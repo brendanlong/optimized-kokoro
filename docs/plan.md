@@ -13,7 +13,7 @@ It's feasible. Two of the goals need restating, though:
    - 50-token sentences: 127× real time at batch size 1, 296× at batch size 8;
    - 150-token sentences: 201× at batch size 1, 328× at batch size 8.
 
-   The card tops out around 330–350× real time. Typical sentences are short (median 81 phonemes), and short ones gain the most. An earlier decoder-only test at 470 frames found no gain, which fits: long inputs already fill the GPU. Mixed lengths are the catch. InstanceNorm/AdaIN and the bidirectional LSTMs read the padding, and padding changed the audio (spectrogram correlation 0.946–0.975 vs unpadded, noise floor ~0.99, in journal `2026-11-01--kokoro-fastapi-latency-profile-cont`). So batching needs short length buckets plus masked norms and LSTMs. That's work, not a blocker.
+   The card tops out around 330–350× real time. Typical sentences are short (median 81 phonemes), and short ones gain the most. An earlier decoder-only test at 470 frames found no gain, which fits: long inputs already fill the GPU. Mixed lengths are the catch. InstanceNorm/AdaIN and the bidirectional LSTMs read the padding, and padding changed the audio (spectrogram correlation 0.946–0.975 vs unpadded, noise floor ~0.99, in journal `2026-11-01--kokoro-fastapi-latency-profile-cont`). Masking the norm alone didn't fix it: still 0.964 against a 0.995 floor, and the cause wasn't found. So mixed-length batching is an **open risk**. First find what reads the padding (the LSTMs are the likely suspect). Until then, batch only same-length requests, or accept the audio change if listening tests can't hear it (Brendan couldn't hear the padded version).
 
 What's large: **G2P (turning text into phonemes) in Rust, at parity with misaki.** Everything else is small or already done.
 
