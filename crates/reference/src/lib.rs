@@ -75,12 +75,13 @@ pub fn read(path: impl AsRef<Path>) -> Vec<Record> {
         .collect()
 }
 
-/// The committed hard-case fixtures, plus every dump in `reference/out/` when present
-/// (the downloaded corpus isn't committed).
+/// The committed hard-case fixtures, plus every dump in `reference/out/` (or `$KOKORO_REFERENCE_OUT`)
+/// when present, since the downloaded corpus isn't committed.
 pub fn all() -> Vec<Record> {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../reference");
+    let out = std::env::var_os("KOKORO_REFERENCE_OUT").map_or_else(|| root.join("out"), PathBuf::from);
     let mut paths = vec![root.join("fixtures/hard_cases.out.jsonl")];
-    if let Ok(entries) = std::fs::read_dir(root.join("out")) {
+    if let Ok(entries) = std::fs::read_dir(out) {
         let mut extra: Vec<_> = entries
             .filter_map(|e| e.ok().map(|e| e.path()))
             .filter(|p| p.extension().is_some_and(|x| x == "jsonl") && p.file_name().is_some_and(|n| n != "hard_cases.jsonl"))
