@@ -66,7 +66,7 @@ What's deployed isn't "misaki English". It's a pipeline: script segmentation (ko
 
 **Order:** harness and corpus → English tokenizer and lexicon (measure the match rate) → tagger → segmentation + espeak-ng-rs (one dependency covers six languages plus the English fallback) → zh (legacy path) → ja last (largest dependency, least traffic).
 
-**Decided (Brendan, 2026-11-02): go straight to the Rust port.** There's no interim Python G2P service. The Rust code loads misaki's own data files where it can: the gold/silver lexicons, pypinyin's phrase and character dictionaries, jieba's dictionary, `ja_words.txt`, and the espeak-ng data. The Python pipeline stays only as the offline reference for the parity harness. A language ships when it reaches parity; until then it's unsupported.
+**Decided (Brendan, 2026-11-02): go straight to the Rust port.** There's no interim Python G2P service. The Rust code loads misaki's own data files where it can: the gold/silver lexicons, pypinyin's phrase and character dictionaries, jieba's dictionary, `ja_words.txt`, and the espeak-ng data. The Python pipeline stays only as the offline reference for the parity harness. Every language the current deploy supports gets ported. The current server isn't part of the end state or the migration.
 
 Rejected alternatives (measured in session decf45d1):
 - **One learned G2P model.** It's simpler to serve, but not faster: Python G2P is already ~1.5% of request time. It would also need a teacher and carries long-tail risk.
@@ -88,7 +88,12 @@ To publish, we need one license for the combined work. Component licenses:
 | pypinyin data, jieba / jieba-rs, cn2an, cutlet, lindera | MIT |
 | UniDic | BSD-3 / GPL / LGPL (pick one) |
 
-All of these are compatible with **GPL-3.0-or-later**, and espeak forces it for anything that links espeak-ng-rs. So publish the combined program under GPL-3.0-or-later, and keep our own source files Apache-2.0, matching the repo's current LICENSE, so the parts without espeak stay permissively reusable. The alternative is to drop espeak (losing es/fr/it/pt/hi/ru/el/ko/ar/he and English unknown words) and stay Apache. Not publishing removes the question entirely, since the GPL and LGPL only bind distribution.
+All of these are compatible with **GPL-3.0-or-later**, and espeak forces it for anything that links espeak-ng-rs. **Decided (Brendan, 2026-11-02):** publish the combined program under GPL-3.0-or-later, and license everything else as permissively as its inputs allow. Concretely:
+- Each crate carries its own license.
+- Our own code and the crates that don't depend on espeak (the protocol, scheduler, worker, the misaki-English/zh/ja ports, segmentation) are Apache-2.0, matching the repo's current LICENSE.
+- The num2words port is LGPL-2.1 (or written from scratch from the spec to stay Apache).
+- Only the espeak integration crate and the final server binary are GPL-3.0-or-later.
+- `cargo deny` in CI checks that no permissive crate pulls in a GPL or LGPL dependency. The alternative is to drop espeak (losing es/fr/it/pt/hi/ru/el/ko/ar/he and English unknown words) and stay Apache. Not publishing removes the question entirely, since the GPL and LGPL only bind distribution.
 
 
 ### Scheduler / "no waiting"
@@ -99,11 +104,11 @@ The worker loop: when the GPU is free, take the highest-priority queued chunks, 
 
 1. **Worker + protocol (small, about a week).** Day one: check that torch.compile/Triton runs under gVisor+nvproxy on this host's 580.x driver, with a tmpfs or prebuilt kernel cache. Then freeze the current compiled PyTorch model behind a unix-socket integer protocol in gVisor+nvproxy. Benchmark it fed with phonemes from the reference pipeline.
 2. **Rust G2P (large; in parallel with 1).** In the order above, starting with the parity harness and English.
-3. **Rust front and relay (small–medium).** HTTP/relay, chunking, scheduler with priorities and length-bucketed batching, PCM streaming. Replace Kokoro-FastAPI in production once English plus the espeak languages reach parity. zh and ja follow; the current server keeps serving them until they're done.
+3. **Rust front and relay (small–medium).** HTTP/relay, chunking, scheduler with priorities and length-bucketed batching, PCM streaming. Switch production over once every language the current deploy supports, including zh and ja, reaches parity. The new server never hands any language back to Kokoro-FastAPI.
 4. **Smaller model (research).** Finish LSTM→conv distillation and maybe a Vocos head. Per-timestep norms make mixed-length batching exact.
 5. **Rust runtime (optional).** Port the simplified model to burn or candle, and keep it only if it matches torch.compile speed.
 
-Phase 2 is where the time goes, and it gates the production switch. Phases 4–5 are optional performance work, and their value depends on measurements.
+Phase 2 is where the time goes, and the production switch waits for all of it. Phases 4–5 are optional performance work, and their value depends on measurements.
 
 ## Open questions
 
