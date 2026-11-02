@@ -66,7 +66,30 @@ What's deployed isn't "misaki English". It's a pipeline: script segmentation (ko
 
 **Order:** harness and corpus → English tokenizer and lexicon (measure the match rate) → tagger → segmentation + espeak-ng-rs (one dependency covers six languages plus the English fallback) → zh (legacy path) → ja last (largest dependency, least traffic).
 
-Until the Rust G2P reaches parity, the stepping stone is to run Python G2P in its **own** no-GPU gVisor sandbox. It must not run in the GPU worker, so the worker only ever receives integers. That sandbox answers `text → phoneme ids` over the same kind of frame protocol. It's no worse than today, and it already removes the Python/C HTTP stack.
+**Decided (Brendan, 2026-11-02): go straight to the Rust port.** There's no interim Python G2P service. The Rust code loads misaki's own data files where it can: the gold/silver lexicons, pypinyin's phrase and character dictionaries, jieba's dictionary, `ja_words.txt`, and the espeak-ng data. The Python pipeline stays only as the offline reference for the parity harness. A language ships when it reaches parity; until then it's unsupported.
+
+Rejected alternatives (measured in session decf45d1):
+- **One learned G2P model.** It's simpler to serve, but not faster: Python G2P is already ~1.5% of request time. It would also need a teacher and carries long-tail risk.
+- **misaki's BART fallback for unknown words.** About 10 ms per word on CPU, one word at a time, and it truncates long words. The deploy uses espeak instead, where 32 unknown words cost about the same as 70 known ones (~4 ms).
+- **Treating duplicate symbols as interchangeable.** Kokoro treats `T` and `ɾ`, and `ts` and `ʦ`, as different sounds (wiki `kokoro-duplicate-phoneme-tokens`). So the port must reproduce each pipeline's exact symbol conventions.
+
+espeak-ng-rs check: 19 of 25 sentences across en/ru/el/ko/ar/he/hi/cmn matched C espeak exactly. The misses were small: a dropped vowel in "Tchaikovsky", one Korean liquid, one Arabic and one Hindi stress or schwa, and Mandarin tones, which we don't use. Usable, with fixes sent upstream as the harness finds them.
+
+### Licensing
+
+To publish, we need one license for the combined work. Component licenses:
+
+| Component | License |
+|---|---|
+| misaki code and lexicons, Kokoro weights and voices | Apache-2.0 |
+| espeak-ng-rs, espeak-ng data | GPL-3.0-or-later |
+| num2words (ported, so a derivative) | LGPL-2.1 |
+| spaCy `en_core_web_sm` weights | MIT (trained on OntoNotes; Explosion licenses it as MIT) |
+| pypinyin data, jieba / jieba-rs, cn2an, cutlet, lindera | MIT |
+| UniDic | BSD-3 / GPL / LGPL (pick one) |
+
+All of these are compatible with **GPL-3.0-or-later**, and espeak forces it for anything that links espeak-ng-rs. So publish the combined program under GPL-3.0-or-later, and keep our own source files Apache-2.0, matching the repo's current LICENSE, so the parts without espeak stay permissively reusable. The alternative is to drop espeak (losing es/fr/it/pt/hi/ru/el/ko/ar/he and English unknown words) and stay Apache. Not publishing removes the question entirely, since the GPL and LGPL only bind distribution.
+
 
 ### Scheduler / "no waiting"
 
@@ -74,13 +97,13 @@ The worker loop: when the GPU is free, take the highest-priority queued chunks, 
 
 ## Phases (rough)
 
-1. **Worker + protocol (small, about a week).** Day one: check that torch.compile/Triton runs under gVisor+nvproxy on this host's 580.x driver, with a tmpfs or prebuilt kernel cache. Then freeze the current compiled PyTorch model behind a unix-socket integer protocol in gVisor+nvproxy. Python G2P runs in a separate no-GPU gVisor sandbox for now. Benchmark against Kokoro-FastAPI.
-2. **Rust front and relay (small–medium).** HTTP/relay, chunking, scheduler with priorities and length-bucketed batching (masked norms/LSTMs in the worker), PCM streaming. Replace Kokoro-FastAPI in production.
-3. **Rust G2P (large, open-ended).** In the order above. Move G2P out of the worker sandbox language by language as each one reaches parity.
+1. **Worker + protocol (small, about a week).** Day one: check that torch.compile/Triton runs under gVisor+nvproxy on this host's 580.x driver, with a tmpfs or prebuilt kernel cache. Then freeze the current compiled PyTorch model behind a unix-socket integer protocol in gVisor+nvproxy. Benchmark it fed with phonemes from the reference pipeline.
+2. **Rust G2P (large; in parallel with 1).** In the order above, starting with the parity harness and English.
+3. **Rust front and relay (small–medium).** HTTP/relay, chunking, scheduler with priorities and length-bucketed batching, PCM streaming. Replace Kokoro-FastAPI in production once English plus the espeak languages reach parity. zh and ja follow; the current server keeps serving them until they're done.
 4. **Smaller model (research).** Finish LSTM→conv distillation and maybe a Vocos head. Per-timestep norms make mixed-length batching exact.
 5. **Rust runtime (optional).** Port the simplified model to burn or candle, and keep it only if it matches torch.compile speed.
 
-Phases 1–2 give the security win quickly. Phase 3 is where the time goes. Phases 4–5 are optional performance work, and their value depends on measurements.
+Phase 2 is where the time goes, and it gates the production switch. Phases 4–5 are optional performance work, and their value depends on measurements.
 
 ## Open questions
 
