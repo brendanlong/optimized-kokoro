@@ -54,16 +54,19 @@ I recommend **PyTorch in the sandboxed worker first**, behind the integer-only p
 
 ### G2P: the big piece
 
-misaki English is: lexicon lookup (gold/silver dictionaries), spaCy POS tags for heteronyms ("read", "lead"), number/currency/abbreviation rules, and espeak for unknown words. Plus our script segmentation (kokoro#2) and Mandarin-accent (kokoro#6) work.
+What's deployed isn't "misaki English". It's a pipeline: script segmentation (kokoro#2, `foreign.py`), then per-language G2Ps, then post-processing. Every piece has its own parity traps. (Details from the a189 review on PR #1.)
 
-Rust plan:
-- Lexicons and rules: a direct port.
-- POS tagging: a small pure-Rust tagger (averaged perceptron or a tiny CNN) trained on UD English. It only has to decide heteronyms, not do general tagging.
-- Unknown words: either **espeak-ng-rs** (pure Rust and claims bit-identical IPA, but it's 7 months old with 27★ and **GPL-3.0**, which is fine for hosting and a problem for distribution), or a small character-level model distilled from misaki+espeak output, as Crane/Moonshine do.
-- Chinese: `jieba-rs` plus a pinyin crate plus a port of misaki's pinyin→IPA tables. Japanese: `lindera` (pure Rust, UniDic). Other scripts: espeak-ng-rs.
-- **Testing is easy to make objective:** run Python misaki (our fork) and the Rust G2P over a large corpus and diff the phoneme strings. Count mismatches per category and listen only to the ones that differ. This turns "is the port good" into a number.
+- **English.** spaCy's **tokenizer** sets the token boundaries for everything else: contractions, hyphens, number and currency spans. Tokenizer drift will likely cause more diffs than tagging will. misaki uses POS tags in about 66 places, not just for heteronyms: function-word reductions (`to` → `tə`/`tu`), stress on function words, straight-quote direction, numbers through `num2words`. So the Rust tagger has to produce full PTB tags (an averaged perceptron trained on PTB/UD is a known, small design), or we list every tag-dependent rule and test each one.
+- **espeak covers six languages** (ru/el/ko/ar/he/hi) as well as unknown English words. So a distilled character model would only replace the English fallback; **espeak-ng-rs** is needed regardless. Pin the reference espeak version, since misaki's `E2M` rewrites depend on it. Port our own post-processing too: strip Hebrew vowel points, map `ħ→h` and `ʕ→ʔ`, and treat Greek as Greek only from 3 letters. Licensing doesn't change: the current deploy already ships GPL-3 espeak-ng.
+- **Chinese.** The v1.0 model uses misaki's **legacy** path (jieba + pypinyin `lazy_pinyin` + `transcription.py`), not `ZHFrontend`. Polyphones (行, 长) depend on pypinyin's phrase dictionary, and segmentation depends on jieba's dictionary version. So the Rust side has to use the same dictionary data, not whatever a pinyin crate ships. Also test which characters have no reading (they fall back to English), and the Mandarin-accent rules (kokoro#6).
+- **Japanese** is cutlet: MeCab with full UniDic, then romanization rules, then misaki's kana tables. `lindera` only replaces the MeCab step, so this is about as much work as zh.
+- **Segmentation** (`foreign.py`, ~140 lines): port `tests/test_foreign.py` one-to-one and use it as the spec.
 
-Until the Rust G2P reaches parity, the stepping stone is to run Python misaki inside the worker's sandbox. That's no worse than today, and it already removes the Python/C HTTP stack.
+**Parity harness.** Diff per-chunk phonemes from our `KPipeline` (`en_g2p_tokens`/`g2p_phonemes`, pinned to a commit), not from misaki alone, because segmentation, chunking and post-processing live outside misaki. Corpus: real Lion Reader articles plus the mixed-script sets from kokoro#2. Weight the diffs, since many are inaudible (primary vs secondary stress, `ᵊ`). For the rest, use blind transcription by two audio models as a cheap second check.
+
+**Order:** harness and corpus → English tokenizer and lexicon (measure the match rate) → tagger → segmentation + espeak-ng-rs (one dependency covers six languages plus the English fallback) → zh (legacy path) → ja last (largest dependency, least traffic).
+
+Until the Rust G2P reaches parity, the stepping stone is to run Python G2P inside the worker's sandbox. That's no worse than today, and it already removes the Python/C HTTP stack.
 
 ### Scheduler / "no waiting"
 
@@ -73,7 +76,7 @@ The worker loop: when the GPU is free, take the highest-priority queued chunks, 
 
 1. **Worker + protocol (small, about a week).** Day one: check that torch.compile/Triton runs under gVisor+nvproxy on this host's 580.x driver, with a tmpfs or prebuilt kernel cache. Then freeze the current compiled PyTorch model behind a unix-socket integer protocol in gVisor+nvproxy. Python G2P runs inside the sandbox for now. Benchmark against Kokoro-FastAPI.
 2. **Rust front and relay (small–medium).** HTTP/relay, chunking, scheduler with priorities and length-bucketed batching (masked norms/LSTMs in the worker), PCM streaming. Replace Kokoro-FastAPI in production.
-3. **Rust G2P (large, open-ended).** English to parity on the diff harness first, then zh/ja, then espeak-ng-rs for the rest. Move G2P out of the worker sandbox.
+3. **Rust G2P (large, open-ended).** In the order above. Move G2P out of the worker sandbox language by language as each one reaches parity.
 4. **Smaller model (research).** Finish LSTM→conv distillation and maybe a Vocos head. Per-timestep norms make mixed-length batching exact.
 5. **Rust runtime (optional).** Port the simplified model to burn or candle, and keep it only if it matches torch.compile speed.
 
@@ -82,5 +85,4 @@ Phases 1–2 give the security win quickly. Phase 3 is where the time goes. Phas
 ## Open questions
 
 - Which GPU in production: the 3060 Ti only, or cloud? This sets the batch size and the bucket boundaries.
-- Is GPL-3 espeak-ng-rs acceptable, given we only host and don't distribute?
 - Does anything need OpenAI-compatible output besides Lion Reader and clawed-abode?
