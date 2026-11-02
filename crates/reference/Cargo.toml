@@ -1,0 +1,13 @@
+[package]
+name = "kokoro-reference"
+version = "0.1.0"
+description = "Reads the reference text pipeline's recorded output (reference/dump.py) for parity tests"
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
