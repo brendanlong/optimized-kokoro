@@ -27,15 +27,15 @@ client ──► [Fly relay, Rust]  ◄── outbound connection ── [deskto
 ```
 
 - **Front (Rust, sandboxed, no GPU).** Owns every byte from the network: request parsing, text normalization, sentence chunking, G2P, the voice table, the scheduler and the PCM stream back. It sends the worker `{request_id, voice_index, speed, phoneme_ids: [u8; ≤510]}` and gets back `{request_id, seq, pcm: [i16]}` frames.
-- **Model worker.** Only reads length-prefixed integer frames. Weights load from safetensors (no pickle). It runs in gVisor `runsc --nvproxy`, which forwards only the NVIDIA ioctls on its list for that driver version. That list is probably the "whitelist of allowed GPU commands" you remembered. It has no network and a read-only filesystem.
-- **Desktop listens on nothing.** This matches the relay design already chosen in `self-hosted-kokoro-exposure-options`.
+- **Model worker.** Only reads length-prefixed integer frames, and **re-validates them itself**. It doesn't trust the front: every phoneme id must be in the vocab, the voice index in range, the length ≤ 510, and speed finite and within bounds. Weights load from safetensors (no pickle). It runs in gVisor `runsc --nvproxy`, which forwards only the NVIDIA ioctls on its list for that driver version. That list is probably the "whitelist of allowed GPU commands" you remembered. The arguments to those ioctls are still forwarded, though, so the sandbox doesn't make the worker safe to compromise. It has no network and a read-only filesystem. nvproxy supports exact driver versions only, so pin the host driver and runsc together.
+- **Desktop listens on nothing.** This matches the relay design already chosen in `self-hosted-kokoro-exposure-options`. The relay and agent authenticate each other (mutual TLS or a pinned key). A stolen agent credential would receive every listener's text, so store it outside the `claude` user.
 
 ### Protocol question (OpenAI-compatible HTTP vs MessagePack-RPC)
 
 Most of the risk was never in the HTTP format. It was in the C and Python parsers behind it, and G2P (espeak-ng is C, spaCy is Cython, MeCab is C++). With Rust on both ends:
 
-- **Between the relay and the desktop:** a fixed binary frame over one outbound TLS stream. Use length-prefixed `bincode`/hand-rolled structs with hard size caps. MessagePack adds nothing over that.
-- **Public edge (relay):** one route, `POST /v1/audio/speech`, through `hyper`/`axum`, with a body-size cap and `serde(deny_unknown_fields)`. It returns `audio/pcm` (24 kHz s16le). That's a small, well-fuzzed surface, and existing clients (Lion Reader, clawed-abode) keep working. I don't think something narrower is worth the cost of breaking compatibility.
+- **Between the relay and the desktop:** a fixed binary frame over one outbound TLS stream. Use length-prefixed `postcard`/hand-rolled structs. Check each length prefix against a hard cap *before* allocating. MessagePack adds nothing over that. The agent's hello frame carries the voice list.
+- **Relay API:** two routes, `POST /v1/audio/speech` and `GET /v1/audio/voices`, which Lion Reader's `selfhosted.ts` also calls. They go through `hyper`/`axum` with a body-size cap. `/v1/audio/speech` returns `audio/pcm` (24 kHz s16le), with no encoding. The API stays on Fly's private network, so only the agent's connection endpoint is public, and auth is checked before reading a body or accepting an upgrade. That's a small, well-fuzzed surface, and Lion Reader and clawed-abode keep working. Whether to reject unknown fields (`deny_unknown_fields`) depends on which clients we support. Generic OpenAI clients send extras like `model` and `response_format`, so the choice is either to accept and ignore a fixed list of them, or to support only our own clients.
 
 ### Audio
 
@@ -66,7 +66,7 @@ What's deployed isn't "misaki English". It's a pipeline: script segmentation (ko
 
 **Order:** harness and corpus → English tokenizer and lexicon (measure the match rate) → tagger → segmentation + espeak-ng-rs (one dependency covers six languages plus the English fallback) → zh (legacy path) → ja last (largest dependency, least traffic).
 
-Until the Rust G2P reaches parity, the stepping stone is to run Python G2P inside the worker's sandbox. That's no worse than today, and it already removes the Python/C HTTP stack.
+Until the Rust G2P reaches parity, the stepping stone is to run Python G2P in its **own** no-GPU gVisor sandbox. It must not run in the GPU worker, so the worker only ever receives integers. That sandbox answers `text → phoneme ids` over the same kind of frame protocol. It's no worse than today, and it already removes the Python/C HTTP stack.
 
 ### Scheduler / "no waiting"
 
@@ -74,7 +74,7 @@ The worker loop: when the GPU is free, take the highest-priority queued chunks, 
 
 ## Phases (rough)
 
-1. **Worker + protocol (small, about a week).** Day one: check that torch.compile/Triton runs under gVisor+nvproxy on this host's 580.x driver, with a tmpfs or prebuilt kernel cache. Then freeze the current compiled PyTorch model behind a unix-socket integer protocol in gVisor+nvproxy. Python G2P runs inside the sandbox for now. Benchmark against Kokoro-FastAPI.
+1. **Worker + protocol (small, about a week).** Day one: check that torch.compile/Triton runs under gVisor+nvproxy on this host's 580.x driver, with a tmpfs or prebuilt kernel cache. Then freeze the current compiled PyTorch model behind a unix-socket integer protocol in gVisor+nvproxy. Python G2P runs in a separate no-GPU gVisor sandbox for now. Benchmark against Kokoro-FastAPI.
 2. **Rust front and relay (small–medium).** HTTP/relay, chunking, scheduler with priorities and length-bucketed batching (masked norms/LSTMs in the worker), PCM streaming. Replace Kokoro-FastAPI in production.
 3. **Rust G2P (large, open-ended).** In the order above. Move G2P out of the worker sandbox language by language as each one reaches parity.
 4. **Smaller model (research).** Finish LSTM→conv distillation and maybe a Vocos head. Per-timestep norms make mixed-length batching exact.
@@ -85,4 +85,4 @@ Phases 1–2 give the security win quickly. Phase 3 is where the time goes. Phas
 ## Open questions
 
 - Which GPU in production: the 3060 Ti only, or cloud? This sets the batch size and the bucket boundaries.
-- Does anything need OpenAI-compatible output besides Lion Reader and clawed-abode?
+- Do we support generic OpenAI clients (accept and ignore their extra fields), or only Lion Reader and clawed-abode (strict schema)?
