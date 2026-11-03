@@ -7,8 +7,9 @@
 //! Requests live in slots (`docs/worker-protocol.md`): a fixed table, as large as the worker's
 //! Hello and the configured limit allow. A request takes a free slot when it's submitted and
 //! gives it back only when the worker's Result or Failed for that slot arrives, so cancelled
-//! requests the worker hasn't acknowledged still hold theirs, and the outgoing frame queue (at
-//! most a Synthesize and a Cancel per slot) is bounded.
+//! requests the worker hasn't acknowledged still hold theirs, and the outgoing frame queue is
+//! bounded: at most three frames per slot (a stale Cancel for its previous request, which the
+//! worker ignores, then a Synthesize and a Cancel).
 //!
 //! A request's audio is at most the worker's chunk cap at its speed (durations implying more are
 //! a violation), so memory is bounded by how many chunks can be in flight, which the request and
@@ -335,6 +336,7 @@ impl Connection {
                 let _ = reply.send(Err(SynthError::ConnectionLost));
             }
         }
+        state.free = (0..state.slots.len() as u16).rev().collect();
         self.reset.notify_one();
     }
 }
@@ -437,7 +439,8 @@ async fn serve(
     }
     let slots = settings.slots.min(hello.slots);
     tracing::info!("worker connected: {} voices, max batch {}, {slots} slots", hello.voices.len(), hello.max_batch);
-    let (out_tx, mut out_rx) = mpsc::channel::<Vec<u8>>(2 * usize::from(slots));
+    let (out_tx, mut out_rx) = mpsc::channel::<Vec<u8>>(3 * usize::from(slots));
+
     let connection = Arc::new(Connection::new(hello, out_tx, slots, gauge.clone()));
     publish.send_replace(Some(connection.clone()));
 
