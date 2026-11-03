@@ -48,7 +48,8 @@ pub struct Config {
     /// disconnected and its requests fail.
     pub worker_progress_timeout_ms: u64,
     /// Requests on the worker at once, counting cancelled ones until the worker acknowledges
-    /// them. Defaults to `max_concurrent_requests × lookahead`.
+    /// them. Defaults to `max_concurrent_requests × lookahead`; never more than the protocol's
+    /// 1024.
     pub worker_max_outstanding: Option<usize>,
     /// Audio held in memory across all requests (rendered, reordered or being written), in
     /// bytes. Each chunk reserves the most it could produce before it's sent to the worker.
@@ -153,7 +154,9 @@ impl Config {
     }
 
     pub fn worker_max_outstanding(&self) -> usize {
-        self.worker_max_outstanding.unwrap_or(self.max_concurrent_requests.saturating_mul(self.lookahead))
+        self.worker_max_outstanding
+            .unwrap_or(self.max_concurrent_requests.saturating_mul(self.lookahead))
+            .min(crate::protocol::MAX_OUTSTANDING)
     }
 
     pub fn shutdown_grace(&self) -> Duration {

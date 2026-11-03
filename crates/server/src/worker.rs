@@ -322,7 +322,11 @@ impl Connection {
                 }
                 let pending = state.pending.remove(&id).expect("just found");
                 if let Some(reply) = pending.reply {
-                    let _ = reply.send(Err(SynthError::WorkerFailed));
+                    let error = match code {
+                        FailCode::TooLong => SynthError::Unrenderable,
+                        FailCode::Cancelled | FailCode::Internal => SynthError::WorkerFailed,
+                    };
+                    let _ = reply.send(Err(error));
                 }
                 Ok(())
             }

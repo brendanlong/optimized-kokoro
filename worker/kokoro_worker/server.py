@@ -64,7 +64,7 @@ class Connection:
                 if not 1 <= length <= P.MAX_FRONT_BODY:
                     raise P.ProtocolError(f"frame length {length}")
                 body = _recv_exact(self.conn, length)
-                msg = P.parse_request(body, self.n_voices, self.synth.vocab_ids, self.synth.max_phonemes)
+                msg = P.parse_request(body, self.n_voices, self.synth.vocab_size, self.synth.max_phonemes)
                 if isinstance(msg, P.Cancel):
                     if self.queue.cancel(msg.request_id):
                         self.send(P.failed(msg.request_id, P.CANCELLED))

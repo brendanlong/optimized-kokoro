@@ -6,13 +6,13 @@ import pytest
 
 from kokoro_worker import protocol as P
 
-VOCAB = frozenset([1, 2, 3, 4, 5, 16, 177])
+VOCAB = 178  # vocab_size: ids 1..177
 
 
 def parse(frame: bytes):
     (length,) = struct.unpack_from("<I", frame)
     assert length == len(frame) - 4
-    return P.parse_request(frame[4:], n_voices=3, vocab_ids=VOCAB, max_phonemes=510)
+    return P.parse_request(frame[4:], n_voices=3, vocab_size=VOCAB, max_phonemes=510)
 
 
 def test_synthesize_round_trip():
@@ -43,7 +43,6 @@ def test_cancel_round_trip():
         dict(ids=[]),
         dict(ids=[1] * 511),
         dict(ids=[0]),
-        dict(ids=[6]),
         dict(ids=[178]),
         dict(style_len=0),
         dict(style_len=511),

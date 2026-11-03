@@ -14,7 +14,8 @@
 //!   at most `ceil(50 / speed) + 1` (Kokoro's `max_dur` is 50 sigmoid bins, divided by speed).
 //! - Audio: after the request's Durations, with exactly `600 × Σ durations` samples (Kokoro v1.0
 //!   renders 600 samples per duration unit; measured exact on the real model).
-//! - Failed: code 1 (cancelled) only after the front sent Cancel for that request, or 2.
+//! - Failed: code 1 (cancelled) only after the front sent Cancel for that request, 2 (internal
+//!   error), or 3 (too long: the predicted audio exceeds the worker's frame cap).
 //! - Each length prefix is checked against its frame type's bound before anything is allocated:
 //!   Hello at most 19 + 65,535 × 65 bytes, Durations at most 1,035, Failed exactly 10, and Audio
 //!   exactly the size its Durations imply, so the reader asks the caller how many samples to expect.
@@ -33,6 +34,9 @@ pub const SAMPLE_RATE: u32 = 24_000;
 /// `600 * sum(durations)` samples.
 pub const SAMPLES_PER_FRAME: u64 = 600;
 pub const MAX_FRONT_BODY: usize = 64 * 1024;
+/// Requests the worker accepts on one connection at once (sent and not yet answered); one more
+/// is a violation and closes the connection.
+pub const MAX_OUTSTANDING: usize = 1024;
 /// Kokoro v1.0's `max_dur`: an id's duration is a sum of this many sigmoids, divided by speed.
 const DURATION_BINS: f64 = 50.0;
 pub const MAX_VOICES_PER_MIX: usize = 8;
@@ -72,6 +76,8 @@ pub struct Hello {
 pub enum FailCode {
     Cancelled,
     Internal,
+    /// The predicted output is over the worker's frame cap; retrying the same chunk won't help.
+    TooLong,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -272,6 +278,7 @@ fn parse_body(body: &[u8]) -> Result<WorkerFrame, ReadError> {
             let code = match c.u8()? {
                 1 => FailCode::Cancelled,
                 2 => FailCode::Internal,
+                3 => FailCode::TooLong,
                 other => return violation(format!("unknown failure code {other}")),
             };
             c.finish()?;
@@ -376,6 +383,7 @@ pub mod worker_side {
         body.push(match code {
             FailCode::Cancelled => 1,
             FailCode::Internal => 2,
+            FailCode::TooLong => 3,
         });
         frame(body)
     }
@@ -444,6 +452,10 @@ mod tests {
         assert_eq!(
             read(&failed(9, FailCode::Cancelled), None).await.unwrap(),
             WorkerFrame::Failed { id: 9, code: FailCode::Cancelled }
+        );
+        assert_eq!(
+            read(&failed(10, FailCode::TooLong), None).await.unwrap(),
+            WorkerFrame::Failed { id: 10, code: FailCode::TooLong }
         );
     }
 

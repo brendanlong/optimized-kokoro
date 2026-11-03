@@ -42,7 +42,7 @@ class Cancel:
     request_id: int
 
 
-def parse_request(body: bytes, n_voices: int, vocab_ids: frozenset[int], max_phonemes: int):
+def parse_request(body: bytes, n_voices: int, vocab_size: int, max_phonemes: int):
     """Decode and validate one front -> worker frame body (type byte included)."""
     if not body:
         raise ProtocolError("empty body")
@@ -84,8 +84,8 @@ def parse_request(body: bytes, n_voices: int, vocab_ids: frozenset[int], max_pho
     if len(body) != pos + n_ids:
         raise ProtocolError("Synthesize: wrong length")
     ids = tuple(body[pos:])
-    if not vocab_ids.issuperset(ids):
-        raise ProtocolError("phoneme id not in vocab")
+    if min(ids) < 1 or max(ids) >= vocab_size:
+        raise ProtocolError("phoneme id out of range")
     return Synthesize(request_id, priority, speed, tuple(voices), style_len, ids)
 
 

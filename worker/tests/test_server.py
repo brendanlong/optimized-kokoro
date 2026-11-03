@@ -125,7 +125,8 @@ def test_batches_queued_requests(worker):
         struct.pack("<I", P.MAX_FRONT_BODY + 1),
         struct.pack("<I", 0xFFFFFFFF),
         struct.pack("<I", 1) + b"\x99",
-        P.synthesize(1, [5], [(0, 1.0)]),  # id not in vocab
+        P.synthesize(1, [200], [(0, 1.0)]),  # id out of range
+        P.synthesize(1, [0], [(0, 1.0)]),  # the boundary id
         P.synthesize(1, [1], [(2, 1.0)]),  # voice out of range
         struct.pack("<I", 3) + b"\x11\x00\x00",
     ],
