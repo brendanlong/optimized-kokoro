@@ -1,0 +1,113 @@
+//! Whole requests against the reference server, including what the corpus parity test doesn't
+//! check: pauses, model ids, dropped phonemes and word spans. Cases come from
+//! `reference/request_cases.py` (corpus words mixed with foreign runs, phoneme links, punctuation,
+//! pause tags, long clause chains, and character fuzz) and `reference/request_dump.py`:
+//! `tests/requests.jsonl` (the first 300 of seed 1, then links with blank phonemes at a chunk's
+//! start and end, before a pause and at a clause cut), plus `reference/out/requests/*.jsonl` (or
+//! under `$KOKORO_REFERENCE_OUT`).
+//!
+//! When the reference fails a request, the port yields `Err` for that sentence and carries on
+//! (docs/divergences.md), so only the chunks before the failure are compared, and the port must
+//! report an error, except where the failure is a listed divergence the port reads instead.
+
+use kokoro_pipeline::{Lang, NormalizationOptions, Pipeline};
+use serde::Deserialize;
+use std::path::PathBuf;
+
+#[derive(Deserialize)]
+struct Case {
+    id: String,
+    lang: String,
+    text: String,
+    chunks: Vec<Expected>,
+}
+
+#[derive(Deserialize, Debug, PartialEq)]
+#[serde(untagged)]
+enum Expected {
+    Pause { pause: f64 },
+    Error { error: String },
+    Speech { text: String, phonemes: String, ids: Vec<u8>, dropped: usize, words: Vec<(String, usize, usize)> },
+}
+
+fn cases() -> Vec<Case> {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let out = std::env::var_os("KOKORO_REFERENCE_OUT").map_or_else(|| root.join("../../reference/out"), PathBuf::from);
+    let mut paths = vec![root.join("tests/requests.jsonl")];
+    if let Ok(entries) = std::fs::read_dir(out.join("requests")) {
+        let mut extra: Vec<_> = entries
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| p.extension().is_some_and(|x| x == "jsonl"))
+            .collect();
+        extra.sort();
+        paths.extend(extra);
+    }
+    paths
+        .iter()
+        .flat_map(|path| {
+            let text = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+            text.lines()
+                .filter(|l| !l.trim().is_empty())
+                .map(|l| serde_json::from_str(l).unwrap_or_else(|e| panic!("{}: {e}", path.display())))
+                .collect::<Vec<Case>>()
+        })
+        .collect()
+}
+
+#[test]
+fn requests_match_the_reference() {
+    let american = Pipeline::new(Lang::AmericanEnglish).unwrap();
+    let british = Pipeline::new(Lang::BritishEnglish).unwrap();
+    let options = NormalizationOptions::default();
+    let cases = cases();
+    let mut failures = Vec::new();
+    for case in &cases {
+        let pipeline = if case.lang == "b" { &british } else { &american };
+        let mut actual = Vec::new();
+        for chunk in pipeline.chunks(&case.text, &options) {
+            actual.push(match chunk {
+                Ok(c) => match c.pause {
+                    Some(pause) => Expected::Pause { pause },
+                    None => Expected::Speech {
+                        text: c.text,
+                        phonemes: c.phonemes,
+                        ids: c.ids,
+                        dropped: c.dropped,
+                        words: c.words.into_iter().map(|w| (w.text, w.ids.start, w.ids.end)).collect(),
+                    },
+                },
+                Err(e) => Expected::Error { error: e.to_string() },
+            });
+        }
+        let mut expected: Vec<&Expected> = case.chunks.iter().collect();
+        let error = match expected.last() {
+            Some(Expected::Error { error }) => Some(error.clone()),
+            _ => None,
+        };
+        if error.is_some() {
+            expected.pop();
+        }
+        let prefix_matches = expected.len() <= actual.len() && expected.iter().zip(&actual).all(|(e, a)| *e == a);
+        let ok = match error {
+            // misaki's `TypeError` on `İ` after punctuation: the port reads it (docs/divergences.md).
+            Some(e) if e.starts_with("TypeError: ord() expected a character") => prefix_matches,
+            Some(_) => prefix_matches && actual[expected.len()..].iter().any(|a| matches!(a, Expected::Error { .. })),
+            None => prefix_matches && expected.len() == actual.len(),
+        };
+        if !ok {
+            let first = expected.iter().zip(&actual).position(|(e, a)| **e != *a).unwrap_or(expected.len().min(actual.len()));
+            failures.push(format!(
+                "{} {:?}\n  expected: {:?}\n  actual:   {:?}",
+                case.id,
+                case.text.chars().take(200).collect::<String>(),
+                expected.get(first),
+                actual.get(first)
+            ));
+        }
+    }
+    println!("{} of {} requests match", cases.len() - failures.len(), cases.len());
+    for f in failures.iter().take(10) {
+        println!("{f}");
+    }
+    assert!(failures.is_empty(), "{} requests differ", failures.len());
+}

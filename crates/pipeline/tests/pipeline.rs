@@ -198,6 +198,39 @@ fn pauses_ids_and_words() {
     assert_eq!(russian.ids.len() + russian.dropped, russian.phonemes.chars().count());
 }
 
+/// The reference fails the whole request with `OverflowError` here, after "Hello there."
+#[test]
+fn a_number_too_large_to_read_fails_only_its_sentence() {
+    let options = NormalizationOptions::default();
+    let text = format!("Hello there. I owe 1{} things. Bye now.", "0".repeat(400));
+    let chunks: Vec<_> = pipeline().chunks(&text, &options).collect();
+    assert!(matches!(chunks[1], Err(Error::G2p(_))), "{:?}", chunks[1]);
+    let texts: Vec<_> = chunks.iter().map(|c| c.as_ref().map(|c| c.text.as_str()).ok()).collect();
+    assert_eq!(texts, [Some("Hello there."), None, Some("Bye now.")]);
+}
+
+/// A link with blank phonemes is stripped off the chunk's ends; its word has no span left and is
+/// dropped, as Python's `inside` list is empty for it (this used to index past the end).
+#[test]
+fn links_with_blank_phonemes_at_chunk_ends() {
+    let options = NormalizationOptions::default();
+    let words = |text: &str| -> Vec<Vec<(String, usize, usize)>> {
+        pipeline()
+            .chunks(text, &options)
+            .map(|c| c.unwrap().words.into_iter().map(|w| (w.text, w.ids.start, w.ids.end)).collect())
+            .collect()
+    };
+    let say = vec![("Say".to_owned(), 0, 3)];
+    assert_eq!(words("Say [word](/ /)"), [say.clone()]);
+    assert_eq!(words("[word](/ /) say"), [vec![("say".to_owned(), 0, 3)]]);
+    assert_eq!(words("Say [word](/ /) [now](/ /)"), [say.clone()]);
+    assert_eq!(words("Say [word](/ /) [pause:1s] more [x](/ /)"), [say, vec![], vec![("more".to_owned(), 0, 4)]]);
+    let clauses = ["the quick brown fox jumps over the lazy dog"; 7].join(", ");
+    let cut = words(&format!("{clauses}, {clauses} [word](/ /)"));
+    assert_eq!(cut.len(), 2);
+    assert_eq!(cut[1].last(), Some(&("dog".to_owned(), 239, 243)));
+}
+
 #[test]
 fn shared_across_threads() {
     fn check<T: Send + Sync>() {}

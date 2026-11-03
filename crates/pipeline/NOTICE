@@ -15,4 +15,5 @@ src/vocab.rs holds the vocabulary from Kokoro-82M's config.json
 (https://huggingface.co/hexgrad/Kokoro-82M, Apache License 2.0).
 
 src/tables.rs is generated from the Unicode data in the Python `regex` package
-the reference uses (reference/gen_pipeline_tables.py).
+the reference uses (reference/gen_pipeline_tables.py), which is derived from the
+Unicode Character Database; COPYING.UCD has the Unicode terms for that data.

@@ -125,7 +125,7 @@ pub struct Chunk {
     pub ids: Vec<u8>,
     pub dropped: usize,
     /// Seconds of silence, for a pause chunk.
-    pub pause: Option<f32>,
+    pub pause: Option<f64>,
     /// The words with phonemes, for word timestamps.
     pub words: Vec<Word>,
 }
@@ -142,7 +142,8 @@ pub struct Word {
 }
 
 /// One language's G2P, loaded once and shared across threads. Every call to [`chunks`](Self::chunks)
-/// gets fresh espeak engines, so nothing passes from one request to the next.
+/// gets its own espeak engines (about 5 µs each), so requests never wait on one another's engine
+/// lock; espeak itself starts every call from fresh state, so nothing passes between requests.
 pub struct Pipeline {
     lang: Lang,
     nlp: Nlp,
@@ -220,7 +221,7 @@ impl Pipeline {
                     phonemes: String::new(),
                     ids: Vec::new(),
                     dropped: 0,
-                    pause: Some(seconds as f32),
+                    pause: Some(seconds),
                     words: Vec::new(),
                 },
             })
@@ -260,6 +261,10 @@ fn speech(text: String, p: Phonemes) -> Chunk {
 /// `_word_spans` followed by the vocabulary filter `_render_stitched` applies: each word with
 /// phonemes, located by walking the tokens as `tokens_to_ps` joins them. `kept[i]` is the number
 /// of ids for the first `i` phonemes.
+///
+/// Positions are counted in the joined string before `strip`, and each word's span is cut to the
+/// stripped string, so a token whose phonemes were stripped away (blank phonemes at either end)
+/// gets an empty span and is left out, as Python's `inside` list comes out empty for it.
 fn word_spans(tokens: &[Token], kept: &[usize]) -> Vec<Word> {
     let mut leading = 0;
     for t in tokens {
@@ -269,26 +274,23 @@ fn word_spans(tokens: &[Token], kept: &[usize]) -> Vec<Word> {
         if blank < ps.chars().count() {
             break;
         }
-        if t.whitespace.is_empty() {
-            continue;
-        }
-        leading += 1;
+        leading += usize::from(!t.whitespace.is_empty());
     }
-    let mut position = -(leading as isize);
+    let len = kept.len() - 1;
+    let stripped = |raw: usize| raw.saturating_sub(leading).min(len);
+    let mut raw = 0;
     let mut words = Vec::new();
     for t in tokens {
-        let ps = t.phonemes.as_deref().unwrap_or("");
-        let len = ps.chars().count() as isize;
+        let n = t.phonemes.as_deref().unwrap_or("").chars().count();
         let text = kokoro_text::py::strip(&t.text);
-        if !text.is_empty() && len > 0 && position >= 0 {
-            let first = position as usize;
-            let end = ((position + len) as usize).min(kept.len() - 1);
-            let ids = kept[first]..kept[end];
+        if !text.is_empty() && n > 0 && raw >= leading {
+            let phonemes = stripped(raw)..stripped(raw + n);
+            let ids = kept[phonemes.start]..kept[phonemes.end];
             if !ids.is_empty() {
-                words.push(Word { text: text.to_owned(), phonemes: first..end, ids });
+                words.push(Word { text: text.to_owned(), phonemes, ids });
             }
         }
-        position += len + isize::from(!t.whitespace.is_empty());
+        raw += n + usize::from(!t.whitespace.is_empty());
     }
     words
 }
