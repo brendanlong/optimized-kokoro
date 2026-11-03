@@ -9,6 +9,7 @@ allocating, known types, exact body sizes. No torch needed.
 
 import argparse
 import json
+import math
 import socket
 import struct
 import wave
@@ -132,11 +133,19 @@ def main() -> None:
         name, _, weight = part.partition(":")
         mix.append((client.hello.voices.index(name), float(weight or 1)))
     client.send(P.synthesize(1, ids, mix, args.speed))
+    durations = None
     while True:
         kind, rid, payload = client.receive()
+        if rid != 1:
+            raise WorkerError(f"unexpected request id {rid}")
         if kind == "durations":
+            if len(payload) != len(ids) + 2 or not all(1 <= d <= math.ceil(50 / args.speed) for d in payload):
+                raise WorkerError("bad Durations")
+            durations = payload
             print(f"durations: {payload}")
         elif kind == "audio":
+            if durations is None or len(payload) != 2 * 600 * sum(durations):
+                raise WorkerError("Audio length doesn't match Durations")
             write_wav(args.out, payload, client.hello.sample_rate)
             print(f"wrote {args.out}: {len(payload) // 2 / client.hello.sample_rate:.2f} s")
             break

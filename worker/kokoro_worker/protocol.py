@@ -33,6 +33,7 @@ class Synthesize:
     priority: int
     speed: float
     voices: tuple[tuple[int, float], ...]  # (voice index, weight), weights > 0, not yet normalized
+    style_len: int  # voice-pack row style_len - 1; n_ids except for pieces of a stitched clause
     ids: tuple[int, ...]
 
 
@@ -63,7 +64,7 @@ def parse_request(body: bytes, n_voices: int, vocab_ids: frozenset[int], max_pho
     if not 1 <= mix <= MAX_MIX:
         raise ProtocolError("n_voices")
     pos = 15
-    if len(body) < pos + 6 * mix + 2:
+    if len(body) < pos + 6 * mix + 4:
         raise ProtocolError("Synthesize: short")
     voices = []
     for _ in range(mix):
@@ -74,16 +75,18 @@ def parse_request(body: bytes, n_voices: int, vocab_ids: frozenset[int], max_pho
         if not (math.isfinite(weight) and weight > 0):
             raise ProtocolError("voice weight")
         voices.append((index, weight))
-    (n_ids,) = struct.unpack_from("<H", body, pos)
-    pos += 2
+    n_ids, style_len = struct.unpack_from("<HH", body, pos)
+    pos += 4
     if not 1 <= n_ids <= max_phonemes:
         raise ProtocolError("n_ids")
+    if not 1 <= style_len <= max_phonemes:
+        raise ProtocolError("style_len")
     if len(body) != pos + n_ids:
         raise ProtocolError("Synthesize: wrong length")
     ids = tuple(body[pos:])
     if not vocab_ids.issuperset(ids):
         raise ProtocolError("phoneme id not in vocab")
-    return Synthesize(request_id, priority, speed, tuple(voices), ids)
+    return Synthesize(request_id, priority, speed, tuple(voices), style_len, ids)
 
 
 def frame(body: bytes) -> bytes:
@@ -116,11 +119,11 @@ def failed(request_id: int, code: int) -> bytes:
 # Front side, for the test client and tests.
 
 
-def synthesize(request_id: int, ids, voices, speed: float = 1.0, priority: int = 0) -> bytes:
+def synthesize(request_id: int, ids, voices, speed: float = 1.0, priority: int = 0, style_len=None) -> bytes:
     body = bytearray(struct.pack("<BQBfB", SYNTHESIZE, request_id, priority, speed, len(voices)))
     for index, weight in voices:
         body += struct.pack("<Hf", index, weight)
-    body += struct.pack("<H", len(ids)) + bytes(ids)
+    body += struct.pack("<HH", len(ids), len(ids) if style_len is None else style_len) + bytes(ids)
     return frame(bytes(body))
 
 

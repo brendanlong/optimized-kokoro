@@ -16,8 +16,9 @@ def parse(frame: bytes):
 
 
 def test_synthesize_round_trip():
-    msg = parse(P.synthesize(7, [1, 16, 177], [(0, 1.0), (2, 0.5)], speed=1.25, priority=1))
-    assert msg == P.Synthesize(7, 1, 1.25, ((0, 1.0), (2, 0.5)), (1, 16, 177))
+    msg = parse(P.synthesize(7, [1, 16, 177], [(0, 1.0), (2, 0.5)], speed=1.25, priority=1, style_len=300))
+    assert msg == P.Synthesize(7, 1, 1.25, ((0, 1.0), (2, 0.5)), 300, (1, 16, 177))
+    assert parse(P.synthesize(7, [1, 16], [(0, 1.0)])).style_len == 2
 
 
 def test_cancel_round_trip():
@@ -44,6 +45,8 @@ def test_cancel_round_trip():
         dict(ids=[0]),
         dict(ids=[6]),
         dict(ids=[178]),
+        dict(style_len=0),
+        dict(style_len=511),
     ],
 )
 def test_synthesize_rejects(kwargs):
@@ -55,7 +58,7 @@ def test_synthesize_rejects(kwargs):
 
 def test_max_lengths_accepted():
     parse(P.synthesize(1, [1] * 510, [(0, 1.0)] * 8, speed=0.25))
-    parse(P.synthesize(1, [1], [(0, 1.0)], speed=4.0))
+    parse(P.synthesize(1, [1], [(0, 1.0)], speed=4.0, style_len=510))
 
 
 @pytest.mark.parametrize("delta", [-1, 1])

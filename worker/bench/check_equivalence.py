@@ -57,7 +57,7 @@ def main():
     args = ap.parse_args()
 
     synth = Synth(args.models, device=args.device, half=args.half, compile=args.compile, pad_slack=10.0,
-                  frame_budget=10**9, exact=not args.inexact)
+                  frame_budget=8192, exact=not args.inexact)
     vocab = json.load(open(os.path.join(args.models, "config.json")))["vocab"]
     chunks = sentences.load(vocab)
     rng = np.random.default_rng(0)
@@ -92,6 +92,10 @@ def main():
         print(f"B={b}: durations equal {dur_eq}/{len(reqs)}; spectrogram corr padded vs alone "
               f"mean {np.mean(corr):.4f} min {np.min(corr):.4f}; seed noise floor mean {np.mean(floor):.4f} "
               f"min {np.min(floor):.4f}")
+    # Copies of one sentence: batched with no padding at all, to separate batch numerics from padding.
+    copies = [run(synth, [r] * 4, 2)[0] for r in reqs]
+    corr = [spec_corr(pcm(x), pcm(y)) for x, y in zip(alone, copies)]
+    print(f"B=4 copies (no padding): spectrogram corr vs alone mean {np.mean(corr):.4f} min {np.min(corr):.4f}")
 
     # 3. non-finite outputs
     if args.nan_lengths:

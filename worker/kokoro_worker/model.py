@@ -168,12 +168,12 @@ class Synth:
             self._f0n_blocks = torch.compile(self._f0n_blocks_eager, dynamic=True)
             self._decoder = torch.compile(model.decoder, dynamic=True)
 
-    def style(self, voices: list[tuple[int, float]], n_ids: int) -> torch.Tensor:
-        """Weighted mix of voice packs at row n_ids - 1, as KPipeline indexes a pack. Weights sum to 1."""
+    def style(self, voices: list[tuple[int, float]], style_len: int) -> torch.Tensor:
+        """Weighted mix of voice packs at row style_len - 1 (KPipeline's pack[len(ps) - 1]). Weights sum to 1."""
         total = sum(w for _, w in voices)
         index = torch.tensor([v for v, _ in voices], device=self.device)
         weight = torch.tensor([w / total for _, w in voices], device=self.device, dtype=torch.float32)
-        return (self.voices[index, n_ids - 1] * weight[:, None]).sum(0)
+        return (self.voices[index, style_len - 1] * weight[:, None]).sum(0)
 
     def _text_cnn_eager(self, ids: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         te = self.model.text_encoder
