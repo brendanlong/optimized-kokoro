@@ -13,7 +13,7 @@
 //!
 //! `PARITY_SHOW=n` prints up to n mismatches (default 20).
 
-use kokoro_pipeline::foreign::{Language, Script, script};
+use kokoro_pipeline::foreign::{self, Language, Script, script};
 use kokoro_pipeline::{ForeignG2p, Lang, NormalizationOptions, Pipeline};
 use std::collections::HashMap;
 use kokoro_reference::{Call, Record};
@@ -81,15 +81,33 @@ fn with_placeholders(call: &Call, placeholder: impl Fn(&str) -> Vec<String>) -> 
                 last = tokens.next().unwrap();
             }
             whitespace = last.whitespace.clone();
-            if let Some(&next) = tokens.peek()
-                && starts_run(next, runs.peek())
-                && runs.peek().unwrap().1 == language
-                && whitespace.chars().all(|c| c == ' ')
+            // The next run of the language joins this one if only joiners, marks and format
+            // characters come between: the gap's tokens (`'`, `-`, U+200B) are read as part of
+            // the placeholder.
+            let mut ahead = tokens.clone();
+            let mut gap = 0;
+            let mut gap_ok = whitespace.chars().all(foreign::is_gap);
+            while let Some(&t) = ahead.peek()
+                && gap_ok
+                && !starts_run(t, runs.peek())
+                && !t.text.is_empty()
+                && t.text.chars().chain(t.whitespace.chars()).all(foreign::is_gap)
             {
+                ahead.next();
+                gap += 1;
+            }
+            gap_ok &= ahead.peek().is_some_and(|&t| starts_run(t, runs.peek()) && runs.peek().unwrap().1 == language);
+            if gap_ok {
+                for _ in 0..gap {
+                    tokens.next();
+                }
                 first = tokens.next();
             }
         }
-        let next = tokens.peek().and_then(|t| t.phonemes.as_deref());
+        // A word right after the placeholder is kept apart from it: the next token that is
+        // spoken (phonemes or whitespace), if its phonemes start with a letter.
+        let next = tokens.clone().find(|t| t.phonemes.as_deref().is_some_and(|p| !p.is_empty()) || !t.whitespace.is_empty());
+        let next = next.and_then(|t| t.phonemes.as_deref());
         if let Some(previous) = out.iter_mut().rev().find(|o| !o.phonemes.is_empty() || o.whitespace)
             && previous.phonemes.ends_with(char::is_alphabetic)
         {
@@ -138,7 +156,7 @@ fn reference_records() {
     let options = NormalizationOptions::default();
     let show: usize = std::env::var("PARITY_SHOW").ok().and_then(|s| s.parse().ok()).unwrap_or(20);
     let (mut matched, mut compared, mut chars) = (0, 0, 0);
-    let (mut cjk, mut cjk_matched, mut new_script, mut flagged) = (0, 0, Vec::new(), Vec::new());
+    let (mut cjk, mut cjk_matched, mut cjk_skipped, mut new_script, mut flagged) = (0, 0, 0, Vec::new(), Vec::new());
     let (mut zh, mut zh_matched, mut failing, mut failing_matched, mut unreadable) = (0, 0, 0, 0, Vec::new());
     let mut mismatches = Vec::new();
     let start = Instant::now();
@@ -182,6 +200,7 @@ fn reference_records() {
             if record.calls.len() != record.chunks.len()
                 || record.calls.iter().zip(&record.chunks).any(|(call, chunk)| call.input != chunk.text)
             {
+                cjk_skipped += 1;
                 continue;
             }
             let placeholder = |name: &str| {
@@ -217,7 +236,7 @@ fn reference_records() {
     }
     let elapsed = start.elapsed();
     println!(
-        "{matched}/{compared} records match exactly ({:.3}%): {zh_matched}/{zh} of them Chinese (those with Japanese runs read with the reference's Japanese phonemes), {failing_matched}/{failing} up to where the reference fails; {cjk_matched}/{cjk} English records with Japanese runs match with placeholders",
+        "{matched}/{compared} records match exactly ({:.3}%): {zh_matched}/{zh} of them Chinese (those with Japanese runs read with the reference's Japanese phonemes), {failing_matched}/{failing} up to where the reference fails; {cjk_matched}/{cjk} English records with Japanese runs match with placeholders ({cjk_skipped} not compared: a chunk spans several G2P calls)",
         100.0 * matched as f64 / compared.max(1) as f64
     );
     println!(

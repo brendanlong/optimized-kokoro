@@ -256,8 +256,9 @@ fn an2cn(text: &str) -> Option<String> {
 
 /// `__integer_convert(integer, "low")`.
 fn integer_convert(integer: &str) -> Option<String> {
-    // `str(int(integer))`: int() fails on "" (and on "-", which `ascii` let through).
-    if integer.is_empty() || !integer.bytes().all(|b| b.is_ascii_digit()) {
+    // `str(int(integer))`: int() fails on "" (and on "-", which `ascii` let through), and on more
+    // than 4,300 digits (Python's default `sys.get_int_max_str_digits()`), leading zeros included.
+    if integer.is_empty() || integer.len() > 4300 || !integer.bytes().all(|b| b.is_ascii_digit()) {
         return None;
     }
     let digits = integer.trim_start_matches('0');
@@ -322,5 +323,8 @@ mod tests {
         assert_eq!(transform("2024年٣月"), "二零二四年٣月");
         assert_eq!(transform("100000001"), "一亿零一");
         assert_eq!(transform("1000010000"), "十亿零一万");
+        let zeros = format!("{}5", "0".repeat(4300));
+        assert_eq!(transform(&zeros), zeros);
+        assert_eq!(transform(&format!("{}5", "0".repeat(4299))), "五");
     }
 }

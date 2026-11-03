@@ -33,6 +33,12 @@ pub use kokoro_g2p_en::Token;
 pub use kokoro_text::{DEFAULT_MAX_TOKENS, Limits, Options as NormalizationOptions};
 pub use vocab::id;
 
+/// Whether this process has loaded misaki's Chinese G2P yet: only Han text or a Chinese request
+/// loads it.
+pub fn chinese_g2p_loaded() -> bool {
+    chinese::loaded()
+}
+
 /// The Kokoro pipelines this crate covers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Lang {
@@ -161,8 +167,8 @@ pub struct Pipeline {
 }
 
 impl Pipeline {
-    /// Loads the pipeline with the bundled espeak-ng data, and misaki's Chinese G2P (loaded once
-    /// per process and shared).
+    /// Loads the pipeline with the bundled espeak-ng data. misaki's Chinese G2P is loaded on the
+    /// first Han character or Chinese request (see [`chinese_g2p_loaded`]), once per process.
     pub fn new(lang: Lang) -> Result<Pipeline, Error> {
         Self::with_espeak_data(lang, kokoro_espeak::default_data()?)
     }
@@ -173,7 +179,7 @@ impl Pipeline {
             EspeakG2P::with_data(espeak_voice(voice, lang), espeak.clone())?;
         }
         let mut foreign: HashMap<Language, Box<dyn ForeignG2p>> = HashMap::new();
-        foreign.insert(Language::Chinese, Box::new(chinese::Chinese(chinese::shared())));
+        foreign.insert(Language::Chinese, Box::new(chinese::Chinese));
         Ok(Pipeline {
             lang,
             nlp: Nlp::new(),

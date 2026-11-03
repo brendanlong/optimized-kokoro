@@ -83,13 +83,13 @@ pub fn read(path: impl AsRef<Path>) -> Vec<Record> {
         .collect()
 }
 
-/// The committed fixtures (hard cases, and Chinese mixed with English, `zh_mixed_cases.py`), plus every dump in `reference/out/` (or `$KOKORO_REFERENCE_OUT`)
+/// The committed fixtures (hard cases, Chinese mixed with English from `zh_mixed_cases.py`, kana next to Han and joiners in English from `kana_mixed_cases.py`), plus every dump in `reference/out/` (or `$KOKORO_REFERENCE_OUT`)
 /// when present, since the downloaded corpus isn't committed.
 pub fn all() -> Vec<Record> {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../reference");
     let explicit = std::env::var_os("KOKORO_REFERENCE_OUT").map(PathBuf::from);
     let out = explicit.clone().unwrap_or_else(|| root.join("out"));
-    let mut paths = vec![root.join("fixtures/hard_cases.out.jsonl"), root.join("fixtures/zh_mixed.out.jsonl")];
+    let mut paths = vec![root.join("fixtures/hard_cases.out.jsonl"), root.join("fixtures/zh_mixed.out.jsonl"), root.join("fixtures/kana_mixed.out.jsonl")];
     let entries = match std::fs::read_dir(&out) {
         Err(e) if explicit.is_some() || e.kind() != std::io::ErrorKind::NotFound => {
             panic!("{}: {e}", out.display())

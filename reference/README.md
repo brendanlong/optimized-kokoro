@@ -62,6 +62,9 @@ mkdir -p out/zh-g2p
 .cache/kfa/.venv/bin/python -I zh_dump.py 1 25000 corpus/wiki-zh.jsonl > out/zh-g2p/seed-1.jsonl
 python3 zh_mixed_cases.py 7 160 corpus/wiki-en.jsonl corpus/wiki-zh.jsonl > fixtures/zh_mixed.jsonl
 .cache/kfa/.venv/bin/python -I dump.py fixtures/zh_mixed.jsonl fixtures/zh_mixed.out.jsonl
+# Kana next to Han, words and joiners in English text: where "Japanese text" placeholders merge
+python3 kana_mixed_cases.py 3 120 corpus/wiki-en.jsonl > fixtures/kana_mixed.jsonl
+.cache/kfa/.venv/bin/python -I dump.py fixtures/kana_mixed.jsonl fixtures/kana_mixed.out.jsonl
 .cache/kfa/.venv/bin/python -I zh_bench.py corpus/wiki-zh.jsonl   # vs cargo run --release -p kokoro-g2p-zh --example bench -- corpus/wiki-zh.jsonl
 ```
 

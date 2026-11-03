@@ -5,24 +5,32 @@ use crate::foreign::{self, Language};
 use crate::{Error, ForeignG2p, Phonemes, Request};
 use kokoro_g2p_zh::ZhG2p;
 use kokoro_text::py;
-use std::sync::{Arc, LazyLock};
+use std::sync::OnceLock;
 
-/// The dictionaries, loaded once per process on first use and shared by every pipeline.
-pub fn shared() -> Arc<ZhG2p> {
-    static G2P: LazyLock<Arc<ZhG2p>> = LazyLock::new(|| Arc::new(ZhG2p::new()));
-    G2P.clone()
+static G2P: OnceLock<ZhG2p> = OnceLock::new();
+
+/// The dictionaries (about 45 MB, 80–95 ms to load), loaded on the first Han character or Chinese
+/// request and shared by every pipeline, so English-only text never pays for them (Brendan's
+/// decision, 2026-11-03).
+fn g2p() -> &'static ZhG2p {
+    G2P.get_or_init(ZhG2p::new)
+}
+
+/// Whether the Chinese G2P has been loaded in this process.
+pub fn loaded() -> bool {
+    G2P.get().is_some()
 }
 
 /// `ZHG2P(version=None)` for runs of Han characters.
-pub struct Chinese(pub Arc<ZhG2p>);
+pub struct Chinese;
 
 impl ForeignG2p for Chinese {
     fn phonemize(&self, text: &str) -> Result<String, String> {
-        self.0.phonemize(text).map_err(|e| e.to_string())
+        g2p().phonemize(text).map_err(|e| e.to_string())
     }
 
     fn reads(&self, c: char) -> bool {
-        self.0.reads(c)
+        g2p().reads(c)
     }
 }
 

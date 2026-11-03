@@ -33,4 +33,8 @@ And of the files here:
 | `phrases.txt` | `6d4e7921a2e2fed60493ef1253c4c8bc3da62b9f82d8e8159075256d1448ebb1` |
 | `syllables.txt` | `adb5a1e859a67e5b713064a683c72ca32761e8a749ebac1ea49cd5a2cccfdc04` |
 
-They are compiled in with `include_str!` and parsed when a `ZhG2p` is made (about 90 ms in a release build, about 50 MB resident with everything else); the pipeline loads one per process and shares it.
+They are compiled in with `include_str!` and parsed when a `ZhG2p` is made: about 80–95 ms in a release build, and about 45 MB resident for the Chinese G2P alone. The pipeline loads one per process, lazily, on the first Han character or Chinese request (Brendan's decision, 2026-11-03), so an English-only server never pays for it.
+
+## Upstream sources of pypinyin's data
+
+pypinyin builds `pinyin_dict` from its author's [pinyin-data](https://github.com/mozillazg/pinyin-data) (MIT), which merges the readings of the Unicode Han Database (Unihan: `kTGHZ2013`, `kHanyuPinyin`, `kXHC1983`, `kHanyuPinlu`, `kMandarin`) with hand corrections. Unihan is © Unicode, Inc. under the Unicode License v3, whose notice is in `../COPYING.UCD`; pypinyin itself ships no Unicode notice. `phrases_dict` comes from [phrase-pinyin-data](https://github.com/mozillazg/phrase-pinyin-data) (MIT), whose sources include zdic.net and CC-CEDICT. CC-CEDICT is CC BY-SA 4.0; whether its terms reach the phrase readings here is a question for whoever publishes this [assumed: not checked against phrase-pinyin-data's build].
