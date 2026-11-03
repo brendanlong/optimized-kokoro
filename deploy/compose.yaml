@@ -1,0 +1,147 @@
+# The production deployment on the host's system Docker: the GPU worker, the Rust server and the demo
+# page, each in gVisor as nobody (65534), with no capabilities and a read-only root. deploy/install.sh
+# and deploy/update.sh copy this file to /srv/optimized-kokoro/releases/RELEASE/compose.yaml next to a
+# .env that sets KOKORO_ROOT, KOKORO_RELEASE and the settings from /srv/optimized-kokoro/settings.env;
+# /srv/optimized-kokoro/current points at the release that runs. See deploy/README.md.
+#
+#   sudo docker compose -f /srv/optimized-kokoro/current/compose.yaml ps|logs -f|restart
+#
+# runsc-kokoro is a runtime install.sh adds to /etc/docker/daemon.json:
+#   /usr/bin/runsc --directfs=false --host-uds=all
+# --directfs=false: under rootful Docker the sandbox otherwise runs as root in the host's user
+#   namespace; with it, the sentry runs as nobody in an empty user namespace and all file access goes
+#   through the gofer.
+# --host-uds=all: each container is its own gVisor kernel, so a Unix socket the worker binds in the
+#   shared volume only reaches the server as a real host socket. The worker needs `create`, the
+#   server `open`.
+# GPU support turns on by itself when Docker adds the NVIDIA devices (--gpus, legacy hook mode).
+
+name: optimized-kokoro
+
+x-hardening: &hardening
+  restart: unless-stopped
+  user: "65534:65534"
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  logging:
+    driver: json-file
+    options: {max-size: 10m, max-file: "5"}
+
+services:
+  worker:
+    <<: *hardening
+    image: optimized-kokoro-worker:${KOKORO_RELEASE:?}
+    runtime: runsc-kokoro
+    network_mode: none
+    # The same flags must go to the export run (lib.sh), or the cache seed won't match.
+    command: ["--max-batch", "${KOKORO_MAX_BATCH:-1}"]
+    environment:
+      KOKORO_CACHE_SEED: /cache-seed
+    # Triton and Inductor write their caches there and dlopen the launcher they compile (exec).
+    tmpfs:
+      - /tmp:rw,exec,nosuid,nodev,size=2g,mode=1777
+    volumes:
+      - {type: volume, source: sock, target: /run/kokoro, volume: {nocopy: true}}
+      - {type: bind, source: "${KOKORO_ROOT:?}/models", target: /models, read_only: true}
+      - {type: bind, source: "${KOKORO_ROOT:?}/releases/${KOKORO_RELEASE:?}/cache-seed", target: /cache-seed, read_only: true}
+    # Host RAM, CPU and threads for the sandbox (worker/run.sh's limits). GPU memory isn't covered.
+    mem_limit: 12g
+    memswap_limit: 12g
+    cpus: 4
+    pids_limit: 1024
+    stop_grace_period: 30s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${KOKORO_GPU:-0}"]
+              capabilities: [gpu]
+
+  server:
+    <<: *hardening
+    image: optimized-kokoro-server:${KOKORO_RELEASE:?}
+    runtime: runsc-kokoro
+    command: ["--config", "/run/secrets/server.toml"]
+    environment:
+      RUST_LOG: info
+      # Mapped the first time a request needs Japanese.
+      KOKORO_UNIDIC: /unidic/unidic.dic
+    secrets:
+      - {source: server_config, target: server.toml}
+    volumes:
+      - {type: volume, source: sock, target: /run/kokoro, volume: {nocopy: true}}
+      - {type: bind, source: "${KOKORO_ROOT:?}/unidic", target: /unidic, read_only: true}
+    networks:
+      kokoro: {ipv4_address: 172.30.88.2}
+    # Exactly this address: Tailscale serve proxies svc:kokoro to http://127.0.0.1:8880.
+    ports: ["127.0.0.1:8880:8880"]
+    # max_connections (default 4096) needs about one file descriptor per connection.
+    ulimits:
+      nofile: {soft: 8192, hard: 8192}
+    # About 110 MB resident without Japanese; UniDic adds its 516 MB when mapped.
+    mem_limit: 3g
+    memswap_limit: 3g
+    pids_limit: 256
+    stop_grace_period: 15s
+
+  demo:
+    <<: *hardening
+    image: optimized-kokoro-demo:${KOKORO_RELEASE:?}
+    # No GPU and no socket: plain gVisor without host sockets.
+    runtime: runsc-gpuc
+    # An address, not a name: Docker's embedded DNS doesn't work under runsc.
+    command: ["--listen", "0.0.0.0:25436", "--upstream", "http://172.30.88.2:8880", "--key-file", "/run/secrets/demo.key"]
+    secrets:
+      - {source: demo_key, target: demo.key}
+    networks:
+      kokoro: {ipv4_address: 172.30.88.3}
+    # Local only; expose it with Tailscale serve (deploy/README.md).
+    ports: ["127.0.0.1:${KOKORO_DEMO_PORT:-25436}:25436"]
+    mem_limit: 512m
+    memswap_limit: 512m
+    pids_limit: 128
+
+  # For later: a Cloudflare tunnel to the server. Cloudflare Access (or the relay in docs/plan.md) must
+  # filter unauthenticated traffic first (crates/server/src/config.rs).
+  # cloudflared:
+  #   <<: *hardening
+  #   image: cloudflare/cloudflared:VERSION@sha256:DIGEST
+  #   runtime: runsc-gpuc
+  #   command: ["tunnel", "--no-autoupdate", "run"]
+  #   environment:
+  #     TUNNEL_TOKEN_FILE: /run/secrets/cloudflared.token
+  #   secrets:
+  #     - {source: cloudflared_token, target: cloudflared.token}
+  #   networks:
+  #     kokoro: {ipv4_address: 172.30.88.4}
+  #   # Ingress to http://172.30.88.2:8880 (configured on the tunnel). cloudflared needs DNS, which
+  #   # Docker's embedded resolver doesn't give runsc: mount a resolv.conf.
+  #   volumes:
+  #     - {type: bind, source: "${KOKORO_ROOT:?}/resolv.conf", target: /etc/resolv.conf, read_only: true}
+
+volumes:
+  # A tmpfs owned by nobody, mounted on the host while either container uses it; it only ever holds
+  # worker.sock (mode 0660), which the worker replaces when it starts.
+  sock:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: uid=65534,gid=65534,mode=0700,size=1m
+
+networks:
+  kokoro:
+    ipam:
+      config:
+        - subnet: 172.30.88.0/24
+
+# Not swarm, so Docker bind-mounts these files as they are: root:65534, mode 0640 (install.sh).
+secrets:
+  server_config:
+    file: ${KOKORO_ROOT:?}/secrets/server.toml
+  demo_key:
+    file: ${KOKORO_ROOT:?}/secrets/demo.key
+  # cloudflared_token:
+  #   file: ${KOKORO_ROOT:?}/secrets/cloudflared.token

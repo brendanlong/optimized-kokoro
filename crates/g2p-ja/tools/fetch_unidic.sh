@@ -2,7 +2,7 @@
 # Downloads UniDic 3.1.0 (2021-08-31; the release `python -m unidic download` installs, which the
 # reference uses), checks it, and converts its MeCab dictionary into crates/g2p-ja/data/unidic.dic
 # (or $1), the file kokoro-g2p-ja memory-maps. Never overwrite that file in place while a server
-# runs: this script (and deploy/deploy.sh) replaces it by rename. UniDic is used under its BSD-3-Clause license (it is
+# runs: this script (and deploy/lib.sh) replaces it by rename. UniDic is used under its BSD-3-Clause license (it is
 # triple-licensed BSD-3 / GPL-2 / LGPL-2.1); the license travels with the converted file as
 # data/unidic.dic.LICENSE.
 #

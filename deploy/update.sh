@@ -1,0 +1,37 @@
+#!/bin/bash
+# Updates the Docker deployment from this checkout (after deploy/install.sh):
+#
+#   sudo deploy/update.sh
+#
+# Builds new images, exports a compile cache with the new worker and stages a release while the
+# running one keeps serving; then points /srv/optimized-kokoro/current at it (by rename) and
+# recreates the containers. If it doesn't come up healthy, current goes back to the previous release,
+# which is started again. Server and worker are always updated together, since the protocol between
+# them changes with the code. Also picks up changes to settings.env and a new UniDic checksum.
+set -euo pipefail
+# shellcheck source=deploy/lib.sh
+. "$(dirname "$0")/lib.sh"
+
+[ $# = 0 ] || { sed -n '2,10p' "$0"; exit 2; }
+require_root
+[ -L "$root/current" ] || die "not installed; run deploy/install.sh first"
+[ -f "$root/secrets/server.toml" ] && [ -f "$root/secrets/demo.key" ] || die "$root/secrets is incomplete"
+prev=$(basename "$(readlink "$root/current")")
+ensure_runtime
+ensure_dirs
+ensure_unidic
+ensure_models
+stage_release
+
+echo "== swap $prev -> $rel"
+point_current "$rel"
+if ! start_current; then
+    show_logs
+    echo "update failed; going back to $prev" >&2
+    point_current "$prev"
+    start_current || echo "$prev isn't healthy either; see sudo docker compose -f $root/current/compose.yaml logs" >&2
+    remove_release "$rel"
+    exit 1
+fi
+prune_releases "$rel" "$prev"
+echo "up: $rel (previous: $prev, kept for going back)"

@@ -1,0 +1,9 @@
+# The server build reads only Cargo.toml, Cargo.lock, .cargo and crates/.
+*
+!Cargo.toml
+!Cargo.lock
+!.cargo
+!crates
+crates/g2p-ja/data/unidic.dic
+crates/g2p-ja/data/unidic.dic.LICENSE
+**/target
