@@ -1,7 +1,7 @@
 //! Routes: `POST /v1/audio/speech` and `GET /v1/audio/voices` behind a bearer key, and
 //! `GET /health`. Nothing else.
 
-use crate::config::Config;
+use crate::config::{ApiKey, Config};
 use crate::pipeline::{Pipeline, voice_lang};
 use crate::request::{self, SpeechRequest};
 use crate::stream::{self, StreamError};
@@ -42,7 +42,7 @@ struct KeyIndex(usize);
 
 pub fn router(config: Config, worker: Worker, pipeline: Arc<dyn Pipeline>) -> App {
     let slots = Arc::new(Semaphore::new(config.max_concurrent_requests));
-    let key_slots = config.api_keys.iter().map(|_| Arc::new(Semaphore::new(config.max_streams_per_key))).collect();
+    let key_slots = (0..config.api_keys.len()).map(|i| Arc::new(Semaphore::new(config.max_streams(i)))).collect();
     App(Arc::new(AppState { config, worker, pipeline, slots, key_slots }))
 }
 
@@ -108,11 +108,11 @@ fn unavailable(message: &str) -> Response<Body> {
 }
 
 /// The index of the key equal to `token`, comparing against every key in constant time.
-fn find_key(keys: &[String], token: &str) -> Option<usize> {
+fn find_key(keys: &[ApiKey], token: &str) -> Option<usize> {
     let mut found = subtle::Choice::from(0);
     let mut index = 0u64;
     for (i, key) in keys.iter().enumerate() {
-        let equal = key.as_bytes().ct_eq(token.as_bytes());
+        let equal = key.key.as_bytes().ct_eq(token.as_bytes());
         index.conditional_assign(&(i as u64), equal);
         found |= equal;
     }
@@ -121,7 +121,7 @@ fn find_key(keys: &[String], token: &str) -> Option<usize> {
 
 /// The key a request's bearer token matches. Checked before the handler reads the body, so the app
 /// never reads an unauthenticated request's body. hyper may already have buffered some of it while
-/// parsing the headers (at most its read buffer, `serve::MAX_BUF`), and it doesn't send
+/// parsing the headers (bounded by its read buffer, see `serve::MAX_BUF`), and it doesn't send
 /// `100 Continue` until the body is read.
 fn authenticate<B>(state: &AppState, request: &Request<B>) -> Option<KeyIndex> {
     let token = request
@@ -163,6 +163,7 @@ fn voices(state: &AppState) -> Response<Body> {
 fn stream_failure(e: &StreamError) -> Response<Body> {
     match e {
         StreamError::Synth(SynthError::ConnectionLost) => unavailable("Lost the connection to the model worker"),
+        StreamError::TooMuchSpeech { .. } => invalid(e.to_string()),
         _ => error(StatusCode::INTERNAL_SERVER_ERROR, "processing_error", "server_error", e.to_string()),
     }
 }
@@ -221,7 +222,7 @@ where
             StatusCode::TOO_MANY_REQUESTS,
             "rate_limited",
             "rate_limit_error",
-            format!("This API key already has {} speech requests in progress", state.config.max_streams_per_key),
+            format!("This API key already has {} speech requests in progress", state.config.max_streams(key.0)),
         );
     };
     let Ok(permit) = state.slots.clone().try_acquire_owned() else {
@@ -243,7 +244,7 @@ where
         (Ok(speech), permits) => (speech, permits),
         (Err(message), _) => return invalid(message),
     };
-    let mut audio = stream::start(speech, connection, state.pipeline.clone(), state.config.lookahead, permits);
+    let mut audio = stream::start(speech, connection, state.pipeline.clone(), stream::Limits { lookahead: state.config.lookahead, max_ids: state.config.max_request_ids }, permits);
 
     // Headers wait for the first audio, so a request that fails before any is made gets a status.
     let first = match audio.next().await {

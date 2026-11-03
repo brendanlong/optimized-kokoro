@@ -15,8 +15,8 @@
 //! a violation), so memory is bounded by how many chunks can be in flight, which the request and
 //! lookahead limits fix. An [`AudioGauge`] counts what's held.
 //!
-//! A worker that doesn't say hello in time, or makes no progress while it has work, is
-//! disconnected.
+//! A worker that doesn't say hello in time, makes no progress while it has work, or leaves any
+//! one slot outstanding for too long (while answering others), is disconnected.
 
 use crate::protocol::{
     self, Expected, FailCode, Hello, Priority, ReadError, Speed, Synthesize, WorkerFrame, encode_cancel,
@@ -115,6 +115,8 @@ struct Pending {
     expected: Expected,
     /// `None` once cancelled: the worker still owes a Result or Failed for the slot.
     reply: Option<Reply>,
+    /// When the Synthesize was queued.
+    submitted: Instant,
 }
 
 struct State {
@@ -149,6 +151,8 @@ pub struct Settings {
     /// The largest `max_chunk_samples` a worker may announce; a hello above it is refused, since
     /// the cap is what bounds the audio the server holds.
     pub max_chunk_samples: u32,
+    /// Longest one slot may stay outstanding after its Synthesize, queueing included.
+    pub slot_timeout: Duration,
 }
 
 pub struct Connection {
@@ -255,7 +259,7 @@ impl Connection {
             speed: request.speed,
             max_chunk_samples: self.hello.max_chunk_samples,
         };
-        state.slots[usize::from(slot)] = Some(Pending { ticket, expected, reply: Some(tx) });
+        state.slots[usize::from(slot)] = Some(Pending { ticket, expected, reply: Some(tx), submitted: Instant::now() });
         drop(state);
         Ok(Ticket { slot, ticket, connection: self.clone(), reply: rx, finished: false })
     }
@@ -320,10 +324,20 @@ impl Connection {
         }
     }
 
-    /// Whether the worker has had work and sent no whole frame for `timeout`.
-    fn stalled(&self, timeout: Duration) -> bool {
+    /// Why the worker should be dropped, if it should: it has had work and sent no whole frame
+    /// for `progress_timeout`, or one slot has been outstanding for `slot_timeout`.
+    fn overdue(&self, progress_timeout: Duration, slot_timeout: Duration) -> Option<String> {
         let state = self.state.lock().unwrap();
-        state.busy() > 0 && state.last_progress.elapsed() >= timeout
+        if state.busy() > 0 && state.last_progress.elapsed() >= progress_timeout {
+            return Some(format!("no progress for {progress_timeout:?} with work outstanding"));
+        }
+        let oldest = state.slots.iter().enumerate().filter_map(|(i, p)| Some((i, p.as_ref()?.submitted))).min_by_key(|(_, t)| *t);
+        match oldest {
+            Some((slot, submitted)) if submitted.elapsed() >= slot_timeout => {
+                Some(format!("slot {slot} outstanding for {slot_timeout:?}"))
+            }
+            _ => None,
+        }
     }
 
     /// Fails everything in flight and tells the connection task to hang up.
@@ -381,11 +395,18 @@ impl Worker {
         let gauge = AudioGauge::default();
         let task_gauge = gauge.clone();
         tokio::spawn(async move {
+            // A worker that keeps failing would log a line per reconnect attempt.
+            let mut warnings = crate::log::RateLimit::new(Duration::from_secs(60));
             loop {
                 match UnixStream::connect(&settings.socket).await {
                     Ok(stream) => {
-                        if let Err(e) = serve(stream, &tx, &settings, &task_gauge).await {
-                            crate::warn!("{e}");
+                        if let Err(e) = serve(stream, &tx, &settings, &task_gauge).await
+                            && let Some(suppressed) = warnings.allow()
+                        {
+                            match suppressed {
+                                0 => crate::warn!("worker connection: {e}"),
+                                n => crate::warn!("worker connection: {e} ({n} similar warnings suppressed)"),
+                            }
                         }
                         tx.send_replace(None);
                     }
@@ -444,7 +465,7 @@ async fn serve(
     let connection = Arc::new(Connection::new(hello, out_tx, slots, gauge.clone()));
     publish.send_replace(Some(connection.clone()));
 
-    let read = read_loop(&mut reader, &connection, settings.progress_timeout);
+    let read = read_loop(&mut reader, &connection, settings.progress_timeout, settings.slot_timeout);
     let write = async {
         while let Some(frame) = out_rx.recv().await {
             writer.write_all(&frame).await?;
@@ -460,8 +481,13 @@ async fn serve(
     result
 }
 
-async fn read_loop(reader: &mut OwnedReadHalf, connection: &Connection, timeout: Duration) -> Result<(), ReadError> {
-    let check_every = timeout / 4;
+async fn read_loop(
+    reader: &mut OwnedReadHalf,
+    connection: &Connection,
+    timeout: Duration,
+    slot_timeout: Duration,
+) -> Result<(), ReadError> {
+    let check_every = timeout.min(slot_timeout) / 4;
     loop {
         let read = protocol::read_frame(reader, |slot| connection.expected(slot));
         tokio::pin!(read);
@@ -469,8 +495,8 @@ async fn read_loop(reader: &mut OwnedReadHalf, connection: &Connection, timeout:
             tokio::select! {
                 frame = &mut read => break frame?,
                 _ = tokio::time::sleep(check_every) => {
-                    if connection.stalled(timeout) {
-                        return Err(ReadError::Violation(format!("no progress for {timeout:?} with work outstanding")));
+                    if let Some(why) = connection.overdue(timeout, slot_timeout) {
+                        return Err(ReadError::Violation(why));
                     }
                 }
             }

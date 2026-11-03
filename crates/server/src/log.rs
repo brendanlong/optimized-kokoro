@@ -100,8 +100,57 @@ fn timestamp(since_epoch: std::time::Duration) -> String {
 
 #[doc(hidden)]
 pub fn write(level: Level, target: &str, message: std::fmt::Arguments) {
+    #[cfg(test)]
+    if CAPTURED.with_borrow_mut(|c| c.as_mut().map(|c| c.push(format!("{} {target}: {message}", level.name())))).is_some() {
+        return;
+    }
     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
     eprintln!("{} {} {target}: {message}", timestamp(now), level.name());
+}
+
+#[cfg(test)]
+thread_local! {
+    static CAPTURED: std::cell::RefCell<Option<Vec<String>>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Runs `f`, returning the lines it logged on this thread instead of writing them.
+#[cfg(test)]
+pub(crate) fn capture(f: impl FnOnce()) -> Vec<String> {
+    CAPTURED.with_borrow_mut(|c| *c = Some(Vec::new()));
+    f();
+    CAPTURED.with_borrow_mut(Option::take).unwrap_or_default()
+}
+
+/// Lets one event through per `period`, counting the ones it holds back.
+#[derive(Debug)]
+pub struct RateLimit {
+    period: std::time::Duration,
+    last: Option<std::time::Instant>,
+    suppressed: u64,
+}
+
+impl RateLimit {
+    pub fn new(period: std::time::Duration) -> Self {
+        Self { period, last: None, suppressed: 0 }
+    }
+
+    /// `Some(events suppressed since the last one allowed)` if this one may be logged.
+    pub fn allow(&mut self) -> Option<u64> {
+        self.allow_at(std::time::Instant::now())
+    }
+
+    fn allow_at(&mut self, now: std::time::Instant) -> Option<u64> {
+        match self.last {
+            Some(last) if now.saturating_duration_since(last) < self.period => {
+                self.suppressed += 1;
+                None
+            }
+            _ => {
+                self.last = Some(now);
+                Some(std::mem::take(&mut self.suppressed))
+            }
+        }
+    }
 }
 
 #[macro_export]
@@ -143,6 +192,18 @@ mod tests {
         assert_eq!(level_from("hyper=trace"), None);
         assert_eq!(level_from("verbose"), None);
         assert_eq!(level_from(""), None);
+    }
+
+    #[test]
+    fn rate_limit_counts_what_it_holds_back() {
+        let mut limit = RateLimit::new(Duration::from_secs(60));
+        let t = std::time::Instant::now();
+        assert_eq!(limit.allow_at(t), Some(0));
+        for i in 1..=500 {
+            assert_eq!(limit.allow_at(t + Duration::from_millis(100 * i)), None);
+        }
+        assert_eq!(limit.allow_at(t + Duration::from_secs(60)), Some(500));
+        assert_eq!(limit.allow_at(t + Duration::from_secs(61)), None);
     }
 
     #[test]

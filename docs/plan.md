@@ -105,6 +105,19 @@ First candidates (my proposals, not decided):
 - **No `unsafe` in our code.** Every crate has `#![forbid(unsafe_code)]`. The spaCy tagger's matmul, the one `unsafe` call (to matrixmultiply's sgemm), is now a safe blocked loop. It gives identical tags.
 - **Build for `x86-64-v3`** (AVX2, FMA), set in `.cargo/config.toml` for every build and test. The server therefore needs an **Intel Haswell or AMD Zen 1 or newer** CPU. On baseline x86-64 (SSE2), the safe matmul made the pipeline 29% slower than sgemm, which picks AVX2 at run time. Built for v3, it is 7% faster than sgemm.
 
+An adversarial review of PR #13 found resource-exhaustion gaps, all fixed with regression tests in `crates/server/tests/exhaustion.rs`. The fixes:
+- **Text processing:** permits cover phonemizing too.
+- **Response writes:** a write that stalls for 30 s closes the connection.
+- **Stream limits:** each API key can have its own.
+- **Request ids:** each request may send at most 60,000 phoneme ids to the worker.
+- **Worker:** each worker slot has a deadline.
+- **Logging:** one log line per request, and reconnect warnings are rate-limited.
+- **Request heads:** a 16 KiB limit.
+- **Weights:** they are validated at load.
+- **Connections:** the cap is now 4096, with a 5 s header timeout.
+
+The connection cap and header timeout make a flood of unauthenticated connections expensive, but don't stop one. So whenever the server is reachable from the internet, an edge must filter unauthenticated traffic first: Cloudflare Access, or the relay above. The reviewer's tools are in `tools/security/`.
+
 The server's request path also uses fewer dependencies: no axum, tower, tracing or safetensors. `deny.toml` checks licences, sources and advisories. The audit's numbers are in PR #13.
 
 ### Licensing

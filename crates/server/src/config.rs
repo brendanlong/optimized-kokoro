@@ -1,5 +1,11 @@
 //! Settings, from an optional TOML file plus `KOKORO_API_KEYS` (comma-separated) from the
 //! environment.
+//!
+//! The limits here bound what one client can make the server hold or do. They are not a defence
+//! against a flood of unauthenticated connections: when the server is reachable from the
+//! internet, put it behind an edge that authenticates or filters first (Cloudflare Access, or the
+//! relay in `docs/plan.md`), so only our clients reach it. Without that, the connection cap and
+//! the header timeout only make such a flood expensive (see [`Config::max_connections`]).
 
 use crate::protocol::Speed;
 use crate::worker;
@@ -14,6 +20,58 @@ const HYPER_QUEUE_BYTES: usize = 8192 + 4096 * 100;
 /// The longest pause one request may ask for (`kokoro_text::Limits`), as samples.
 const MAX_PAUSE_SAMPLES: u64 = 60 * crate::protocol::SAMPLE_RATE as u64;
 
+/// The soft "Max open files" limit from Linux's `/proc/self/limits`; `u64::MAX` if unlimited.
+pub fn soft_open_file_limit(limits: &str) -> Option<u64> {
+    let line = limits.lines().find(|l| l.starts_with("Max open files"))?;
+    match line["Max open files".len()..].split_whitespace().next()? {
+        "unlimited" => Some(u64::MAX),
+        soft => soft.parse().ok(),
+    }
+}
+
+/// An API key, and how many speech requests it may have in progress at once.
+///
+/// In the TOML file, either a string or a table: `api_keys = ["k1", { key = "k2", max_streams = 4 }]`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ApiKey {
+    pub key: String,
+    /// Overrides [`Config::max_streams_per_key`] for this key.
+    pub max_streams: Option<usize>,
+}
+
+impl From<&str> for ApiKey {
+    fn from(key: &str) -> Self {
+        Self { key: key.into(), max_streams: None }
+    }
+}
+
+impl From<String> for ApiKey {
+    fn from(key: String) -> Self {
+        Self { key, max_streams: None }
+    }
+}
+
+impl<'de> Deserialize<'de> for ApiKey {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Table {
+            key: String,
+            max_streams: Option<usize>,
+        }
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Raw {
+            Plain(String),
+            Table(Table),
+        }
+        Ok(match Raw::deserialize(deserializer)? {
+            Raw::Plain(key) => key.into(),
+            Raw::Table(Table { key, max_streams }) => Self { key, max_streams },
+        })
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct Config {
@@ -21,8 +79,9 @@ pub struct Config {
     pub listen: SocketAddr,
     /// The model worker's Unix socket.
     pub worker_socket: PathBuf,
-    /// Bearer tokens accepted on `/v1/*`. At least one is required.
-    pub api_keys: Vec<String>,
+    /// Bearer tokens accepted on `/v1/*`, each optionally with its own stream limit. At least one
+    /// is required.
+    pub api_keys: Vec<ApiKey>,
     /// Voice used when a request doesn't name one.
     pub default_voice: String,
     /// Longest `input`, in characters, checked before any text processing.
@@ -33,9 +92,17 @@ pub struct Config {
     /// Speech requests served at once; more get 503. With `lookahead`, this bounds the audio the
     /// server can hold: see [`Config::audio_bound`].
     pub max_concurrent_requests: usize,
-    /// Speech requests one API key may have in progress; more get 429.
+    /// Speech requests one API key may have in progress, unless the key sets its own
+    /// `max_streams`; more get 429. The default equals `max_concurrent_requests`: a key belongs to
+    /// one of our own clients (Lion Reader, clawed-abode), which we trust not to attack the
+    /// server, so this only keeps one client's bug from taking every stream. Lower it per key to
+    /// reserve capacity for the other client.
     pub max_streams_per_key: usize,
-    /// Open client connections. Further connections wait in the listen backlog.
+    /// Open client connections. Further connections wait in the listen backlog. An idle
+    /// connection costs a file descriptor and a few KB, so the default is high (4096): a client
+    /// holding connections open without sending a request (each for up to the header timeout,
+    /// then reconnecting) needs this many sockets to starve `/health` and the API. The server
+    /// refuses to start if the open-file limit can't cover it.
     pub max_connections: usize,
     /// Requests served on one connection before it's closed.
     pub max_requests_per_connection: usize,
@@ -44,6 +111,16 @@ pub struct Config {
     pub header_read_timeout_ms: u64,
     /// Time a client has to send a request's body.
     pub request_body_timeout_ms: u64,
+    /// Longest a response write may make no progress (the client not reading) before the
+    /// connection is closed, which frees the request's permits and audio. A client that reads
+    /// slowly, even at playback speed, keeps making progress and isn't affected.
+    pub response_write_timeout_ms: u64,
+    /// Most phoneme ids one speech request may send to the worker, stitched pieces' overlapping
+    /// context included. The input limit counts characters, not work: 20,000 characters of long
+    /// numbers become hundreds of thousands of ids (hours of audio). Past this, the response ends
+    /// with an error. The default, 60,000, is roughly an hour of speech; ordinary text of
+    /// `max_input_chars` characters (about one id per character) stays well under it.
+    pub max_request_ids: usize,
     /// Chunks per request queued on or rendered by the worker, ahead of what the client has
     /// received. The first is the one the client is waiting for.
     pub lookahead: usize,
@@ -54,6 +131,11 @@ pub struct Config {
     /// Longest the worker may go without sending a whole frame while it has work; then it's
     /// disconnected and its requests fail.
     pub worker_progress_timeout_ms: u64,
+    /// Longest one slot may stay outstanding after its Synthesize, queueing included, before the
+    /// connection is reset (a worker answering other slots can't hold one forever). Legitimate
+    /// waits are bounded by the slots ahead of it times the longest render (a 120 s chunk renders
+    /// in a few seconds), so the default, 5 minutes, leaves a wide margin.
+    pub worker_slot_timeout_ms: u64,
     /// Worker slots the server uses: requests on the worker at once, counting cancelled ones until
     /// the worker acknowledges them. Defaults to `max_concurrent_requests × lookahead`; the
     /// worker's hello may lower it.
@@ -77,12 +159,15 @@ impl Default for Config {
             max_body_bytes: None,
             max_concurrent_requests: 16,
             max_streams_per_key: 16,
-            max_connections: 256,
+            max_connections: 4096,
             max_requests_per_connection: 1000,
-            header_read_timeout_ms: 10_000,
+            header_read_timeout_ms: 5_000,
             request_body_timeout_ms: 10_000,
+            response_write_timeout_ms: 30_000,
+            max_request_ids: 60_000,
             worker_hello_timeout_ms: 30_000,
             worker_progress_timeout_ms: 30_000,
+            worker_slot_timeout_ms: 300_000,
             worker_slots: None,
             worker_max_chunk_samples: 2_880_000,
             shutdown_grace_ms: 10_000,
@@ -102,7 +187,7 @@ impl Config {
             None => Config::default(),
         };
         if let Some(keys) = env_keys {
-            config.api_keys.extend(keys.split(',').map(str::trim).filter(|k| !k.is_empty()).map(String::from));
+            config.api_keys.extend(keys.split(',').map(str::trim).filter(|k| !k.is_empty()).map(ApiKey::from));
         }
         config.check()?;
         Ok(config)
@@ -112,8 +197,11 @@ impl Config {
         if self.api_keys.is_empty() {
             return Err("no API keys: set api_keys in the config file or KOKORO_API_KEYS".into());
         }
-        if self.api_keys.iter().any(String::is_empty) {
+        if self.api_keys.iter().any(|k| k.key.is_empty()) {
             return Err("an API key is empty".into());
+        }
+        if let Some(i) = (0..self.api_keys.len()).find(|&i| !(1..=Semaphore::MAX_PERMITS).contains(&self.max_streams(i))) {
+            return Err(format!("API key {} (by position): max_streams must be at least 1", i + 1));
         }
         let counts = [
             ("lookahead", self.lookahead),
@@ -123,6 +211,7 @@ impl Config {
             ("max_requests_per_connection", self.max_requests_per_connection),
             ("worker_slots", self.worker_slots().into()),
             ("worker_max_chunk_samples", self.worker_max_chunk_samples as usize),
+            ("max_request_ids", self.max_request_ids),
         ];
         if let Some((name, _)) = counts.iter().find(|(_, n)| *n == 0) {
             return Err(format!("{name} must be at least 1"));
@@ -133,11 +222,39 @@ impl Config {
         let timeouts = [
             self.header_read_timeout_ms,
             self.request_body_timeout_ms,
+            self.response_write_timeout_ms,
             self.worker_hello_timeout_ms,
             self.worker_progress_timeout_ms,
+            self.worker_slot_timeout_ms,
         ];
         if timeouts.contains(&0) {
             return Err("timeouts must be positive".into());
+        }
+        Ok(())
+    }
+
+    /// Speech requests the `i`th API key may have in progress.
+    pub fn max_streams(&self, i: usize) -> usize {
+        self.api_keys[i].max_streams.unwrap_or(self.max_streams_per_key)
+    }
+
+    pub fn response_write_timeout(&self) -> Duration {
+        Duration::from_millis(self.response_write_timeout_ms)
+    }
+
+    /// File descriptors the server needs besides client connections: the listener, the worker
+    /// socket, stdio, the runtime's own, with room to spare.
+    pub const RESERVED_FDS: u64 = 64;
+
+    /// Checks that the open-file limit (`soft`, from `RLIMIT_NOFILE`) covers every connection.
+    pub fn check_fd_limit(&self, soft: u64) -> Result<(), String> {
+        let needed = self.max_connections as u64 + Self::RESERVED_FDS;
+        if soft < needed {
+            return Err(format!(
+                "max_connections = {} needs about {needed} open files, but the limit is {soft}: raise it \
+                 (`ulimit -n`, or LimitNOFILE= in the systemd unit) or lower max_connections",
+                self.max_connections
+            ));
         }
         Ok(())
     }
@@ -199,6 +316,7 @@ impl Config {
             progress_timeout: Duration::from_millis(self.worker_progress_timeout_ms),
             slots: self.worker_slots(),
             max_chunk_samples: self.worker_max_chunk_samples,
+            slot_timeout: Duration::from_millis(self.worker_slot_timeout_ms),
         }
     }
 }
@@ -214,9 +332,39 @@ mod tests {
         std::fs::write(&path, "listen = \"0.0.0.0:9000\"\napi_keys = [\"a\"]\nlookahead = 2\n").unwrap();
         let config = Config::load(Some(&path), Some("b, c,")).unwrap();
         assert_eq!(config.listen.port(), 9000);
-        assert_eq!(config.api_keys, ["a", "b", "c"]);
+        assert_eq!(config.api_keys, ["a", "b", "c"].map(ApiKey::from));
         assert_eq!(config.lookahead, 2);
         assert_eq!(config.body_limit(), 20_000 * 12 + 16 * 1024);
+    }
+
+    #[test]
+    fn keys_may_set_their_own_stream_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("server.toml");
+        let toml = "max_streams_per_key = 6\napi_keys = [\"plain\", { key = \"lion\", max_streams = 2 }]\n";
+        std::fs::write(&path, toml).unwrap();
+        let config = Config::load(Some(&path), Some("env")).unwrap();
+        assert_eq!(config.api_keys[1], ApiKey { key: "lion".into(), max_streams: Some(2) });
+        assert_eq!((0..3).map(|i| config.max_streams(i)).collect::<Vec<_>>(), [6, 2, 6]);
+        for bad in ["api_keys = [{ key = \"k\", max_streams = 0 }]", "api_keys = [{ key = \"k\", streams = 1 }]"] {
+            std::fs::write(&path, bad).unwrap();
+            assert!(Config::load(Some(&path), None).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn defaults_resist_connection_exhaustion() {
+        let config = Config::default();
+        assert!(config.max_connections >= 4096);
+        assert!(config.header_read_timeout() <= Duration::from_secs(5));
+        assert!(config.check_fd_limit(1024).is_err());
+        assert!(config.check_fd_limit(524_288).is_ok());
+        let limits = "Limit                     Soft Limit           Hard Limit           Units\n\
+                      Max processes             254641               254641               processes\n\
+                      Max open files            1024                 524288               files\n";
+        assert_eq!(soft_open_file_limit(limits), Some(1024));
+        assert_eq!(soft_open_file_limit(&limits.replace("1024 ", "unlimited")), Some(u64::MAX));
+        assert_eq!(soft_open_file_limit("nothing here"), None);
     }
 
     #[test]

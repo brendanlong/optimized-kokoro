@@ -8,6 +8,11 @@
 //!
 //! Both stages mark their end explicitly, so a stage that dies (a panic) fails the response
 //! instead of ending it early as if it were complete.
+//!
+//! The request's admission permits are shared by the response body and the phonemizing thread,
+//! and released only when both are done: a client that disconnects while a long sentence is being
+//! phonemized still counts against the limits until that work stops. A request may send at most
+//! [`Limits::max_ids`] phoneme ids to the worker in all.
 
 use crate::audio::{silence, trim_range};
 use crate::pipeline::{Chunk, Pipeline, PipelineError};
@@ -28,6 +33,8 @@ use tokio::sync::mpsc;
 pub enum StreamError {
     Pipeline(PipelineError),
     Synth(SynthError),
+    /// The text needs more phoneme ids than one request may send to the worker.
+    TooMuchSpeech { max_ids: usize },
     /// A stage stopped without finishing or reporting an error.
     Aborted,
 }
@@ -37,6 +44,9 @@ impl fmt::Display for StreamError {
         match self {
             Self::Pipeline(e) => write!(f, "text processing failed: {e}"),
             Self::Synth(e) => e.fmt(f),
+            Self::TooMuchSpeech { max_ids } => {
+                write!(f, "the input makes more than {max_ids} phonemes of speech; send it as several requests")
+            }
             Self::Aborted => f.write_str("speech generation stopped unexpectedly"),
         }
     }
@@ -61,7 +71,7 @@ enum Unit {
 
 enum Produced {
     Unit(Unit),
-    Failed(PipelineError),
+    Failed(StreamError),
     End,
 }
 
@@ -93,26 +103,53 @@ fn units(chunk: Chunk, speech: &Speech) -> Vec<Unit> {
         .collect()
 }
 
-fn produce(pipeline: &dyn Pipeline, speech: &Speech, out: &mpsc::Sender<Produced>) {
+/// Phonemizes the request and sends its units, then how it ended. Sentences in a language with
+/// no G2P yet are skipped, and logged once per request, as a count: the reasons quote the text.
+fn produce(pipeline: &dyn Pipeline, speech: &Speech, max_ids: usize, out: &mpsc::Sender<Produced>) {
+    let mut skipped = 0usize;
+    let end = produce_units(pipeline, speech, max_ids, out, &mut skipped);
+    if skipped > 0 {
+        crate::warn!("skipped {skipped} sentences in a language with no G2P yet");
+    }
+    if let Some(end) = end {
+        let _ = out.blocking_send(end);
+    }
+}
+
+/// How the request ended, or `None` if the stream is gone.
+fn produce_units(
+    pipeline: &dyn Pipeline,
+    speech: &Speech,
+    max_ids: usize,
+    out: &mpsc::Sender<Produced>,
+    skipped: &mut usize,
+) -> Option<Produced> {
+    let mut ids = 0usize;
     for chunk in pipeline.chunks(speech.lang, &speech.text) {
         let units = match chunk {
             Ok(chunk) => units(chunk, speech),
-            Err(PipelineError::Unsupported(why)) => {
-                crate::warn!("skipping a sentence: {why}");
+            Err(PipelineError::Unsupported(_)) => {
+                *skipped += 1;
                 continue;
             }
-            Err(e) => {
-                let _ = out.blocking_send(Produced::Failed(e));
-                return;
-            }
+            Err(e) => return Some(Produced::Failed(StreamError::Pipeline(e))),
         };
+        // What the worker renders, stitched pieces' overlapping context included.
+        let chunk_ids: usize =
+            units.iter().map(|unit| if let Unit::Speech(request, _) = unit { request.ids.len() } else { 0 }).sum();
+        ids = ids.saturating_add(chunk_ids);
+        if ids > max_ids {
+            return Some(Produced::Failed(StreamError::TooMuchSpeech { max_ids }));
+        }
         for unit in units {
-            if out.blocking_send(Produced::Unit(unit)).is_err() {
-                return;
-            }
+            out.blocking_send(Produced::Unit(unit)).ok()?;
+        }
+        // Stop before the next sentence once nobody is listening.
+        if out.is_closed() {
+            return None;
         }
     }
-    let _ = out.blocking_send(Produced::End);
+    Some(Produced::End)
 }
 
 enum Output {
@@ -142,13 +179,13 @@ fn pcm_bytes(samples: &[i16], held: HeldAudio) -> Bytes {
     Bytes::from_owner(Pcm { bytes, _held: held })
 }
 
-/// A request's PCM, in order. It holds the request's admission permits, so they're released only
-/// when the response body is finished or dropped. Dropping it stops the request and cancels its
-/// queued chunks.
+/// A request's PCM, in order. It shares the request's admission permits with the phonemizing
+/// thread, so they're released only when the response body is finished or dropped *and* that
+/// thread has stopped. Dropping it stops the request and cancels its queued chunks.
 pub struct AudioStream {
     rx: mpsc::Receiver<Output>,
     over: bool,
-    _permits: Box<dyn Send + Sync>,
+    _permits: Arc<dyn Send + Sync>,
 }
 
 impl AudioStream {
@@ -175,22 +212,37 @@ enum Done {
 
 type Pending = Pin<Box<dyn Future<Output = Done> + Send>>;
 
-/// Starts producing a request's audio. `permits` are held by the returned stream.
+/// How much of the worker one request may use.
+#[derive(Debug, Clone, Copy)]
+pub struct Limits {
+    /// Chunks on the worker or waiting for the client, ahead of what the client has received.
+    pub lookahead: usize,
+    /// Phoneme ids the request may send to the worker in all.
+    pub max_ids: usize,
+}
+
+/// Starts producing a request's audio. `permits` are held until both the returned stream and the
+/// phonemizing thread are done.
 pub fn start(
     speech: Speech,
     connection: Arc<Connection>,
     pipeline: Arc<dyn Pipeline>,
-    lookahead: usize,
+    limits: Limits,
     permits: impl Send + Sync + 'static,
 ) -> AudioStream {
     let (out_tx, out_rx) = mpsc::channel(1);
     let (unit_tx, unit_rx) = mpsc::channel(1);
-    tokio::task::spawn_blocking(move || produce(pipeline.as_ref(), &speech, &unit_tx));
+    let permits: Arc<dyn Send + Sync> = Arc::new(permits);
+    let producer_permits = permits.clone();
+    tokio::task::spawn_blocking(move || {
+        produce(pipeline.as_ref(), &speech, limits.max_ids, &unit_tx);
+        drop(producer_permits);
+    });
     tokio::spawn(async move {
-        let result = drive(connection, unit_rx, &out_tx, lookahead).await;
+        let result = drive(connection, unit_rx, &out_tx, limits.lookahead).await;
         let _ = out_tx.send(result.map_or_else(Output::Failed, |()| Output::End)).await;
     });
-    AudioStream { rx: out_rx, over: false, _permits: Box::new(permits) }
+    AudioStream { rx: out_rx, over: false, _permits: permits }
 }
 
 /// The client went away; stop quietly.
@@ -247,7 +299,7 @@ async fn drive(
                         exhausted = true;
                         Ok(())
                     }
-                    Produced::Failed(e) => return Err(StreamError::Pipeline(e)),
+                    Produced::Failed(e) => return Err(e),
                     Produced::Unit(Unit::Silence(n)) => {
                         window.push_back(Box::pin(async move { Done::Silence(n) }));
                         Ok(())
@@ -270,5 +322,31 @@ async fn drive(
         if step.is_err() {
             return Ok(());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::pipeline::Lang;
+    use crate::protocol::Speed;
+
+    /// Every sentence in a language with no G2P, quoting the text in its reason.
+    struct AllUnsupported(usize);
+
+    impl Pipeline for AllUnsupported {
+        fn chunks<'a>(&'a self, _: Lang, text: &'a str) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
+            Box::new((0..self.0).map(move |_| Err(PipelineError::Unsupported(format!("no G2P for {text:?}")))))
+        }
+    }
+
+    #[test]
+    fn skipped_sentences_are_logged_once_without_their_text() {
+        let speech = Speech { lang: Lang::AmericanEnglish, text: "SECRET".into(), voice: 0, speed: Speed::NORMAL };
+        let (tx, mut rx) = mpsc::channel(1);
+        let lines = crate::log::capture(|| produce(&AllUnsupported(6666), &speech, 60_000, &tx));
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert!(lines[0].contains("6666") && !lines[0].contains("SECRET"), "{}", lines[0]);
+        assert!(matches!(rx.try_recv(), Ok(Produced::End)));
     }
 }

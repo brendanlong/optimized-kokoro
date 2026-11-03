@@ -36,6 +36,15 @@ async fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    match std::fs::read_to_string("/proc/self/limits").ok().as_deref().and_then(kokoro_server::config::soft_open_file_limit) {
+        Some(soft) => {
+            if let Err(e) = config.check_fd_limit(soft) {
+                eprintln!("{e}");
+                return ExitCode::FAILURE;
+            }
+        }
+        None => kokoro_server::warn!("couldn't read the open-file limit; make sure it covers max_connections"),
+    }
     let listener = match tokio::net::TcpListener::bind(config.listen).await {
         Ok(listener) => listener,
         Err(e) => {
