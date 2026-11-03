@@ -6,7 +6,7 @@ use crate::py::{self, parse_float};
 use crate::pyre::{Pattern, compile_i};
 use crate::tables::{EMOJI_MODIFIER, EMOJI_START};
 use std::fmt::Write;
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock};
 
 /// The server settings these checks read, with the deployed defaults.
 #[derive(Debug, Clone, PartialEq)]
@@ -66,7 +66,8 @@ pub fn strip_emoji(text: &str) -> String {
 /// One run of text in a single voice and pace.
 #[derive(Debug, Clone, PartialEq)]
 pub struct VoiceSegment {
-    pub voice: String,
+    /// Shared between segments, so many short segments in one voice cost one copy of its name.
+    pub voice: Arc<str>,
     pub rate: f64,
     pub text: String,
 }
@@ -77,15 +78,15 @@ pub struct VoiceSegment {
 pub fn split_by_voice(text: &str, default_voice: &str) -> Vec<VoiceSegment> {
     let parts = CONTROL_TAG.split(text);
     if parts.len() == 1 {
-        return vec![VoiceSegment { voice: default_voice.to_owned(), rate: 1.0, text: text.to_owned() }];
+        return vec![VoiceSegment { voice: default_voice.into(), rate: 1.0, text: text.to_owned() }];
     }
     let mut segments: Vec<VoiceSegment> = Vec::new();
-    let mut voice = default_voice.to_owned();
+    let mut voice: Arc<str> = default_voice.into();
     let (mut base_rate, mut tag_rate) = (1.0, 1.0);
     for (index, part) in parts.into_iter().enumerate() {
         match (index % 4, part) {
             (1, Some(name)) => {
-                voice = name.trim_matches(py::is_space).to_owned();
+                voice = name.trim_matches(py::is_space).into();
                 base_rate = 1.0;
                 tag_rate = 1.0;
             }
@@ -215,7 +216,7 @@ mod tests {
     #[test]
     fn voices_and_rates() {
         let segments = split_by_voice("Hi [voice:af_sky] there [rate:2] fast [voice:af_bella]slow", "af_heart");
-        let summary: Vec<_> = segments.iter().map(|s| (s.voice.as_str(), s.rate, s.text.as_str())).collect();
+        let summary: Vec<_> = segments.iter().map(|s| (&*s.voice, s.rate, s.text.as_str())).collect();
         assert_eq!(summary, [("af_heart", 1.0, "Hi"), ("af_sky", 1.0, "there"), ("af_sky", 2.0, "fast"), ("af_bella", 1.0, "slow")]);
     }
 

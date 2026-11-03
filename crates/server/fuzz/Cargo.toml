@@ -1,0 +1,25 @@
+[package]
+name = "kokoro-server-fuzz"
+version = "0.0.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+kokoro-server = { path = ".." }
+libfuzzer-sys = "0.4"
+tokio = { version = "1", features = ["rt"] }
+
+# Not part of the main workspace: cargo-fuzz needs nightly and its own build settings.
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "worker_frames"
+path = "fuzz_targets/worker_frames.rs"
+test = false
+doc = false
+bench = false
