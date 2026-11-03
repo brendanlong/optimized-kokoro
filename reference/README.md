@@ -37,6 +37,14 @@ mkdir -p out/spacy-en
 .cache/kfa/.venv/bin/python -I ../crates/spacy-en/reference.py --patterns out/spacy-en/patterns-200k.jsonl 200000
 ```
 
+`crates/pipeline` (the whole English path, text to phoneme chunks) is tested end to end against the dumps above. Its script segmentation (kokoro's `foreign.py`) also has a random-text fixture, its Unicode tables come from the `regex` package here, and `pipeline_bench.py` times the reference's `smart_split` for comparison with `cargo run --release -p kokoro-pipeline --example bench`:
+
+```sh
+.cache/kfa/.venv/bin/python -I foreign_cases.py 3000 ../crates/pipeline/tests/foreign_cases.jsonl
+.cache/kfa/.venv/bin/python -I gen_pipeline_tables.py ../crates/pipeline/src/tables.rs
+.cache/kfa/.venv/bin/python -I pipeline_bench.py --dump out/wiki-en.jsonl   # or FILE [REPEAT] as one request
+```
+
 ## C espeak-ng oracle
 
 `espeak-ng-oracle/` builds C espeak-ng 1.52.0 statically into small drivers, to test `crates/espeak-ng` (the Rust port of its text-to-phoneme engine) on any text, not just the calls the Python pipeline makes. It reads the same data as the venv. Nothing here ships.
