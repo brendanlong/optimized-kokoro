@@ -1,7 +1,7 @@
 [package]
 name = "kokoro-espeak"
 version = "0.1.0"
-description = "misaki's espeak-ng wrappers (EspeakFallback, EspeakG2P) and phonemizer's espeak backend, on espeak-ng-rs"
+description = "misaki's espeak-ng wrappers (EspeakFallback, EspeakG2P) and phonemizer's espeak backend, on kokoro-espeak-ng"
 edition.workspace = true
 rust-version.workspace = true
 repository.workspace = true
@@ -9,8 +9,7 @@ license = "GPL-3.0-or-later"
 publish = false
 
 [dependencies]
-# Upstream; forking to brendanlong failed (token lacks permission), so the caching patch isn't applied yet.
-espeak-ng = { git = "https://github.com/eugenehp/espeak-ng-rs", rev = "8d34c92dbbfcfcdffd7b56e26ab0d25a6566afef", default-features = false }
+kokoro-espeak-ng = { path = "../espeak-ng" }
 
 [dev-dependencies]
 serde.workspace = true

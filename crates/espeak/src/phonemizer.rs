@@ -1,8 +1,8 @@
 //! phonemizer-fork 3.3.2's espeak backend, as misaki configures it: `preserve_punctuation=True`,
 //! `with_stress=True`, `tie='^'`, the default separator (words end in a space) and `strip=False`.
 
-use espeak_ng::Translator;
-use std::path::Path;
+use kokoro_espeak_ng::{Espeak, EspeakData, Error, PHONEMES_IPA_TIE, Result};
+use std::sync::{Arc, Mutex};
 
 /// `phonemizer.punctuation._DEFAULT_MARKS`.
 const MARKS: &str = ";:,.!?¡¿—…\"«»“”(){}[]";
@@ -16,7 +16,7 @@ pub enum LanguageSwitch {
 }
 
 pub struct Backend {
-    translator: Translator,
+    espeak: Mutex<Espeak>,
     language_switch: LanguageSwitch,
 }
 
@@ -34,19 +34,30 @@ struct Mark<'a> {
 }
 
 impl Backend {
-    pub fn new(language: &str, language_switch: LanguageSwitch, data_dir: &Path) -> espeak_ng::Result<Self> {
-        let mut translator = Translator::new(language, Some(data_dir))?;
-        translator.options.ipa_tie = Some(ESPEAK_TIE);
-        Ok(Self { translator, language_switch })
+    /// `EspeakBackend(language)`: selects the first voice (in `espeak_ListVoices` order) whose
+    /// first language is `language`, as phonemizer's `EspeakWrapper.set_voice` does.
+    pub fn new(language: &str, language_switch: LanguageSwitch, data: Arc<EspeakData>) -> Result<Self> {
+        let identifier = data
+            .list_voices()
+            .into_iter()
+            .find(|v| v.languages.first().is_some_and(|l| l.1 == language))
+            .map(|v| v.identifier.clone())
+            .ok_or_else(|| Error::VoiceNotFound(language.to_string()))?;
+        let mut espeak = Espeak::new(data);
+        espeak.set_voice_by_name(&identifier)?;
+        Ok(Self { espeak: Mutex::new(espeak), language_switch })
     }
 
-    /// `EspeakWrapper.text_to_phonemes`: every clause espeak reads in `text`, joined by spaces.
-    pub fn espeak(&self, text: &str) -> espeak_ng::Result<String> {
-        Ok(self.translator.text_to_ipa(text)?.replace('\n', " "))
+    /// `EspeakWrapper.text_to_phonemes`: the non-empty clauses espeak reads in `text`, joined by
+    /// spaces.
+    pub fn espeak(&self, text: &str) -> Result<String> {
+        let mut espeak = self.espeak.lock().unwrap_or_else(|e| e.into_inner());
+        let clauses = espeak.text_to_phonemes(text, PHONEMES_IPA_TIE);
+        Ok(clauses.into_iter().filter(|c| !c.is_empty()).collect::<Vec<_>>().join(" "))
     }
 
     /// `EspeakBackend.phonemize([text])`.
-    pub fn phonemize(&self, text: &str) -> espeak_ng::Result<Vec<String>> {
+    pub fn phonemize(&self, text: &str) -> Result<Vec<String>> {
         self.phonemize_with(text, |chunk| self.espeak(chunk))
     }
 
@@ -54,13 +65,13 @@ impl Backend {
     pub fn phonemize_with(
         &self,
         text: &str,
-        mut espeak: impl FnMut(&str) -> espeak_ng::Result<String>,
-    ) -> espeak_ng::Result<Vec<String>> {
+        mut espeak: impl FnMut(&str) -> Result<String>,
+    ) -> Result<Vec<String>> {
         let (chunks, marks) = preserve(text);
         let phonemized = chunks
             .iter()
             .map(|chunk| Ok(self.postprocess_line(&espeak(chunk)?)))
-            .collect::<espeak_ng::Result<Vec<_>>>()?;
+            .collect::<Result<Vec<_>>>()?;
         Ok(restore(phonemized, &marks))
     }
 

@@ -121,10 +121,10 @@ fn wrappers_match_misaki_given_c_espeak() {
     assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.join("\n"));
 }
 
-/// End to end on espeak-ng-rs. Prints exact-match rates per wrapper and language, for the wrappers'
-/// output and for each raw espeak call, then the mismatches (`KOKORO_ESPEAK_SHOW` per language).
+/// End to end on kokoro-espeak-ng. Prints exact-match rates per wrapper and language, for the
+/// wrappers' output and for each raw espeak call, then any mismatches (`KOKORO_ESPEAK_SHOW` per
+/// language). Run with `--nocapture` for the report.
 #[test]
-#[ignore = "espeak-ng-rs doesn't match C espeak-ng yet; run with --ignored --nocapture for the report"]
 fn parity_with_c_espeak() {
     let show: usize = std::env::var("KOKORO_ESPEAK_SHOW").map_or(20, |s| s.parse().unwrap());
     let mut wrappers = HashMap::new();

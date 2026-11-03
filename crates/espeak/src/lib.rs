@@ -1,4 +1,5 @@
-//! misaki 0.9.4's two espeak-ng wrappers (`misaki/espeak.py`), on espeak-ng-rs instead of C espeak-ng:
+//! misaki 0.9.4's two espeak-ng wrappers (`misaki/espeak.py`), on `kokoro-espeak-ng` (a port of
+//! espeak-ng 1.52's text-to-phoneme engine) instead of C espeak-ng:
 //! - [`EspeakFallback`] reads English words missing from misaki's lexicons;
 //! - [`EspeakG2P`] reads whole segments of es, fr-fr, hi, it, pt-br, and the ar, el, he, hi, ko and ru
 //!   runs kokoro's `foreign.py` hands to espeak.
@@ -8,14 +9,19 @@
 pub mod phonemizer;
 
 use phonemizer::{Backend, LanguageSwitch, py_strip};
-use std::path::{Path, PathBuf};
+use std::path::Path;
+use std::sync::{Arc, OnceLock};
 
-pub use espeak_ng::{Error, Result};
+pub use kokoro_espeak_ng::{EspeakData, Error, Result, default_data_dir};
 
-/// The espeak-ng 1.52 data the reference pipeline reads (from espeakng-loader 0.2.4), cut down to
-/// the dictionaries misaki and kokoro use.
-pub fn default_data_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("espeak-ng-data")
+/// The data in [`default_data_dir`], loaded once per process.
+pub fn default_data() -> Result<Arc<EspeakData>> {
+    static DATA: OnceLock<Arc<EspeakData>> = OnceLock::new();
+    if let Some(d) = DATA.get() {
+        return Ok(d.clone());
+    }
+    let d = EspeakData::load(default_data_dir())?;
+    Ok(DATA.get_or_init(|| d).clone())
 }
 
 /// `misaki.espeak.EspeakFallback`, the last resort for English words.
@@ -27,12 +33,16 @@ pub struct EspeakFallback {
 
 impl EspeakFallback {
     pub fn new(british: bool) -> Result<Self> {
-        Self::with_data_dir(british, &default_data_dir())
+        Self::with_data(british, default_data()?)
     }
 
     pub fn with_data_dir(british: bool, data_dir: &Path) -> Result<Self> {
+        Self::with_data(british, EspeakData::load(data_dir)?)
+    }
+
+    pub fn with_data(british: bool, data: Arc<EspeakData>) -> Result<Self> {
         let language = if british { "en-gb" } else { "en-us" };
-        let backend = Backend::new(language, LanguageSwitch::KeepFlags, data_dir)?;
+        let backend = Backend::new(language, LanguageSwitch::KeepFlags, data)?;
         // Python sorts the dict items by descending length, keeping insertion order among equals.
         let mut e2m = vec![
             ("ʔˌn\u{329}", "ʔn"),
@@ -69,7 +79,7 @@ impl EspeakFallback {
         self.phonemize_with(word, |chunk| self.backend.espeak(chunk))
     }
 
-    /// [`phonemize`](Self::phonemize) with `espeak` standing in for espeak-ng-rs.
+    /// [`phonemize`](Self::phonemize) with `espeak` standing in for the engine.
     pub fn phonemize_with(
         &self,
         word: &str,
@@ -120,11 +130,15 @@ pub struct EspeakG2P {
 
 impl EspeakG2P {
     pub fn new(language: &str) -> Result<Self> {
-        Self::with_data_dir(language, &default_data_dir())
+        Self::with_data(language, default_data()?)
     }
 
     pub fn with_data_dir(language: &str, data_dir: &Path) -> Result<Self> {
-        let backend = Backend::new(language, LanguageSwitch::RemoveFlags, data_dir)?;
+        Self::with_data(language, EspeakData::load(data_dir)?)
+    }
+
+    pub fn with_data(language: &str, data: Arc<EspeakData>) -> Result<Self> {
+        let backend = Backend::new(language, LanguageSwitch::RemoveFlags, data)?;
         let mut e2m = vec![
             ("a^ɪ", "I"),
             ("a^ʊ", "W"),
@@ -150,7 +164,7 @@ impl EspeakG2P {
         self.phonemize_with(text, |chunk| self.backend.espeak(chunk))
     }
 
-    /// [`phonemize`](Self::phonemize) with `espeak` standing in for espeak-ng-rs.
+    /// [`phonemize`](Self::phonemize) with `espeak` standing in for the engine.
     pub fn phonemize_with(&self, text: &str, espeak: impl FnMut(&str) -> Result<String>) -> Result<String> {
         let text = text
             .replace('«', "\u{201c}")

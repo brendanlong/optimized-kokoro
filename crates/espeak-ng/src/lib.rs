@@ -1,0 +1,86 @@
+//! A port of espeak-ng 1.52.0's text-to-phoneme engine (`espeak_TextToPhonemes`), reading
+//! espeak-ng's compiled data (`phontab`, `phonindex`, `*_dict`, `lang/`) unchanged.
+//!
+//! The modules follow the C files they port, and functions keep their C names in snake_case,
+//! so they can be compared with C side by side. C's globals live in [`Espeak`]; the data shared
+//! by all instances lives in [`EspeakData`].
+//!
+//! ```no_run
+//! use kokoro_espeak_ng::{Espeak, EspeakData, PHONEMES_IPA_TIE};
+//! let data = EspeakData::load("espeak-ng-data").unwrap();
+//! let mut espeak = Espeak::new(data);
+//! espeak.set_voice_by_name("gmw/en-US").unwrap();
+//! let clauses = espeak.text_to_phonemes("Hello world.", PHONEMES_IPA_TIE);
+//! ```
+
+#![forbid(unsafe_code)]
+
+mod common;
+mod data;
+mod defs;
+mod dictionary;
+mod encoding;
+mod engine;
+mod numbers;
+mod phoneme;
+mod phonemelist;
+mod readclause;
+mod tr_languages;
+mod translate;
+mod translateword;
+mod ucd;
+mod ucd_tables;
+mod voices;
+
+pub use data::{EspeakData, Error, Result, VoiceInfo};
+pub use engine::Espeak;
+
+/// The espeak-ng 1.52 data the reference pipeline reads (bundled with espeakng-loader 0.2.4), cut
+/// down to the phoneme tables, the voice files and the dictionaries misaki and kokoro use.
+pub fn default_data_dir() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("espeak-ng-data")
+}
+
+use engine::Tr;
+
+/// `espeakPHONEMES_IPA`.
+pub const PHONEMES_IPA: i32 = 0x02;
+/// `espeakPHONEMES_TIE`: bits 8-23 hold the tie character.
+pub const PHONEMES_TIE: i32 = 0x80;
+/// The mode phonemizer uses: IPA, with U+0361 tying multi-letter phonemes.
+pub const PHONEMES_IPA_TIE: i32 = PHONEMES_IPA | PHONEMES_TIE | (0x361 << 8);
+
+impl Espeak {
+    /// One call of `espeak_TextToPhonemes`: decodes `text` (a UTF-8 C string; it ends at its
+    /// first NUL), translates its first clause, and returns the clause's phonemes together with
+    /// the text not yet read (`None` at the end, like C's `*textptr`).
+    pub fn text_to_phonemes_clause<'t>(&mut self, text: &'t [u8], phoneme_mode: i32) -> Option<(String, Option<&'t [u8]>)> {
+        if !self.voice_loaded || self.translator.is_none() {
+            return None;
+        }
+        let text = &text[..text.iter().position(|&c| c == 0).unwrap_or(text.len())];
+        self.decoder.decode_string(text);
+        self.translate_clause(Tr::Main);
+        let remaining = self.decoder.remaining().map(|r| r.len());
+        let phonemes = self.get_translated_phoneme_string(phoneme_mode);
+        let rest = remaining.map(|n| &text[text.len() - n..]);
+        Some((String::from_utf8_lossy(&phonemes).into_owned(), rest))
+    }
+
+    /// Calls `espeak_TextToPhonemes` until the text is used up, as phonemizer does, returning
+    /// each clause's phonemes.
+    pub fn text_to_phonemes(&mut self, text: &str, phoneme_mode: i32) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut rest: Option<&[u8]> = Some(text.as_bytes());
+        while let Some(t) = rest {
+            match self.text_to_phonemes_clause(t, phoneme_mode) {
+                Some((ph, r)) => {
+                    out.push(ph);
+                    rest = r;
+                }
+                None => break,
+            }
+        }
+        out
+    }
+}
