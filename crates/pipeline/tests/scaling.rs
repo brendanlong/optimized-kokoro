@@ -75,6 +75,8 @@ fn grows_linearly() {
         ("Han sentences (placeholder)", Box::new(|n| "東. ".repeat(n))),
         ("Han words (one placeholder)", Box::new(|n| "東 ".repeat(n))),
         ("Thai words (one placeholder)", Box::new(|n| "สวัสดี ".repeat(n))),
+        ("Thai with zero-width spaces", Box::new(|n| "สวัสดี\u{200b}".repeat(n))),
+        ("Latin and Thai alternating", Box::new(|n| "aส".repeat(n))),
         ("Georgian", Box::new(|n| "გამარჯობა ".repeat(n))),
         ("long-vowel marks", Box::new(|n| "ー".repeat(n))),
         ("CJK full stops", Box::new(|n| "a。".repeat(n))),

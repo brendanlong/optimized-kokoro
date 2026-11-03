@@ -2,7 +2,7 @@
 
 use kokoro_espeak::{EspeakFallback, EspeakG2P};
 use kokoro_g2p_en::{Fallback, G2p, TaggedToken, Tagger, kokoro};
-use kokoro_pipeline::foreign::Language;
+use kokoro_pipeline::foreign::{Language, Script};
 use kokoro_pipeline::{Chunk, Error, ForeignG2p, Lang, NormalizationOptions, Pipeline};
 use kokoro_spacy_en::Nlp;
 use std::sync::OnceLock;
@@ -141,6 +141,71 @@ fn every_voice_a_run_may_go_to_loads() {
     }
     Pipeline::new(Lang::BritishEnglish).unwrap();
     assert!(phonemize("Shavian 𐑖𐑱𐑝𐑾𐑯.").starts_with("ʃˈAviən "));
+}
+
+#[test]
+fn invisible_characters_neither_split_nor_fuse_placeholders() {
+    for (text, expected) in [
+        ("Thai \u{e2a}\u{e27}\u{e31}\u{e2a}\u{e14}\u{e35}\u{200b}\u{e04}\u{e23}\u{e31}\u{e1a}\u{200b}\u{e1c}\u{e21} is hello.", "tˈI tˈI tˈɛkst ɪz həlˈO."),
+        ("\u{e2a}\u{e27}\u{e31}\u{e2a}\u{ad}\u{e14}\u{e35}", "tˈI tˈɛkst"),
+        ("你好\u{200b}世界", "ʧˌInˈiz tˈɛkst"),
+        ("你好\u{200e}世界", "ʧˌInˈiz tˈɛkst"),
+        ("東京\u{200d}へ", "ʧˌInˈiz tˈɛkst ʤˌæpənˈiz tˈɛkst"),
+        ("Привет\u{200b}สวัสดี", "prʲivʲˈet tˈI tˈɛkst"),
+        ("a\u{301}สวัสดี", "ˈæ tˈI tˈɛkst"),
+        ("สวัสดี\u{200b}hello", "tˈI tˈɛkst həlˈO"),
+        ("hello\u{2060}สวัสดี", "həlˈO tˈI tˈɛkst"),
+        ("(สวัสดี) x", "(tˈI tˈɛkst) ˈɛks"),
+    ] {
+        assert_eq!(phonemize(text), expected, "{text:?}");
+    }
+    let (_, tokens) = pipeline().phonemize("x สวัสดี\u{200b}ครับ y").unwrap();
+    assert_eq!(tokens.iter().filter(|t| t.text.contains('ส')).count(), 1, "{tokens:?}");
+}
+
+#[test]
+fn scripts_a_voices_alphabet_holds_but_it_doesnt_read_are_unread() {
+    for (text, name) in [
+        ("ꦗꦮ", "ʤˌɑvənˈiz"),
+        ("ꨌꩌ", "kˈæm"),
+        ("ꯃꯤꯇꯩ", "mˈiTA mˈAɛk"),
+        ("ꮳꮃꭹ", "ʧˈɛɹəkˌi"),
+        ("ꬁꬂ", "ˌiθiˈɑpɪk"),
+        ("ꩠꩡ", "mˈiənmˌɑɹ"),
+        ("ϢϤϦ", "kˈɑptɪk"),
+        ("ⴂⴀⴋⴀ", "ʤˈɔɹʤᵊn"),
+    ] {
+        let options = NormalizationOptions::default();
+        let chunks: Vec<_> = pipeline().chunks(text, &options).map(Result::unwrap).collect();
+        assert_eq!((chunks[0].phonemes.as_str(), chunks[0].unread), (format!("{name} tˈɛkst").as_str(), 1), "{text}");
+    }
+}
+
+#[test]
+fn the_runs_script_not_its_first_letter_picks_the_voice() {
+    let word = espeak("ka", "გამარჯობა");
+    assert_eq!(phonemize("ᲒᲐᲛᲐᲠᲯᲝᲑᲐ"), word);
+    assert_eq!(phonemize("Ა გამარჯობა"), format!("{} {word}", espeak("ka", "ა")));
+    assert_eq!(phonemize("ﬓ Բարեւ"), format!("ɑɹmˈiniən tˈɛkst {}", espeak("hy", "Բարեւ")));
+}
+
+/// A G2P that reads every run as nothing.
+struct Silent;
+
+impl ForeignG2p for Silent {
+    fn phonemize(&self, _: &str) -> Result<String, String> {
+        Ok(String::new())
+    }
+}
+
+#[test]
+fn a_run_its_g2p_reads_as_nothing_is_unread() {
+    let pipeline = Pipeline::new(Lang::AmericanEnglish)
+        .unwrap()
+        .with_foreign_g2p(Language::Script(Script::Thai), Box::new(Silent))
+        .with_foreign_g2p(Language::Script(Script::Cyrillic), Box::new(Silent));
+    assert_eq!(pipeline.phonemize("x สวัสดี y").unwrap().0, "ˈɛks tˈI tˈɛkst wˈI");
+    assert_eq!(pipeline.phonemize("x Привет y").unwrap().0, "ˈɛks wˈI");
 }
 
 /// Stands in for misaki's Chinese G2P: one syllable per character, with a tone arrow.

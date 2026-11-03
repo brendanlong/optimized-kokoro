@@ -179,6 +179,8 @@ pub enum Script {
 }
 
 impl Script {
+    pub const COUNT: usize = 172;
+
     /// Unicode's English name for the script.
     pub fn name(self) -> &'static str {
         match self {
@@ -1507,4 +1509,29 @@ pub const NONSPACING_MARKS: &[(char, char)] = &[
     ('\u{1e8d0}', '\u{1e8d6}'),
     ('\u{1e944}', '\u{1e94a}'),
     ('\u{e0100}', '\u{e01ef}'),
+];
+
+/// `\p{Cf}`.
+pub const FORMAT_CHARS: &[(char, char)] = &[
+    ('\u{ad}', '\u{ad}'),
+    ('\u{600}', '\u{605}'),
+    ('\u{61c}', '\u{61c}'),
+    ('\u{6dd}', '\u{6dd}'),
+    ('\u{70f}', '\u{70f}'),
+    ('\u{890}', '\u{891}'),
+    ('\u{8e2}', '\u{8e2}'),
+    ('\u{180e}', '\u{180e}'),
+    ('\u{200b}', '\u{200f}'),
+    ('\u{202a}', '\u{202e}'),
+    ('\u{2060}', '\u{2064}'),
+    ('\u{2066}', '\u{206f}'),
+    ('\u{feff}', '\u{feff}'),
+    ('\u{fff9}', '\u{fffb}'),
+    ('\u{110bd}', '\u{110bd}'),
+    ('\u{110cd}', '\u{110cd}'),
+    ('\u{13430}', '\u{1343f}'),
+    ('\u{1bca0}', '\u{1bca3}'),
+    ('\u{1d173}', '\u{1d17a}'),
+    ('\u{e0001}', '\u{e0001}'),
+    ('\u{e0020}', '\u{e007f}'),
 ];

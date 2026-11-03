@@ -18,14 +18,14 @@ pub mod foreign;
 mod tables;
 mod vocab;
 
-use foreign::Language;
+use foreign::{Language, Script};
 use kokoro_espeak::{EspeakData, EspeakFallback, EspeakG2P};
 use kokoro_g2p_en::{Fallback, G2p, TaggedToken, Tagger, kokoro};
 use kokoro_spacy_en::Nlp;
 use std::collections::HashMap;
 use std::fmt;
 use std::ops::Range;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 pub use kokoro_g2p_en::Token;
 pub use kokoro_text::{DEFAULT_MAX_TOKENS, Limits, Options as NormalizationOptions};
@@ -148,6 +148,8 @@ pub struct Pipeline {
     g2p: G2p,
     espeak: Arc<EspeakData>,
     foreign: HashMap<Language, Box<dyn ForeignG2p>>,
+    /// The tokens of each language's "<name> text", read once on first use.
+    placeholders: Box<[OnceLock<Vec<Token>>]>,
     limits: Limits,
     max_tokens: usize,
 }
@@ -169,6 +171,7 @@ impl Pipeline {
             g2p: G2p::new(lang.british()),
             espeak,
             foreign: HashMap::new(),
+            placeholders: (0..2 + Script::COUNT).map(|_| OnceLock::new()).collect(),
             limits: Limits::default(),
             max_tokens: DEFAULT_MAX_TOKENS,
         })
@@ -301,6 +304,29 @@ fn word_spans(tokens: &[Token], kept: &[usize]) -> Vec<Word> {
     words
 }
 
+/// Puts a space between each placeholder and a word right against it on either side, unless
+/// there's whitespace already: the run it stands for may have been written without spaces, or
+/// with only invisible characters around it.
+fn separate(tokens: &mut [Token], placeholders: &[Range<usize>]) {
+    let spoken = |t: &Token| t.phonemes.as_deref().is_some_and(|p| !p.is_empty()) || !t.whitespace.is_empty();
+    let word = |c: Option<char>| c.is_some_and(char::is_alphabetic);
+    for range in placeholders {
+        if let Some(before) = tokens[..range.start].iter().rposition(spoken)
+            && tokens[before].whitespace.is_empty()
+            && word(tokens[before].phonemes.as_deref().and_then(|p| p.chars().next_back()))
+        {
+            tokens[before].whitespace.push(' ');
+        }
+        let last = range.end - 1;
+        if let Some(after) = tokens[range.end..].iter().find(|t| spoken(t))
+            && word(after.phonemes.as_deref().and_then(|p| p.chars().next()))
+            && tokens[last].whitespace.is_empty()
+        {
+            tokens[last].whitespace.push(' ');
+        }
+    }
+}
+
 /// One request's G2P state: espeak engines are made on first use and dropped with the request.
 struct Request<'p> {
     pipeline: &'p Pipeline,
@@ -355,52 +381,59 @@ impl<'p> Request<'p> {
     /// Kokoro-FastAPI's `phonemize` for English: CJK punctuation made Western, then
     /// `en_g2p_tokens` and `tokens_to_ps`.
     ///
-    /// A run with no G2P for its language or script (so far Chinese and Japanese, and the scripts
-    /// espeak has no voice for) is read as "<name> text" instead, once for runs of the same
-    /// language joined only by spaces, apostrophes or hyphens.
+    /// A run with no G2P for its language or script (so far Chinese and Japanese, and the letters
+    /// espeak has no voice for) is read as "<name> text" instead: once for runs of one language
+    /// with only joiners, marks or format characters between them, and kept apart from the words
+    /// on either side. So is a run its G2P reads as nothing, outside `foreign.py`'s scripts (where
+    /// the reference reads it as nothing too).
     fn phonemize(&mut self, text: &str) -> Result<Phonemes, Error> {
         let graphemes = foreign::translate_cjk_punctuation(text);
         let mut tokens: Vec<Token> = Vec::new();
-        let mut unread = 0;
+        let mut placeholders = Vec::new();
         let chinese = self.pipeline.foreign.get(&Language::Chinese);
         let segments = foreign::split(&graphemes, |c| chinese.is_none_or(|g2p| g2p.reads(c)));
         let mut i = 0;
         while i < segments.len() {
             let (segment, language) = segments[i];
             i += 1;
-            match language {
-                None => self.english(&mut tokens, segment)?,
-                Some(language) if self.reads(language) => {
-                    let ps = self.foreign(segment, language)?;
-                    let words: Vec<&str> = ps.split(kokoro_text::py::is_space).filter(|w| !w.is_empty()).collect();
+            let Some(language) = language else {
+                self.english(&mut tokens, segment)?;
+                continue;
+            };
+            let run = if self.reads(language) {
+                let ps = self.foreign(segment, language)?;
+                let words: Vec<&str> = ps.split(kokoro_text::py::is_space).filter(|w| !w.is_empty()).collect();
+                let reference = matches!(language, Language::Script(s) if foreign::in_foreign_py(s));
+                if !words.is_empty() || reference {
                     tokens.extend(words.iter().enumerate().map(|(i, w)| Token {
                         text: if i == 0 { segment.to_owned() } else { String::new() },
                         tag: String::new(),
                         whitespace: if i + 1 < words.len() { " ".to_owned() } else { String::new() },
                         phonemes: Some((*w).to_owned()),
                     }));
+                    continue;
                 }
-                Some(language) => {
-                    let start = i - 1;
-                    while let [(gap, None), (_, Some(next)), ..] = segments[i..]
-                        && next == language
-                        && gap.chars().all(foreign::is_joiner)
-                    {
-                        i += 2;
-                    }
-                    let run: String = segments[start..i].iter().map(|(s, _)| *s).collect();
-                    let before = start.checked_sub(1).and_then(|j| segments[j].0.chars().next_back());
-                    let after = segments.get(i).and_then(|(s, _)| s.chars().next());
-                    self.placeholder(&mut tokens, run, language, before, after)?;
-                    unread += 1;
+                segment.to_owned()
+            } else {
+                let start = i - 1;
+                while let [(gap, None), (_, Some(next)), ..] = segments[i..]
+                    && next == language
+                    && gap.chars().all(foreign::is_gap)
+                {
+                    i += 2;
                 }
-            }
+                segments[start..i].iter().map(|(s, _)| *s).collect()
+            };
+            let start = tokens.len();
+            tokens.extend(self.placeholder(language, run)?);
+            placeholders.push(start..tokens.len());
         }
+        separate(&mut tokens, &placeholders);
         let phonemes = kokoro::tokens_to_ps(&tokens);
         for token in &mut tokens {
             token.phonemes.get_or_insert_with(String::new);
         }
-        Ok(Phonemes { phonemes, tokens, unread })
+        Ok(Phonemes { phonemes, tokens, unread: placeholders.len() })
     }
 
     fn reads(&self, language: Language) -> bool {
@@ -408,31 +441,29 @@ impl<'p> Request<'p> {
     }
 
     /// "<name> text" for an unread run, as English words that make one token group like a foreign
-    /// run's: the first holds the run's text. A letter or digit right against the run gets a
-    /// space, so the placeholder doesn't run into the words around it.
-    fn placeholder(
-        &mut self,
-        tokens: &mut Vec<Token>,
-        run: String,
-        language: Language,
-        before: Option<char>,
-        after: Option<char>,
-    ) -> Result<(), Error> {
-        let mut words = Vec::new();
-        self.english(&mut words, &format!("{} text", language.name()))?;
-        if before.is_some_and(char::is_alphanumeric)
-            && let Some(last) = tokens.last_mut()
-        {
-            last.whitespace.push(' ');
-        }
+    /// run's: the first holds the run's text.
+    fn placeholder(&mut self, language: Language, run: String) -> Result<Vec<Token>, Error> {
+        let index = match language {
+            Language::Chinese => 0,
+            Language::Japanese => 1,
+            Language::Script(script) | Language::Unread(script) => 2 + script as usize,
+        };
+        let cell = &self.pipeline.placeholders[index];
+        let mut words = match cell.get() {
+            Some(words) => words.clone(),
+            None => {
+                let mut words = Vec::new();
+                self.english(&mut words, &format!("{} text", language.name()))?;
+                cell.get_or_init(|| words).clone()
+            }
+        };
         for (i, word) in words.iter_mut().enumerate() {
             word.text = if i == 0 { run.clone() } else { String::new() };
         }
         if let Some(last) = words.last_mut() {
-            last.whitespace = if after.is_some_and(char::is_alphanumeric) { " ".into() } else { String::new() };
+            last.whitespace.clear();
         }
-        tokens.extend(words);
-        Ok(())
+        Ok(words)
     }
 
     fn english(&mut self, tokens: &mut Vec<Token>, segment: &str) -> Result<(), Error> {

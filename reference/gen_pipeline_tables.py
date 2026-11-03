@@ -1,6 +1,6 @@
 """Writes crates/pipeline/src/tables.rs: the Unicode classes the English pipelines' foreign-script
-splitting matches with the `regex` module (\\p{Script} for every script, \\p{Mn}), generated from
-the reference interpreter so the port uses the same Unicode version.
+splitting matches with the `regex` module (\\p{Script} for every script, \\p{Mn}, \\p{Cf}),
+generated from the reference interpreter so the port uses the same Unicode version.
 
 The scripts kokoro's foreign.py names (Han, Hiragana, Katakana, Latin, Arabic, Cyrillic,
 Devanagari, Greek, Hangul, Hebrew) are matched as it writes them, `\\p{Han}`; the rest as
@@ -87,6 +87,7 @@ def main(dst):
     out += [
         "}\n\n",
         "impl Script {\n",
+        f"    pub const COUNT: usize = {len(known)};\n\n",
         "    /// Unicode's English name for the script.\n",
         "    pub fn name(self) -> &'static str {\n",
         "        match self {\n",
@@ -102,6 +103,8 @@ def main(dst):
     out += [f"    ({u(a)}, {u(b)}, Script::{name}),\n" for a, b, name in scripts]
     out += ["];\n\n", "/// `\\p{Mn}`.\n", "pub const NONSPACING_MARKS: &[(char, char)] = &[\n"]
     out += [f"    ({u(a)}, {u(b)}),\n" for a, b in marks]
+    out += ["];\n\n", "/// `\\p{Cf}`.\n", "pub const FORMAT_CHARS: &[(char, char)] = &[\n"]
+    out += [f"    ({u(a)}, {u(b)}),\n" for a, b in ranges(r"\p{Cf}")]
     out += ["];\n"]
     with open(dst, "w") as f:
         f.write("".join(out))

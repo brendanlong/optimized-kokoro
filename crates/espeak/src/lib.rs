@@ -3,7 +3,7 @@
 //! - [`EspeakFallback`] reads English words missing from misaki's lexicons;
 //! - [`EspeakG2P`] reads whole segments of es, fr-fr, hi, it, pt-br, and the runs of other scripts
 //!   the English pipelines hand to espeak (kokoro's `foreign.py`: ar, el, he, hi, ko and ru; here
-//!   also the languages espeak switches to for other alphabets, [`alphabet_language`]).
+//!   also the languages espeak switches to for other alphabets, [`alphabet_languages`]).
 //!
 //! Both match the deployed pipeline, which passes no `version` to either, except that the fallback
 //! drops espeak's language-switch flags as `EspeakG2P` does (`docs/divergences.md`).
@@ -15,7 +15,7 @@ use phonemizer::{Backend, py_strip};
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
-pub use kokoro_espeak_ng::{EspeakData, Error, Result, alphabet_language, default_data_dir};
+pub use kokoro_espeak_ng::{EspeakData, Error, Result, alphabet_languages, default_data_dir};
 
 /// The data in [`default_data_dir`], loaded once per process.
 pub fn default_data() -> Result<Arc<EspeakData>> {

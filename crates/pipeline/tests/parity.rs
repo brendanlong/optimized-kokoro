@@ -38,13 +38,17 @@ fn has_language_flag(record: &Record) -> bool {
 }
 
 struct Out {
-    text: String,
     phonemes: String,
     whitespace: bool,
 }
 
+fn starts_word(phonemes: Option<&str>) -> bool {
+    phonemes.and_then(|p| p.chars().next()).is_some_and(char::is_alphabetic)
+}
+
 /// The reference call's phonemes with each Chinese or Japanese run (runs of one language with
-/// only spaces between them counting as one) read as `placeholder(language)`.
+/// only spaces between them counting as one) read as `placeholder(language)`, kept apart from a
+/// word right against it.
 fn with_placeholders(call: &Call, placeholder: impl Fn(&str) -> Vec<String>) -> String {
     let mut runs = call.foreign.iter().filter(|(_, l, _)| l == "zh" || l == "ja").peekable();
     let mut out: Vec<Out> = Vec::new();
@@ -55,7 +59,7 @@ fn with_placeholders(call: &Call, placeholder: impl Fn(&str) -> Vec<String>) -> 
         };
         if !starts_run(token, runs.peek()) {
             let phonemes = token.phonemes.clone().unwrap_or_default();
-            out.push(Out { text: token.text.clone(), phonemes, whitespace: !token.whitespace.is_empty() });
+            out.push(Out { phonemes, whitespace: !token.whitespace.is_empty() });
             continue;
         }
         let language = runs.peek().unwrap().1.clone();
@@ -76,9 +80,9 @@ fn with_placeholders(call: &Call, placeholder: impl Fn(&str) -> Vec<String>) -> 
                 first = tokens.next();
             }
         }
-        let next = tokens.peek().and_then(|t| t.text.chars().next());
+        let next = tokens.peek().and_then(|t| t.phonemes.as_deref());
         if let Some(previous) = out.last_mut()
-            && previous.text.ends_with(char::is_alphanumeric)
+            && previous.phonemes.ends_with(char::is_alphabetic)
         {
             previous.whitespace = true;
         }
@@ -88,9 +92,9 @@ fn with_placeholders(call: &Call, placeholder: impl Fn(&str) -> Vec<String>) -> 
             let whitespace = if i + 1 < n {
                 true
             } else {
-                !whitespace.is_empty() || next.is_some_and(char::is_alphanumeric)
+                !whitespace.is_empty() || starts_word(next)
             };
-            out.push(Out { text: String::new(), phonemes, whitespace });
+            out.push(Out { phonemes, whitespace });
         }
     }
     let joined: String = out.iter().map(|o| format!("{}{}", o.phonemes, if o.whitespace { " " } else { "" })).collect();
