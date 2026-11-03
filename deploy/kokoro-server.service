@@ -1,0 +1,22 @@
+# The Rust front (kokoro-server), installed by deploy/deploy.sh. It reconnects to the worker by
+# itself and answers /health with 503 until the worker is up.
+[Unit]
+# Give up (and show as failed) after 5 failed starts in 10 minutes rather than looping forever.
+StartLimitIntervalSec=600
+StartLimitBurst=5
+Description=optimized-kokoro HTTP server
+Wants=kokoro-worker.service
+After=kokoro-worker.service
+
+[Service]
+EnvironmentFile=%h/.local/share/optimized-kokoro/server.env
+ExecStart=%h/.local/share/optimized-kokoro/bin/kokoro-server --config %h/.local/share/optimized-kokoro/server.toml
+Environment=RUST_LOG=info
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+# max_connections (default 4096) needs about one file descriptor per connection.
+LimitNOFILE=8192
+
+[Install]
+WantedBy=default.target
