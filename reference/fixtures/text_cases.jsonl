@@ -1,0 +1,364 @@
+{"kind": "normalize", "id": "normalize-0-default", "text": "Visit https://www.example.com/path/to/page?query=1&b=2#frag now.", "options": "default"}
+{"kind": "normalize", "id": "normalize-0-all", "text": "Visit https://www.example.com/path/to/page?query=1&b=2#frag now.", "options": "all"}
+{"kind": "normalize", "id": "normalize-0-none", "text": "Visit https://www.example.com/path/to/page?query=1&b=2#frag now.", "options": "none"}
+{"kind": "normalize", "id": "normalize-0-off", "text": "Visit https://www.example.com/path/to/page?query=1&b=2#frag now.", "options": "off"}
+{"kind": "normalize", "id": "normalize-1-default", "text": "Go to http://localhost:8080/api/v1 or HTTP://EXAMPLE.ORG.", "options": "default"}
+{"kind": "normalize", "id": "normalize-1-all", "text": "Go to http://localhost:8080/api/v1 or HTTP://EXAMPLE.ORG.", "options": "all"}
+{"kind": "normalize", "id": "normalize-1-none", "text": "Go to http://localhost:8080/api/v1 or HTTP://EXAMPLE.ORG.", "options": "none"}
+{"kind": "normalize", "id": "normalize-1-off", "text": "Go to http://localhost:8080/api/v1 or HTTP://EXAMPLE.ORG.", "options": "off"}
+{"kind": "normalize", "id": "normalize-2-default", "text": "See example.co.uk, github.io and foo-bar_baz.net/x_y.", "options": "default"}
+{"kind": "normalize", "id": "normalize-2-all", "text": "See example.co.uk, github.io and foo-bar_baz.net/x_y.", "options": "all"}
+{"kind": "normalize", "id": "normalize-2-none", "text": "See example.co.uk, github.io and foo-bar_baz.net/x_y.", "options": "none"}
+{"kind": "normalize", "id": "normalize-2-off", "text": "See example.co.uk, github.io and foo-bar_baz.net/x_y.", "options": "off"}
+{"kind": "normalize", "id": "normalize-3-default", "text": "Server at 192.168.1.254:3000/status is down.", "options": "default"}
+{"kind": "normalize", "id": "normalize-3-all", "text": "Server at 192.168.1.254:3000/status is down.", "options": "all"}
+{"kind": "normalize", "id": "normalize-3-none", "text": "Server at 192.168.1.254:3000/status is down.", "options": "none"}
+{"kind": "normalize", "id": "normalize-3-off", "text": "Server at 192.168.1.254:3000/status is down.", "options": "off"}
+{"kind": "normalize", "id": "normalize-4-default", "text": "The file is at www.site.info/a%20b=c.", "options": "default"}
+{"kind": "normalize", "id": "normalize-4-all", "text": "The file is at www.site.info/a%20b=c.", "options": "all"}
+{"kind": "normalize", "id": "normalize-4-none", "text": "The file is at www.site.info/a%20b=c.", "options": "none"}
+{"kind": "normalize", "id": "normalize-4-off", "text": "The file is at www.site.info/a%20b=c.", "options": "off"}
+{"kind": "normalize", "id": "normalize-5-default", "text": "Email me: john.smith+news@mail.example.com, or JANE@EXAMPLE.ORG.", "options": "default"}
+{"kind": "normalize", "id": "normalize-5-all", "text": "Email me: john.smith+news@mail.example.com, or JANE@EXAMPLE.ORG.", "options": "all"}
+{"kind": "normalize", "id": "normalize-5-none", "text": "Email me: john.smith+news@mail.example.com, or JANE@EXAMPLE.ORG.", "options": "none"}
+{"kind": "normalize", "id": "normalize-5-off", "text": "Email me: john.smith+news@mail.example.com, or JANE@EXAMPLE.ORG.", "options": "off"}
+{"kind": "normalize", "id": "normalize-6-default", "text": "Contact a@b.co or x.y@z.museum today.", "options": "default"}
+{"kind": "normalize", "id": "normalize-6-all", "text": "Contact a@b.co or x.y@z.museum today.", "options": "all"}
+{"kind": "normalize", "id": "normalize-6-none", "text": "Contact a@b.co or x.y@z.museum today.", "options": "none"}
+{"kind": "normalize", "id": "normalize-6-off", "text": "Contact a@b.co or x.y@z.museum today.", "options": "off"}
+{"kind": "normalize", "id": "normalize-7-default", "text": "An email-like thing: user@localhost isn't one.", "options": "default"}
+{"kind": "normalize", "id": "normalize-7-all", "text": "An email-like thing: user@localhost isn't one.", "options": "all"}
+{"kind": "normalize", "id": "normalize-7-none", "text": "An email-like thing: user@localhost isn't one.", "options": "none"}
+{"kind": "normalize", "id": "normalize-7-off", "text": "An email-like thing: user@localhost isn't one.", "options": "off"}
+{"kind": "normalize", "id": "normalize-8-default", "text": "Version 1.2.3 of numpy.io came out.", "options": "default"}
+{"kind": "normalize", "id": "normalize-8-all", "text": "Version 1.2.3 of numpy.io came out.", "options": "all"}
+{"kind": "normalize", "id": "normalize-8-none", "text": "Version 1.2.3 of numpy.io came out.", "options": "none"}
+{"kind": "normalize", "id": "normalize-8-off", "text": "Version 1.2.3 of numpy.io came out.", "options": "off"}
+{"kind": "normalize", "id": "normalize-9-default", "text": "Trailing dot www.example.com. Then more.", "options": "default"}
+{"kind": "normalize", "id": "normalize-9-all", "text": "Trailing dot www.example.com. Then more.", "options": "all"}
+{"kind": "normalize", "id": "normalize-9-none", "text": "Trailing dot www.example.com. Then more.", "options": "none"}
+{"kind": "normalize", "id": "normalize-9-off", "text": "Trailing dot www.example.com. Then more.", "options": "off"}
+{"kind": "normalize", "id": "normalize-10-default", "text": "Ports: example.com:443/ and example.com:80", "options": "default"}
+{"kind": "normalize", "id": "normalize-10-all", "text": "Ports: example.com:443/ and example.com:80", "options": "all"}
+{"kind": "normalize", "id": "normalize-10-none", "text": "Ports: example.com:443/ and example.com:80", "options": "none"}
+{"kind": "normalize", "id": "normalize-10-off", "text": "Ports: example.com:443/ and example.com:80", "options": "off"}
+{"kind": "normalize", "id": "normalize-11-default", "text": "Weird: https://example.com:8080?x=1:2", "options": "default"}
+{"kind": "normalize", "id": "normalize-11-all", "text": "Weird: https://example.com:8080?x=1:2", "options": "all"}
+{"kind": "normalize", "id": "normalize-11-none", "text": "Weird: https://example.com:8080?x=1:2", "options": "none"}
+{"kind": "normalize", "id": "normalize-11-off", "text": "Weird: https://example.com:8080?x=1:2", "options": "off"}
+{"kind": "normalize", "id": "normalize-12-default", "text": "A long domain aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com here.", "options": "default"}
+{"kind": "normalize", "id": "normalize-12-all", "text": "A long domain aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com here.", "options": "all"}
+{"kind": "normalize", "id": "normalize-12-none", "text": "A long domain aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com here.", "options": "none"}
+{"kind": "normalize", "id": "normalize-12-off", "text": "A long domain aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com here.", "options": "off"}
+{"kind": "normalize", "id": "normalize-13-default", "text": "Call (555) 123-4567 or 555.123.4567 or +44 20 7946 0958.", "options": "default"}
+{"kind": "normalize", "id": "normalize-13-all", "text": "Call (555) 123-4567 or 555.123.4567 or +44 20 7946 0958.", "options": "all"}
+{"kind": "normalize", "id": "normalize-13-none", "text": "Call (555) 123-4567 or 555.123.4567 or +44 20 7946 0958.", "options": "none"}
+{"kind": "normalize", "id": "normalize-13-off", "text": "Call (555) 123-4567 or 555.123.4567 or +44 20 7946 0958.", "options": "off"}
+{"kind": "normalize", "id": "normalize-14-default", "text": "Dial 1-800-555-0199 or +1 (800) 555 0199.", "options": "default"}
+{"kind": "normalize", "id": "normalize-14-all", "text": "Dial 1-800-555-0199 or +1 (800) 555 0199.", "options": "all"}
+{"kind": "normalize", "id": "normalize-14-none", "text": "Dial 1-800-555-0199 or +1 (800) 555 0199.", "options": "none"}
+{"kind": "normalize", "id": "normalize-14-off", "text": "Dial 1-800-555-0199 or +1 (800) 555 0199.", "options": "off"}
+{"kind": "normalize", "id": "normalize-15-default", "text": "Numbers: 123 456 7890 and 12 345 678 9012.", "options": "default"}
+{"kind": "normalize", "id": "normalize-15-all", "text": "Numbers: 123 456 7890 and 12 345 678 9012.", "options": "all"}
+{"kind": "normalize", "id": "normalize-15-none", "text": "Numbers: 123 456 7890 and 12 345 678 9012.", "options": "none"}
+{"kind": "normalize", "id": "normalize-15-off", "text": "Numbers: 123 456 7890 and 12 345 678 9012.", "options": "off"}
+{"kind": "normalize", "id": "normalize-16-default", "text": "Arabic digits: ٥٥٥-١٢٣-٤٥٦٧.", "options": "default"}
+{"kind": "normalize", "id": "normalize-16-all", "text": "Arabic digits: ٥٥٥-١٢٣-٤٥٦٧.", "options": "all"}
+{"kind": "normalize", "id": "normalize-16-none", "text": "Arabic digits: ٥٥٥-١٢٣-٤٥٦٧.", "options": "none"}
+{"kind": "normalize", "id": "normalize-16-off", "text": "Arabic digits: ٥٥٥-١٢٣-٤٥٦٧.", "options": "off"}
+{"kind": "normalize", "id": "normalize-17-default", "text": "It weighs 5kg and is 10 cm long, runs at 3.5 GHz with 16GB RAM.", "options": "default"}
+{"kind": "normalize", "id": "normalize-17-all", "text": "It weighs 5kg and is 10 cm long, runs at 3.5 GHz with 16GB RAM.", "options": "all"}
+{"kind": "normalize", "id": "normalize-17-none", "text": "It weighs 5kg and is 10 cm long, runs at 3.5 GHz with 16GB RAM.", "options": "none"}
+{"kind": "normalize", "id": "normalize-17-off", "text": "It weighs 5kg and is 10 cm long, runs at 3.5 GHz with 16GB RAM.", "options": "off"}
+{"kind": "normalize", "id": "normalize-18-default", "text": "Speed 60 mph, 100 km/h, 9.8 m/s, -40 °C, 98.6°F, 300 K.", "options": "default"}
+{"kind": "normalize", "id": "normalize-18-all", "text": "Speed 60 mph, 100 km/h, 9.8 m/s, -40 °C, 98.6°F, 300 K.", "options": "all"}
+{"kind": "normalize", "id": "normalize-18-none", "text": "Speed 60 mph, 100 km/h, 9.8 m/s, -40 °C, 98.6°F, 300 K.", "options": "none"}
+{"kind": "normalize", "id": "normalize-18-off", "text": "Speed 60 mph, 100 km/h, 9.8 m/s, -40 °C, 98.6°F, 300 K.", "options": "off"}
+{"kind": "normalize", "id": "normalize-19-default", "text": "Use 1 m, 0 m, 1.0 m, 1,5 s, 1,000 m, +3 V and 2 MΩ, 4 kΩ, 5 Ω.", "options": "default"}
+{"kind": "normalize", "id": "normalize-19-all", "text": "Use 1 m, 0 m, 1.0 m, 1,5 s, 1,000 m, +3 V and 2 MΩ, 4 kΩ, 5 Ω.", "options": "all"}
+{"kind": "normalize", "id": "normalize-19-none", "text": "Use 1 m, 0 m, 1.0 m, 1,5 s, 1,000 m, +3 V and 2 MΩ, 4 kΩ, 5 Ω.", "options": "none"}
+{"kind": "normalize", "id": "normalize-19-off", "text": "Use 1 m, 0 m, 1.0 m, 1,5 s, 1,000 m, +3 V and 2 MΩ, 4 kΩ, 5 Ω.", "options": "off"}
+{"kind": "normalize", "id": "normalize-20-default", "text": "Files of 1 B, 1 b, 2 KB, 3 kb, 4 Mbps, 5 MBps, 6 TB and 7 pb.", "options": "default"}
+{"kind": "normalize", "id": "normalize-20-all", "text": "Files of 1 B, 1 b, 2 KB, 3 kb, 4 Mbps, 5 MBps, 6 TB and 7 pb.", "options": "all"}
+{"kind": "normalize", "id": "normalize-20-none", "text": "Files of 1 B, 1 b, 2 KB, 3 kb, 4 Mbps, 5 MBps, 6 TB and 7 pb.", "options": "none"}
+{"kind": "normalize", "id": "normalize-20-off", "text": "Files of 1 B, 1 b, 2 KB, 3 kb, 4 Mbps, 5 MBps, 6 TB and 7 pb.", "options": "off"}
+{"kind": "normalize", "id": "normalize-21-default", "text": "A 5 µF and a 6 μF capacitor, 7 nF, 8 pF, 9 mi/h, 10 ft/s.", "options": "default"}
+{"kind": "normalize", "id": "normalize-21-all", "text": "A 5 µF and a 6 μF capacitor, 7 nF, 8 pF, 9 mi/h, 10 ft/s.", "options": "all"}
+{"kind": "normalize", "id": "normalize-21-none", "text": "A 5 µF and a 6 μF capacitor, 7 nF, 8 pF, 9 mi/h, 10 ft/s.", "options": "none"}
+{"kind": "normalize", "id": "normalize-21-off", "text": "A 5 µF and a 6 μF capacitor, 7 nF, 8 pF, 9 mi/h, 10 ft/s.", "options": "off"}
+{"kind": "normalize", "id": "normalize-22-default", "text": "Times: 5 min, 2 h, 30 s, 100 ms; 5mins; 3hrs.", "options": "default"}
+{"kind": "normalize", "id": "normalize-22-all", "text": "Times: 5 min, 2 h, 30 s, 100 ms; 5mins; 3hrs.", "options": "all"}
+{"kind": "normalize", "id": "normalize-22-none", "text": "Times: 5 min, 2 h, 30 s, 100 ms; 5mins; 3hrs.", "options": "none"}
+{"kind": "normalize", "id": "normalize-22-off", "text": "Times: 5 min, 2 h, 30 s, 100 ms; 5mins; 3hrs.", "options": "off"}
+{"kind": "normalize", "id": "normalize-23-default", "text": "Glued: x5km, 5kmx, 5 km., 5.5.5 km, 1,234.5 kg.", "options": "default"}
+{"kind": "normalize", "id": "normalize-23-all", "text": "Glued: x5km, 5kmx, 5 km., 5.5.5 km, 1,234.5 kg.", "options": "all"}
+{"kind": "normalize", "id": "normalize-23-none", "text": "Glued: x5km, 5kmx, 5 km., 5.5.5 km, 1,234.5 kg.", "options": "none"}
+{"kind": "normalize", "id": "normalize-23-off", "text": "Glued: x5km, 5kmx, 5 km., 5.5.5 km, 1,234.5 kg.", "options": "off"}
+{"kind": "normalize", "id": "normalize-24-default", "text": "It cost $5, $5.50, $0.99, $1, $1.01, $1,000,000 and $2.5 million.", "options": "default"}
+{"kind": "normalize", "id": "normalize-24-all", "text": "It cost $5, $5.50, $0.99, $1, $1.01, $1,000,000 and $2.5 million.", "options": "all"}
+{"kind": "normalize", "id": "normalize-24-none", "text": "It cost $5, $5.50, $0.99, $1, $1.01, $1,000,000 and $2.5 million.", "options": "none"}
+{"kind": "normalize", "id": "normalize-24-off", "text": "It cost $5, $5.50, $0.99, $1, $1.01, $1,000,000 and $2.5 million.", "options": "off"}
+{"kind": "normalize", "id": "normalize-25-default", "text": "Prices: £3.20, €1.05 million, $5k, $3b, $7t, $1.5 trillion, -$5.", "options": "default"}
+{"kind": "normalize", "id": "normalize-25-all", "text": "Prices: £3.20, €1.05 million, $5k, $3b, $7t, $1.5 trillion, -$5.", "options": "all"}
+{"kind": "normalize", "id": "normalize-25-none", "text": "Prices: £3.20, €1.05 million, $5k, $3b, $7t, $1.5 trillion, -$5.", "options": "none"}
+{"kind": "normalize", "id": "normalize-25-off", "text": "Prices: £3.20, €1.05 million, $5k, $3b, $7t, $1.5 trillion, -$5.", "options": "off"}
+{"kind": "normalize", "id": "normalize-26-default", "text": "Big: $99999999999999999999999 and $9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999.", "options": "default"}
+{"kind": "normalize", "id": "normalize-26-all", "text": "Big: $99999999999999999999999 and $9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999.", "options": "all"}
+{"kind": "normalize", "id": "normalize-26-none", "text": "Big: $99999999999999999999999 and $9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999.", "options": "none"}
+{"kind": "normalize", "id": "normalize-26-off", "text": "Big: $99999999999999999999999 and $9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999.", "options": "off"}
+{"kind": "normalize", "id": "normalize-27-default", "text": "Tiny: $0.00001 and $0.1 and $.5 and $5.", "options": "default"}
+{"kind": "normalize", "id": "normalize-27-all", "text": "Tiny: $0.00001 and $0.1 and $.5 and $5.", "options": "all"}
+{"kind": "normalize", "id": "normalize-27-none", "text": "Tiny: $0.00001 and $0.1 and $.5 and $5.", "options": "none"}
+{"kind": "normalize", "id": "normalize-27-off", "text": "Tiny: $0.00001 and $0.1 and $.5 and $5.", "options": "off"}
+{"kind": "normalize", "id": "normalize-28-default", "text": "Glued money: $5abc, $5.5.5, $5,5, ab$5.", "options": "default"}
+{"kind": "normalize", "id": "normalize-28-all", "text": "Glued money: $5abc, $5.5.5, $5,5, ab$5.", "options": "all"}
+{"kind": "normalize", "id": "normalize-28-none", "text": "Glued money: $5abc, $5.5.5, $5,5, ab$5.", "options": "none"}
+{"kind": "normalize", "id": "normalize-28-off", "text": "Glued money: $5abc, $5.5.5, $5,5, ab$5.", "options": "off"}
+{"kind": "normalize", "id": "normalize-29-default", "text": "The years 1984, 2000, 2005, 2010, 1066, 1500, 1501, 9999 and 10000.", "options": "default"}
+{"kind": "normalize", "id": "normalize-29-all", "text": "The years 1984, 2000, 2005, 2010, 1066, 1500, 1501, 9999 and 10000.", "options": "all"}
+{"kind": "normalize", "id": "normalize-29-none", "text": "The years 1984, 2000, 2005, 2010, 1066, 1500, 1501, 9999 and 10000.", "options": "none"}
+{"kind": "normalize", "id": "normalize-29-off", "text": "The years 1984, 2000, 2005, 2010, 1066, 1500, 1501, 9999 and 10000.", "options": "off"}
+{"kind": "normalize", "id": "normalize-30-default", "text": "Ranges: 1-2, 10-20-30, pages 100-150.", "options": "default"}
+{"kind": "normalize", "id": "normalize-30-all", "text": "Ranges: 1-2, 10-20-30, pages 100-150.", "options": "all"}
+{"kind": "normalize", "id": "normalize-30-none", "text": "Ranges: 1-2, 10-20-30, pages 100-150.", "options": "none"}
+{"kind": "normalize", "id": "normalize-30-off", "text": "Ranges: 1-2, 10-20-30, pages 100-150.", "options": "off"}
+{"kind": "normalize", "id": "normalize-31-default", "text": "Decimals: 3.14, 0.001, .5, 1.50, 100.0, 2.0000001.", "options": "default"}
+{"kind": "normalize", "id": "normalize-31-all", "text": "Decimals: 3.14, 0.001, .5, 1.50, 100.0, 2.0000001.", "options": "all"}
+{"kind": "normalize", "id": "normalize-31-none", "text": "Decimals: 3.14, 0.001, .5, 1.50, 100.0, 2.0000001.", "options": "none"}
+{"kind": "normalize", "id": "normalize-31-off", "text": "Decimals: 3.14, 0.001, .5, 1.50, 100.0, 2.0000001.", "options": "off"}
+{"kind": "normalize", "id": "normalize-32-default", "text": "Negative: -5, -0.5, -1,000, x-5.", "options": "default"}
+{"kind": "normalize", "id": "normalize-32-all", "text": "Negative: -5, -0.5, -1,000, x-5.", "options": "all"}
+{"kind": "normalize", "id": "normalize-32-none", "text": "Negative: -5, -0.5, -1,000, x-5.", "options": "none"}
+{"kind": "normalize", "id": "normalize-32-off", "text": "Negative: -5, -0.5, -1,000, x-5.", "options": "off"}
+{"kind": "normalize", "id": "normalize-33-default", "text": "Commas: 1,000, 1,23, 12,345,678, 1,2,3, 1,000,00.", "options": "default"}
+{"kind": "normalize", "id": "normalize-33-all", "text": "Commas: 1,000, 1,23, 12,345,678, 1,2,3, 1,000,00.", "options": "all"}
+{"kind": "normalize", "id": "normalize-33-none", "text": "Commas: 1,000, 1,23, 12,345,678, 1,2,3, 1,000,00.", "options": "none"}
+{"kind": "normalize", "id": "normalize-33-off", "text": "Commas: 1,000, 1,23, 12,345,678, 1,2,3, 1,000,00.", "options": "off"}
+{"kind": "normalize", "id": "normalize-34-default", "text": "Multipliers: 5k, 5 thousand, 3m, 2b, 7 million, 1.5 billion, 4 quadrillion, 5km.", "options": "default"}
+{"kind": "normalize", "id": "normalize-34-all", "text": "Multipliers: 5k, 5 thousand, 3m, 2b, 7 million, 1.5 billion, 4 quadrillion, 5km.", "options": "all"}
+{"kind": "normalize", "id": "normalize-34-none", "text": "Multipliers: 5k, 5 thousand, 3m, 2b, 7 million, 1.5 billion, 4 quadrillion, 5km.", "options": "none"}
+{"kind": "normalize", "id": "normalize-34-off", "text": "Multipliers: 5k, 5 thousand, 3m, 2b, 7 million, 1.5 billion, 4 quadrillion, 5km.", "options": "off"}
+{"kind": "normalize", "id": "normalize-35-default", "text": "Huge: 123456789012345678901234567890123456 and 1234567890123456789012345678901234567.", "options": "default"}
+{"kind": "normalize", "id": "normalize-35-all", "text": "Huge: 123456789012345678901234567890123456 and 1234567890123456789012345678901234567.", "options": "all"}
+{"kind": "normalize", "id": "normalize-35-none", "text": "Huge: 123456789012345678901234567890123456 and 1234567890123456789012345678901234567.", "options": "none"}
+{"kind": "normalize", "id": "normalize-35-off", "text": "Huge: 123456789012345678901234567890123456 and 1234567890123456789012345678901234567.", "options": "off"}
+{"kind": "normalize", "id": "normalize-36-default", "text": "Floats: 12345678901234567.5, 0.1234567890123456789, 1e5.", "options": "default"}
+{"kind": "normalize", "id": "normalize-36-all", "text": "Floats: 12345678901234567.5, 0.1234567890123456789, 1e5.", "options": "all"}
+{"kind": "normalize", "id": "normalize-36-none", "text": "Floats: 12345678901234567.5, 0.1234567890123456789, 1e5.", "options": "none"}
+{"kind": "normalize", "id": "normalize-36-off", "text": "Floats: 12345678901234567.5, 0.1234567890123456789, 1e5.", "options": "off"}
+{"kind": "normalize", "id": "normalize-37-default", "text": "Ordinals stay: 1st 2nd 3rd 4th 21st 101st.", "options": "default"}
+{"kind": "normalize", "id": "normalize-37-all", "text": "Ordinals stay: 1st 2nd 3rd 4th 21st 101st.", "options": "all"}
+{"kind": "normalize", "id": "normalize-37-none", "text": "Ordinals stay: 1st 2nd 3rd 4th 21st 101st.", "options": "none"}
+{"kind": "normalize", "id": "normalize-37-off", "text": "Ordinals stay: 1st 2nd 3rd 4th 21st 101st.", "options": "off"}
+{"kind": "normalize", "id": "normalize-38-default", "text": "Plural years: the 1990s and 80s and 1990S.", "options": "default"}
+{"kind": "normalize", "id": "normalize-38-all", "text": "Plural years: the 1990s and 80s and 1990S.", "options": "all"}
+{"kind": "normalize", "id": "normalize-38-none", "text": "Plural years: the 1990s and 80s and 1990S.", "options": "none"}
+{"kind": "normalize", "id": "normalize-38-off", "text": "Plural years: the 1990s and 80s and 1990S.", "options": "off"}
+{"kind": "normalize", "id": "normalize-39-default", "text": "Model 747, B12, X-15, F-16s, COVID-19, 4x4, 3D, H2O.", "options": "default"}
+{"kind": "normalize", "id": "normalize-39-all", "text": "Model 747, B12, X-15, F-16s, COVID-19, 4x4, 3D, H2O.", "options": "all"}
+{"kind": "normalize", "id": "normalize-39-none", "text": "Model 747, B12, X-15, F-16s, COVID-19, 4x4, 3D, H2O.", "options": "none"}
+{"kind": "normalize", "id": "normalize-39-off", "text": "Model 747, B12, X-15, F-16s, COVID-19, 4x4, 3D, H2O.", "options": "off"}
+{"kind": "normalize", "id": "normalize-40-default", "text": "Unicode: ٣ apples, ١٢٣٤ items, １２３ things, ۱۹۸۴.", "options": "default"}
+{"kind": "normalize", "id": "normalize-40-all", "text": "Unicode: ٣ apples, ١٢٣٤ items, １２３ things, ۱۹۸۴.", "options": "all"}
+{"kind": "normalize", "id": "normalize-40-none", "text": "Unicode: ٣ apples, ١٢٣٤ items, １２３ things, ۱۹۸۴.", "options": "none"}
+{"kind": "normalize", "id": "normalize-40-off", "text": "Unicode: ٣ apples, ١٢٣٤ items, １２３ things, ۱۹۸۴.", "options": "off"}
+{"kind": "normalize", "id": "normalize-41-default", "text": "Versions: 2.0.1, v3.10.2, 1.2.3.4.5, 01.02.03.", "options": "default"}
+{"kind": "normalize", "id": "normalize-41-all", "text": "Versions: 2.0.1, v3.10.2, 1.2.3.4.5, 01.02.03.", "options": "all"}
+{"kind": "normalize", "id": "normalize-41-none", "text": "Versions: 2.0.1, v3.10.2, 1.2.3.4.5, 01.02.03.", "options": "none"}
+{"kind": "normalize", "id": "normalize-41-off", "text": "Versions: 2.0.1, v3.10.2, 1.2.3.4.5, 01.02.03.", "options": "off"}
+{"kind": "normalize", "id": "normalize-42-default", "text": "Mixed: 5.5.5.5, 1.2.3-beta, 3.2.", "options": "default"}
+{"kind": "normalize", "id": "normalize-42-all", "text": "Mixed: 5.5.5.5, 1.2.3-beta, 3.2.", "options": "all"}
+{"kind": "normalize", "id": "normalize-42-none", "text": "Mixed: 5.5.5.5, 1.2.3-beta, 3.2.", "options": "none"}
+{"kind": "normalize", "id": "normalize-42-off", "text": "Mixed: 5.5.5.5, 1.2.3-beta, 3.2.", "options": "off"}
+{"kind": "normalize", "id": "normalize-43-default", "text": "Meet at 9:30am, 10:00, 12:05 PM, 3:00 pm and 23:59:59.", "options": "default"}
+{"kind": "normalize", "id": "normalize-43-all", "text": "Meet at 9:30am, 10:00, 12:05 PM, 3:00 pm and 23:59:59.", "options": "all"}
+{"kind": "normalize", "id": "normalize-43-none", "text": "Meet at 9:30am, 10:00, 12:05 PM, 3:00 pm and 23:59:59.", "options": "none"}
+{"kind": "normalize", "id": "normalize-43-off", "text": "Meet at 9:30am, 10:00, 12:05 PM, 3:00 pm and 23:59:59.", "options": "off"}
+{"kind": "normalize", "id": "normalize-44-default", "text": "Times 1:01:01, 0:00, 7:7, 11 : 30, 5 :45 am.", "options": "default"}
+{"kind": "normalize", "id": "normalize-44-all", "text": "Times 1:01:01, 0:00, 7:7, 11 : 30, 5 :45 am.", "options": "all"}
+{"kind": "normalize", "id": "normalize-44-none", "text": "Times 1:01:01, 0:00, 7:7, 11 : 30, 5 :45 am.", "options": "none"}
+{"kind": "normalize", "id": "normalize-44-off", "text": "Times 1:01:01, 0:00, 7:7, 11 : 30, 5 :45 am.", "options": "off"}
+{"kind": "normalize", "id": "normalize-45-default", "text": "Ratio 3:2 and 10:15:20 and 123:45.", "options": "default"}
+{"kind": "normalize", "id": "normalize-45-all", "text": "Ratio 3:2 and 10:15:20 and 123:45.", "options": "all"}
+{"kind": "normalize", "id": "normalize-45-none", "text": "Ratio 3:2 and 10:15:20 and 123:45.", "options": "none"}
+{"kind": "normalize", "id": "normalize-45-off", "text": "Ratio 3:2 and 10:15:20 and 123:45.", "options": "off"}
+{"kind": "normalize", "id": "normalize-46-default", "text": "THE QUICK BROWN FOX JUMPS. NASA AND THE FBI. HELLO.", "options": "default"}
+{"kind": "normalize", "id": "normalize-46-all", "text": "THE QUICK BROWN FOX JUMPS. NASA AND THE FBI. HELLO.", "options": "all"}
+{"kind": "normalize", "id": "normalize-46-none", "text": "THE QUICK BROWN FOX JUMPS. NASA AND THE FBI. HELLO.", "options": "none"}
+{"kind": "normalize", "id": "normalize-46-off", "text": "THE QUICK BROWN FOX JUMPS. NASA AND THE FBI. HELLO.", "options": "off"}
+{"kind": "normalize", "id": "normalize-47-default", "text": "World War II and Louis XIV and MCMLXXXIV ARE ROMAN.", "options": "default"}
+{"kind": "normalize", "id": "normalize-47-all", "text": "World War II and Louis XIV and MCMLXXXIV ARE ROMAN.", "options": "all"}
+{"kind": "normalize", "id": "normalize-47-none", "text": "World War II and Louis XIV and MCMLXXXIV ARE ROMAN.", "options": "none"}
+{"kind": "normalize", "id": "normalize-47-off", "text": "World War II and Louis XIV and MCMLXXXIV ARE ROMAN.", "options": "off"}
+{"kind": "normalize", "id": "normalize-48-default", "text": "BREAKING NEWS: SCIENTISTS FIND WATER ON MARS-2 TODAY", "options": "default"}
+{"kind": "normalize", "id": "normalize-48-all", "text": "BREAKING NEWS: SCIENTISTS FIND WATER ON MARS-2 TODAY", "options": "all"}
+{"kind": "normalize", "id": "normalize-48-none", "text": "BREAKING NEWS: SCIENTISTS FIND WATER ON MARS-2 TODAY", "options": "none"}
+{"kind": "normalize", "id": "normalize-48-off", "text": "BREAKING NEWS: SCIENTISTS FIND WATER ON MARS-2 TODAY", "options": "off"}
+{"kind": "normalize", "id": "normalize-49-default", "text": "An ACRONYM-HEAVY TEXT, LIKE NVIDIA'S GPUs, IS HARD.", "options": "default"}
+{"kind": "normalize", "id": "normalize-49-all", "text": "An ACRONYM-HEAVY TEXT, LIKE NVIDIA'S GPUs, IS HARD.", "options": "all"}
+{"kind": "normalize", "id": "normalize-49-none", "text": "An ACRONYM-HEAVY TEXT, LIKE NVIDIA'S GPUs, IS HARD.", "options": "none"}
+{"kind": "normalize", "id": "normalize-49-off", "text": "An ACRONYM-HEAVY TEXT, LIKE NVIDIA'S GPUs, IS HARD.", "options": "off"}
+{"kind": "normalize", "id": "normalize-50-default", "text": "Mixed CAPS here AND THERE, ok? ABCDEF ghi.", "options": "default"}
+{"kind": "normalize", "id": "normalize-50-all", "text": "Mixed CAPS here AND THERE, ok? ABCDEF ghi.", "options": "all"}
+{"kind": "normalize", "id": "normalize-50-none", "text": "Mixed CAPS here AND THERE, ok? ABCDEF ghi.", "options": "none"}
+{"kind": "normalize", "id": "normalize-50-off", "text": "Mixed CAPS here AND THERE, ok? ABCDEF ghi.", "options": "off"}
+{"kind": "normalize", "id": "normalize-51-default", "text": "UNESCO alone, and IBM alone.", "options": "default"}
+{"kind": "normalize", "id": "normalize-51-all", "text": "UNESCO alone, and IBM alone.", "options": "all"}
+{"kind": "normalize", "id": "normalize-51-none", "text": "UNESCO alone, and IBM alone.", "options": "none"}
+{"kind": "normalize", "id": "normalize-51-off", "text": "UNESCO alone, and IBM alone.", "options": "off"}
+{"kind": "normalize", "id": "normalize-52-default", "text": "How're you? What’re they? Where're we? Theyre here. Youre right. Whore? Were.", "options": "default"}
+{"kind": "normalize", "id": "normalize-52-all", "text": "How're you? What’re they? Where're we? Theyre here. Youre right. Whore? Were.", "options": "all"}
+{"kind": "normalize", "id": "normalize-52-none", "text": "How're you? What’re they? Where're we? Theyre here. Youre right. Whore? Were.", "options": "none"}
+{"kind": "normalize", "id": "normalize-52-off", "text": "How're you? What’re they? Where're we? Theyre here. Youre right. Whore? Were.", "options": "off"}
+{"kind": "normalize", "id": "normalize-53-default", "text": "Yeah, yea, YEAH, Yeah! yeahs.", "options": "default"}
+{"kind": "normalize", "id": "normalize-53-all", "text": "Yeah, yea, YEAH, Yeah! yeahs.", "options": "all"}
+{"kind": "normalize", "id": "normalize-53-none", "text": "Yeah, yea, YEAH, Yeah! yeahs.", "options": "none"}
+{"kind": "normalize", "id": "normalize-53-off", "text": "Yeah, yea, YEAH, Yeah! yeahs.", "options": "off"}
+{"kind": "normalize", "id": "normalize-54-default", "text": "Dr. Who and DR. Smith; Mr. T and MR. Jones; Ms. Lee, MS. Lee; Mrs. Doe, MRS. Doe; etc. and etc. The end.", "options": "default"}
+{"kind": "normalize", "id": "normalize-54-all", "text": "Dr. Who and DR. Smith; Mr. T and MR. Jones; Ms. Lee, MS. Lee; Mrs. Doe, MRS. Doe; etc. and etc. The end.", "options": "all"}
+{"kind": "normalize", "id": "normalize-54-none", "text": "Dr. Who and DR. Smith; Mr. T and MR. Jones; Ms. Lee, MS. Lee; Mrs. Doe, MRS. Doe; etc. and etc. The end.", "options": "none"}
+{"kind": "normalize", "id": "normalize-54-off", "text": "Dr. Who and DR. Smith; Mr. T and MR. Jones; Ms. Lee, MS. Lee; Mrs. Doe, MRS. Doe; etc. and etc. The end.", "options": "off"}
+{"kind": "normalize", "id": "normalize-55-default", "text": "dr. no, Dr.No, DR.X", "options": "default"}
+{"kind": "normalize", "id": "normalize-55-all", "text": "dr. no, Dr.No, DR.X", "options": "all"}
+{"kind": "normalize", "id": "normalize-55-none", "text": "dr. no, Dr.No, DR.X", "options": "none"}
+{"kind": "normalize", "id": "normalize-55-off", "text": "dr. no, Dr.No, DR.X", "options": "off"}
+{"kind": "normalize", "id": "normalize-56-default", "text": "A--B, A -- B, A---B, 50% off, A&B, 2+2=4, a/b, a\\b, a|b, x^2, ~5, *bold*, snake_case, #1, @home.", "options": "default"}
+{"kind": "normalize", "id": "normalize-56-all", "text": "A--B, A -- B, A---B, 50% off, A&B, 2+2=4, a/b, a\\b, a|b, x^2, ~5, *bold*, snake_case, #1, @home.", "options": "all"}
+{"kind": "normalize", "id": "normalize-56-none", "text": "A--B, A -- B, A---B, 50% off, A&B, 2+2=4, a/b, a\\b, a|b, x^2, ~5, *bold*, snake_case, #1, @home.", "options": "none"}
+{"kind": "normalize", "id": "normalize-56-off", "text": "A--B, A -- B, A---B, 50% off, A&B, 2+2=4, a/b, a\\b, a|b, x^2, ~5, *bold*, snake_case, #1, @home.", "options": "off"}
+{"kind": "normalize", "id": "normalize-57-default", "text": "Quotes: ‘single’, “double”, «guillemets», 'plain', \"plain\".", "options": "default"}
+{"kind": "normalize", "id": "normalize-57-all", "text": "Quotes: ‘single’, “double”, «guillemets», 'plain', \"plain\".", "options": "all"}
+{"kind": "normalize", "id": "normalize-57-none", "text": "Quotes: ‘single’, “double”, «guillemets», 'plain', \"plain\".", "options": "none"}
+{"kind": "normalize", "id": "normalize-57-off", "text": "Quotes: ‘single’, “double”, «guillemets», 'plain', \"plain\".", "options": "off"}
+{"kind": "normalize", "id": "normalize-58-default", "text": "CJK punct：你好，世界！好吗？是的。一、二；三", "options": "default"}
+{"kind": "normalize", "id": "normalize-58-all", "text": "CJK punct：你好，世界！好吗？是的。一、二；三", "options": "all"}
+{"kind": "normalize", "id": "normalize-58-none", "text": "CJK punct：你好，世界！好吗？是的。一、二；三", "options": "none"}
+{"kind": "normalize", "id": "normalize-58-off", "text": "CJK punct：你好，世界！好吗？是的。一、二；三", "options": "off"}
+{"kind": "normalize", "id": "normalize-59-default", "text": "Ellipsis…then, wait…… and … here…!", "options": "default"}
+{"kind": "normalize", "id": "normalize-59-all", "text": "Ellipsis…then, wait…… and … here…!", "options": "all"}
+{"kind": "normalize", "id": "normalize-59-none", "text": "Ellipsis…then, wait…… and … here…!", "options": "none"}
+{"kind": "normalize", "id": "normalize-59-off", "text": "Ellipsis…then, wait…… and … here…!", "options": "off"}
+{"kind": "normalize", "id": "normalize-60-default", "text": "Tabs\tand nbsp line sep\u001cfile sep　ideographic.", "options": "default"}
+{"kind": "normalize", "id": "normalize-60-all", "text": "Tabs\tand nbsp line sep\u001cfile sep　ideographic.", "options": "all"}
+{"kind": "normalize", "id": "normalize-60-none", "text": "Tabs\tand nbsp line sep\u001cfile sep　ideographic.", "options": "none"}
+{"kind": "normalize", "id": "normalize-60-off", "text": "Tabs\tand nbsp line sep\u001cfile sep　ideographic.", "options": "off"}
+{"kind": "normalize", "id": "normalize-61-default", "text": "Optional (s) plural: item(s) and file(s).", "options": "default"}
+{"kind": "normalize", "id": "normalize-61-all", "text": "Optional (s) plural: item(s) and file(s).", "options": "all"}
+{"kind": "normalize", "id": "normalize-61-none", "text": "Optional (s) plural: item(s) and file(s).", "options": "none"}
+{"kind": "normalize", "id": "normalize-61-off", "text": "Optional (s) plural: item(s) and file(s).", "options": "off"}
+{"kind": "normalize", "id": "normalize-62-default", "text": "Acronyms: U.S.A. and e.g. this, i.e. that, a.b.c.d.e.f.g.h.i.j.k.l.m.n done. U.K.", "options": "default"}
+{"kind": "normalize", "id": "normalize-62-all", "text": "Acronyms: U.S.A. and e.g. this, i.e. that, a.b.c.d.e.f.g.h.i.j.k.l.m.n done. U.K.", "options": "all"}
+{"kind": "normalize", "id": "normalize-62-none", "text": "Acronyms: U.S.A. and e.g. this, i.e. that, a.b.c.d.e.f.g.h.i.j.k.l.m.n done. U.K.", "options": "none"}
+{"kind": "normalize", "id": "normalize-62-off", "text": "Acronyms: U.S.A. and e.g. this, i.e. that, a.b.c.d.e.f.g.h.i.j.k.l.m.n done. U.K.", "options": "off"}
+{"kind": "normalize", "id": "normalize-63-default", "text": "P.M. A.M. p.m. at 5.", "options": "default"}
+{"kind": "normalize", "id": "normalize-63-all", "text": "P.M. A.M. p.m. at 5.", "options": "all"}
+{"kind": "normalize", "id": "normalize-63-none", "text": "P.M. A.M. p.m. at 5.", "options": "none"}
+{"kind": "normalize", "id": "normalize-63-off", "text": "P.M. A.M. p.m. at 5.", "options": "off"}
+{"kind": "normalize", "id": "normalize-64-default", "text": "İstanbul has 5İ and ıx; ſtreet 5K kelvin.", "options": "default"}
+{"kind": "normalize", "id": "normalize-64-all", "text": "İstanbul has 5İ and ıx; ſtreet 5K kelvin.", "options": "all"}
+{"kind": "normalize", "id": "normalize-64-none", "text": "İstanbul has 5İ and ıx; ſtreet 5K kelvin.", "options": "none"}
+{"kind": "normalize", "id": "normalize-64-off", "text": "İstanbul has 5İ and ıx; ſtreet 5K kelvin.", "options": "off"}
+{"kind": "normalize", "id": "normalize-65-default", "text": "Combining é 5 and ²5 and ½ and 5² and x²5.", "options": "default"}
+{"kind": "normalize", "id": "normalize-65-all", "text": "Combining é 5 and ²5 and ½ and 5² and x²5.", "options": "all"}
+{"kind": "normalize", "id": "normalize-65-none", "text": "Combining é 5 and ²5 and ½ and 5² and x²5.", "options": "none"}
+{"kind": "normalize", "id": "normalize-65-off", "text": "Combining é 5 and ²5 and ½ and 5² and x²5.", "options": "off"}
+{"kind": "normalize", "id": "normalize-66-default", "text": "Superscript ³4 and 4³, fractions ¾.", "options": "default"}
+{"kind": "normalize", "id": "normalize-66-all", "text": "Superscript ³4 and 4³, fractions ¾.", "options": "all"}
+{"kind": "normalize", "id": "normalize-66-none", "text": "Superscript ³4 and 4³, fractions ¾.", "options": "none"}
+{"kind": "normalize", "id": "normalize-66-off", "text": "Superscript ³4 and 4³, fractions ¾.", "options": "off"}
+{"kind": "normalize", "id": "normalize-67-default", "text": "Greek ΣΑΣ and final sigma ΟΔΟΣ, German STRASSE ẞ.", "options": "default"}
+{"kind": "normalize", "id": "normalize-67-all", "text": "Greek ΣΑΣ and final sigma ΟΔΟΣ, German STRASSE ẞ.", "options": "all"}
+{"kind": "normalize", "id": "normalize-67-none", "text": "Greek ΣΑΣ and final sigma ΟΔΟΣ, German STRASSE ẞ.", "options": "none"}
+{"kind": "normalize", "id": "normalize-67-off", "text": "Greek ΣΑΣ and final sigma ΟΔΟΣ, German STRASSE ẞ.", "options": "off"}
+{"kind": "normalize", "id": "normalize-68-default", "text": "[Kokoro](/kˈOkəɹO/) costs $5 and [NASA](/nˈæsə/) is BIG.", "options": "default"}
+{"kind": "normalize", "id": "normalize-68-all", "text": "[Kokoro](/kˈOkəɹO/) costs $5 and [NASA](/nˈæsə/) is BIG.", "options": "all"}
+{"kind": "normalize", "id": "normalize-68-none", "text": "[Kokoro](/kˈOkəɹO/) costs $5 and [NASA](/nˈæsə/) is BIG.", "options": "none"}
+{"kind": "normalize", "id": "normalize-68-off", "text": "[Kokoro](/kˈOkəɹO/) costs $5 and [NASA](/nˈæsə/) is BIG.", "options": "off"}
+{"kind": "normalize", "id": "normalize-69-default", "text": "Broken [annotation](/x and [x]](/y/) and [](/z/).", "options": "default"}
+{"kind": "normalize", "id": "normalize-69-all", "text": "Broken [annotation](/x and [x]](/y/) and [](/z/).", "options": "all"}
+{"kind": "normalize", "id": "normalize-69-none", "text": "Broken [annotation](/x and [x]](/y/) and [](/z/).", "options": "none"}
+{"kind": "normalize", "id": "normalize-69-off", "text": "Broken [annotation](/x and [x]](/y/) and [](/z/).", "options": "off"}
+{"kind": "normalize", "id": "normalize-70-default", "text": "Nested [a [b](/c/)](/d/) here.", "options": "default"}
+{"kind": "normalize", "id": "normalize-70-all", "text": "Nested [a [b](/c/)](/d/) here.", "options": "all"}
+{"kind": "normalize", "id": "normalize-70-none", "text": "Nested [a [b](/c/)](/d/) here.", "options": "none"}
+{"kind": "normalize", "id": "normalize-70-off", "text": "Nested [a [b](/c/)](/d/) here.", "options": "off"}
+{"kind": "normalize", "id": "normalize-71-default", "text": "First line\nsecond line\n\nNew paragraph\n\n\n  Third.\r\n\r\nFourth!\n\n\"Quoted\"\n\n)", "options": "default"}
+{"kind": "normalize", "id": "normalize-71-all", "text": "First line\nsecond line\n\nNew paragraph\n\n\n  Third.\r\n\r\nFourth!\n\n\"Quoted\"\n\n)", "options": "all"}
+{"kind": "normalize", "id": "normalize-71-none", "text": "First line\nsecond line\n\nNew paragraph\n\n\n  Third.\r\n\r\nFourth!\n\n\"Quoted\"\n\n)", "options": "none"}
+{"kind": "normalize", "id": "normalize-71-off", "text": "First line\nsecond line\n\nNew paragraph\n\n\n  Third.\r\n\r\nFourth!\n\n\"Quoted\"\n\n)", "options": "off"}
+{"kind": "normalize", "id": "normalize-72-default", "text": "Ends with colon:\n\nNext", "options": "default"}
+{"kind": "normalize", "id": "normalize-72-all", "text": "Ends with colon:\n\nNext", "options": "all"}
+{"kind": "normalize", "id": "normalize-72-none", "text": "Ends with colon:\n\nNext", "options": "none"}
+{"kind": "normalize", "id": "normalize-72-off", "text": "Ends with colon:\n\nNext", "options": "off"}
+{"kind": "normalize", "id": "normalize-73-default", "text": "Only\n \n \nspaces", "options": "default"}
+{"kind": "normalize", "id": "normalize-73-all", "text": "Only\n \n \nspaces", "options": "all"}
+{"kind": "normalize", "id": "normalize-73-none", "text": "Only\n \n \nspaces", "options": "none"}
+{"kind": "normalize", "id": "normalize-73-off", "text": "Only\n \n \nspaces", "options": "off"}
+{"kind": "normalize", "id": "normalize-74-default", "text": "Mr. Smith went to Washington. He said \"Hi!\" Then left... Really? Yes!!", "options": "default"}
+{"kind": "normalize", "id": "normalize-74-all", "text": "Mr. Smith went to Washington. He said \"Hi!\" Then left... Really? Yes!!", "options": "all"}
+{"kind": "normalize", "id": "normalize-74-none", "text": "Mr. Smith went to Washington. He said \"Hi!\" Then left... Really? Yes!!", "options": "none"}
+{"kind": "normalize", "id": "normalize-74-off", "text": "Mr. Smith went to Washington. He said \"Hi!\" Then left... Really? Yes!!", "options": "off"}
+{"kind": "normalize", "id": "normalize-75-default", "text": "e.g. this. U.S. citizens. 3.5 apples. Version 2. Done", "options": "default"}
+{"kind": "normalize", "id": "normalize-75-all", "text": "e.g. this. U.S. citizens. 3.5 apples. Version 2. Done", "options": "all"}
+{"kind": "normalize", "id": "normalize-75-none", "text": "e.g. this. U.S. citizens. 3.5 apples. Version 2. Done", "options": "none"}
+{"kind": "normalize", "id": "normalize-75-off", "text": "e.g. this. U.S. citizens. 3.5 apples. Version 2. Done", "options": "off"}
+{"kind": "normalize", "id": "normalize-76-default", "text": "", "options": "default"}
+{"kind": "normalize", "id": "normalize-76-all", "text": "", "options": "all"}
+{"kind": "normalize", "id": "normalize-76-none", "text": "", "options": "none"}
+{"kind": "normalize", "id": "normalize-76-off", "text": "", "options": "off"}
+{"kind": "normalize", "id": "normalize-77-default", "text": "   ", "options": "default"}
+{"kind": "normalize", "id": "normalize-77-all", "text": "   ", "options": "all"}
+{"kind": "normalize", "id": "normalize-77-none", "text": "   ", "options": "none"}
+{"kind": "normalize", "id": "normalize-77-off", "text": "   ", "options": "off"}
+{"kind": "normalize", "id": "normalize-78-default", "text": "!!!", "options": "default"}
+{"kind": "normalize", "id": "normalize-78-all", "text": "!!!", "options": "all"}
+{"kind": "normalize", "id": "normalize-78-none", "text": "!!!", "options": "none"}
+{"kind": "normalize", "id": "normalize-78-off", "text": "!!!", "options": "off"}
+{"kind": "normalize", "id": "normalize-79-default", "text": "I love it 😀👍🏽 so much 🇺🇸 and 1️⃣ #️⃣ *️⃣ 👨‍👩‍👧 ok.", "options": "default"}
+{"kind": "normalize", "id": "normalize-79-all", "text": "I love it 😀👍🏽 so much 🇺🇸 and 1️⃣ #️⃣ *️⃣ 👨‍👩‍👧 ok.", "options": "all"}
+{"kind": "normalize", "id": "normalize-79-none", "text": "I love it 😀👍🏽 so much 🇺🇸 and 1️⃣ #️⃣ *️⃣ 👨‍👩‍👧 ok.", "options": "none"}
+{"kind": "normalize", "id": "normalize-79-off", "text": "I love it 😀👍🏽 so much 🇺🇸 and 1️⃣ #️⃣ *️⃣ 👨‍👩‍👧 ok.", "options": "off"}
+{"kind": "normalize", "id": "normalize-80-default", "text": "Wait [pause:1.5s] then go.", "options": "default"}
+{"kind": "normalize", "id": "normalize-80-all", "text": "Wait [pause:1.5s] then go.", "options": "all"}
+{"kind": "normalize", "id": "normalize-80-none", "text": "Wait [pause:1.5s] then go.", "options": "none"}
+{"kind": "normalize", "id": "normalize-80-off", "text": "Wait [pause:1.5s] then go.", "options": "off"}
+{"kind": "normalize", "id": "lang-e-0", "text": "El 5 de mayo cuesta $5. ¿Dónde?", "lang": "e"}
+{"kind": "normalize", "id": "lang-f-1", "text": "Le 5 mai coûte 5 €. Où?", "lang": "f"}
+{"kind": "normalize", "id": "lang-z-2", "text": "我们今天去北京，明天去上海。这本书花了25元。", "lang": "z"}
+{"kind": "normalize", "id": "lang-j-3", "text": "東京は日本の首都です。今日はいい天気ですね。", "lang": "j"}
+{"kind": "normalize", "id": "lang-h-4", "text": "तेज़ भूरी लोमड़ी। पुस्तकालय कहाँ है?", "lang": "h"}
+{"kind": "normalize", "id": "lang-b-5", "text": "The colour costs £5 at 10:30.", "lang": "b"}
+{"kind": "smart_split", "id": "split-0-default", "text": "One. Two, three; four: five. [pause:1s] Six. [PAUSE:0.25s][pause:0s] Seven 😀.", "options": "default", "max_tokens": 20}
+{"kind": "smart_split", "id": "split-0-all", "text": "One. Two, three; four: five. [pause:1s] Six. [PAUSE:0.25s][pause:0s] Seven 😀.", "options": "all", "max_tokens": 20}
+{"kind": "smart_split", "id": "split-1-default", "text": "A very long sentence, with many clauses, separated by commas; and semicolons: and colons, until the end.", "options": "default", "max_tokens": 30}
+{"kind": "smart_split", "id": "split-1-all", "text": "A very long sentence, with many clauses, separated by commas; and semicolons: and colons, until the end.", "options": "all", "max_tokens": 30}
+{"kind": "smart_split", "id": "split-2-default", "text": "[Hi!](/hˈI/) said the man. Then, after a while, he left.", "options": "default", "max_tokens": 15}
+{"kind": "smart_split", "id": "split-2-all", "text": "[Hi!](/hˈI/) said the man. Then, after a while, he left.", "options": "all", "max_tokens": 15}
+{"kind": "smart_split", "id": "split-3-default", "text": "Clause one，clause two、clause three；clause four：end.", "options": "default", "max_tokens": 12}
+{"kind": "smart_split", "id": "split-3-all", "text": "Clause one，clause two、clause three；clause four：end.", "options": "all", "max_tokens": 12}
+{"kind": "smart_split", "id": "split-4-default", "text": "No punctuation in this very long sentence that goes on and on and on forever", "options": "default", "max_tokens": 10}
+{"kind": "smart_split", "id": "split-4-all", "text": "No punctuation in this very long sentence that goes on and on and on forever", "options": "all", "max_tokens": 10}
+{"kind": "smart_split", "id": "split-5-default", "text": "[pause:2s]", "options": "default", "max_tokens": 450}
+{"kind": "smart_split", "id": "split-5-all", "text": "[pause:2s]", "options": "all", "max_tokens": 450}
+{"kind": "smart_split", "id": "split-6-default", "text": "[pause:100s] Long pause.", "options": "default", "max_tokens": 450}
+{"kind": "smart_split", "id": "split-6-all", "text": "[pause:100s] Long pause.", "options": "all", "max_tokens": 450}
+{"kind": "smart_split", "id": "split-7-default", "text": ",,,;;; ...", "options": "default", "max_tokens": 450}
+{"kind": "smart_split", "id": "split-7-all", "text": ",,,;;; ...", "options": "all", "max_tokens": 450}
+{"kind": "smart_split", "id": "split-8-default", "text": "Hello\n\nWorld\nagain", "options": "default", "max_tokens": 450}
+{"kind": "smart_split", "id": "split-8-all", "text": "Hello\n\nWorld\nagain", "options": "all", "max_tokens": 450}
+{"kind": "smart_split", "id": "split-9-default", "text": "Price $5.50, time 10:30, call 555-123-4567.", "options": "default", "max_tokens": 25}
+{"kind": "smart_split", "id": "split-9-all", "text": "Price $5.50, time 10:30, call 555-123-4567.", "options": "all", "max_tokens": 25}
+{"kind": "voices", "id": "voices-[voice:af_sky]Hi[voice:af_sky] there", "text": "[voice:af_sky]Hi[voice:af_sky] there", "voice": "af_heart"}
+{"kind": "checks", "id": "checks-[voice:af_sky]Hi[voice:af_sky] there", "text": "[voice:af_sky]Hi[voice:af_sky] there", "allow_voice_tags": true, "remove_emoji": true}
+{"kind": "voices", "id": "voices-[rate:2]fast[rate:2]still", "text": "[rate:2]fast[rate:2]still", "voice": "af_heart"}
+{"kind": "checks", "id": "checks-[rate:2]fast[rate:2]still", "text": "[rate:2]fast[rate:2]still", "allow_voice_tags": true, "remove_emoji": true}
+{"kind": "voices", "id": "voices-x [baserate:2][rate:3] y", "text": "x [baserate:2][rate:3] y", "voice": "af_heart"}
+{"kind": "checks", "id": "checks-x [baserate:2][rate:3] y", "text": "x [baserate:2][rate:3] y", "allow_voice_tags": true, "remove_emoji": true}
+{"kind": "voices", "id": "voices-[voice:af_sky(2)+af_bella]mixed", "text": "[voice:af_sky(2)+af_bella]mixed", "voice": "af_heart"}
+{"kind": "checks", "id": "checks-[voice:af_sky(2)+af_bella]mixed", "text": "[voice:af_sky(2)+af_bella]mixed", "allow_voice_tags": true, "remove_emoji": true}
+{"kind": "voices", "id": "voices-[voice:   ]", "text": "[voice:   ]", "voice": "af_heart"}
+{"kind": "checks", "id": "checks-[voice:   ]", "text": "[voice:   ]", "allow_voice_tags": true, "remove_emoji": true}
+{"kind": "voices", "id": "voices-[pause:301s]", "text": "[pause:301s]", "voice": "af_heart"}
+{"kind": "checks", "id": "checks-[pause:301s]", "text": "[pause:301s]", "allow_voice_tags": true, "remove_emoji": true}
+{"kind": "voices", "id": "voices-[pause:60s][pause:60s][pause:60s][pause:60s][pause:60s][pause:0.1s]", "text": "[pause:60s][pause:60s][pause:60s][pause:60s][pause:60s][pause:0.1s]", "voice": "af_heart"}
+{"kind": "checks", "id": "checks-[pause:60s][pause:60s][pause:60s][pause:60s][pause:60s][pause:0.1s]", "text": "[pause:60s][pause:60s][pause:60s][pause:60s][pause:60s][pause:0.1s]", "allow_voice_tags": true, "remove_emoji": true}
