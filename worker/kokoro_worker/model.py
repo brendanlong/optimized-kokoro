@@ -177,9 +177,9 @@ class Synth:
         }
         self._single = self._batched = eager
         if compile:
-            # Separate graphs for batch 1 and batches > 1. One torch.compile'd function holds both,
-            # but the batched graph's guards also accept batch 1, and then every batch of one ran on
-            # the generic graph: 61 ms instead of 40 per typical sentence.
+            # Separate graphs for batch 1 and batches > 1: within one torch.compile'd function, the
+            # dynamic-batch graph's guards also accept batch 1, so batches of one could run on it
+            # instead of on the graph specialized for them.
             self._single = {k: torch.compile(_fresh(f, "single"), dynamic=True) for k, f in eager.items()}
             self._batched = {k: torch.compile(_fresh(f, "batched"), dynamic=True) for k, f in eager.items()}
 

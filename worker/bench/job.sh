@@ -55,7 +55,7 @@ bench_one() {
             > "results/$label.worker.log" 2>&1 &
         pid=$!
     fi
-    uv run --no-sync python bench/load.py "$sock/worker.sock" "$MODELS/config.json" --json "results/$label.json" \
+    uv run --no-sync python bench/load.py "$sock/worker.sock" "$MODELS/config.json" --json "results/$label.json" ${LOAD_ARGS:-} \
         2>&1 | tee "results/$label.load.txt"
     nvidia-smi --query-gpu=memory.used --format=csv,noheader >> "results/$label.load.txt"
     if [ "$where" = sandbox ]; then
