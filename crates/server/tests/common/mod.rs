@@ -20,7 +20,7 @@ use tokio::net::{TcpStream, UnixListener};
 use tokio::sync::mpsc;
 
 pub const KEY: &str = "test-key";
-pub const VOICES: [&str; 7] = ["af_heart", "af_bella", "af_sky", "am_adam", "bf_emma", "jf_alpha", "zf_xiaobei"];
+pub const VOICES: [&str; 8] = ["af_heart", "af_bella", "af_sky", "am_adam", "bf_emma", "jf_alpha", "zf_xiaobei", "ef_dora"];
 
 pub fn hello() -> Hello {
     Hello {

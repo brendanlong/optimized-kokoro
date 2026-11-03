@@ -1,5 +1,6 @@
 //! Text in, Kokoro phoneme chunks out: the deployed Kokoro-FastAPI's `smart_split` for English
-//! (`lang` a and b) and Chinese (`lang` z), end to end.
+//! (`lang` a and b), Chinese (`lang` z) and Japanese (`j`, kokoro's `g2p_phonemes` with misaki's
+//! `JAG2P`), end to end.
 //!
 //! [`Pipeline::chunks`] runs the text crate's tags, normalization, sentence splitting and chunking,
 //! with Kokoro-FastAPI's `phonemize` as the G2P: kokoro's `KPipeline.en_g2p_tokens` (runs of other
@@ -7,11 +8,12 @@
 //! espeak for unknown words) and `tokens_to_ps`. Each chunk's phonemes are then mapped to
 //! Kokoro-82M's input ids, dropping what the vocabulary lacks as `KModel` does.
 //!
-//! Han runs are read by misaki's Chinese G2P ([`kokoro_g2p_zh`]), in every pipeline. Japanese has
-//! no G2P yet, so unless one is supplied with [`Pipeline::with_foreign_g2p`], a kana run is read as
-//! "Japanese text"; so is a run of any script espeak has no voice for, by the script's name ("Thai
-//! text"), and a Han character pypinyin has no reading for ("Chinese text"). [`Chunk::unread`]
-//! counts them. The Chinese pipeline is in `chinese.rs`. `docs/divergences.md` lists every intentional difference from
+//! Han runs are read by misaki's Chinese G2P ([`kokoro_g2p_zh`]), in every pipeline, and Japanese
+//! runs (Han and kana, with kana) by its Japanese G2P ([`kokoro_g2p_ja`]), whose dictionary is
+//! mapped the first time Japanese is read; without the dictionary they are read as "Japanese
+//! text". So is a run of any script espeak has no voice for, by the script's name ("Thai text"),
+//! and a Han character pypinyin has no reading for ("Chinese text"). [`Chunk::unread`] counts
+//! them. The Chinese pipeline is in `chinese.rs`. `docs/divergences.md` lists every intentional difference from
 //! the reference.
 #![forbid(unsafe_code)]
 
@@ -48,6 +50,8 @@ pub enum Lang {
     BritishEnglish,
     /// `z`: Mandarin Chinese.
     Chinese,
+    /// `j`: misaki's Japanese G2P (cutlet), with Latin runs read by its American English G2P.
+    Japanese,
 }
 
 impl Lang {
@@ -57,6 +61,7 @@ impl Lang {
             Lang::AmericanEnglish => "a",
             Lang::BritishEnglish => "b",
             Lang::Chinese => "z",
+            Lang::Japanese => "j",
         }
     }
 
@@ -65,6 +70,7 @@ impl Lang {
             "a" => Some(Lang::AmericanEnglish),
             "b" => Some(Lang::BritishEnglish),
             "z" => Some(Lang::Chinese),
+            "j" => Some(Lang::Japanese),
             _ => None,
         }
     }
@@ -82,6 +88,8 @@ pub enum Error {
     Espeak(kokoro_espeak::Error),
     /// A G2P passed to [`Pipeline::with_foreign_g2p`] failed.
     Foreign { language: Language, message: String },
+    /// The Japanese G2P's dictionary couldn't be loaded.
+    Dictionary(String),
 }
 
 impl fmt::Display for Error {
@@ -90,6 +98,7 @@ impl fmt::Display for Error {
             Error::G2p(e) => write!(f, "English G2P: {e}"),
             Error::Espeak(e) => write!(f, "espeak: {e}"),
             Error::Foreign { language, message } => write!(f, "{} G2P: {message}", language.code()),
+            Error::Dictionary(message) => write!(f, "Japanese dictionary: {message}"),
         }
     }
 }
@@ -117,6 +126,11 @@ pub trait ForeignG2p: Send + Sync {
     /// Chinese only: whether the character has a reading. The reference leaves characters
     /// pypinyin can't read (some radicals, Japanese-only kanji) to the English G2P.
     fn reads(&self, _c: char) -> bool {
+        true
+    }
+
+    /// Whether it can read at all (its data loaded). If not, its runs are read as "<name> text".
+    fn available(&self) -> bool {
         true
     }
 }
@@ -166,9 +180,33 @@ pub struct Pipeline {
     max_tokens: usize,
 }
 
+/// misaki's Japanese G2P on the default dictionary, loaded the first time Japanese is read
+/// ([`kokoro_g2p_ja::default_dictionary`]), so a pipeline that never reads Japanese never loads it.
+struct LazyJapanese;
+
+impl ForeignG2p for LazyJapanese {
+    fn phonemize(&self, text: &str) -> Result<String, String> {
+        let g2p = kokoro_g2p_ja::JaG2p::load_default().map_err(|e| e.to_string())?;
+        g2p.phonemize(text).map_err(|e| e.to_string())
+    }
+
+    fn available(&self) -> bool {
+        kokoro_g2p_ja::default_dictionary().is_ok()
+    }
+}
+
+/// Whether misaki's Japanese G2P can read: UniDic is at `$KOKORO_UNIDIC` (this maps it).
+pub fn japanese_available() -> bool {
+    kokoro_g2p_ja::default_dictionary().is_ok()
+}
+
 impl Pipeline {
     /// Loads the pipeline with the bundled espeak-ng data. misaki's Chinese G2P is loaded on the
     /// first Han character or Chinese request (see [`chinese_g2p_loaded`]), once per process.
+    /// Japanese (the `j` pipeline's text, and Japanese runs in other pipelines' text) is read by
+    /// misaki's Japanese G2P, whose dictionary, UniDic, is mapped the first time Japanese is read,
+    /// once per process, from `$KOKORO_UNIDIC`. Without it, the `j` pipeline's sentences fail with
+    /// [`Error::Dictionary`], and Japanese runs in other pipelines are read as "Japanese text".
     pub fn new(lang: Lang) -> Result<Pipeline, Error> {
         Self::with_espeak_data(lang, kokoro_espeak::default_data()?)
     }
@@ -180,6 +218,7 @@ impl Pipeline {
         }
         let mut foreign: HashMap<Language, Box<dyn ForeignG2p>> = HashMap::new();
         foreign.insert(Language::Chinese, Box::new(chinese::Chinese));
+        foreign.insert(Language::Japanese, Box::new(LazyJapanese));
         Ok(Pipeline {
             lang,
             nlp: Nlp::new(),
@@ -406,6 +445,9 @@ impl<'p> Request<'p> {
         if self.pipeline.lang == Lang::Chinese {
             return self.chinese(text);
         }
+        if self.pipeline.lang == Lang::Japanese {
+            return self.japanese(text);
+        }
         let graphemes = foreign::translate_cjk_punctuation(text);
         let mut tokens: Vec<Token> = Vec::new();
         let mut placeholders = Vec::new();
@@ -422,7 +464,8 @@ impl<'p> Request<'p> {
             let run = if self.reads(language) {
                 let ps = self.foreign(segment, language)?;
                 let words: Vec<&str> = ps.split(kokoro_text::py::is_space).filter(|w| !w.is_empty()).collect();
-                let reference = matches!(language, Language::Script(s) if foreign::in_foreign_py(s));
+                let reference =
+                    language == Language::Japanese || matches!(language, Language::Script(s) if foreign::in_foreign_py(s));
                 if !words.is_empty() || reference {
                     tokens.extend(words.iter().enumerate().map(|(i, w)| Token {
                         text: if i == 0 { segment.to_owned() } else { String::new() },
@@ -456,7 +499,88 @@ impl<'p> Request<'p> {
     }
 
     fn reads(&self, language: Language) -> bool {
-        language.espeak().is_some() || self.pipeline.foreign.contains_key(&language)
+        language == Language::English
+            || language.espeak().is_some()
+            || self.pipeline.foreign.get(&language).is_some_and(|g2p| g2p.available())
+    }
+
+    /// Kokoro-FastAPI's `phonemize` for Japanese, `KPipeline.g2p_phonemes`: the text as is (no
+    /// CJK punctuation mapping), split into runs; Han, kana and everything `foreign.py` doesn't
+    /// split out go to misaki's Japanese G2P, Latin runs to its American English G2P, and the
+    /// other scripts to espeak, as in the English pipelines (so the scripts it has no voice for
+    /// are "<name> text"). Each run's phonemes are stripped and joined with a space where the
+    /// text has one at the join, or two letters meet there. There are no word timestamps.
+    fn japanese(&mut self, text: &str) -> Result<Phonemes, Error> {
+        let g2p = self.pipeline.foreign.get(&Language::Japanese).expect("every pipeline has a Japanese G2P");
+        if !g2p.available() {
+            return Err(Error::Dictionary(kokoro_g2p_ja::default_dictionary().err().map_or_else(String::new, |e| e.to_string())));
+        }
+        let segments = foreign::split_in(text, Some(Language::Japanese), |_| true);
+        let mut ps = String::new();
+        let mut previous = "";
+        let mut unread = 0;
+        let mut after_placeholder = false;
+        let mut i = 0;
+        while i < segments.len() {
+            let (segment, language) = segments[i];
+            let start = i;
+            i += 1;
+            let mut placeholder = false;
+            let p = match language {
+                None => {
+                    let raw = g2p.phonemize(segment).map_err(|message| Error::Foreign { language: Language::Japanese, message })?;
+                    kokoro_text::py::strip(&raw).to_owned()
+                }
+                Some(Language::English) => {
+                    let text = foreign::prepare(segment, Language::English);
+                    let raw = self.english_string(&text)?;
+                    foreign::finish(&raw, Language::English)
+                }
+                Some(language) if self.reads(language) => self.foreign(segment, language)?,
+                Some(language) => {
+                    while let [(gap, None), (_, Some(next)), ..] = segments[i..]
+                        && next == language
+                        && gap.chars().all(foreign::is_gap)
+                    {
+                        i += 2;
+                    }
+                    unread += 1;
+                    placeholder = true;
+                    let run: String = segments[start..i].iter().map(|(s, _)| *s).collect();
+                    kokoro::tokens_to_ps(&self.placeholder(language, run)?)
+                }
+            };
+            let segment_start = segment;
+            let last = segments[i - 1].0;
+            let mut boundary = String::new();
+            boundary.extend(previous.chars().next_back());
+            boundary.extend(segment_start.chars().next());
+            let alpha = boundary.chars().count() == 2 && boundary.chars().all(kokoro_g2p_en::is_alpha);
+            // A placeholder is kept apart from its neighbours, as in the English pipelines.
+            let apart = placeholder || after_placeholder;
+            if !ps.is_empty() && !p.is_empty() && (boundary.chars().any(kokoro_text::py::is_space) || alpha || apart) {
+                ps.push(' ');
+            }
+            if !p.is_empty() {
+                after_placeholder = placeholder;
+            }
+            ps.push_str(&p);
+            previous = last;
+        }
+        Ok(Phonemes { phonemes: kokoro_text::py::strip(&ps).to_owned(), tokens: Vec::new(), unread })
+    }
+
+    /// misaki's English `G2P()(text)[0]` (American, with the espeak fallback), as
+    /// `ForeignScripts` reads Latin runs in other pipelines.
+    fn english_string(&mut self, segment: &str) -> Result<String, Error> {
+        let pipeline = self.pipeline;
+        let mut tagger = Spacy(&pipeline.nlp);
+        let mut fallback = LazyFallback { data: &pipeline.espeak, british: false, engine: &mut self.fallback, error: None };
+        let (ps, _) = pipeline.g2p.phonemize(segment, &mut tagger, Some(&mut fallback))?;
+        match fallback.error {
+            Some(e) => Err(e.into()),
+            None => Ok(ps),
+        }
     }
 
     /// "<name> text" for an unread run, as English words that make one token group like a foreign

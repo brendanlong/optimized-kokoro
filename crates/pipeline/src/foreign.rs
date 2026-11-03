@@ -20,7 +20,8 @@ use std::sync::LazyLock;
 pub enum Language {
     Chinese,
     Japanese,
-    /// Latin runs in a pipeline of another language (Chinese), read by misaki's English G2P.
+    /// Latin runs in a pipeline of another language (Chinese, Japanese), read by misaki's American
+    /// English G2P.
     English,
     /// A run of another script, read by espeak with the voice for the script ([`espeak_voice`]).
     Script(Script),
@@ -235,16 +236,19 @@ fn links(text: &str) -> Vec<(usize, usize)> {
 /// kanji) to the English G2P, which here reads them as [`Language::Unread`]`(Han)`. `ー` outside
 /// kana stays English.
 pub fn split(text: &str, reads: impl Fn(char) -> bool) -> Vec<(&str, Option<Language>)> {
-    split_in(text, reads, false)
+    split_in(text, None, reads)
 }
 
 /// `ForeignScripts.split` in the Chinese pipeline: Han runs without kana are its own (`None`),
 /// whatever pypinyin reads, and Latin runs are [`Language::English`].
 pub fn split_chinese(text: &str) -> Vec<(&str, Option<Language>)> {
-    split_in(text, |_| true, true)
+    split_in(text, Some(Language::Chinese), |_| true)
 }
 
-fn split_in(text: &str, reads: impl Fn(char) -> bool, chinese: bool) -> Vec<(&str, Option<Language>)> {
+/// `ForeignScripts.split` in the pipeline of `native` (`None` for English): in the Japanese
+/// pipeline every Han and kana run is its own, in the Chinese one every Han run without kana, and
+/// in both Latin runs are [`Language::English`].
+pub fn split_in(text: &str, native: Option<Language>, reads: impl Fn(char) -> bool) -> Vec<(&str, Option<Language>)> {
     let mut segments = Vec::new();
     let mut last = 0;
     let mut push = |start: usize, end: usize, language: Language| {
@@ -265,8 +269,10 @@ fn split_in(text: &str, reads: impl Fn(char) -> bool, chinese: bool) -> Vec<(&st
         }
         let run_text = &text[run.start..run.end];
         let language = match run.script {
+            None if native == Some(Language::Japanese) => continue,
+            Some(Script::Latin) if native.is_some() => Language::English,
             None if run_text.chars().any(is_kana) => Language::Japanese,
-            None if chinese => continue,
+            None if native == Some(Language::Chinese) => continue,
             None => {
                 let language = |c: char| match script(c) {
                     _ if c == '、' => Some(Language::Chinese),
@@ -288,7 +294,6 @@ fn split_in(text: &str, reads: impl Fn(char) -> bool, chinese: bool) -> Vec<(&st
                 }
                 continue;
             }
-            Some(Script::Latin) if chinese => Language::English,
             Some(Script::Latin) => continue,
             Some(script) if in_foreign_py(script) => Language::Script(script),
             Some(_) if !run_text.chars().any(char::is_alphanumeric) => continue,

@@ -4,3 +4,8 @@
 # dies with SIGILL (illegal instruction) on older x86-64 CPUs.
 [target.x86_64-unknown-linux-gnu]
 rustflags = ["-C", "target-cpu=x86-64-v3"]
+
+# Where kokoro-g2p-ja finds UniDic in `cargo run` and `cargo test` (crates/g2p-ja/tools/fetch_unidic.sh
+# writes it there). A deployed server sets KOKORO_UNIDIC itself; binaries have no built-in path.
+[env]
+KOKORO_UNIDIC = { value = "crates/g2p-ja/data/unidic.dic", relative = true, force = false }

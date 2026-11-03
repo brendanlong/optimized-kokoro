@@ -3,3 +3,5 @@
 /.claude/
 __pycache__/
 /.tools/
+/crates/g2p-ja/data/unidic.dic
+/crates/g2p-ja/data/unidic.dic.LICENSE

@@ -7,9 +7,43 @@ use kokoro_pipeline::{Chunk, Error, ForeignG2p, Lang, NormalizationOptions, Pipe
 use kokoro_spacy_en::Nlp;
 use std::sync::OnceLock;
 
+/// The Japanese G2P without its dictionary, so kana runs are "Japanese text" whether or not UniDic
+/// is installed; `japanese_runs_are_read_by_the_japanese_g2p` reads them with it.
+struct NoDictionary;
+
+impl ForeignG2p for NoDictionary {
+    fn phonemize(&self, _: &str) -> Result<String, String> {
+        Err("no dictionary".into())
+    }
+
+    fn available(&self) -> bool {
+        false
+    }
+}
+
 fn pipeline() -> &'static Pipeline {
     static P: OnceLock<Pipeline> = OnceLock::new();
-    P.get_or_init(|| Pipeline::new(Lang::AmericanEnglish).unwrap())
+    P.get_or_init(|| {
+        Pipeline::new(Lang::AmericanEnglish).unwrap().with_foreign_g2p(Language::Japanese, Box::new(NoDictionary))
+    })
+}
+
+#[test]
+fn japanese_runs_are_read_by_the_japanese_g2p() {
+    if !kokoro_pipeline::japanese_available() {
+        return eprintln!("skipping: no UniDic at $KOKORO_UNIDIC");
+    }
+    let pipeline = Pipeline::new(Lang::AmericanEnglish).unwrap();
+    for (text, expected) in [
+        ("東京へ行く", "toːkʲoː e ikɯ"),
+        ("The wordカナmeans hello.", "ðə wˈɜɹdkanamˈinz həlˈO."),
+        ("東京\u{200d}へ", "dˈʊŋʨˈiŋe"),
+    ] {
+        assert_eq!(pipeline.phonemize(text).unwrap().0, expected, "{text}");
+    }
+    let options = NormalizationOptions::default();
+    let unread: Vec<usize> = pipeline.chunks("ありがとう, Goodbye 你好. ゃ", &options).map(|c| c.unwrap().unread).collect();
+    assert_eq!(unread, [0]);
 }
 
 fn phonemize(text: &str) -> String {

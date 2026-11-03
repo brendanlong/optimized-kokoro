@@ -4,9 +4,11 @@
 //! output.
 //!
 //! Records the intentional differences in `docs/divergences.md` change are counted apart:
-//! - Japanese runs, read as "Japanese text" until its G2P is ported. Where each chunk is one
-//!   reference G2P call, the chunks must equal the reference's with each run's tokens replaced by
-//!   the placeholder's;
+//! - Japanese runs, when UniDic isn't installed (`$KOKORO_UNIDIC`), which are then read as
+//!   "Japanese text". Where each chunk is one reference G2P call, the chunks must equal the
+//!   reference's with each run's tokens replaced by the placeholder's, and Chinese records read
+//!   their Japanese runs with the reference's recorded phonemes. With UniDic, records with
+//!   Japanese runs must match exactly;
 //! - runs of scripts `foreign.py` leaves to the English G2P, which now go to espeak's voice for
 //!   the script or read as "<script> text";
 //! - espeak's language-switch flags, which the reference's English fallback reads out.
@@ -140,7 +142,11 @@ impl ForeignG2p for Recorded {
 
 #[test]
 fn reference_records() {
-    let records: Vec<Record> = kokoro_reference::all().into_iter().filter(|r| Lang::from_code(&r.lang).is_some()).collect();
+    let mut records = kokoro_reference::all();
+    // English with Japanese runs, from `crates/g2p-ja/tools/gen_mixed.py` (see tests/japanese.rs).
+    records.extend(kokoro_reference::read(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/japanese.jsonl")));
+    records.retain(|r| matches!(r.lang.as_str(), "a" | "b" | "z"));
+    let japanese_read = kokoro_pipeline::japanese_available();
     let american = Pipeline::new(Lang::AmericanEnglish).unwrap();
     let british = Pipeline::new(Lang::BritishEnglish).unwrap();
     let chinese = Pipeline::new(Lang::Chinese).unwrap();
@@ -165,7 +171,7 @@ fn reference_records() {
         let pipeline = match record.lang.as_str() {
             "b" => &british,
             // Read with the reference's own Japanese phonemes, so the chunks must match exactly.
-            "z" if chinese_with_japanese => &chinese_recorded,
+            "z" if chinese_with_japanese && !japanese_read => &chinese_recorded,
             "z" => &chinese,
             _ => &american,
         };
@@ -195,7 +201,7 @@ fn reference_records() {
             unreadable.push(record.id.as_str());
             continue;
         }
-        let expected: Vec<(String, String)> = if uses_cjk(record) && !chinese_with_japanese {
+        let expected: Vec<(String, String)> = if uses_cjk(record) && !chinese_with_japanese && !japanese_read {
             cjk += 1;
             if record.calls.len() != record.chunks.len()
                 || record.calls.iter().zip(&record.chunks).any(|(call, chunk)| call.input != chunk.text)
@@ -214,7 +220,7 @@ fn reference_records() {
             record.chunks.iter().map(|c| (c.text.clone(), c.phonemes.clone())).collect()
         };
         if error.is_some() == record.error.is_some() && actual == expected {
-            if uses_cjk(record) && !chinese_with_japanese {
+            if uses_cjk(record) && !chinese_with_japanese && !japanese_read {
                 cjk_matched += 1;
             } else {
                 matched += 1;
@@ -236,8 +242,9 @@ fn reference_records() {
     }
     let elapsed = start.elapsed();
     println!(
-        "{matched}/{compared} records match exactly ({:.3}%): {zh_matched}/{zh} of them Chinese (those with Japanese runs read with the reference's Japanese phonemes), {failing_matched}/{failing} up to where the reference fails; {cjk_matched}/{cjk} English records with Japanese runs match with placeholders ({cjk_skipped} not compared: a chunk spans several G2P calls)",
-        100.0 * matched as f64 / compared.max(1) as f64
+        "{matched}/{compared} records match exactly ({:.3}%): {zh_matched}/{zh} of them Chinese ({}), {failing_matched}/{failing} up to where the reference fails; {cjk_matched}/{cjk} English records with Japanese runs match with placeholders ({cjk_skipped} not compared: a chunk spans several G2P calls)",
+        100.0 * matched as f64 / compared.max(1) as f64,
+        if japanese_read { "Japanese runs read with UniDic" } else { "no UniDic: Japanese runs read with the reference's phonemes" }
     );
     println!(
         "not compared: {} with other scripts {new_script:?}, {} with espeak language flags {flagged:?}, {} with Han characters pypinyin can't read {unreadable:?}",
