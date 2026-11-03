@@ -36,7 +36,7 @@ Choosing the cap: across 63 chunks of 450–510 phonemes (consecutive sentences 
 - Voice weights stay positive: voice subtraction isn't supported. There is no Reprioritize frame; to change a queued request's priority, Cancel it and send it again.
 - Ids in `1..vocab_size-1` that aren't in the model's `config.json` vocab (Kokoro-82M uses 114 of the 177) are accepted: they are untrained embedding rows, harmless, and the front never sends them.
 - Scheduling is the worker's: whenever the GPU is free, take queued requests by (priority, arrival), up to `max_batch`, and never wait to fill a batch. The batch's text side (durations) runs together; then its decoder runs in groups of similar output length, most urgent group first, and each group's responses are sent as soon as it finishes. Responses may come back in any order; the front reorders per stream.
-- Batching doesn't change the result beyond run-to-run noise: padding is masked out (see `worker/README.md`).
+- Padding doesn't change the result: it's masked out (see `worker/README.md`). In fp16, batch size itself changes the numerics slightly, and about one sentence in 16 gets one duration a frame different from batch 1.
 - No state carries between requests except loaded weights and voices. Closing the connection drops every queued request; requests already on the GPU finish and their results are discarded.
 
 ## Changes from the first draft

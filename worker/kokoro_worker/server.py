@@ -187,7 +187,9 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--socket", required=True)
     parser.add_argument("--models", required=True, help="directory written by kokoro_worker.convert")
-    parser.add_argument("--max-batch", type=int, default=8)
+    # 1 by default: on the 3060 Ti, batching 8 gives +39% throughput at 16 concurrent requests but
+    # nothing at 4 and slower single requests (60 vs 34 ms median), cause not found yet. See the PR.
+    parser.add_argument("--max-batch", type=int, default=1)
     parser.add_argument("--max-chunk-seconds", type=float, default=120.0,
                         help="longest audio one request may produce at speed 1 (scaled by 1/speed); "
                              "real 510-phoneme chunks reach about 44 s")
