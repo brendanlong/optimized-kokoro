@@ -2,7 +2,7 @@
 
 Goal (from Brendan): a Kokoro TTS server we can host without worrying about C exploits or slow Python. It should do no duplicate work, run optimized graphs, batch whatever is already queued without waiting, avoid C and risky dependencies, and stream audio as fast as possible.
 
-This is a proposal, not decided. Numbers are from the measurements in the wiki (`kokoro-tts-local-vs-gpu`, `self-hosted-kokoro-exposure-options`, journals `2026-10-31/11-01--kokoro-fastapi-latency-profile*`, `2026-11-01--kokoro-architecture-retrain-ideas`), all on the RTX 3060 Ti.
+Items marked **Decided** are settled with Brendan; the rest is proposal. Numbers are from the measurements in the wiki (`kokoro-tts-local-vs-gpu`, `self-hosted-kokoro-exposure-options`, journals `2026-10-31/11-01--kokoro-fastapi-latency-profile*`, `2026-11-01--kokoro-architecture-retrain-ideas`), all on the RTX 3060 Ti.
 
 ## Short answer
 
@@ -57,14 +57,14 @@ I recommend **PyTorch in the sandboxed worker first**, behind the integer-only p
 What's deployed isn't "misaki English". It's a pipeline: script segmentation (kokoro#2, `foreign.py`), then per-language G2Ps, then post-processing. Every piece has its own parity traps. (Details from the a189 review on PR #1.)
 
 - **English.** spaCy's **tokenizer** sets the token boundaries for everything else: contractions, hyphens, number and currency spans. Tokenizer drift will likely cause more diffs than tagging will. misaki uses POS tags in about 66 places, not just for heteronyms: function-word reductions (`to` → `tə`/`tu`), stress on function words, straight-quote direction, numbers through `num2words`. So the Rust tagger has to produce full PTB tags (an averaged perceptron trained on PTB/UD is a known, small design), or we list every tag-dependent rule and test each one.
-- **espeak covers six languages** (ru/el/ko/ar/he/hi) as well as unknown English words. So a distilled character model would only replace the English fallback; **espeak-ng-rs** is needed regardless. Pin the reference espeak version, since misaki's `E2M` rewrites depend on it. Port our own post-processing too: strip Hebrew vowel points, map `ħ→h` and `ʕ→ʔ`, and treat Greek as Greek only from 3 letters. Licensing doesn't change: the current deploy already ships GPL-3 espeak-ng.
+- **espeak covers six languages** (ru/el/ko/ar/he/hi) as well as unknown English words. So a distilled character model would only replace the English fallback; an espeak engine is needed regardless (now our own port, `kokoro-espeak-ng`, see below). Pin the reference espeak version, since misaki's `E2M` rewrites depend on it. Port our own post-processing too: strip Hebrew vowel points, map `ħ→h` and `ʕ→ʔ`, and treat Greek as Greek only from 3 letters. Licensing doesn't change: the current deploy already ships GPL-3 espeak-ng.
 - **Chinese.** The v1.0 model uses misaki's **legacy** path (jieba + pypinyin `lazy_pinyin` + `transcription.py`), not `ZHFrontend`. Polyphones (行, 长) depend on pypinyin's phrase dictionary, and segmentation depends on jieba's dictionary version. So the Rust side has to use the same dictionary data, not whatever a pinyin crate ships. Also test which characters have no reading (they fall back to English), and the Mandarin-accent rules (kokoro#6).
 - **Japanese** is cutlet: MeCab with full UniDic, then romanization rules, then misaki's kana tables. `lindera` only replaces the MeCab step, so this is about as much work as zh.
 - **Segmentation** (`foreign.py`, ~140 lines): port `tests/test_foreign.py` one-to-one and use it as the spec.
 
 **Parity harness.** Diff per-chunk phonemes from our `KPipeline` (`en_g2p_tokens`/`g2p_phonemes`, pinned to a commit), not from misaki alone, because segmentation, chunking and post-processing live outside misaki. Corpus: real Lion Reader articles plus the mixed-script sets from kokoro#2. Weight the diffs, since many are inaudible (primary vs secondary stress, `ᵊ`). For the rest, use blind transcription by two audio models as a cheap second check.
 
-**Order:** harness and corpus → English tokenizer and lexicon (measure the match rate) → tagger → segmentation + espeak-ng-rs (one dependency covers six languages plus the English fallback) → zh (legacy path) → ja last (largest dependency, least traffic).
+**Order:** harness and corpus → English tokenizer and lexicon (measure the match rate) → tagger → segmentation + our espeak-ng port (covers the English fallback and every other espeak language) → zh (legacy path) → ja last (largest dependency, least traffic).
 
 **Decided (Brendan, 2026-11-02): go straight to the Rust port.** There's no interim Python G2P service. The Rust code loads misaki's own data files where it can: the gold/silver lexicons, pypinyin's phrase and character dictionaries, jieba's dictionary, `ja_words.txt`, and the espeak-ng data. The Python pipeline stays only as the offline reference for the parity harness. Every language the current deploy supports gets ported. The current server isn't part of the end state or the migration.
 
@@ -73,7 +73,31 @@ Rejected alternatives (measured in session decf45d1):
 - **misaki's BART fallback for unknown words.** About 10 ms per word on CPU, one word at a time, and it truncates long words. The deploy uses espeak instead, where 32 unknown words cost about the same as 70 known ones (~4 ms).
 - **Treating duplicate symbols as interchangeable.** Kokoro treats `T` and `ɾ`, and `ts` and `ʦ`, as different sounds (wiki `kokoro-duplicate-phoneme-tokens`). So the port must reproduce each pipeline's exact symbol conventions.
 
-espeak-ng-rs check: 19 of 25 sentences across en/ru/el/ko/ar/he/hi/cmn matched C espeak exactly. The misses were small: a dropped vowel in "Tchaikovsky", one Korean liquid, one Arabic and one Hindi stress or schwa, and Mandarin tones, which we don't use. Usable, with fixes sent upstream as the harness finds them.
+### espeak: port the engine, keep its rules
+
+**Decided (Brendan, 2026-11-02):** port espeak-ng 1.52's text-to-phoneme engine to Rust ourselves, function by function, and use espeak's per-language rule and dictionary files unchanged. English is the goal; other languages should work too, without anyone rewriting rules per language.
+
+Why: an early 25-sentence check suggested espeak-ng-rs was usable, but on the 191k-case harness it matched C espeak on only 44–68% of sentences for es/fr/it/pt/hi/ko/ar, and on 84% of the unknown English words misaki sends it (PR #6). Parts of it, like the clause splitter, reinvent the C code instead of porting it, so fixing it would have a long tail. espeak's per-language data is small (Spanish is 12 KB of rules plus exceptions; English 265 KB). The complexity is in one shared engine (dictionary/rule matching, word translation, numbers, per-language options, clause reading, phoneme lists). The synthesis half isn't needed. A faithful engine port gets every espeak language from its unchanged data, and every function can be checked against C.
+
+Status: PR #8 (about 12.5k lines of Rust) matches C exactly on every scored call: the corpus, adversarial text, and generated text in all 141 voices. It diverges only where C reads undefined memory or carries state between calls (see `divergences.md`).
+
+How it's checked: exact output against C espeak 1.52 (the 191k-case harness from PR #6, plus direct calls). For languages nobody here speaks, quality questions such as simplifications are judged by synthesizing, transcribing with a multilingual ASR model, and comparing the error rate with C espeak's.
+
+### Matching the reference vs simplifying it
+
+**Decided (Brendan, 2026-11-02):** part of the goal is simplification. Where misaki or Kokoro-FastAPI does something overly complex, or wrong, we can do it a better way, as long as the final model still pronounces the result reasonably. Also decided: no state passes between requests.
+
+Proposed process (mine, not yet confirmed by Brendan):
+- **Port exactly first** where it's cheap. An exact port, proven by the reference harness, shows we understand the behaviour, and turns every later change into a measured diff instead of an accident. The spaCy, text and misaki-English ports did this.
+- **Every intentional difference is listed** in `docs/divergences.md`, with the reason, how many corpus records it changes, and how it was checked. The parity tests then compare against the reference *plus* the listed differences, so nothing else drifts.
+- **"Pronounced reasonably" is checked on audio, not phoneme strings**: synthesize the changed sentences with both versions, compare automatic transcriptions (two ASR models), and have Brendan listen to a sample of what changed.
+- **For ports not started yet (zh, ja)**, prefer the simplest implementation that gives the same phonemes, or better-sounding ones, over a line-by-line port. Only invest in exact parity where behaviour is subtle and we have no better idea.
+
+First candidates (my proposals, not decided):
+- **One number path.** The normalizer spells out most numbers, money and years before misaki sees them, so misaki's number and currency code (and our num2words port) mostly sees leftovers. Two implementations disagree in places: "$1" → "one dollars", "1900" → "nineteen zero", "5 Ω" drops the number. Keep one number reader, and delete the other.
+- **Crashes in the reference**: misaki Japanese asserts on digits in 49 of 1,581 Japanese Wikipedia paragraphs (reference dump `out/wiki-ja.jsonl`, see PR #2). Do whatever reads well instead. The misaki English crashes are already handled; see `divergences.md`.
+- **espeak wrapper simplifications** listed in PR #6: phonemizer's punctuation split and restore, misaki's `()`↔`«»` swap, keeping only the first output element, and the `(en)` flags.
+- **spaCy's full tagger** is only needed for the tag-dependent rules. If a smaller rule set gives the same audio, it could go, but the port is already exact and fast (0.35 ms per sentence), so this is low priority.
 
 ### Licensing
 
@@ -82,17 +106,17 @@ To publish, we need one license for the combined work. Component licenses:
 | Component | License |
 |---|---|
 | misaki code and lexicons, Kokoro weights and voices | Apache-2.0 |
-| espeak-ng-rs, espeak-ng data | GPL-3.0-or-later |
+| `kokoro-espeak-ng` (port of espeak-ng), `kokoro-espeak` (wrappers), espeak-ng data | GPL-3.0-or-later |
 | num2words (ported, so a derivative) | LGPL-2.1 |
 | spaCy `en_core_web_sm` weights | MIT (trained on OntoNotes; Explosion licenses it as MIT) |
 | pypinyin data, jieba / jieba-rs, cn2an, cutlet, lindera | MIT |
 | UniDic | BSD-3 / GPL / LGPL (pick one) |
 
-All of these are compatible with **GPL-3.0-or-later**, and espeak forces it for anything that links espeak-ng-rs. **Decided (Brendan, 2026-11-02):** publish the combined program under GPL-3.0-or-later, and license everything else as permissively as its inputs allow. Concretely:
+All of these are compatible with **GPL-3.0-or-later**, and espeak forces it for anything that links our espeak port. **Decided (Brendan, 2026-11-02):** publish the combined program under GPL-3.0-or-later, and license everything else as permissively as its inputs allow. Concretely:
 - Each crate carries its own license.
 - Our own code and the crates that don't depend on espeak (the protocol, scheduler, worker, the misaki-English/zh/ja ports, segmentation) are Apache-2.0, matching the repo's current LICENSE.
 - The num2words port is LGPL-2.1 (or written from scratch from the spec to stay Apache).
-- Only the espeak integration crate and the final server binary are GPL-3.0-or-later.
+- Only `kokoro-espeak-ng`, `kokoro-espeak`, and what links them (the pipeline and server) are GPL-3.0-or-later.
 - `cargo deny` in CI checks that no permissive crate pulls in a GPL or LGPL dependency. The alternative is to drop espeak (losing es/fr/it/pt/hi/ru/el/ko/ar/he and English unknown words) and stay Apache. Not publishing removes the question entirely, since the GPL and LGPL only bind distribution.
 
 
