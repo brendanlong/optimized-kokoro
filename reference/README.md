@@ -45,6 +45,14 @@ mkdir -p out/spacy-en
 .cache/kfa/.venv/bin/python -I pipeline_bench.py --dump out/wiki-en.jsonl   # or FILE [REPEAT] as one request
 ```
 
+Whole requests (pauses, model ids, word spans) on generated and fuzzed text, from the PR #9 review. The committed `tests/requests.jsonl` holds the first 300 of seed 1; `tests/requests.rs` also reads `out/requests/*.jsonl`:
+
+```sh
+mkdir -p out/requests
+python3 request_cases.py 1 1500 > /tmp/cases.jsonl
+.cache/kfa/.venv/bin/python -I request_dump.py < /tmp/cases.jsonl > out/requests/seed-1.jsonl
+```
+
 ## C espeak-ng oracle
 
 `espeak-ng-oracle/` builds C espeak-ng 1.52.0 statically into small drivers, to test `crates/espeak-ng` (the Rust port of its text-to-phoneme engine) on any text, not just the calls the Python pipeline makes. It reads the same data as the venv. Nothing here ships.

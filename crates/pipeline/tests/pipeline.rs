@@ -221,9 +221,9 @@ fn links_with_blank_phonemes_at_chunk_ends() {
             .collect()
     };
     let say = vec![("Say".to_owned(), 0, 3)];
-    assert_eq!(words("Say [word](/ /)"), [say.clone()]);
+    assert_eq!(words("Say [word](/ /)"), std::slice::from_ref(&say));
     assert_eq!(words("[word](/ /) say"), [vec![("say".to_owned(), 0, 3)]]);
-    assert_eq!(words("Say [word](/ /) [now](/ /)"), [say.clone()]);
+    assert_eq!(words("Say [word](/ /) [now](/ /)"), std::slice::from_ref(&say));
     assert_eq!(words("Say [word](/ /) [pause:1s] more [x](/ /)"), [say, vec![], vec![("more".to_owned(), 0, 4)]]);
     let clauses = ["the quick brown fox jumps over the lazy dog"; 7].join(", ");
     let cut = words(&format!("{clauses}, {clauses} [word](/ /)"));
