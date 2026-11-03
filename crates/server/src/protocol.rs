@@ -16,6 +16,8 @@ pub const SAMPLE_RATE: u32 = 24_000;
 /// `600 * sum(durations)` samples.
 pub const SAMPLES_PER_FRAME: u64 = 600;
 pub const MAX_FRONT_BODY: usize = 64 * 1024;
+/// Kokoro v1.0's `max_dur`: an id's duration is a sum of this many sigmoids, divided by speed.
+const DURATION_BINS: f64 = 50.0;
 pub const MAX_VOICES_PER_MIX: usize = 8;
 pub const MAX_VOICE_NAME: usize = 64;
 pub const SPEED_MIN: f32 = 0.25;
@@ -34,6 +36,12 @@ const HELLO_MAX: usize = HELLO_FIXED + u16::MAX as usize * (1 + MAX_VOICE_NAME);
 const DURATIONS_MAX: usize = 1 + 8 + 2 + 2 * (MAX_PHONEMES as usize + 2);
 const FAILED_LEN: usize = 1 + 8 + 1;
 const AUDIO_HEADER: usize = 1 + 8 + 4;
+
+/// The longest duration Kokoro can predict for one id at `speed`, plus one for float rounding.
+/// It bounds how much audio the front accepts for a request.
+pub fn max_duration(speed: f32) -> u16 {
+    ((DURATION_BINS / f64::from(speed)).ceil() + 1.0) as u16
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Hello {

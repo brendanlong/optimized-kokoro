@@ -60,6 +60,7 @@ type Reply = oneshot::Sender<Result<Synthesized, SynthError>>;
 
 struct Pending {
     n_ids: usize,
+    max_duration: u16,
     durations: Option<Vec<u16>>,
     /// `None` once cancelled: the worker still owes a final Audio or Failed frame.
     reply: Option<Reply>,
@@ -126,7 +127,13 @@ impl Connection {
             if !state.open {
                 return Err(SynthError::ConnectionLost);
             }
-            state.pending.insert(id, Pending { n_ids: request.ids.len(), durations: None, reply: Some(tx) });
+            let pending = Pending {
+                n_ids: request.ids.len(),
+                max_duration: protocol::max_duration(request.speed),
+                durations: None,
+                reply: Some(tx),
+            };
+            state.pending.insert(id, pending);
             let frame = encode_synthesize(&Synthesize {
                 id,
                 priority,
@@ -171,6 +178,9 @@ impl Connection {
                 }
                 if durations.len() != pending.n_ids + 2 {
                     return Err(format!("request {id}: {} durations for {} ids", durations.len(), pending.n_ids));
+                }
+                if durations.iter().any(|&d| d > pending.max_duration) {
+                    return Err(format!("request {id}: a duration over {}", pending.max_duration));
                 }
                 pending.durations = Some(durations);
                 Ok(())

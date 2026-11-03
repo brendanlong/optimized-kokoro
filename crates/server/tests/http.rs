@@ -307,7 +307,7 @@ async fn requests_while_the_worker_is_down_get_503() {
 async fn malformed_worker_frames_close_the_connection() {
     let (server, mut worker) = with_scripted(|_| {}).await;
     type Bad = fn(u64, &[u8]) -> Vec<u8>;
-    let bad: [(&str, Bad); 9] = [
+    let bad: [(&str, Bad); 10] = [
         ("audio before durations", |id, ids| worker_side::audio(id, &render(ids).1)),
         ("audio too short", |id, ids| {
             let (d, pcm) = render(ids);
@@ -316,6 +316,7 @@ async fn malformed_worker_frames_close_the_connection() {
             out
         }),
         ("durations count", |id, ids| worker_side::durations(id, &vec![1; ids.len()])),
+        ("duration too long", |id, ids| worker_side::durations(id, &vec![52; ids.len() + 2])),
         ("unknown id", |id, ids| respond(id + 1000, ids)),
         ("cancelled but not cancelled", |id, _| worker_side::failed(id, FailCode::Cancelled)),
         ("second hello", |_, _| worker_side::hello(&hello())),
