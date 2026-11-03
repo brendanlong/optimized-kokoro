@@ -49,10 +49,10 @@ with torch.inference_mode():
             t[0, 1 : n + 1] = torch.tensor(ids)
             t = t.to(synth.device)
             mask = torch.zeros(1, width, dtype=torch.bool, device=synth.device)
-            ref = synth.style([(v, 1.0)], n)[None]
+            ref = synth.style(v, n)[None]
             with torch.autocast(synth.device.type, dtype=torch.float16, enabled=synth.half):
                 dur, _, _ = synth._durations(t, mask, torch.tensor([width]), ref[:, 128:],
-                                             torch.ones(1, device=synth.device))
+                                             torch.ones(1, device=synth.device), torch.full((1, 1), 50, device=synth.device))
             frames = int(dur.sum())
             rows.append((frames * SAMPLES_PER_FRAME / 24000, n, name))
 rows.sort(reverse=True)

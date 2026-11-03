@@ -1,5 +1,5 @@
-//! Kokoro-FastAPI's per-chunk audio post-processing (`services/audio.py`): volume, then trimming
-//! each chunk to its speech plus padding, which sets the gaps between sentences.
+//! Kokoro-FastAPI's per-chunk audio post-processing (`services/audio.py`): trimming each chunk
+//! to its speech plus padding, which sets the gaps between sentences.
 
 use crate::protocol::SAMPLE_RATE;
 use kokoro_text::py;
@@ -18,15 +18,6 @@ pub fn silence(seconds: f64) -> usize {
     (seconds * f64::from(SAMPLE_RATE)) as usize
 }
 
-/// Scales samples, saturating and truncating toward zero as `np.clip(...).astype(np.int16)` does.
-pub fn apply_volume(pcm: &mut [i16], volume: f64) {
-    if volume == 1.0 {
-        return;
-    }
-    for s in pcm {
-        *s = (f64::from(*s) * volume).clamp(-32768.0, 32767.0) as i16;
-    }
-}
 
 fn end_padding(text: &str, speed: f64) -> usize {
     let multiplier = match py::strip(text).chars().next_back() {
@@ -89,14 +80,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn volume_saturates_and_truncates() {
-        let mut pcm = [1000, -1000, 30000, 3];
-        apply_volume(&mut pcm, 1.5);
-        assert_eq!(pcm, [1500, -1500, 32767, 4]);
-        apply_volume(&mut pcm, 0.1);
-        assert_eq!(pcm, [150, -150, 3276, 0]);
-    }
 
     #[test]
     fn silence_truncates() {

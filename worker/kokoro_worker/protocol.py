@@ -1,25 +1,30 @@
-"""Worker protocol v1 framing and validation (docs/worker-protocol.md). No torch here.
+"""Worker protocol v2 framing and validation (docs/worker-protocol.md). No torch here.
 
-Every check the spec asks for happens in `parse_request`; anything it rejects is a ProtocolError,
-and the caller closes the connection.
+Every check the spec asks for happens in `parse_request`, except whether a slot is busy, which
+the queue knows; anything rejected is a ProtocolError, and the caller closes the connection.
 """
 
-import math
 import struct
 from dataclasses import dataclass
 
-VERSION = 1
+VERSION = 2
 MAGIC = b"KOKW"
-MAX_FRONT_BODY = 64 * 1024
 MAX_PHONEMES = 510
-MAX_MIX = 8
-MIN_SPEED, MAX_SPEED = 0.25, 4.0
+MIN_SPEED, MAX_SPEED = 25, 400  # hundredths
 SAMPLE_RATE = 24000
+SAMPLES_PER_FRAME = 600
+DURATION_BINS = 50  # Kokoro's max_dur: a duration is a sum of this many sigmoids, over speed
 
-HELLO, AUDIO, DURATIONS, FAILED = 0x01, 0x02, 0x03, 0x04
+HELLO, RESULT, FAILED = 0x01, 0x02, 0x03
 SYNTHESIZE, CANCEL = 0x10, 0x11
 
 CANCELLED, INTERNAL_ERROR, TOO_LONG = 1, 2, 3
+
+SYNTHESIZE_FIXED = 12  # type, slot, priority, speed, voice, n_ids, style_len
+
+
+def max_front_body(max_phonemes: int) -> int:
+    return SYNTHESIZE_FIXED + max_phonemes
 
 
 class ProtocolError(Exception):
@@ -28,79 +33,75 @@ class ProtocolError(Exception):
 
 @dataclass(frozen=True)
 class Synthesize:
-    request_id: int
+    slot: int
     priority: int
-    speed: float
-    voices: tuple[tuple[int, float], ...]  # (voice index, weight), weights > 0, not yet normalized
+    speed: int  # hundredths
+    voice: int
     style_len: int  # voice-pack row style_len - 1; n_ids except for pieces of a stitched clause
     ids: tuple[int, ...]
 
 
 @dataclass(frozen=True)
 class Cancel:
-    request_id: int
+    slot: int
 
 
-def parse_request(body: bytes, n_voices: int, vocab_size: int, max_phonemes: int):
+def parse_request(body: bytes, slots: int, n_voices: int, vocab_size: int, max_phonemes: int):
     """Decode and validate one front -> worker frame body (type byte included)."""
     if not body:
         raise ProtocolError("empty body")
     kind = body[0]
     if kind == CANCEL:
-        if len(body) != 9:
+        if len(body) != 3:
             raise ProtocolError("Cancel: wrong length")
-        return Cancel(struct.unpack_from("<Q", body, 1)[0])
+        (slot,) = struct.unpack_from("<H", body, 1)
+        if slot >= slots:
+            raise ProtocolError("slot")
+        return Cancel(slot)
     if kind != SYNTHESIZE:
         raise ProtocolError(f"unknown frame type {kind:#x}")
 
-    if len(body) < 15:
+    if len(body) < SYNTHESIZE_FIXED:
         raise ProtocolError("Synthesize: short")
-    request_id, priority, speed, mix = struct.unpack_from("<QBfB", body, 1)
+    slot, priority, speed, voice, n_ids, style_len = struct.unpack_from("<HBHHHH", body, 1)
+    if slot >= slots:
+        raise ProtocolError("slot")
     if priority > 1:
         raise ProtocolError("priority")
-    if not (math.isfinite(speed) and MIN_SPEED <= speed <= MAX_SPEED):
+    if not MIN_SPEED <= speed <= MAX_SPEED:
         raise ProtocolError("speed")
-    if not 1 <= mix <= MAX_MIX:
-        raise ProtocolError("n_voices")
-    pos = 15
-    if len(body) < pos + 6 * mix + 4:
-        raise ProtocolError("Synthesize: short")
-    voices = []
-    for _ in range(mix):
-        index, weight = struct.unpack_from("<Hf", body, pos)
-        pos += 6
-        if index >= n_voices:
-            raise ProtocolError("voice index")
-        if not (math.isfinite(weight) and weight > 0):
-            raise ProtocolError("voice weight")
-        voices.append((index, weight))
-    n_ids, style_len = struct.unpack_from("<HH", body, pos)
-    pos += 4
+    if voice >= n_voices:
+        raise ProtocolError("voice index")
     if not 1 <= n_ids <= max_phonemes:
         raise ProtocolError("n_ids")
     if not 1 <= style_len <= max_phonemes:
         raise ProtocolError("style_len")
-    if len(body) != pos + n_ids:
+    if len(body) != SYNTHESIZE_FIXED + n_ids:
         raise ProtocolError("Synthesize: wrong length")
-    ids = tuple(body[pos:])
+    ids = tuple(body[SYNTHESIZE_FIXED:])
     if min(ids) < 1 or max(ids) >= vocab_size:
         raise ProtocolError("phoneme id out of range")
-    return Synthesize(request_id, priority, speed, tuple(voices), style_len, ids)
+    return Synthesize(slot, priority, speed, voice, style_len, ids)
 
 
 def frame(body: bytes) -> bytes:
     return struct.pack("<I", len(body)) + body
 
 
-def chunk_cap(max_chunk_samples: int, speed: float) -> int:
-    """Most samples one request at `speed` may produce: ceil(max_chunk_samples / speed), in f64."""
-    return math.ceil(max_chunk_samples / speed)
+def max_duration(speed: int) -> int:
+    """The longest duration one id can get at `speed` hundredths: ceil(50 / speed)."""
+    return -(-DURATION_BINS * 100 // speed)
 
 
-def hello(vocab_size: int, max_phonemes: int, max_batch: int, max_chunk_samples: int,
+def chunk_cap(max_chunk_samples: int, speed: int) -> int:
+    """Most samples one request at `speed` hundredths may produce: ceil(max_chunk_samples / speed)."""
+    return -(-max_chunk_samples * 100 // speed)
+
+
+def hello(vocab_size: int, max_phonemes: int, max_batch: int, slots: int, max_chunk_samples: int,
           voice_names: list[str]) -> bytes:
-    body = bytearray(struct.pack("<B4sHHHHIIH", HELLO, MAGIC, VERSION, vocab_size, max_phonemes,
-                                 max_batch, SAMPLE_RATE, max_chunk_samples, len(voice_names)))
+    body = bytearray(struct.pack("<B4sHHHHHIIH", HELLO, MAGIC, VERSION, vocab_size, max_phonemes,
+                                 max_batch, slots, SAMPLE_RATE, max_chunk_samples, len(voice_names)))
     for name in voice_names:
         raw = name.encode("ascii")
         if not 1 <= len(raw) <= 64:
@@ -109,28 +110,24 @@ def hello(vocab_size: int, max_phonemes: int, max_batch: int, max_chunk_samples:
     return frame(bytes(body))
 
 
-def audio(request_id: int, pcm: bytes) -> bytes:
-    return frame(struct.pack("<BQI", AUDIO, request_id, len(pcm) // 2) + pcm)
+def result(slot: int, durations: list[int], pcm: bytes) -> bytes:
+    if len(pcm) != 2 * SAMPLES_PER_FRAME * sum(durations):
+        raise ValueError("audio length doesn't match the durations")
+    return frame(struct.pack(f"<BHH{len(durations)}H", RESULT, slot, len(durations), *durations) + pcm)
 
 
-def durations(request_id: int, frames: list[int]) -> bytes:
-    return frame(struct.pack(f"<BQH{len(frames)}H", DURATIONS, request_id, len(frames), *frames))
-
-
-def failed(request_id: int, code: int) -> bytes:
-    return frame(struct.pack("<BQB", FAILED, request_id, code))
+def failed(slot: int, code: int) -> bytes:
+    return frame(struct.pack("<BHB", FAILED, slot, code))
 
 
 # Front side, for the test client and tests.
 
 
-def synthesize(request_id: int, ids, voices, speed: float = 1.0, priority: int = 0, style_len=None) -> bytes:
-    body = bytearray(struct.pack("<BQBfB", SYNTHESIZE, request_id, priority, speed, len(voices)))
-    for index, weight in voices:
-        body += struct.pack("<Hf", index, weight)
-    body += struct.pack("<HH", len(ids), len(ids) if style_len is None else style_len) + bytes(ids)
-    return frame(bytes(body))
+def synthesize(slot: int, ids, voice: int, speed: int = 100, priority: int = 0, style_len=None) -> bytes:
+    style_len = len(ids) if style_len is None else style_len
+    return frame(struct.pack("<BHBHHHH", SYNTHESIZE, slot, priority, speed, voice, len(ids), style_len) + bytes(ids))
 
 
-def cancel(request_id: int) -> bytes:
-    return frame(struct.pack("<BQ", CANCEL, request_id))
+def cancel(slot: int) -> bytes:
+    return frame(struct.pack("<BH", CANCEL, slot))
+

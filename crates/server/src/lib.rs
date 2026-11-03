@@ -12,7 +12,6 @@ pub mod request;
 pub mod serve;
 pub mod stitch;
 pub mod stream;
-pub mod voices;
 pub mod worker;
 
 pub use config::Config;

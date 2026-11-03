@@ -348,20 +348,13 @@
 {"kind": "smart_split", "id": "split-8-all", "text": "Hello\n\nWorld\nagain", "options": "all", "max_tokens": 450, "chunks": [["Hello.", "Hello."], ["World again", "World again"]]}
 {"kind": "smart_split", "id": "split-9-default", "text": "Price $5.50, time 10:30, call 555-123-4567.", "options": "default", "max_tokens": 25, "chunks": [["Price five dollars and fifty cents,", "Price five dollars and fifty cents,"], ["time ten thirty,", "time ten thirty,"], ["call five five five,", "call five five five,"], ["one two three,", "one two three,"], ["four five six seven.", "four five six seven."]]}
 {"kind": "smart_split", "id": "split-9-all", "text": "Price $5.50, time 10:30, call 555-123-4567.", "options": "all", "max_tokens": 25, "chunks": [["Price five dollars and fifty cents,", "Price five dollars and fifty cents,"], ["time ten thirty,", "time ten thirty,"], ["call five five five,", "call five five five,"], ["one two three,", "one two three,"], ["four five six seven.", "four five six seven."]]}
-{"kind": "voices", "id": "voices-[voice:af_sky]Hi[voice:af_sky] there", "text": "[voice:af_sky]Hi[voice:af_sky] there", "voice": "af_heart", "segments": [["af_sky", 1.0, "Hi there"]]}
-{"kind": "checks", "id": "checks-[voice:af_sky]Hi[voice:af_sky] there", "text": "[voice:af_sky]Hi[voice:af_sky] there", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "voices-[rate:2]fast[rate:2]still", "text": "[rate:2]fast[rate:2]still", "voice": "af_heart", "segments": [["af_heart", 2.0, "fast still"]]}
-{"kind": "checks", "id": "checks-[rate:2]fast[rate:2]still", "text": "[rate:2]fast[rate:2]still", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "voices-x [baserate:2][rate:3] y", "text": "x [baserate:2][rate:3] y", "voice": "af_heart", "segments": [["af_heart", 1.0, "x"], ["af_heart", 4.0, "y"]]}
-{"kind": "checks", "id": "checks-x [baserate:2][rate:3] y", "text": "x [baserate:2][rate:3] y", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "voices-[voice:af_sky(2)+af_bella]mixed", "text": "[voice:af_sky(2)+af_bella]mixed", "voice": "af_heart", "segments": [["af_sky(2)+af_bella", 1.0, "mixed"]]}
-{"kind": "checks", "id": "checks-[voice:af_sky(2)+af_bella]mixed", "text": "[voice:af_sky(2)+af_bella]mixed", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "voices-[voice:   ]", "text": "[voice:   ]", "voice": "af_heart", "segments": [["af_heart", 1.0, "[voice:   ]"]]}
-{"kind": "checks", "id": "checks-[voice:   ]", "text": "[voice:   ]", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "voices-[pause:301s]", "text": "[pause:301s]", "voice": "af_heart", "segments": [["af_heart", 1.0, "[pause:301s]"]]}
-{"kind": "checks", "id": "checks-[pause:301s]", "text": "[pause:301s]", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "voices-[pause:60s][pause:60s][pause:60s][pause:60s][pause:60s][pause:0.1s]", "text": "[pause:60s][pause:60s][pause:60s][pause:60s][pause:60s][pause:0.1s]", "voice": "af_heart", "segments": [["af_heart", 1.0, "[pause:60s][pause:60s][pause:60s][pause:60s][pause:60s][pause:0.1s]"]]}
-{"kind": "checks", "id": "checks-[pause:60s][pause:60s][pause:60s][pause:60s][pause:60s][pause:0.1s]", "text": "[pause:60s][pause:60s][pause:60s][pause:60s][pause:60s][pause:0.1s]", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": "Total pause duration 300.1s exceeds the 300.0s limit"}
+{"kind": "checks", "id": "checks-[voice:af_sky]Hi[voice:af_sky] there", "text": "[voice:af_sky]Hi[voice:af_sky] there", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
+{"kind": "checks", "id": "checks-[rate:2]fast[rate:2]still", "text": "[rate:2]fast[rate:2]still", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
+{"kind": "checks", "id": "checks-x [baserate:2][rate:3] y", "text": "x [baserate:2][rate:3] y", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
+{"kind": "checks", "id": "checks-[voice:af_sky(2)+af_bella]mixed", "text": "[voice:af_sky(2)+af_bella]mixed", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
+{"kind": "checks", "id": "checks-[voice:   ]", "text": "[voice:   ]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
+{"kind": "checks", "id": "checks-[pause:301s]", "text": "[pause:301s]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
+{"kind": "checks", "id": "checks-[pause:60s][pause:60s][pause:60s][pause:60s][pause:60s][pause:0.1s]", "text": "[pause:60s][pause:60s][pause:60s][pause:60s][pause:60s][pause:0.1s]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": "Total pause duration 300.1s exceeds the 300.0s limit"}
 {"kind": "normalize", "id": "fuzz-normalize-0", "text": "1501)Thehttps://k٣=007İ[PAUSE:2S]", "options": "all", "normalized": "fifteen one)Thehttps: slash slash k٣ equals 007İ[pause:two seconds]", "sentences": ["fifteen one)Thehttps: slash slash k٣ equals 007İ[pause:two seconds]"]}
 {"kind": "normalize", "id": "fuzz-normalize-1", "text": "how'reNVIDIA'S’ millionßMCMLXXXIV hundred", "options": "off", "normalized": "how'reNVIDIA'S’ millionßMCMLXXXIV hundred", "sentences": ["how'reNVIDIA'S’ millionßMCMLXXXIV hundred"]}
 {"kind": "normalize", "id": "fuzz-normalize-2", "text": "Σ\r\nIV ΑΒΓ trillionMr.:8080，2010", "options": "default", "normalized": "Σ IV ΑΒΓ trillionMr.:eighty eighty, twenty ten", "sentences": ["Σ IV ΑΒΓ trillionMr.:eighty eighty, twenty ten"]}
@@ -4662,605 +4655,157 @@
 {"kind": "smart_split", "id": "fuzz-split-297", "text": " billionam12:30theyres 15017:00:01DR. k[rate:1.5]\te.g.  Million ı²[rate:1.5]3:05#️⃣100000000000000000000000000000000000000001.2.3etc. 1234；GHz \\１２[rate:1.5]mhttps://192.168.0.1 Million'μF、^", "options": "off", "max_tokens": 450, "chunks": [["billionam12:30theyres 15017:00:01DR. k[rate:1.5]\te.g.", "billionam12:30theyres 15017:00:01DR. k[rate:1.5]\te.g."], ["Million ı²[rate:1.5]3:05#️⃣100000000000000000000000000000000000000001.2.3etc.", "Million ı²[rate:1.5]3:05#️⃣100000000000000000000000000000000000000001.2.3etc."], ["1234；GHz \\１２[rate:1.5]mhttps://192.168.0.1 Million'μF、^", "1234；GHz \\１２[rate:1.5]mhttps://192.168.0.1 Million'μF、^"]]}
 {"kind": "smart_split", "id": "fuzz-split-298", "text": "[pause:0.5s]XVI1,23,4561️⃣*1501-é Klocalhostword+px", "options": "none", "max_tokens": 450, "chunks": [0.5, ["XVI123456one️⃣*fifteen one-é Klocalhostword+px", "XVI123456one️⃣*fifteen one-é Klocalhostword+px"]]}
 {"kind": "smart_split", "id": "fuzz-split-299", "text": ".5Ab1234.co.ukmphMRS. \n ~[Kokoro](/kˈOkəɹO/)”—10:00۴۵wordi.e.x . ~“1234word billion1HTTPS://。K  —", "options": "off", "max_tokens": 450, "chunks": [[".5Ab1234.co.ukmphMRS.", ".5Ab1234.co.ukmphMRS."], ["~[Kokoro](/kˈOkəɹO/)”—10:00۴۵wordi.e.x . ~“1234word billion1HTTPS://。", "~[Kokoro](/kˈOkəɹO/)”—10:00۴۵wordi.e.x . ~“1234word billion1HTTPS://。"], ["K", "K"]]}
-{"kind": "voices", "id": "fuzz-voices-0", "text": "[voice:][voice:]", "voice": "af_heart", "segments": [["af_heart", 1.0, "[voice:][voice:]"]]}
 {"kind": "checks", "id": "fuzz-checks-0", "text": "[voice:][voice:]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-1", "text": "[voice:af_sky][rate:9]world.[voice: bm_george ]", "voice": "af_heart", "segments": [["af_sky", 4.0, "world."]]}
 {"kind": "checks", "id": "fuzz-checks-1", "text": "[voice:af_sky][rate:9]world.[voice: bm_george ]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-2", "text": "[voice: bm_george ][VOICE:af_bella(2)+af_sky]", "voice": "af_heart", "segments": []}
 {"kind": "checks", "id": "fuzz-checks-2", "text": "[voice: bm_george ][VOICE:af_bella(2)+af_sky]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-3", "text": "[voice:af_sky][voice: bm_george ] world.[pause:3s][voice: bm_george ][rate:9]", "voice": "af_heart", "segments": [["bm_george", 1.0, "world.[pause:3s]"]]}
 {"kind": "checks", "id": "fuzz-checks-3", "text": "[voice:af_sky][voice: bm_george ] world.[pause:3s][voice: bm_george ][rate:9]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-4", "text": "[rate: 0.1 ][VOICE:af_bella(2)+af_sky] hello[rate:2]", "voice": "af_heart", "segments": [["af_bella(2)+af_sky", 1.0, "hello"]]}
 {"kind": "checks", "id": "fuzz-checks-4", "text": "[rate: 0.1 ][VOICE:af_bella(2)+af_sky] hello[rate:2]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-5", "text": "[voice:]hello", "voice": "af_heart", "segments": [["af_heart", 1.0, "[voice:]hello"]]}
 {"kind": "checks", "id": "fuzz-checks-5", "text": "[voice:]hello", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-6", "text": "[voice: bm_george ] [voice:af_sky]", "voice": "af_heart", "segments": []}
 {"kind": "checks", "id": "fuzz-checks-6", "text": "[voice: bm_george ] [voice:af_sky]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-7", "text": "\n[pause:3s]helloworld.", "voice": "af_heart", "segments": [["af_heart", 1.0, "\n[pause:3s]helloworld."]]}
-{"kind": "checks", "id": "fuzz-checks-7", "text": "\n[pause:3s]helloworld.", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-8", "text": "[baserate:1.5][pause:3s]\n", "voice": "af_heart", "segments": [["af_heart", 1.5, "[pause:3s]"]]}
-{"kind": "checks", "id": "fuzz-checks-8", "text": "[baserate:1.5][pause:3s]\n", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-9", "text": "[voice: bm_george ][pause:3s][voice:af_sky]", "voice": "af_heart", "segments": [["bm_george", 1.0, "[pause:3s]"]]}
 {"kind": "checks", "id": "fuzz-checks-9", "text": "[voice: bm_george ][pause:3s][voice:af_sky]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-10", "text": "hello[rate:9][voice:af_sky]😀[voice: bm_george ][voice:af_sky][rate:9]", "voice": "af_heart", "segments": [["af_heart", 1.0, "hello"], ["af_sky", 1.0, "😀"]]}
 {"kind": "checks", "id": "fuzz-checks-10", "text": "hello[rate:9][voice:af_sky]😀[voice: bm_george ][voice:af_sky][rate:9]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-11", "text": "world.[rate:9]😀[baserate:1.5]", "voice": "af_heart", "segments": [["af_heart", 1.0, "world."], ["af_heart", 4.0, "😀"]]}
 {"kind": "checks", "id": "fuzz-checks-11", "text": "world.[rate:9]😀[baserate:1.5]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-12", "text": "[VOICE:af_bella(2)+af_sky]world. [rate:2][voice:]😀[voice:af_sky] ", "voice": "af_heart", "segments": [["af_bella(2)+af_sky", 1.0, "world."], ["af_bella(2)+af_sky", 2.0, "[voice:]😀"]]}
 {"kind": "checks", "id": "fuzz-checks-12", "text": "[VOICE:af_bella(2)+af_sky]world. [rate:2][voice:]😀[voice:af_sky] ", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-13", "text": "[baserate:1.5][rate:2]world.\n[voice:]", "voice": "af_heart", "segments": [["af_heart", 3.0, "world.\n[voice:]"]]}
 {"kind": "checks", "id": "fuzz-checks-13", "text": "[baserate:1.5][rate:2]world.\n[voice:]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-14", "text": "hello[VOICE:af_bella(2)+af_sky][VOICE:af_bella(2)+af_sky]", "voice": "af_heart", "segments": [["af_heart", 1.0, "hello"]]}
 {"kind": "checks", "id": "fuzz-checks-14", "text": "hello[VOICE:af_bella(2)+af_sky][VOICE:af_bella(2)+af_sky]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-15", "text": "[rate: 0.1 ] world.[voice:] hello[baserate:1.5]", "voice": "af_heart", "segments": [["af_heart", 0.25, "world.[voice:] hello"]]}
-{"kind": "checks", "id": "fuzz-checks-15", "text": "[rate: 0.1 ] world.[voice:] hello[baserate:1.5]", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-16", "text": "[baserate:1.5][rate:2][voice: bm_george ][rate:9][voice: bm_george ][rate: 0.1 ]", "voice": "af_heart", "segments": []}
 {"kind": "checks", "id": "fuzz-checks-16", "text": "[baserate:1.5][rate:2][voice: bm_george ][rate:9][voice: bm_george ][rate: 0.1 ]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-17", "text": "[voice:]world.[voice:af_sky]\n[pause:3s] [rate:9][voice: bm_george ]", "voice": "af_heart", "segments": [["af_heart", 1.0, "[voice:]world."], ["af_sky", 1.0, "[pause:3s]"]]}
-{"kind": "checks", "id": "fuzz-checks-17", "text": "[voice:]world.[voice:af_sky]\n[pause:3s] [rate:9][voice: bm_george ]", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-18", "text": "[pause:3s][voice: bm_george ]\nhello😀[rate: 0.1 ]", "voice": "af_heart", "segments": [["af_heart", 1.0, "[pause:3s]"], ["bm_george", 1.0, "hello😀"]]}
-{"kind": "checks", "id": "fuzz-checks-18", "text": "[pause:3s][voice: bm_george ]\nhello😀[rate: 0.1 ]", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-19", "text": "[VOICE:af_bella(2)+af_sky][voice: bm_george ]😀[VOICE:af_bella(2)+af_sky][VOICE:af_bella(2)+af_sky][rate: 0.1 ]hello[VOICE:af_bella(2)+af_sky]", "voice": "af_heart", "segments": [["bm_george", 1.0, "😀"], ["af_bella(2)+af_sky", 0.25, "hello"]]}
 {"kind": "checks", "id": "fuzz-checks-19", "text": "[VOICE:af_bella(2)+af_sky][voice: bm_george ]😀[VOICE:af_bella(2)+af_sky][VOICE:af_bella(2)+af_sky][rate: 0.1 ]hello[VOICE:af_bella(2)+af_sky]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-20", "text": "[voice: bm_george ]", "voice": "af_heart", "segments": []}
 {"kind": "checks", "id": "fuzz-checks-20", "text": "[voice: bm_george ]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-21", "text": "[VOICE:af_bella(2)+af_sky][rate: 0.1 ][voice:][rate: 0.1 ]", "voice": "af_heart", "segments": [["af_bella(2)+af_sky", 0.25, "[voice:]"]]}
 {"kind": "checks", "id": "fuzz-checks-21", "text": "[VOICE:af_bella(2)+af_sky][rate: 0.1 ][voice:][rate: 0.1 ]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-22", "text": "\n[baserate:1.5][voice:]", "voice": "af_heart", "segments": [["af_heart", 1.5, "[voice:]"]]}
 {"kind": "checks", "id": "fuzz-checks-22", "text": "\n[baserate:1.5][voice:]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-23", "text": "world.😀[voice:][rate:2][rate:2]hello", "voice": "af_heart", "segments": [["af_heart", 1.0, "world.😀[voice:]"], ["af_heart", 2.0, "hello"]]}
-{"kind": "checks", "id": "fuzz-checks-23", "text": "world.😀[voice:][rate:2][rate:2]hello", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-24", "text": "[rate:2][rate: 0.1 ][rate: 0.1 ][voice: bm_george ][rate:9] [rate: 0.1 ][rate:2]", "voice": "af_heart", "segments": []}
-{"kind": "checks", "id": "fuzz-checks-24", "text": "[rate:2][rate: 0.1 ][rate: 0.1 ][voice: bm_george ][rate:9] [rate: 0.1 ][rate:2]", "allow_voice_tags": true, "remove_emoji": false, "speakable": false, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-25", "text": "😀[voice: bm_george ][voice:][rate:2]world.world.[pause:3s][rate:9]", "voice": "af_heart", "segments": [["af_heart", 1.0, "😀"], ["bm_george", 1.0, "[voice:]"], ["bm_george", 2.0, "world.world.[pause:3s]"]]}
-{"kind": "checks", "id": "fuzz-checks-25", "text": "😀[voice: bm_george ][voice:][rate:2]world.world.[pause:3s][rate:9]", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-26", "text": "[rate: 0.1 ]world. [rate:9]\n[rate: 0.1 ][voice: bm_george ][rate:9]", "voice": "af_heart", "segments": [["af_heart", 0.25, "world."]]}
-{"kind": "checks", "id": "fuzz-checks-26", "text": "[rate: 0.1 ]world. [rate:9]\n[rate: 0.1 ][voice: bm_george ][rate:9]", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-27", "text": "[voice: bm_george ][voice:af_sky]\n[rate:9]hello", "voice": "af_heart", "segments": [["af_sky", 4.0, "hello"]]}
-{"kind": "checks", "id": "fuzz-checks-27", "text": "[voice: bm_george ][voice:af_sky]\n[rate:9]hello", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-28", "text": "😀[pause:3s][voice:][VOICE:af_bella(2)+af_sky][rate: 0.1 ][rate:2]", "voice": "af_heart", "segments": [["af_heart", 1.0, "😀[pause:3s][voice:]"]]}
-{"kind": "checks", "id": "fuzz-checks-28", "text": "😀[pause:3s][voice:][VOICE:af_bella(2)+af_sky][rate: 0.1 ][rate:2]", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-29", "text": "[rate:2]", "voice": "af_heart", "segments": []}
 {"kind": "checks", "id": "fuzz-checks-29", "text": "[rate:2]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-30", "text": "[rate:9]hello[VOICE:af_bella(2)+af_sky][pause:3s]", "voice": "af_heart", "segments": [["af_heart", 4.0, "hello"], ["af_bella(2)+af_sky", 1.0, "[pause:3s]"]]}
-{"kind": "checks", "id": "fuzz-checks-30", "text": "[rate:9]hello[VOICE:af_bella(2)+af_sky][pause:3s]", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-31", "text": "[VOICE:af_bella(2)+af_sky]😀[voice:]", "voice": "af_heart", "segments": [["af_bella(2)+af_sky", 1.0, "😀[voice:]"]]}
 {"kind": "checks", "id": "fuzz-checks-31", "text": "[VOICE:af_bella(2)+af_sky]😀[voice:]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-32", "text": "[voice:]", "voice": "af_heart", "segments": [["af_heart", 1.0, "[voice:]"]]}
 {"kind": "checks", "id": "fuzz-checks-32", "text": "[voice:]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-33", "text": "[voice: bm_george ][pause:3s]", "voice": "af_heart", "segments": [["bm_george", 1.0, "[pause:3s]"]]}
-{"kind": "checks", "id": "fuzz-checks-33", "text": "[voice: bm_george ][pause:3s]", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-34", "text": " \n[pause:3s][voice:af_sky][VOICE:af_bella(2)+af_sky][VOICE:af_bella(2)+af_sky][baserate:1.5]", "voice": "af_heart", "segments": [["af_heart", 1.0, "[pause:3s]"]]}
-{"kind": "checks", "id": "fuzz-checks-34", "text": " \n[pause:3s][voice:af_sky][VOICE:af_bella(2)+af_sky][VOICE:af_bella(2)+af_sky][baserate:1.5]", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-35", "text": "[rate:9][rate: 0.1 ][pause:3s][rate:9][pause:3s][rate: 0.1 ][voice: bm_george ]", "voice": "af_heart", "segments": [["af_heart", 0.25, "[pause:3s]"], ["af_heart", 4.0, "[pause:3s]"]]}
 {"kind": "checks", "id": "fuzz-checks-35", "text": "[rate:9][rate: 0.1 ][pause:3s][rate:9][pause:3s][rate: 0.1 ][voice: bm_george ]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-36", "text": "[voice:af_sky][voice:]world.[pause:3s][voice: bm_george ][rate: 0.1 ]", "voice": "af_heart", "segments": [["af_sky", 1.0, "[voice:]world.[pause:3s]"]]}
-{"kind": "checks", "id": "fuzz-checks-36", "text": "[voice:af_sky][voice:]world.[pause:3s][voice: bm_george ][rate: 0.1 ]", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-37", "text": "[rate:9] 😀[rate:2]\n[baserate:1.5]", "voice": "af_heart", "segments": [["af_heart", 4.0, "😀"]]}
 {"kind": "checks", "id": "fuzz-checks-37", "text": "[rate:9] 😀[rate:2]\n[baserate:1.5]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-38", "text": "[VOICE:af_bella(2)+af_sky][baserate:1.5][baserate:1.5]\n [pause:3s]", "voice": "af_heart", "segments": [["af_bella(2)+af_sky", 1.5, "[pause:3s]"]]}
 {"kind": "checks", "id": "fuzz-checks-38", "text": "[VOICE:af_bella(2)+af_sky][baserate:1.5][baserate:1.5]\n [pause:3s]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-39", "text": "😀 ", "voice": "af_heart", "segments": [["af_heart", 1.0, "😀 "]]}
 {"kind": "checks", "id": "fuzz-checks-39", "text": "😀 ", "allow_voice_tags": false, "remove_emoji": true, "speakable": false, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-40", "text": "[rate:2][pause:3s][voice:][voice:af_sky]hello", "voice": "af_heart", "segments": [["af_heart", 2.0, "[pause:3s][voice:]"], ["af_sky", 1.0, "hello"]]}
 {"kind": "checks", "id": "fuzz-checks-40", "text": "[rate:2][pause:3s][voice:][voice:af_sky]hello", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-41", "text": "[baserate:1.5][rate:9][rate:9][pause:3s][pause:3s]", "voice": "af_heart", "segments": [["af_heart", 4.0, "[pause:3s][pause:3s]"]]}
 {"kind": "checks", "id": "fuzz-checks-41", "text": "[baserate:1.5][rate:9][rate:9][pause:3s][pause:3s]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-42", "text": " \n[voice: bm_george ]  [rate:2][voice: bm_george ]", "voice": "af_heart", "segments": []}
 {"kind": "checks", "id": "fuzz-checks-42", "text": " \n[voice: bm_george ]  [rate:2][voice: bm_george ]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-43", "text": "[baserate:1.5][rate: 0.1 ][voice:][baserate:1.5]😀world.[rate:2]", "voice": "af_heart", "segments": [["af_heart", 0.25, "[voice:] 😀world."]]}
 {"kind": "checks", "id": "fuzz-checks-43", "text": "[baserate:1.5][rate: 0.1 ][voice:][baserate:1.5]😀world.[rate:2]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-44", "text": "world.world.[voice:][rate: 0.1 ][voice:][voice:][voice:]", "voice": "af_heart", "segments": [["af_heart", 1.0, "world.world.[voice:]"], ["af_heart", 0.25, "[voice:][voice:][voice:]"]]}
-{"kind": "checks", "id": "fuzz-checks-44", "text": "world.world.[voice:][rate: 0.1 ][voice:][voice:][voice:]", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-45", "text": "[rate: 0.1 ][rate:2]hello[VOICE:af_bella(2)+af_sky][voice:][voice: bm_george ][voice:]", "voice": "af_heart", "segments": [["af_heart", 2.0, "hello"], ["af_bella(2)+af_sky", 1.0, "[voice:]"], ["bm_george", 1.0, "[voice:]"]]}
 {"kind": "checks", "id": "fuzz-checks-45", "text": "[rate: 0.1 ][rate:2]hello[VOICE:af_bella(2)+af_sky][voice:][voice: bm_george ][voice:]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-46", "text": "😀 [voice: bm_george ][baserate:1.5]", "voice": "af_heart", "segments": [["af_heart", 1.0, "😀"]]}
-{"kind": "checks", "id": "fuzz-checks-46", "text": "😀 [voice: bm_george ][baserate:1.5]", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-47", "text": "world.😀[rate: 0.1 ][voice: bm_george ]\n", "voice": "af_heart", "segments": [["af_heart", 1.0, "world.😀"]]}
-{"kind": "checks", "id": "fuzz-checks-47", "text": "world.😀[rate: 0.1 ][voice: bm_george ]\n", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-48", "text": "[voice:af_sky]😀[voice:]😀 [pause:3s][rate:9]", "voice": "af_heart", "segments": [["af_sky", 1.0, "😀[voice:]😀 [pause:3s]"]]}
 {"kind": "checks", "id": "fuzz-checks-48", "text": "[voice:af_sky]😀[voice:]😀 [pause:3s][rate:9]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-49", "text": "\n[VOICE:af_bella(2)+af_sky][pause:3s]\nworld.[rate:2][voice:]", "voice": "af_heart", "segments": [["af_bella(2)+af_sky", 1.0, "[pause:3s]\nworld."], ["af_bella(2)+af_sky", 2.0, "[voice:]"]]}
-{"kind": "checks", "id": "fuzz-checks-49", "text": "\n[VOICE:af_bella(2)+af_sky][pause:3s]\nworld.[rate:2][voice:]", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-50", "text": "[rate: 0.1 ][rate:9][voice: bm_george ][rate:2][rate: 0.1 ][rate:2][voice: bm_george ][rate: 0.1 ]", "voice": "af_heart", "segments": []}
-{"kind": "checks", "id": "fuzz-checks-50", "text": "[rate: 0.1 ][rate:9][voice: bm_george ][rate:2][rate: 0.1 ][rate:2][voice: bm_george ][rate: 0.1 ]", "allow_voice_tags": true, "remove_emoji": false, "speakable": false, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-51", "text": "[voice:af_sky][baserate:1.5]hello[voice:]helloworld.😀", "voice": "af_heart", "segments": [["af_sky", 1.5, "hello[voice:]helloworld.😀"]]}
-{"kind": "checks", "id": "fuzz-checks-51", "text": "[voice:af_sky][baserate:1.5]hello[voice:]helloworld.😀", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-52", "text": "[rate: 0.1 ]world. [baserate:1.5][pause:3s]world.[rate:9][rate: 0.1 ]", "voice": "af_heart", "segments": [["af_heart", 0.25, "world. [pause:3s]world."]]}
-{"kind": "checks", "id": "fuzz-checks-52", "text": "[rate: 0.1 ]world. [baserate:1.5][pause:3s]world.[rate:9][rate: 0.1 ]", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-53", "text": "[voice:]", "voice": "af_heart", "segments": [["af_heart", 1.0, "[voice:]"]]}
 {"kind": "checks", "id": "fuzz-checks-53", "text": "[voice:]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-54", "text": "[rate: 0.1 ]hello[rate: 0.1 ][voice:af_sky][voice: bm_george ][rate:2]", "voice": "af_heart", "segments": [["af_heart", 0.25, "hello"]]}
-{"kind": "checks", "id": "fuzz-checks-54", "text": "[rate: 0.1 ]hello[rate: 0.1 ][voice:af_sky][voice: bm_george ][rate:2]", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-55", "text": "\nworld.[VOICE:af_bella(2)+af_sky]", "voice": "af_heart", "segments": [["af_heart", 1.0, "world."]]}
-{"kind": "checks", "id": "fuzz-checks-55", "text": "\nworld.[VOICE:af_bella(2)+af_sky]", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-56", "text": "😀\nhello[rate:9]\n[voice:af_sky]", "voice": "af_heart", "segments": [["af_heart", 1.0, "😀\nhello"]]}
-{"kind": "checks", "id": "fuzz-checks-56", "text": "😀\nhello[rate:9]\n[voice:af_sky]", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-57", "text": "hello😀 [voice: bm_george ][rate: 0.1 ]", "voice": "af_heart", "segments": [["af_heart", 1.0, "hello😀"]]}
-{"kind": "checks", "id": "fuzz-checks-57", "text": "hello😀 [voice: bm_george ][rate: 0.1 ]", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-58", "text": "😀[VOICE:af_bella(2)+af_sky]", "voice": "af_heart", "segments": [["af_heart", 1.0, "😀"]]}
-{"kind": "checks", "id": "fuzz-checks-58", "text": "😀[VOICE:af_bella(2)+af_sky]", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-59", "text": "[rate:2]", "voice": "af_heart", "segments": []}
 {"kind": "checks", "id": "fuzz-checks-59", "text": "[rate:2]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-60", "text": "[rate:9] \n [rate: 0.1 ][pause:3s][VOICE:af_bella(2)+af_sky] ", "voice": "af_heart", "segments": [["af_heart", 0.25, "[pause:3s]"]]}
-{"kind": "checks", "id": "fuzz-checks-60", "text": "[rate:9] \n [rate: 0.1 ][pause:3s][VOICE:af_bella(2)+af_sky] ", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-61", "text": "[rate: 0.1 ][pause:3s][baserate:1.5]😀\n[VOICE:af_bella(2)+af_sky][voice:af_sky]", "voice": "af_heart", "segments": [["af_heart", 0.25, "[pause:3s] 😀"]]}
 {"kind": "checks", "id": "fuzz-checks-61", "text": "[rate: 0.1 ][pause:3s][baserate:1.5]😀\n[VOICE:af_bella(2)+af_sky][voice:af_sky]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-62", "text": "[voice:af_sky]", "voice": "af_heart", "segments": []}
-{"kind": "checks", "id": "fuzz-checks-62", "text": "[voice:af_sky]", "allow_voice_tags": true, "remove_emoji": true, "speakable": false, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-63", "text": "[voice:af_sky][voice: bm_george ]\n[rate: 0.1 ][voice: bm_george ][pause:3s]", "voice": "af_heart", "segments": [["bm_george", 1.0, "[pause:3s]"]]}
 {"kind": "checks", "id": "fuzz-checks-63", "text": "[voice:af_sky][voice: bm_george ]\n[rate: 0.1 ][voice: bm_george ][pause:3s]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-64", "text": "[rate:9]helloworld.[voice:]\n", "voice": "af_heart", "segments": [["af_heart", 4.0, "helloworld.[voice:]"]]}
-{"kind": "checks", "id": "fuzz-checks-64", "text": "[rate:9]helloworld.[voice:]\n", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-65", "text": "\n[voice: bm_george ][pause:3s]", "voice": "af_heart", "segments": [["bm_george", 1.0, "[pause:3s]"]]}
-{"kind": "checks", "id": "fuzz-checks-65", "text": "\n[voice: bm_george ][pause:3s]", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-66", "text": "[voice:][rate:2] [voice:af_sky][voice:af_sky]", "voice": "af_heart", "segments": [["af_heart", 1.0, "[voice:]"]]}
 {"kind": "checks", "id": "fuzz-checks-66", "text": "[voice:][rate:2] [voice:af_sky][voice:af_sky]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-67", "text": "[rate: 0.1 ]", "voice": "af_heart", "segments": []}
 {"kind": "checks", "id": "fuzz-checks-67", "text": "[rate: 0.1 ]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-68", "text": "world.[rate:9][baserate:1.5][baserate:1.5]hello[rate:9]hello[rate:2]", "voice": "af_heart", "segments": [["af_heart", 1.0, "world."], ["af_heart", 4.0, "hello hello"]]}
 {"kind": "checks", "id": "fuzz-checks-68", "text": "world.[rate:9][baserate:1.5][baserate:1.5]hello[rate:9]hello[rate:2]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-69", "text": "[voice:]hello", "voice": "af_heart", "segments": [["af_heart", 1.0, "[voice:]hello"]]}
-{"kind": "checks", "id": "fuzz-checks-69", "text": "[voice:]hello", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-70", "text": "world.world.[rate: 0.1 ]😀[baserate:1.5]", "voice": "af_heart", "segments": [["af_heart", 1.0, "world.world."], ["af_heart", 0.25, "😀"]]}
 {"kind": "checks", "id": "fuzz-checks-70", "text": "world.world.[rate: 0.1 ]😀[baserate:1.5]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-71", "text": "[rate: 0.1 ][voice:][rate:9][voice: bm_george ]", "voice": "af_heart", "segments": [["af_heart", 0.25, "[voice:]"]]}
 {"kind": "checks", "id": "fuzz-checks-71", "text": "[rate: 0.1 ][voice:][rate:9][voice: bm_george ]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-72", "text": "[baserate:1.5][rate:9][VOICE:af_bella(2)+af_sky]\n[voice: bm_george ] ", "voice": "af_heart", "segments": []}
-{"kind": "checks", "id": "fuzz-checks-72", "text": "[baserate:1.5][rate:9][VOICE:af_bella(2)+af_sky]\n[voice: bm_george ] ", "allow_voice_tags": true, "remove_emoji": true, "speakable": false, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-73", "text": "[voice: bm_george ]", "voice": "af_heart", "segments": []}
 {"kind": "checks", "id": "fuzz-checks-73", "text": "[voice: bm_george ]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-74", "text": "[rate:9]world.[rate:2]😀", "voice": "af_heart", "segments": [["af_heart", 4.0, "world."], ["af_heart", 2.0, "😀"]]}
-{"kind": "checks", "id": "fuzz-checks-74", "text": "[rate:9]world.[rate:2]😀", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-75", "text": "[rate:2][baserate:1.5][rate:2][rate:9][voice:]", "voice": "af_heart", "segments": [["af_heart", 4.0, "[voice:]"]]}
-{"kind": "checks", "id": "fuzz-checks-75", "text": "[rate:2][baserate:1.5][rate:2][rate:9][voice:]", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-76", "text": "[pause:3s][baserate:1.5][baserate:1.5][voice:af_sky]hello😀", "voice": "af_heart", "segments": [["af_heart", 1.0, "[pause:3s]"], ["af_sky", 1.0, "hello😀"]]}
 {"kind": "checks", "id": "fuzz-checks-76", "text": "[pause:3s][baserate:1.5][baserate:1.5][voice:af_sky]hello😀", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-77", "text": "[pause:3s]world.", "voice": "af_heart", "segments": [["af_heart", 1.0, "[pause:3s]world."]]}
 {"kind": "checks", "id": "fuzz-checks-77", "text": "[pause:3s]world.", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-78", "text": "[voice:]", "voice": "af_heart", "segments": [["af_heart", 1.0, "[voice:]"]]}
 {"kind": "checks", "id": "fuzz-checks-78", "text": "[voice:]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-79", "text": "[pause:3s]\n\n", "voice": "af_heart", "segments": [["af_heart", 1.0, "[pause:3s]\n\n"]]}
 {"kind": "checks", "id": "fuzz-checks-79", "text": "[pause:3s]\n\n", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-80", "text": "[baserate:1.5]\nworld.[voice:][rate:9]world.", "voice": "af_heart", "segments": [["af_heart", 1.5, "world.[voice:]"], ["af_heart", 4.0, "world."]]}
-{"kind": "checks", "id": "fuzz-checks-80", "text": "[baserate:1.5]\nworld.[voice:][rate:9]world.", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-81", "text": "[voice:af_sky][voice:][VOICE:af_bella(2)+af_sky] [rate:9] ", "voice": "af_heart", "segments": [["af_sky", 1.0, "[voice:]"]]}
 {"kind": "checks", "id": "fuzz-checks-81", "text": "[voice:af_sky][voice:][VOICE:af_bella(2)+af_sky] [rate:9] ", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-82", "text": "[rate:9]", "voice": "af_heart", "segments": []}
 {"kind": "checks", "id": "fuzz-checks-82", "text": "[rate:9]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-83", "text": "\n[voice:][VOICE:af_bella(2)+af_sky]", "voice": "af_heart", "segments": [["af_heart", 1.0, "[voice:]"]]}
-{"kind": "checks", "id": "fuzz-checks-83", "text": "\n[voice:][VOICE:af_bella(2)+af_sky]", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-84", "text": "[rate:9][voice: bm_george ]", "voice": "af_heart", "segments": []}
 {"kind": "checks", "id": "fuzz-checks-84", "text": "[rate:9][voice: bm_george ]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-85", "text": "[voice:]  [rate: 0.1 ]", "voice": "af_heart", "segments": [["af_heart", 1.0, "[voice:]"]]}
 {"kind": "checks", "id": "fuzz-checks-85", "text": "[voice:]  [rate: 0.1 ]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-86", "text": "[rate:2]😀", "voice": "af_heart", "segments": [["af_heart", 2.0, "😀"]]}
 {"kind": "checks", "id": "fuzz-checks-86", "text": "[rate:2]😀", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-87", "text": " [VOICE:af_bella(2)+af_sky]", "voice": "af_heart", "segments": []}
 {"kind": "checks", "id": "fuzz-checks-87", "text": " [VOICE:af_bella(2)+af_sky]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-88", "text": "[pause:3s][voice: bm_george ]\n\n", "voice": "af_heart", "segments": [["af_heart", 1.0, "[pause:3s]"]]}
 {"kind": "checks", "id": "fuzz-checks-88", "text": "[pause:3s][voice: bm_george ]\n\n", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-89", "text": "[rate:2]hello[baserate:1.5]\n😀 ", "voice": "af_heart", "segments": [["af_heart", 2.0, "hello"], ["af_heart", 3.0, "😀"]]}
-{"kind": "checks", "id": "fuzz-checks-89", "text": "[rate:2]hello[baserate:1.5]\n😀 ", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-90", "text": " world.[pause:3s][rate:9][rate:2]", "voice": "af_heart", "segments": [["af_heart", 1.0, "world.[pause:3s]"]]}
-{"kind": "checks", "id": "fuzz-checks-90", "text": " world.[pause:3s][rate:9][rate:2]", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-91", "text": "[rate:2][rate:2][pause:3s]\n[pause:3s] ", "voice": "af_heart", "segments": [["af_heart", 2.0, "[pause:3s]\n[pause:3s]"]]}
-{"kind": "checks", "id": "fuzz-checks-91", "text": "[rate:2][rate:2][pause:3s]\n[pause:3s] ", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-92", "text": " 😀[pause:3s] ", "voice": "af_heart", "segments": [["af_heart", 1.0, " 😀[pause:3s] "]]}
 {"kind": "checks", "id": "fuzz-checks-92", "text": " 😀[pause:3s] ", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-93", "text": "😀[rate:9]hello", "voice": "af_heart", "segments": [["af_heart", 1.0, "😀"], ["af_heart", 4.0, "hello"]]}
-{"kind": "checks", "id": "fuzz-checks-93", "text": "😀[rate:9]hello", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-94", "text": "[rate: 0.1 ][voice:]hello😀[rate: 0.1 ]", "voice": "af_heart", "segments": [["af_heart", 0.25, "[voice:]hello😀"]]}
-{"kind": "checks", "id": "fuzz-checks-94", "text": "[rate: 0.1 ][voice:]hello😀[rate: 0.1 ]", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-95", "text": "[rate:9][baserate:1.5]", "voice": "af_heart", "segments": []}
-{"kind": "checks", "id": "fuzz-checks-95", "text": "[rate:9][baserate:1.5]", "allow_voice_tags": true, "remove_emoji": true, "speakable": false, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-96", "text": "[pause:3s][rate:2]\n [baserate:1.5]", "voice": "af_heart", "segments": [["af_heart", 1.0, "[pause:3s]"]]}
 {"kind": "checks", "id": "fuzz-checks-96", "text": "[pause:3s][rate:2]\n [baserate:1.5]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-97", "text": "[rate:9][voice: bm_george ]😀[rate:9][voice:]", "voice": "af_heart", "segments": [["bm_george", 1.0, "😀"], ["bm_george", 4.0, "[voice:]"]]}
-{"kind": "checks", "id": "fuzz-checks-97", "text": "[rate:9][voice: bm_george ]😀[rate:9][voice:]", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-98", "text": "[voice:af_sky] \n[voice:af_sky][voice: bm_george ]😀", "voice": "af_heart", "segments": [["bm_george", 1.0, "😀"]]}
 {"kind": "checks", "id": "fuzz-checks-98", "text": "[voice:af_sky] \n[voice:af_sky][voice: bm_george ]😀", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-99", "text": "[pause:3s][rate:9][VOICE:af_bella(2)+af_sky][baserate:1.5]hello[VOICE:af_bella(2)+af_sky]hello[voice:af_sky]", "voice": "af_heart", "segments": [["af_heart", 1.0, "[pause:3s]"], ["af_bella(2)+af_sky", 1.5, "hello"], ["af_bella(2)+af_sky", 1.0, "hello"]]}
-{"kind": "checks", "id": "fuzz-checks-99", "text": "[pause:3s][rate:9][VOICE:af_bella(2)+af_sky][baserate:1.5]hello[VOICE:af_bella(2)+af_sky]hello[voice:af_sky]", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-100", "text": "[rate:2]", "voice": "af_heart", "segments": []}
-{"kind": "checks", "id": "fuzz-checks-100", "text": "[rate:2]", "allow_voice_tags": true, "remove_emoji": true, "speakable": false, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-101", "text": "[baserate:1.5][rate:2]", "voice": "af_heart", "segments": []}
 {"kind": "checks", "id": "fuzz-checks-101", "text": "[baserate:1.5][rate:2]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-102", "text": " ", "voice": "af_heart", "segments": [["af_heart", 1.0, " "]]}
 {"kind": "checks", "id": "fuzz-checks-102", "text": " ", "allow_voice_tags": false, "remove_emoji": true, "speakable": false, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-103", "text": "world.[pause:3s][pause:3s][baserate:1.5][voice:]", "voice": "af_heart", "segments": [["af_heart", 1.0, "world.[pause:3s][pause:3s]"], ["af_heart", 1.5, "[voice:]"]]}
-{"kind": "checks", "id": "fuzz-checks-103", "text": "world.[pause:3s][pause:3s][baserate:1.5][voice:]", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-104", "text": "[rate: 0.1 ][voice:][rate: 0.1 ]", "voice": "af_heart", "segments": [["af_heart", 0.25, "[voice:]"]]}
 {"kind": "checks", "id": "fuzz-checks-104", "text": "[rate: 0.1 ][voice:][rate: 0.1 ]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-105", "text": "\n[voice: bm_george ][baserate:1.5]hello[baserate:1.5][voice:af_sky][baserate:1.5][baserate:1.5]", "voice": "af_heart", "segments": [["bm_george", 1.5, "hello"]]}
 {"kind": "checks", "id": "fuzz-checks-105", "text": "\n[voice: bm_george ][baserate:1.5]hello[baserate:1.5][voice:af_sky][baserate:1.5][baserate:1.5]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-106", "text": "world.[voice: bm_george ]world.[pause:3s][voice:af_sky]", "voice": "af_heart", "segments": [["af_heart", 1.0, "world."], ["bm_george", 1.0, "world.[pause:3s]"]]}
 {"kind": "checks", "id": "fuzz-checks-106", "text": "world.[voice: bm_george ]world.[pause:3s][voice:af_sky]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-107", "text": "[VOICE:af_bella(2)+af_sky]", "voice": "af_heart", "segments": []}
 {"kind": "checks", "id": "fuzz-checks-107", "text": "[VOICE:af_bella(2)+af_sky]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-108", "text": "[rate: 0.1 ]", "voice": "af_heart", "segments": []}
-{"kind": "checks", "id": "fuzz-checks-108", "text": "[rate: 0.1 ]", "allow_voice_tags": true, "remove_emoji": false, "speakable": false, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-109", "text": "[rate:9]", "voice": "af_heart", "segments": []}
-{"kind": "checks", "id": "fuzz-checks-109", "text": "[rate:9]", "allow_voice_tags": true, "remove_emoji": true, "speakable": false, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-110", "text": "hello[VOICE:af_bella(2)+af_sky][rate:2][voice:af_sky][rate:2][rate:9]\n[rate: 0.1 ]", "voice": "af_heart", "segments": [["af_heart", 1.0, "hello"]]}
 {"kind": "checks", "id": "fuzz-checks-110", "text": "hello[VOICE:af_bella(2)+af_sky][rate:2][voice:af_sky][rate:2][rate:9]\n[rate: 0.1 ]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-111", "text": "[voice:] [rate:9]😀", "voice": "af_heart", "segments": [["af_heart", 1.0, "[voice:]"], ["af_heart", 4.0, "😀"]]}
 {"kind": "checks", "id": "fuzz-checks-111", "text": "[voice:] [rate:9]😀", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-112", "text": "[VOICE:af_bella(2)+af_sky]", "voice": "af_heart", "segments": []}
-{"kind": "checks", "id": "fuzz-checks-112", "text": "[VOICE:af_bella(2)+af_sky]", "allow_voice_tags": true, "remove_emoji": true, "speakable": false, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-113", "text": "[VOICE:af_bella(2)+af_sky][voice: bm_george ]", "voice": "af_heart", "segments": []}
-{"kind": "checks", "id": "fuzz-checks-113", "text": "[VOICE:af_bella(2)+af_sky][voice: bm_george ]", "allow_voice_tags": true, "remove_emoji": true, "speakable": false, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-114", "text": " [voice: bm_george ]world.world.[rate: 0.1 ][baserate:1.5]", "voice": "af_heart", "segments": [["bm_george", 1.0, "world.world."]]}
 {"kind": "checks", "id": "fuzz-checks-114", "text": " [voice: bm_george ]world.world.[rate: 0.1 ][baserate:1.5]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-115", "text": " 😀[baserate:1.5]😀[pause:3s]", "voice": "af_heart", "segments": [["af_heart", 1.0, "😀"], ["af_heart", 1.5, "😀[pause:3s]"]]}
 {"kind": "checks", "id": "fuzz-checks-115", "text": " 😀[baserate:1.5]😀[pause:3s]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-116", "text": "hello[voice:]world.[baserate:1.5][voice:af_sky][rate:9][voice:af_sky]😀", "voice": "af_heart", "segments": [["af_heart", 1.0, "hello[voice:]world."], ["af_sky", 1.0, "😀"]]}
 {"kind": "checks", "id": "fuzz-checks-116", "text": "hello[voice:]world.[baserate:1.5][voice:af_sky][rate:9][voice:af_sky]😀", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-117", "text": "[rate:2]world.\n[VOICE:af_bella(2)+af_sky][VOICE:af_bella(2)+af_sky]hello[rate: 0.1 ]", "voice": "af_heart", "segments": [["af_heart", 2.0, "world."], ["af_bella(2)+af_sky", 1.0, "hello"]]}
 {"kind": "checks", "id": "fuzz-checks-117", "text": "[rate:2]world.\n[VOICE:af_bella(2)+af_sky][VOICE:af_bella(2)+af_sky]hello[rate: 0.1 ]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-118", "text": "world.hello[rate:9][VOICE:af_bella(2)+af_sky]", "voice": "af_heart", "segments": [["af_heart", 1.0, "world.hello"]]}
-{"kind": "checks", "id": "fuzz-checks-118", "text": "world.hello[rate:9][VOICE:af_bella(2)+af_sky]", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-119", "text": " [pause:3s][voice:][rate: 0.1 ][rate: 0.1 ][rate: 0.1 ]\n", "voice": "af_heart", "segments": [["af_heart", 1.0, "[pause:3s][voice:]"]]}
-{"kind": "checks", "id": "fuzz-checks-119", "text": " [pause:3s][voice:][rate: 0.1 ][rate: 0.1 ][rate: 0.1 ]\n", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-120", "text": "😀", "voice": "af_heart", "segments": [["af_heart", 1.0, "😀"]]}
-{"kind": "checks", "id": "fuzz-checks-120", "text": "😀", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-121", "text": "[rate: 0.1 ][voice:][rate:2] [pause:3s]", "voice": "af_heart", "segments": [["af_heart", 0.25, "[voice:]"], ["af_heart", 2.0, "[pause:3s]"]]}
 {"kind": "checks", "id": "fuzz-checks-121", "text": "[rate: 0.1 ][voice:][rate:2] [pause:3s]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-122", "text": "[voice:af_sky][voice:]\nhellohello\n", "voice": "af_heart", "segments": [["af_sky", 1.0, "[voice:]\nhellohello"]]}
-{"kind": "checks", "id": "fuzz-checks-122", "text": "[voice:af_sky][voice:]\nhellohello\n", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-123", "text": "[baserate:1.5]hello", "voice": "af_heart", "segments": [["af_heart", 1.5, "hello"]]}
 {"kind": "checks", "id": "fuzz-checks-123", "text": "[baserate:1.5]hello", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-124", "text": "[baserate:1.5]", "voice": "af_heart", "segments": []}
 {"kind": "checks", "id": "fuzz-checks-124", "text": "[baserate:1.5]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-125", "text": "hello\n [rate:9]\n😀", "voice": "af_heart", "segments": [["af_heart", 1.0, "hello"], ["af_heart", 4.0, "😀"]]}
 {"kind": "checks", "id": "fuzz-checks-125", "text": "hello\n [rate:9]\n😀", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-126", "text": "[voice: bm_george ]hello[voice:][voice: bm_george ][rate:2][rate:2] ", "voice": "af_heart", "segments": [["bm_george", 1.0, "hello[voice:]"]]}
-{"kind": "checks", "id": "fuzz-checks-126", "text": "[voice: bm_george ]hello[voice:][voice: bm_george ][rate:2][rate:2] ", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-127", "text": "[rate:9][rate:2][rate:2]\n[rate: 0.1 ][voice:af_sky]", "voice": "af_heart", "segments": []}
-{"kind": "checks", "id": "fuzz-checks-127", "text": "[rate:9][rate:2][rate:2]\n[rate: 0.1 ][voice:af_sky]", "allow_voice_tags": true, "remove_emoji": true, "speakable": false, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-128", "text": "[voice:] ", "voice": "af_heart", "segments": [["af_heart", 1.0, "[voice:] "]]}
 {"kind": "checks", "id": "fuzz-checks-128", "text": "[voice:] ", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-129", "text": "hello[rate:2] [rate: 0.1 ][pause:3s][voice: bm_george ][baserate:1.5]😀", "voice": "af_heart", "segments": [["af_heart", 1.0, "hello"], ["af_heart", 0.25, "[pause:3s]"], ["bm_george", 1.5, "😀"]]}
-{"kind": "checks", "id": "fuzz-checks-129", "text": "hello[rate:2] [rate: 0.1 ][pause:3s][voice: bm_george ][baserate:1.5]😀", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-130", "text": "[rate:2]world.[VOICE:af_bella(2)+af_sky]world.[voice:af_sky][rate: 0.1 ]", "voice": "af_heart", "segments": [["af_heart", 2.0, "world."], ["af_bella(2)+af_sky", 1.0, "world."]]}
-{"kind": "checks", "id": "fuzz-checks-130", "text": "[rate:2]world.[VOICE:af_bella(2)+af_sky]world.[voice:af_sky][rate: 0.1 ]", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-131", "text": "[voice:][baserate:1.5][pause:3s] [rate:9]world.[voice:][voice:]", "voice": "af_heart", "segments": [["af_heart", 1.0, "[voice:]"], ["af_heart", 1.5, "[pause:3s]"], ["af_heart", 4.0, "world.[voice:][voice:]"]]}
 {"kind": "checks", "id": "fuzz-checks-131", "text": "[voice:][baserate:1.5][pause:3s] [rate:9]world.[voice:][voice:]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-132", "text": "[pause:3s][baserate:1.5][rate:9]😀[voice:][voice: bm_george ]", "voice": "af_heart", "segments": [["af_heart", 1.0, "[pause:3s]"], ["af_heart", 4.0, "😀[voice:]"]]}
-{"kind": "checks", "id": "fuzz-checks-132", "text": "[pause:3s][baserate:1.5][rate:9]😀[voice:][voice: bm_george ]", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-133", "text": "[voice: bm_george ][rate:9][voice: bm_george ][pause:3s]\n[rate:2][rate: 0.1 ]", "voice": "af_heart", "segments": [["bm_george", 1.0, "[pause:3s]"]]}
 {"kind": "checks", "id": "fuzz-checks-133", "text": "[voice: bm_george ][rate:9][voice: bm_george ][pause:3s]\n[rate:2][rate: 0.1 ]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-134", "text": "world.", "voice": "af_heart", "segments": [["af_heart", 1.0, "world."]]}
-{"kind": "checks", "id": "fuzz-checks-134", "text": "world.", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-135", "text": "[voice: bm_george ]", "voice": "af_heart", "segments": []}
 {"kind": "checks", "id": "fuzz-checks-135", "text": "[voice: bm_george ]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-136", "text": "[rate: 0.1 ][rate:9][rate:2]", "voice": "af_heart", "segments": []}
 {"kind": "checks", "id": "fuzz-checks-136", "text": "[rate: 0.1 ][rate:9][rate:2]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-137", "text": "[rate: 0.1 ][rate:2][voice:][voice:af_sky][baserate:1.5]hello", "voice": "af_heart", "segments": [["af_heart", 2.0, "[voice:]"], ["af_sky", 1.5, "hello"]]}
-{"kind": "checks", "id": "fuzz-checks-137", "text": "[rate: 0.1 ][rate:2][voice:][voice:af_sky][baserate:1.5]hello", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-138", "text": " [voice:]world.[baserate:1.5][rate:2]", "voice": "af_heart", "segments": [["af_heart", 1.0, "[voice:]world."]]}
-{"kind": "checks", "id": "fuzz-checks-138", "text": " [voice:]world.[baserate:1.5][rate:2]", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-139", "text": "[baserate:1.5]", "voice": "af_heart", "segments": []}
-{"kind": "checks", "id": "fuzz-checks-139", "text": "[baserate:1.5]", "allow_voice_tags": true, "remove_emoji": true, "speakable": false, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-140", "text": "[VOICE:af_bella(2)+af_sky][rate: 0.1 ]\n[voice:af_sky]", "voice": "af_heart", "segments": []}
 {"kind": "checks", "id": "fuzz-checks-140", "text": "[VOICE:af_bella(2)+af_sky][rate: 0.1 ]\n[voice:af_sky]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-141", "text": "[rate:9][pause:3s] [voice:]", "voice": "af_heart", "segments": [["af_heart", 4.0, "[pause:3s] [voice:]"]]}
 {"kind": "checks", "id": "fuzz-checks-141", "text": "[rate:9][pause:3s] [voice:]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-142", "text": "[baserate:1.5][rate:2][baserate:1.5][rate: 0.1 ][rate: 0.1 ]", "voice": "af_heart", "segments": []}
-{"kind": "checks", "id": "fuzz-checks-142", "text": "[baserate:1.5][rate:2][baserate:1.5][rate: 0.1 ][rate: 0.1 ]", "allow_voice_tags": true, "remove_emoji": true, "speakable": false, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-143", "text": "[VOICE:af_bella(2)+af_sky]world.", "voice": "af_heart", "segments": [["af_bella(2)+af_sky", 1.0, "world."]]}
-{"kind": "checks", "id": "fuzz-checks-143", "text": "[VOICE:af_bella(2)+af_sky]world.", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-144", "text": "hellohello [rate:2][rate:2][baserate:1.5][baserate:1.5] ", "voice": "af_heart", "segments": [["af_heart", 1.0, "hellohello"]]}
 {"kind": "checks", "id": "fuzz-checks-144", "text": "hellohello [rate:2][rate:2][baserate:1.5][baserate:1.5] ", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-145", "text": "[rate:2][rate: 0.1 ]\nhello", "voice": "af_heart", "segments": [["af_heart", 0.25, "hello"]]}
-{"kind": "checks", "id": "fuzz-checks-145", "text": "[rate:2][rate: 0.1 ]\nhello", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-146", "text": "[voice: bm_george ]", "voice": "af_heart", "segments": []}
 {"kind": "checks", "id": "fuzz-checks-146", "text": "[voice: bm_george ]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-147", "text": "[VOICE:af_bella(2)+af_sky][rate: 0.1 ][voice:][baserate:1.5][rate:2][pause:3s][VOICE:af_bella(2)+af_sky][rate:9]", "voice": "af_heart", "segments": [["af_bella(2)+af_sky", 0.25, "[voice:]"], ["af_bella(2)+af_sky", 3.0, "[pause:3s]"]]}
 {"kind": "checks", "id": "fuzz-checks-147", "text": "[VOICE:af_bella(2)+af_sky][rate: 0.1 ][voice:][baserate:1.5][rate:2][pause:3s][VOICE:af_bella(2)+af_sky][rate:9]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-148", "text": "[VOICE:af_bella(2)+af_sky][rate:2]", "voice": "af_heart", "segments": []}
 {"kind": "checks", "id": "fuzz-checks-148", "text": "[VOICE:af_bella(2)+af_sky][rate:2]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-149", "text": "[baserate:1.5][pause:3s]", "voice": "af_heart", "segments": [["af_heart", 1.5, "[pause:3s]"]]}
 {"kind": "checks", "id": "fuzz-checks-149", "text": "[baserate:1.5][pause:3s]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-150", "text": "[voice: bm_george ][pause:3s]", "voice": "af_heart", "segments": [["bm_george", 1.0, "[pause:3s]"]]}
-{"kind": "checks", "id": "fuzz-checks-150", "text": "[voice: bm_george ][pause:3s]", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-151", "text": "[voice:af_sky]\n", "voice": "af_heart", "segments": []}
-{"kind": "checks", "id": "fuzz-checks-151", "text": "[voice:af_sky]\n", "allow_voice_tags": true, "remove_emoji": true, "speakable": false, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-152", "text": "world.[baserate:1.5][voice:]hello😀", "voice": "af_heart", "segments": [["af_heart", 1.0, "world."], ["af_heart", 1.5, "[voice:]hello😀"]]}
-{"kind": "checks", "id": "fuzz-checks-152", "text": "world.[baserate:1.5][voice:]hello😀", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-153", "text": "[rate:9]", "voice": "af_heart", "segments": []}
-{"kind": "checks", "id": "fuzz-checks-153", "text": "[rate:9]", "allow_voice_tags": true, "remove_emoji": true, "speakable": false, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-154", "text": "\n[voice: bm_george ][rate:9][voice:]\n[rate:2] [baserate:1.5]", "voice": "af_heart", "segments": [["bm_george", 4.0, "[voice:]"]]}
-{"kind": "checks", "id": "fuzz-checks-154", "text": "\n[voice: bm_george ][rate:9][voice:]\n[rate:2] [baserate:1.5]", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-155", "text": "[rate: 0.1 ][rate: 0.1 ]hello", "voice": "af_heart", "segments": [["af_heart", 0.25, "hello"]]}
-{"kind": "checks", "id": "fuzz-checks-155", "text": "[rate: 0.1 ][rate: 0.1 ]hello", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-156", "text": "[voice:][voice:af_sky]", "voice": "af_heart", "segments": [["af_heart", 1.0, "[voice:]"]]}
-{"kind": "checks", "id": "fuzz-checks-156", "text": "[voice:][voice:af_sky]", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-157", "text": "[baserate:1.5]😀  ", "voice": "af_heart", "segments": [["af_heart", 1.5, "😀"]]}
 {"kind": "checks", "id": "fuzz-checks-157", "text": "[baserate:1.5]😀  ", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-158", "text": "[voice:]world.[baserate:1.5][rate:9]", "voice": "af_heart", "segments": [["af_heart", 1.0, "[voice:]world."]]}
-{"kind": "checks", "id": "fuzz-checks-158", "text": "[voice:]world.[baserate:1.5][rate:9]", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-159", "text": "[VOICE:af_bella(2)+af_sky]hello[baserate:1.5][rate: 0.1 ][pause:3s][rate:2][rate:9] ", "voice": "af_heart", "segments": [["af_bella(2)+af_sky", 1.0, "hello"], ["af_bella(2)+af_sky", 0.25, "[pause:3s]"]]}
-{"kind": "checks", "id": "fuzz-checks-159", "text": "[VOICE:af_bella(2)+af_sky]hello[baserate:1.5][rate: 0.1 ][pause:3s][rate:2][rate:9] ", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-160", "text": "[VOICE:af_bella(2)+af_sky][rate: 0.1 ][baserate:1.5][baserate:1.5][pause:3s][rate:2]", "voice": "af_heart", "segments": [["af_bella(2)+af_sky", 0.25, "[pause:3s]"]]}
 {"kind": "checks", "id": "fuzz-checks-160", "text": "[VOICE:af_bella(2)+af_sky][rate: 0.1 ][baserate:1.5][baserate:1.5][pause:3s][rate:2]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-161", "text": "[voice:][voice:af_sky][rate:9][baserate:1.5]", "voice": "af_heart", "segments": [["af_heart", 1.0, "[voice:]"]]}
 {"kind": "checks", "id": "fuzz-checks-161", "text": "[voice:][voice:af_sky][rate:9][baserate:1.5]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-162", "text": "[voice:][baserate:1.5][voice: bm_george ][baserate:1.5][rate: 0.1 ]\n", "voice": "af_heart", "segments": [["af_heart", 1.0, "[voice:]"]]}
-{"kind": "checks", "id": "fuzz-checks-162", "text": "[voice:][baserate:1.5][voice: bm_george ][baserate:1.5][rate: 0.1 ]\n", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-163", "text": "[voice:af_sky]", "voice": "af_heart", "segments": []}
-{"kind": "checks", "id": "fuzz-checks-163", "text": "[voice:af_sky]", "allow_voice_tags": true, "remove_emoji": true, "speakable": false, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-164", "text": "[voice: bm_george ][baserate:1.5][rate:9][pause:3s]", "voice": "af_heart", "segments": [["bm_george", 4.0, "[pause:3s]"]]}
 {"kind": "checks", "id": "fuzz-checks-164", "text": "[voice: bm_george ][baserate:1.5][rate:9][pause:3s]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-165", "text": "[rate:2] helloworld.[pause:3s][baserate:1.5]😀", "voice": "af_heart", "segments": [["af_heart", 2.0, "helloworld.[pause:3s]"], ["af_heart", 3.0, "😀"]]}
-{"kind": "checks", "id": "fuzz-checks-165", "text": "[rate:2] helloworld.[pause:3s][baserate:1.5]😀", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-166", "text": "[voice:af_sky]world.world.", "voice": "af_heart", "segments": [["af_sky", 1.0, "world.world."]]}
 {"kind": "checks", "id": "fuzz-checks-166", "text": "[voice:af_sky]world.world.", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-167", "text": "[rate: 0.1 ][rate: 0.1 ][VOICE:af_bella(2)+af_sky][voice: bm_george ][rate:9]hellohello ", "voice": "af_heart", "segments": [["bm_george", 4.0, "hellohello"]]}
 {"kind": "checks", "id": "fuzz-checks-167", "text": "[rate: 0.1 ][rate: 0.1 ][VOICE:af_bella(2)+af_sky][voice: bm_george ][rate:9]hellohello ", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-168", "text": "[VOICE:af_bella(2)+af_sky]world.[voice:][voice:af_sky][voice: bm_george ][rate:9]", "voice": "af_heart", "segments": [["af_bella(2)+af_sky", 1.0, "world.[voice:]"]]}
-{"kind": "checks", "id": "fuzz-checks-168", "text": "[VOICE:af_bella(2)+af_sky]world.[voice:][voice:af_sky][voice: bm_george ][rate:9]", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-169", "text": "\n", "voice": "af_heart", "segments": [["af_heart", 1.0, "\n"]]}
-{"kind": "checks", "id": "fuzz-checks-169", "text": "\n", "allow_voice_tags": true, "remove_emoji": false, "speakable": false, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-170", "text": "world.", "voice": "af_heart", "segments": [["af_heart", 1.0, "world."]]}
-{"kind": "checks", "id": "fuzz-checks-170", "text": "world.", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-171", "text": "helloworld.[rate:2][voice: bm_george ] [pause:3s] [pause:3s]", "voice": "af_heart", "segments": [["af_heart", 1.0, "helloworld."], ["bm_george", 1.0, "[pause:3s] [pause:3s]"]]}
-{"kind": "checks", "id": "fuzz-checks-171", "text": "helloworld.[rate:2][voice: bm_george ] [pause:3s] [pause:3s]", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-172", "text": "world.[pause:3s][VOICE:af_bella(2)+af_sky][voice: bm_george ][voice:af_sky]", "voice": "af_heart", "segments": [["af_heart", 1.0, "world.[pause:3s]"]]}
 {"kind": "checks", "id": "fuzz-checks-172", "text": "world.[pause:3s][VOICE:af_bella(2)+af_sky][voice: bm_george ][voice:af_sky]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-173", "text": "[baserate:1.5][voice: bm_george ][pause:3s][voice:][baserate:1.5][rate:9][rate: 0.1 ]", "voice": "af_heart", "segments": [["bm_george", 1.0, "[pause:3s][voice:]"]]}
 {"kind": "checks", "id": "fuzz-checks-173", "text": "[baserate:1.5][voice: bm_george ][pause:3s][voice:][baserate:1.5][rate:9][rate: 0.1 ]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-174", "text": "😀[rate: 0.1 ][pause:3s]hello[pause:3s]", "voice": "af_heart", "segments": [["af_heart", 1.0, "😀"], ["af_heart", 0.25, "[pause:3s]hello[pause:3s]"]]}
 {"kind": "checks", "id": "fuzz-checks-174", "text": "😀[rate: 0.1 ][pause:3s]hello[pause:3s]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-175", "text": "[voice:]", "voice": "af_heart", "segments": [["af_heart", 1.0, "[voice:]"]]}
-{"kind": "checks", "id": "fuzz-checks-175", "text": "[voice:]", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-176", "text": "[voice:af_sky]world.[voice:af_sky]\nhello[voice:af_sky][VOICE:af_bella(2)+af_sky][rate: 0.1 ]", "voice": "af_heart", "segments": [["af_sky", 1.0, "world.\nhello"]]}
-{"kind": "checks", "id": "fuzz-checks-176", "text": "[voice:af_sky]world.[voice:af_sky]\nhello[voice:af_sky][VOICE:af_bella(2)+af_sky][rate: 0.1 ]", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-177", "text": "[rate:2][voice:][voice:]", "voice": "af_heart", "segments": [["af_heart", 2.0, "[voice:][voice:]"]]}
 {"kind": "checks", "id": "fuzz-checks-177", "text": "[rate:2][voice:][voice:]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-178", "text": "[voice:af_sky]😀world.[voice:af_sky][pause:3s][pause:3s] [voice:]", "voice": "af_heart", "segments": [["af_sky", 1.0, "😀world. [pause:3s][pause:3s] [voice:]"]]}
 {"kind": "checks", "id": "fuzz-checks-178", "text": "[voice:af_sky]😀world.[voice:af_sky][pause:3s][pause:3s] [voice:]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-179", "text": "[voice: bm_george ][pause:3s][baserate:1.5]", "voice": "af_heart", "segments": [["bm_george", 1.0, "[pause:3s]"]]}
 {"kind": "checks", "id": "fuzz-checks-179", "text": "[voice: bm_george ][pause:3s][baserate:1.5]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-180", "text": "[voice: bm_george ][pause:3s][voice:][baserate:1.5]", "voice": "af_heart", "segments": [["bm_george", 1.0, "[pause:3s][voice:]"]]}
 {"kind": "checks", "id": "fuzz-checks-180", "text": "[voice: bm_george ][pause:3s][voice:][baserate:1.5]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-181", "text": "[voice:af_sky] [VOICE:af_bella(2)+af_sky][VOICE:af_bella(2)+af_sky]hello[pause:3s]", "voice": "af_heart", "segments": [["af_bella(2)+af_sky", 1.0, "hello[pause:3s]"]]}
 {"kind": "checks", "id": "fuzz-checks-181", "text": "[voice:af_sky] [VOICE:af_bella(2)+af_sky][VOICE:af_bella(2)+af_sky]hello[pause:3s]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-182", "text": "world.[VOICE:af_bella(2)+af_sky]", "voice": "af_heart", "segments": [["af_heart", 1.0, "world."]]}
-{"kind": "checks", "id": "fuzz-checks-182", "text": "world.[VOICE:af_bella(2)+af_sky]", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-183", "text": "😀[VOICE:af_bella(2)+af_sky]", "voice": "af_heart", "segments": [["af_heart", 1.0, "😀"]]}
 {"kind": "checks", "id": "fuzz-checks-183", "text": "😀[VOICE:af_bella(2)+af_sky]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-184", "text": "😀[pause:3s][voice: bm_george ]", "voice": "af_heart", "segments": [["af_heart", 1.0, "😀[pause:3s]"]]}
-{"kind": "checks", "id": "fuzz-checks-184", "text": "😀[pause:3s][voice: bm_george ]", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-185", "text": "[rate:9][pause:3s][baserate:1.5] [VOICE:af_bella(2)+af_sky] hello😀", "voice": "af_heart", "segments": [["af_heart", 4.0, "[pause:3s]"], ["af_bella(2)+af_sky", 1.0, "hello😀"]]}
 {"kind": "checks", "id": "fuzz-checks-185", "text": "[rate:9][pause:3s][baserate:1.5] [VOICE:af_bella(2)+af_sky] hello😀", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-186", "text": "[pause:3s][rate: 0.1 ][voice: bm_george ][pause:3s]\n", "voice": "af_heart", "segments": [["af_heart", 1.0, "[pause:3s]"], ["bm_george", 1.0, "[pause:3s]"]]}
-{"kind": "checks", "id": "fuzz-checks-186", "text": "[pause:3s][rate: 0.1 ][voice: bm_george ][pause:3s]\n", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-187", "text": "hello[voice:][pause:3s][voice:af_sky][voice:af_sky][baserate:1.5][voice:]world.", "voice": "af_heart", "segments": [["af_heart", 1.0, "hello[voice:][pause:3s]"], ["af_sky", 1.5, "[voice:]world."]]}
-{"kind": "checks", "id": "fuzz-checks-187", "text": "hello[voice:][pause:3s][voice:af_sky][voice:af_sky][baserate:1.5][voice:]world.", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-188", "text": "[pause:3s]world. ", "voice": "af_heart", "segments": [["af_heart", 1.0, "[pause:3s]world. "]]}
-{"kind": "checks", "id": "fuzz-checks-188", "text": "[pause:3s]world. ", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-189", "text": "[voice:]hello😀", "voice": "af_heart", "segments": [["af_heart", 1.0, "[voice:]hello😀"]]}
-{"kind": "checks", "id": "fuzz-checks-189", "text": "[voice:]hello😀", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-190", "text": "[rate:2] [baserate:1.5][baserate:1.5][VOICE:af_bella(2)+af_sky]world.", "voice": "af_heart", "segments": [["af_bella(2)+af_sky", 1.0, "world."]]}
-{"kind": "checks", "id": "fuzz-checks-190", "text": "[rate:2] [baserate:1.5][baserate:1.5][VOICE:af_bella(2)+af_sky]world.", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-191", "text": "[rate: 0.1 ][rate: 0.1 ]", "voice": "af_heart", "segments": []}
-{"kind": "checks", "id": "fuzz-checks-191", "text": "[rate: 0.1 ][rate: 0.1 ]", "allow_voice_tags": true, "remove_emoji": false, "speakable": false, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-192", "text": "[rate:9]\n[voice: bm_george ][rate:9] \n", "voice": "af_heart", "segments": []}
-{"kind": "checks", "id": "fuzz-checks-192", "text": "[rate:9]\n[voice: bm_george ][rate:9] \n", "allow_voice_tags": true, "remove_emoji": true, "speakable": false, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-193", "text": "[voice:af_sky][baserate:1.5][voice: bm_george ][baserate:1.5]", "voice": "af_heart", "segments": []}
 {"kind": "checks", "id": "fuzz-checks-193", "text": "[voice:af_sky][baserate:1.5][voice: bm_george ][baserate:1.5]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-194", "text": "[rate:9]world.", "voice": "af_heart", "segments": [["af_heart", 4.0, "world."]]}
 {"kind": "checks", "id": "fuzz-checks-194", "text": "[rate:9]world.", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-195", "text": "[pause:3s][VOICE:af_bella(2)+af_sky] [rate:9]", "voice": "af_heart", "segments": [["af_heart", 1.0, "[pause:3s]"]]}
-{"kind": "checks", "id": "fuzz-checks-195", "text": "[pause:3s][VOICE:af_bella(2)+af_sky] [rate:9]", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-196", "text": "[voice: bm_george ][pause:3s][rate:9][voice:af_sky]", "voice": "af_heart", "segments": [["bm_george", 1.0, "[pause:3s]"]]}
-{"kind": "checks", "id": "fuzz-checks-196", "text": "[voice: bm_george ][pause:3s][rate:9][voice:af_sky]", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-197", "text": "[voice: bm_george ][voice: bm_george ][baserate:1.5]", "voice": "af_heart", "segments": []}
 {"kind": "checks", "id": "fuzz-checks-197", "text": "[voice: bm_george ][voice: bm_george ][baserate:1.5]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-198", "text": "world.[voice: bm_george ]world. [VOICE:af_bella(2)+af_sky][voice:af_sky]", "voice": "af_heart", "segments": [["af_heart", 1.0, "world."], ["bm_george", 1.0, "world."]]}
-{"kind": "checks", "id": "fuzz-checks-198", "text": "world.[voice: bm_george ]world. [VOICE:af_bella(2)+af_sky][voice:af_sky]", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-199", "text": "[voice:af_sky][rate:2]\nworld.😀world.\nworld.", "voice": "af_heart", "segments": [["af_sky", 2.0, "world.😀world.\nworld."]]}
 {"kind": "checks", "id": "fuzz-checks-199", "text": "[voice:af_sky][rate:2]\nworld.😀world.\nworld.", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-200", "text": "[voice:][rate:9][rate:2]😀[pause:3s]", "voice": "af_heart", "segments": [["af_heart", 1.0, "[voice:]"], ["af_heart", 2.0, "😀[pause:3s]"]]}
-{"kind": "checks", "id": "fuzz-checks-200", "text": "[voice:][rate:9][rate:2]😀[pause:3s]", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-201", "text": "[baserate:1.5]", "voice": "af_heart", "segments": []}
 {"kind": "checks", "id": "fuzz-checks-201", "text": "[baserate:1.5]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-202", "text": "[pause:3s]", "voice": "af_heart", "segments": [["af_heart", 1.0, "[pause:3s]"]]}
 {"kind": "checks", "id": "fuzz-checks-202", "text": "[pause:3s]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-203", "text": "[voice:]😀", "voice": "af_heart", "segments": [["af_heart", 1.0, "[voice:]😀"]]}
 {"kind": "checks", "id": "fuzz-checks-203", "text": "[voice:]😀", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-204", "text": "[rate:9][rate: 0.1 ] [voice:]hello😀[pause:3s]", "voice": "af_heart", "segments": [["af_heart", 0.25, "[voice:]hello😀[pause:3s]"]]}
-{"kind": "checks", "id": "fuzz-checks-204", "text": "[rate:9][rate: 0.1 ] [voice:]hello😀[pause:3s]", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-205", "text": "hello😀world.", "voice": "af_heart", "segments": [["af_heart", 1.0, "hello😀world."]]}
-{"kind": "checks", "id": "fuzz-checks-205", "text": "hello😀world.", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-206", "text": "[baserate:1.5][rate:9]hellohello[rate: 0.1 ]", "voice": "af_heart", "segments": [["af_heart", 4.0, "hellohello"]]}
-{"kind": "checks", "id": "fuzz-checks-206", "text": "[baserate:1.5][rate:9]hellohello[rate: 0.1 ]", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-207", "text": "[voice:][pause:3s][rate:2]hello😀[voice: bm_george ]", "voice": "af_heart", "segments": [["af_heart", 1.0, "[voice:][pause:3s]"], ["af_heart", 2.0, "hello😀"]]}
 {"kind": "checks", "id": "fuzz-checks-207", "text": "[voice:][pause:3s][rate:2]hello😀[voice: bm_george ]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-208", "text": "hello", "voice": "af_heart", "segments": [["af_heart", 1.0, "hello"]]}
 {"kind": "checks", "id": "fuzz-checks-208", "text": "hello", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-209", "text": "[pause:3s]\n ", "voice": "af_heart", "segments": [["af_heart", 1.0, "[pause:3s]\n "]]}
-{"kind": "checks", "id": "fuzz-checks-209", "text": "[pause:3s]\n ", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-210", "text": "[VOICE:af_bella(2)+af_sky]hello[voice: bm_george ][baserate:1.5]😀", "voice": "af_heart", "segments": [["af_bella(2)+af_sky", 1.0, "hello"], ["bm_george", 1.5, "😀"]]}
 {"kind": "checks", "id": "fuzz-checks-210", "text": "[VOICE:af_bella(2)+af_sky]hello[voice: bm_george ][baserate:1.5]😀", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-211", "text": "[rate:9][pause:3s]\nworld.hellohello[rate:2]world.", "voice": "af_heart", "segments": [["af_heart", 4.0, "[pause:3s]\nworld.hellohello"], ["af_heart", 2.0, "world."]]}
-{"kind": "checks", "id": "fuzz-checks-211", "text": "[rate:9][pause:3s]\nworld.hellohello[rate:2]world.", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-212", "text": " [voice: bm_george ]hello[baserate:1.5]world.[pause:3s]", "voice": "af_heart", "segments": [["bm_george", 1.0, "hello"], ["bm_george", 1.5, "world.[pause:3s]"]]}
 {"kind": "checks", "id": "fuzz-checks-212", "text": " [voice: bm_george ]hello[baserate:1.5]world.[pause:3s]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-213", "text": "[voice:af_sky][VOICE:af_bella(2)+af_sky]\n[baserate:1.5][voice:af_sky][VOICE:af_bella(2)+af_sky][voice:]world.", "voice": "af_heart", "segments": [["af_bella(2)+af_sky", 1.0, "[voice:]world."]]}
-{"kind": "checks", "id": "fuzz-checks-213", "text": "[voice:af_sky][VOICE:af_bella(2)+af_sky]\n[baserate:1.5][voice:af_sky][VOICE:af_bella(2)+af_sky][voice:]world.", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-214", "text": "world.[rate:2][voice:af_sky]", "voice": "af_heart", "segments": [["af_heart", 1.0, "world."]]}
-{"kind": "checks", "id": "fuzz-checks-214", "text": "world.[rate:2][voice:af_sky]", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-215", "text": "[voice: bm_george ]hello", "voice": "af_heart", "segments": [["bm_george", 1.0, "hello"]]}
-{"kind": "checks", "id": "fuzz-checks-215", "text": "[voice: bm_george ]hello", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-216", "text": "😀[voice:][pause:3s][voice:af_sky]", "voice": "af_heart", "segments": [["af_heart", 1.0, "😀[voice:][pause:3s]"]]}
-{"kind": "checks", "id": "fuzz-checks-216", "text": "😀[voice:][pause:3s][voice:af_sky]", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-217", "text": "[voice: bm_george ][VOICE:af_bella(2)+af_sky][voice: bm_george ][rate: 0.1 ][voice: bm_george ]hello hello", "voice": "af_heart", "segments": [["bm_george", 1.0, "hello hello"]]}
 {"kind": "checks", "id": "fuzz-checks-217", "text": "[voice: bm_george ][VOICE:af_bella(2)+af_sky][voice: bm_george ][rate: 0.1 ][voice: bm_george ]hello hello", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-218", "text": "[rate:9][voice:af_sky] 😀[rate:2][baserate:1.5][voice:]", "voice": "af_heart", "segments": [["af_sky", 1.0, "😀"], ["af_sky", 3.0, "[voice:]"]]}
 {"kind": "checks", "id": "fuzz-checks-218", "text": "[rate:9][voice:af_sky] 😀[rate:2][baserate:1.5][voice:]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-219", "text": "[VOICE:af_bella(2)+af_sky]\n[rate:9][voice: bm_george ]", "voice": "af_heart", "segments": []}
-{"kind": "checks", "id": "fuzz-checks-219", "text": "[VOICE:af_bella(2)+af_sky]\n[rate:9][voice: bm_george ]", "allow_voice_tags": true, "remove_emoji": false, "speakable": false, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-220", "text": "[voice: bm_george ]world.😀world.[rate: 0.1 ]", "voice": "af_heart", "segments": [["bm_george", 1.0, "world.😀world."]]}
-{"kind": "checks", "id": "fuzz-checks-220", "text": "[voice: bm_george ]world.😀world.[rate: 0.1 ]", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-221", "text": "\n[voice:af_sky]😀[rate:9]world.\n[pause:3s]", "voice": "af_heart", "segments": [["af_sky", 1.0, "😀"], ["af_sky", 4.0, "world.\n[pause:3s]"]]}
-{"kind": "checks", "id": "fuzz-checks-221", "text": "\n[voice:af_sky]😀[rate:9]world.\n[pause:3s]", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-222", "text": "[rate:2]world.[voice: bm_george ][voice:]", "voice": "af_heart", "segments": [["af_heart", 2.0, "world."], ["bm_george", 1.0, "[voice:]"]]}
-{"kind": "checks", "id": "fuzz-checks-222", "text": "[rate:2]world.[voice: bm_george ][voice:]", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-223", "text": "[baserate:1.5] \n[voice:][voice: bm_george ] [voice:af_sky]", "voice": "af_heart", "segments": [["af_heart", 1.5, "[voice:]"]]}
 {"kind": "checks", "id": "fuzz-checks-223", "text": "[baserate:1.5] \n[voice:][voice: bm_george ] [voice:af_sky]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-224", "text": "[voice:af_sky]hello", "voice": "af_heart", "segments": [["af_sky", 1.0, "hello"]]}
 {"kind": "checks", "id": "fuzz-checks-224", "text": "[voice:af_sky]hello", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-225", "text": "[voice: bm_george ][rate: 0.1 ][rate:2]\n", "voice": "af_heart", "segments": []}
 {"kind": "checks", "id": "fuzz-checks-225", "text": "[voice: bm_george ][rate: 0.1 ][rate:2]\n", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-226", "text": "hello world.", "voice": "af_heart", "segments": [["af_heart", 1.0, "hello world."]]}
-{"kind": "checks", "id": "fuzz-checks-226", "text": "hello world.", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-227", "text": "😀", "voice": "af_heart", "segments": [["af_heart", 1.0, "😀"]]}
-{"kind": "checks", "id": "fuzz-checks-227", "text": "😀", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-228", "text": "[rate:9][pause:3s]😀", "voice": "af_heart", "segments": [["af_heart", 4.0, "[pause:3s]😀"]]}
 {"kind": "checks", "id": "fuzz-checks-228", "text": "[rate:9][pause:3s]😀", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-229", "text": "[voice:]hello ", "voice": "af_heart", "segments": [["af_heart", 1.0, "[voice:]hello "]]}
 {"kind": "checks", "id": "fuzz-checks-229", "text": "[voice:]hello ", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-230", "text": "\nworld.\n[rate:9][rate: 0.1 ]😀", "voice": "af_heart", "segments": [["af_heart", 1.0, "world."], ["af_heart", 0.25, "😀"]]}
 {"kind": "checks", "id": "fuzz-checks-230", "text": "\nworld.\n[rate:9][rate: 0.1 ]😀", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-231", "text": "[rate: 0.1 ][rate:2][voice:af_sky][pause:3s][pause:3s]", "voice": "af_heart", "segments": [["af_sky", 1.0, "[pause:3s][pause:3s]"]]}
 {"kind": "checks", "id": "fuzz-checks-231", "text": "[rate: 0.1 ][rate:2][voice:af_sky][pause:3s][pause:3s]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-232", "text": "hellohello", "voice": "af_heart", "segments": [["af_heart", 1.0, "hellohello"]]}
 {"kind": "checks", "id": "fuzz-checks-232", "text": "hellohello", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-233", "text": "[rate: 0.1 ]😀[voice:af_sky]hello[voice: bm_george ]world.[pause:3s]", "voice": "af_heart", "segments": [["af_heart", 0.25, "😀"], ["af_sky", 1.0, "hello"], ["bm_george", 1.0, "world.[pause:3s]"]]}
-{"kind": "checks", "id": "fuzz-checks-233", "text": "[rate: 0.1 ]😀[voice:af_sky]hello[voice: bm_george ]world.[pause:3s]", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-234", "text": "[baserate:1.5][VOICE:af_bella(2)+af_sky][voice: bm_george ]😀[rate:9][VOICE:af_bella(2)+af_sky][voice:] ", "voice": "af_heart", "segments": [["bm_george", 1.0, "😀"], ["af_bella(2)+af_sky", 1.0, "[voice:]"]]}
-{"kind": "checks", "id": "fuzz-checks-234", "text": "[baserate:1.5][VOICE:af_bella(2)+af_sky][voice: bm_george ]😀[rate:9][VOICE:af_bella(2)+af_sky][voice:] ", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-235", "text": "[pause:3s][voice:af_sky][voice:]world.[baserate:1.5]😀[rate:9][voice:af_sky]", "voice": "af_heart", "segments": [["af_heart", 1.0, "[pause:3s]"], ["af_sky", 1.0, "[voice:]world."], ["af_sky", 1.5, "😀"]]}
 {"kind": "checks", "id": "fuzz-checks-235", "text": "[pause:3s][voice:af_sky][voice:]world.[baserate:1.5]😀[rate:9][voice:af_sky]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-236", "text": "[rate:2][voice:af_sky]hello[rate:9] ", "voice": "af_heart", "segments": [["af_sky", 1.0, "hello"]]}
-{"kind": "checks", "id": "fuzz-checks-236", "text": "[rate:2][voice:af_sky]hello[rate:9] ", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-237", "text": "[rate:2][pause:3s][voice:]", "voice": "af_heart", "segments": [["af_heart", 2.0, "[pause:3s][voice:]"]]}
-{"kind": "checks", "id": "fuzz-checks-237", "text": "[rate:2][pause:3s][voice:]", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-238", "text": "\n[baserate:1.5][rate: 0.1 ][voice:][VOICE:af_bella(2)+af_sky][voice: bm_george ]", "voice": "af_heart", "segments": [["af_heart", 0.25, "[voice:]"]]}
-{"kind": "checks", "id": "fuzz-checks-238", "text": "\n[baserate:1.5][rate: 0.1 ][voice:][VOICE:af_bella(2)+af_sky][voice: bm_george ]", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-239", "text": "hello", "voice": "af_heart", "segments": [["af_heart", 1.0, "hello"]]}
-{"kind": "checks", "id": "fuzz-checks-239", "text": "hello", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-240", "text": "[voice:af_sky][baserate:1.5][voice:][voice: bm_george ]", "voice": "af_heart", "segments": [["af_sky", 1.5, "[voice:]"]]}
-{"kind": "checks", "id": "fuzz-checks-240", "text": "[voice:af_sky][baserate:1.5][voice:][voice: bm_george ]", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-241", "text": "[pause:3s][voice: bm_george ][voice: bm_george ]", "voice": "af_heart", "segments": [["af_heart", 1.0, "[pause:3s]"]]}
-{"kind": "checks", "id": "fuzz-checks-241", "text": "[pause:3s][voice: bm_george ][voice: bm_george ]", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-242", "text": "😀[voice:af_sky][rate: 0.1 ]  ", "voice": "af_heart", "segments": [["af_heart", 1.0, "😀"]]}
 {"kind": "checks", "id": "fuzz-checks-242", "text": "😀[voice:af_sky][rate: 0.1 ]  ", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-243", "text": "[rate:2]😀[voice:af_sky][voice:af_sky][voice: bm_george ]😀[rate: 0.1 ][VOICE:af_bella(2)+af_sky]", "voice": "af_heart", "segments": [["af_heart", 2.0, "😀"], ["bm_george", 1.0, "😀"]]}
 {"kind": "checks", "id": "fuzz-checks-243", "text": "[rate:2]😀[voice:af_sky][voice:af_sky][voice: bm_george ]😀[rate: 0.1 ][VOICE:af_bella(2)+af_sky]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-244", "text": "\n[pause:3s] [voice:][voice:][rate: 0.1 ][rate: 0.1 ]", "voice": "af_heart", "segments": [["af_heart", 1.0, "[pause:3s] [voice:][voice:]"]]}
 {"kind": "checks", "id": "fuzz-checks-244", "text": "\n[pause:3s] [voice:][voice:][rate: 0.1 ][rate: 0.1 ]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-245", "text": "[baserate:1.5] ", "voice": "af_heart", "segments": []}
 {"kind": "checks", "id": "fuzz-checks-245", "text": "[baserate:1.5] ", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-246", "text": "\n\n[rate:2][voice:af_sky][voice:af_sky][voice:]", "voice": "af_heart", "segments": [["af_sky", 1.0, "[voice:]"]]}
 {"kind": "checks", "id": "fuzz-checks-246", "text": "\n\n[rate:2][voice:af_sky][voice:af_sky][voice:]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-247", "text": "[VOICE:af_bella(2)+af_sky][baserate:1.5][voice: bm_george ][baserate:1.5]😀[baserate:1.5]\n[rate:2]", "voice": "af_heart", "segments": [["bm_george", 1.5, "😀"]]}
 {"kind": "checks", "id": "fuzz-checks-247", "text": "[VOICE:af_bella(2)+af_sky][baserate:1.5][voice: bm_george ][baserate:1.5]😀[baserate:1.5]\n[rate:2]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-248", "text": "[VOICE:af_bella(2)+af_sky][VOICE:af_bella(2)+af_sky]\n[pause:3s]", "voice": "af_heart", "segments": [["af_bella(2)+af_sky", 1.0, "[pause:3s]"]]}
-{"kind": "checks", "id": "fuzz-checks-248", "text": "[VOICE:af_bella(2)+af_sky][VOICE:af_bella(2)+af_sky]\n[pause:3s]", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-249", "text": "[rate:9]", "voice": "af_heart", "segments": []}
 {"kind": "checks", "id": "fuzz-checks-249", "text": "[rate:9]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-250", "text": "[rate:9]", "voice": "af_heart", "segments": []}
 {"kind": "checks", "id": "fuzz-checks-250", "text": "[rate:9]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-251", "text": "[rate: 0.1 ] [rate: 0.1 ]", "voice": "af_heart", "segments": []}
-{"kind": "checks", "id": "fuzz-checks-251", "text": "[rate: 0.1 ] [rate: 0.1 ]", "allow_voice_tags": true, "remove_emoji": true, "speakable": false, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-252", "text": "[rate: 0.1 ]", "voice": "af_heart", "segments": []}
-{"kind": "checks", "id": "fuzz-checks-252", "text": "[rate: 0.1 ]", "allow_voice_tags": true, "remove_emoji": true, "speakable": false, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-253", "text": "\n[voice: bm_george ][rate: 0.1 ]😀😀 ", "voice": "af_heart", "segments": [["bm_george", 0.25, "😀😀"]]}
-{"kind": "checks", "id": "fuzz-checks-253", "text": "\n[voice: bm_george ][rate: 0.1 ]😀😀 ", "allow_voice_tags": true, "remove_emoji": true, "speakable": false, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-254", "text": "world.hello[rate:2]", "voice": "af_heart", "segments": [["af_heart", 1.0, "world.hello"]]}
-{"kind": "checks", "id": "fuzz-checks-254", "text": "world.hello[rate:2]", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-255", "text": "hello[pause:3s][VOICE:af_bella(2)+af_sky]", "voice": "af_heart", "segments": [["af_heart", 1.0, "hello[pause:3s]"]]}
 {"kind": "checks", "id": "fuzz-checks-255", "text": "hello[pause:3s][VOICE:af_bella(2)+af_sky]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-256", "text": " hello[pause:3s][pause:3s][pause:3s]\nworld.", "voice": "af_heart", "segments": [["af_heart", 1.0, " hello[pause:3s][pause:3s][pause:3s]\nworld."]]}
-{"kind": "checks", "id": "fuzz-checks-256", "text": " hello[pause:3s][pause:3s][pause:3s]\nworld.", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-257", "text": "[pause:3s][VOICE:af_bella(2)+af_sky] [pause:3s][voice:af_sky]", "voice": "af_heart", "segments": [["af_heart", 1.0, "[pause:3s]"], ["af_bella(2)+af_sky", 1.0, "[pause:3s]"]]}
 {"kind": "checks", "id": "fuzz-checks-257", "text": "[pause:3s][VOICE:af_bella(2)+af_sky] [pause:3s][voice:af_sky]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-258", "text": "hellohello[rate: 0.1 ]helloworld.[rate: 0.1 ]", "voice": "af_heart", "segments": [["af_heart", 1.0, "hellohello"], ["af_heart", 0.25, "helloworld."]]}
-{"kind": "checks", "id": "fuzz-checks-258", "text": "hellohello[rate: 0.1 ]helloworld.[rate: 0.1 ]", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-259", "text": "world.[rate:9]", "voice": "af_heart", "segments": [["af_heart", 1.0, "world."]]}
-{"kind": "checks", "id": "fuzz-checks-259", "text": "world.[rate:9]", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-260", "text": "[baserate:1.5][rate: 0.1 ]hello", "voice": "af_heart", "segments": [["af_heart", 0.25, "hello"]]}
-{"kind": "checks", "id": "fuzz-checks-260", "text": "[baserate:1.5][rate: 0.1 ]hello", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-261", "text": "[rate: 0.1 ]", "voice": "af_heart", "segments": []}
-{"kind": "checks", "id": "fuzz-checks-261", "text": "[rate: 0.1 ]", "allow_voice_tags": true, "remove_emoji": true, "speakable": false, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-262", "text": "😀", "voice": "af_heart", "segments": [["af_heart", 1.0, "😀"]]}
 {"kind": "checks", "id": "fuzz-checks-262", "text": "😀", "allow_voice_tags": false, "remove_emoji": true, "speakable": false, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-263", "text": " helloworld.[rate:9]hello😀[rate: 0.1 ]", "voice": "af_heart", "segments": [["af_heart", 1.0, "helloworld."], ["af_heart", 4.0, "hello😀"]]}
 {"kind": "checks", "id": "fuzz-checks-263", "text": " helloworld.[rate:9]hello😀[rate: 0.1 ]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-264", "text": "world.", "voice": "af_heart", "segments": [["af_heart", 1.0, "world."]]}
-{"kind": "checks", "id": "fuzz-checks-264", "text": "world.", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-265", "text": "world.\n[rate:9][voice:][voice:][VOICE:af_bella(2)+af_sky][pause:3s][pause:3s]", "voice": "af_heart", "segments": [["af_heart", 1.0, "world."], ["af_heart", 4.0, "[voice:][voice:]"], ["af_bella(2)+af_sky", 1.0, "[pause:3s][pause:3s]"]]}
 {"kind": "checks", "id": "fuzz-checks-265", "text": "world.\n[rate:9][voice:][voice:][VOICE:af_bella(2)+af_sky][pause:3s][pause:3s]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-266", "text": "[baserate:1.5][rate:9]", "voice": "af_heart", "segments": []}
-{"kind": "checks", "id": "fuzz-checks-266", "text": "[baserate:1.5][rate:9]", "allow_voice_tags": true, "remove_emoji": true, "speakable": false, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-267", "text": "[baserate:1.5][voice:af_sky]\n", "voice": "af_heart", "segments": []}
-{"kind": "checks", "id": "fuzz-checks-267", "text": "[baserate:1.5][voice:af_sky]\n", "allow_voice_tags": true, "remove_emoji": false, "speakable": false, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-268", "text": "[voice:af_sky][rate:2][VOICE:af_bella(2)+af_sky][VOICE:af_bella(2)+af_sky][voice: bm_george ]", "voice": "af_heart", "segments": []}
-{"kind": "checks", "id": "fuzz-checks-268", "text": "[voice:af_sky][rate:2][VOICE:af_bella(2)+af_sky][VOICE:af_bella(2)+af_sky][voice: bm_george ]", "allow_voice_tags": true, "remove_emoji": false, "speakable": false, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-269", "text": "[voice:af_sky][voice: bm_george ][rate:2][rate:2][voice: bm_george ][voice: bm_george ]", "voice": "af_heart", "segments": []}
 {"kind": "checks", "id": "fuzz-checks-269", "text": "[voice:af_sky][voice: bm_george ][rate:2][rate:2][voice: bm_george ][voice: bm_george ]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-270", "text": "[voice: bm_george ][rate:9]\n", "voice": "af_heart", "segments": []}
 {"kind": "checks", "id": "fuzz-checks-270", "text": "[voice: bm_george ][rate:9]\n", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-271", "text": "[baserate:1.5] [rate: 0.1 ][pause:3s][pause:3s][rate: 0.1 ][voice:][rate: 0.1 ]", "voice": "af_heart", "segments": [["af_heart", 0.25, "[pause:3s][pause:3s] [voice:]"]]}
-{"kind": "checks", "id": "fuzz-checks-271", "text": "[baserate:1.5] [rate: 0.1 ][pause:3s][pause:3s][rate: 0.1 ][voice:][rate: 0.1 ]", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-272", "text": "[pause:3s][VOICE:af_bella(2)+af_sky][baserate:1.5][rate: 0.1 ][voice:af_sky]\n", "voice": "af_heart", "segments": [["af_heart", 1.0, "[pause:3s]"]]}
-{"kind": "checks", "id": "fuzz-checks-272", "text": "[pause:3s][VOICE:af_bella(2)+af_sky][baserate:1.5][rate: 0.1 ][voice:af_sky]\n", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-273", "text": "[voice:af_sky][VOICE:af_bella(2)+af_sky]\n[baserate:1.5]\n", "voice": "af_heart", "segments": []}
 {"kind": "checks", "id": "fuzz-checks-273", "text": "[voice:af_sky][VOICE:af_bella(2)+af_sky]\n[baserate:1.5]\n", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-274", "text": "[voice: bm_george ][rate: 0.1 ][voice: bm_george ][voice:af_sky]", "voice": "af_heart", "segments": []}
-{"kind": "checks", "id": "fuzz-checks-274", "text": "[voice: bm_george ][rate: 0.1 ][voice: bm_george ][voice:af_sky]", "allow_voice_tags": true, "remove_emoji": false, "speakable": false, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-275", "text": "[rate: 0.1 ][voice:af_sky][rate: 0.1 ]😀[rate: 0.1 ][voice:af_sky][voice:]", "voice": "af_heart", "segments": [["af_sky", 0.25, "😀"], ["af_sky", 1.0, "[voice:]"]]}
 {"kind": "checks", "id": "fuzz-checks-275", "text": "[rate: 0.1 ][voice:af_sky][rate: 0.1 ]😀[rate: 0.1 ][voice:af_sky][voice:]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-276", "text": "world.[rate:9][voice:][rate: 0.1 ][pause:3s]\n[voice:af_sky][pause:3s]", "voice": "af_heart", "segments": [["af_heart", 1.0, "world."], ["af_heart", 4.0, "[voice:]"], ["af_heart", 0.25, "[pause:3s]"], ["af_sky", 1.0, "[pause:3s]"]]}
 {"kind": "checks", "id": "fuzz-checks-276", "text": "world.[rate:9][voice:][rate: 0.1 ][pause:3s]\n[voice:af_sky][pause:3s]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-277", "text": "[pause:3s][rate:2]world.😀[rate:2]", "voice": "af_heart", "segments": [["af_heart", 1.0, "[pause:3s]"], ["af_heart", 2.0, "world.😀"]]}
-{"kind": "checks", "id": "fuzz-checks-277", "text": "[pause:3s][rate:2]world.😀[rate:2]", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-278", "text": "[rate:2][voice: bm_george ]\n[rate: 0.1 ]\nhello[voice:][voice:af_sky]", "voice": "af_heart", "segments": [["bm_george", 0.25, "hello[voice:]"]]}
-{"kind": "checks", "id": "fuzz-checks-278", "text": "[rate:2][voice: bm_george ]\n[rate: 0.1 ]\nhello[voice:][voice:af_sky]", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-279", "text": "[VOICE:af_bella(2)+af_sky][voice:af_sky]", "voice": "af_heart", "segments": []}
-{"kind": "checks", "id": "fuzz-checks-279", "text": "[VOICE:af_bella(2)+af_sky][voice:af_sky]", "allow_voice_tags": true, "remove_emoji": false, "speakable": false, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-280", "text": "[rate:2][VOICE:af_bella(2)+af_sky][voice:af_sky][pause:3s]", "voice": "af_heart", "segments": [["af_sky", 1.0, "[pause:3s]"]]}
-{"kind": "checks", "id": "fuzz-checks-280", "text": "[rate:2][VOICE:af_bella(2)+af_sky][voice:af_sky][pause:3s]", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-281", "text": "[rate:2][rate:2][rate:9][VOICE:af_bella(2)+af_sky][rate:9]", "voice": "af_heart", "segments": []}
-{"kind": "checks", "id": "fuzz-checks-281", "text": "[rate:2][rate:2][rate:9][VOICE:af_bella(2)+af_sky][rate:9]", "allow_voice_tags": true, "remove_emoji": true, "speakable": false, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-282", "text": "😀[voice:af_sky][VOICE:af_bella(2)+af_sky][baserate:1.5][baserate:1.5][baserate:1.5][voice:af_sky][rate:9]", "voice": "af_heart", "segments": [["af_heart", 1.0, "😀"]]}
 {"kind": "checks", "id": "fuzz-checks-282", "text": "😀[voice:af_sky][VOICE:af_bella(2)+af_sky][baserate:1.5][baserate:1.5][baserate:1.5][voice:af_sky][rate:9]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-283", "text": "[VOICE:af_bella(2)+af_sky][rate: 0.1 ]world.[voice:]hello", "voice": "af_heart", "segments": [["af_bella(2)+af_sky", 0.25, "world.[voice:]hello"]]}
-{"kind": "checks", "id": "fuzz-checks-283", "text": "[VOICE:af_bella(2)+af_sky][rate: 0.1 ]world.[voice:]hello", "allow_voice_tags": true, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-284", "text": "hello[voice:][rate:9]hello[pause:3s][baserate:1.5][voice:af_sky]\n", "voice": "af_heart", "segments": [["af_heart", 1.0, "hello[voice:]"], ["af_heart", 4.0, "hello[pause:3s]"]]}
 {"kind": "checks", "id": "fuzz-checks-284", "text": "hello[voice:][rate:9]hello[pause:3s][baserate:1.5][voice:af_sky]\n", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-285", "text": "hello [voice: bm_george ][voice:af_sky][baserate:1.5] [rate:2][rate:2]", "voice": "af_heart", "segments": [["af_heart", 1.0, "hello"]]}
 {"kind": "checks", "id": "fuzz-checks-285", "text": "hello [voice: bm_george ][voice:af_sky][baserate:1.5] [rate:2][rate:2]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-286", "text": "😀[voice:af_sky]", "voice": "af_heart", "segments": [["af_heart", 1.0, "😀"]]}
 {"kind": "checks", "id": "fuzz-checks-286", "text": "😀[voice:af_sky]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-287", "text": " hello", "voice": "af_heart", "segments": [["af_heart", 1.0, " hello"]]}
-{"kind": "checks", "id": "fuzz-checks-287", "text": " hello", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-288", "text": "[VOICE:af_bella(2)+af_sky][baserate:1.5]hello[voice: bm_george ]world.[rate:9]", "voice": "af_heart", "segments": [["af_bella(2)+af_sky", 1.5, "hello"], ["bm_george", 1.0, "world."]]}
 {"kind": "checks", "id": "fuzz-checks-288", "text": "[VOICE:af_bella(2)+af_sky][baserate:1.5]hello[voice: bm_george ]world.[rate:9]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-289", "text": "[VOICE:af_bella(2)+af_sky]", "voice": "af_heart", "segments": []}
 {"kind": "checks", "id": "fuzz-checks-289", "text": "[VOICE:af_bella(2)+af_sky]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-290", "text": "\n 😀", "voice": "af_heart", "segments": [["af_heart", 1.0, "\n 😀"]]}
-{"kind": "checks", "id": "fuzz-checks-290", "text": "\n 😀", "allow_voice_tags": true, "remove_emoji": true, "speakable": false, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-291", "text": " [VOICE:af_bella(2)+af_sky][voice: bm_george ][voice:]hello", "voice": "af_heart", "segments": [["bm_george", 1.0, "[voice:]hello"]]}
 {"kind": "checks", "id": "fuzz-checks-291", "text": " [VOICE:af_bella(2)+af_sky][voice: bm_george ][voice:]hello", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-292", "text": "[voice:af_sky][rate: 0.1 ][voice: bm_george ]", "voice": "af_heart", "segments": []}
-{"kind": "checks", "id": "fuzz-checks-292", "text": "[voice:af_sky][rate: 0.1 ][voice: bm_george ]", "allow_voice_tags": true, "remove_emoji": false, "speakable": false, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-293", "text": "  hello😀[baserate:1.5]  ", "voice": "af_heart", "segments": [["af_heart", 1.0, "hello😀"]]}
 {"kind": "checks", "id": "fuzz-checks-293", "text": "  hello😀[baserate:1.5]  ", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-294", "text": "😀", "voice": "af_heart", "segments": [["af_heart", 1.0, "😀"]]}
 {"kind": "checks", "id": "fuzz-checks-294", "text": "😀", "allow_voice_tags": false, "remove_emoji": true, "speakable": false, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-295", "text": "[voice: bm_george ][VOICE:af_bella(2)+af_sky]", "voice": "af_heart", "segments": []}
 {"kind": "checks", "id": "fuzz-checks-295", "text": "[voice: bm_george ][VOICE:af_bella(2)+af_sky]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-296", "text": "  [VOICE:af_bella(2)+af_sky][VOICE:af_bella(2)+af_sky] [voice: bm_george ]😀[VOICE:af_bella(2)+af_sky]", "voice": "af_heart", "segments": [["bm_george", 1.0, "😀"]]}
 {"kind": "checks", "id": "fuzz-checks-296", "text": "  [VOICE:af_bella(2)+af_sky][VOICE:af_bella(2)+af_sky] [voice: bm_george ]😀[VOICE:af_bella(2)+af_sky]", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-297", "text": "😀", "voice": "af_heart", "segments": [["af_heart", 1.0, "😀"]]}
-{"kind": "checks", "id": "fuzz-checks-297", "text": "😀", "allow_voice_tags": true, "remove_emoji": true, "speakable": false, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-298", "text": "[pause:3s][voice:][voice: bm_george ] [rate: 0.1 ] [pause:3s][voice:af_sky]", "voice": "af_heart", "segments": [["af_heart", 1.0, "[pause:3s][voice:]"], ["bm_george", 0.25, "[pause:3s]"]]}
 {"kind": "checks", "id": "fuzz-checks-298", "text": "[pause:3s][voice:][voice: bm_george ] [rate: 0.1 ] [pause:3s][voice:af_sky]", "allow_voice_tags": false, "remove_emoji": false, "speakable": true, "pause_budget": null}
-{"kind": "voices", "id": "fuzz-voices-299", "text": "hello", "voice": "af_heart", "segments": [["af_heart", 1.0, "hello"]]}
 {"kind": "checks", "id": "fuzz-checks-299", "text": "hello", "allow_voice_tags": false, "remove_emoji": true, "speakable": true, "pause_budget": null}
 {"kind": "emoji", "id": "fuzz-emoji-0", "text": "youreMΣ٣05MBexample0", "stripped": "youreMΣ٣05MBexample0"}
 {"kind": "emoji", "id": "fuzz-emoji-1", "text": "3.14159”4.2.1.0g🇺🇸", "stripped": "3.14159”4.2.1.0g "}

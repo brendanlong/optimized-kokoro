@@ -26,8 +26,8 @@ client ──► [Fly relay, Rust]  ◄── outbound connection ── [deskto
                                                            PCM streaming
 ```
 
-- **Front (Rust, sandboxed, no GPU).** Owns every byte from the network: request parsing, text normalization, sentence chunking, G2P, the voice table, the scheduler and the PCM stream back. It sends the worker `{request_id, voice_index, speed, phoneme_ids: [u8; ≤510]}` and gets back `{request_id, seq, pcm: [i16]}` frames.
-- **Model worker.** Only reads length-prefixed integer frames, and **re-validates them itself**. It doesn't trust the front: every phoneme id must be in the vocab, the voice index in range, the length ≤ 510, and speed finite and within bounds. Weights load from safetensors (no pickle). It runs in gVisor `runsc --nvproxy`, which forwards only the NVIDIA ioctls on its list for that driver version. That list is probably the "whitelist of allowed GPU commands" you remembered. The arguments to those ioctls are still forwarded, though, so the sandbox doesn't make the worker safe to compromise. It has no network and a read-only filesystem. nvproxy supports exact driver versions only, so pin the host driver and runsc together.
+- **Front (Rust, sandboxed, no GPU).** Owns every byte from the network: request parsing, text normalization, sentence chunking, G2P, the voice table, the scheduler and the PCM stream back. It sends the worker `{slot, voice_index, speed, phoneme_ids: [u8; ≤510]}` and gets back `{slot, durations, pcm: [i16]}` frames (`worker-protocol.md`).
+- **Model worker.** Only reads length-prefixed integer frames, and **re-validates them itself**. It doesn't trust the front: every phoneme id must be in the vocab, the voice index in range, the length ≤ 510, and speed (an integer, in hundredths) within bounds. Weights load from safetensors (no pickle). It runs in gVisor `runsc --nvproxy`, which forwards only the NVIDIA ioctls on its list for that driver version. That list is probably the "whitelist of allowed GPU commands" you remembered. The arguments to those ioctls are still forwarded, though, so the sandbox doesn't make the worker safe to compromise. It has no network and a read-only filesystem. nvproxy supports exact driver versions only, so pin the host driver and runsc together.
 - **Desktop listens on nothing.** This matches the relay design already chosen in `self-hosted-kokoro-exposure-options`. The relay and agent authenticate each other (mutual TLS or a pinned key). A stolen agent credential would receive every listener's text, so store it outside the `claude` user.
 
 ### Protocol question (OpenAI-compatible HTTP vs MessagePack-RPC)
@@ -35,7 +35,7 @@ client ──► [Fly relay, Rust]  ◄── outbound connection ── [deskto
 Most of the risk was never in the HTTP format. It was in the C and Python parsers behind it, and G2P (espeak-ng is C, spaCy is Cython, MeCab is C++). With Rust on both ends:
 
 - **Between the relay and the desktop:** a fixed binary frame over one outbound TLS stream. Use length-prefixed `postcard`/hand-rolled structs. Check each length prefix against a hard cap *before* allocating. MessagePack adds nothing over that. The agent's hello frame carries the voice list.
-- **Relay API:** two routes, `POST /v1/audio/speech` and `GET /v1/audio/voices`, which Lion Reader's `selfhosted.ts` also calls. They go through `hyper`/`axum` with a body-size cap. `/v1/audio/speech` returns `audio/pcm` (24 kHz s16le), with no encoding. The API stays on Fly's private network, so only the agent's connection endpoint is public, and auth is checked before reading a body or accepting an upgrade. That's a small, well-fuzzed surface, and Lion Reader and clawed-abode keep working. Whether to reject unknown fields (`deny_unknown_fields`) depends on which clients we support. Generic OpenAI clients send extras like `model` and `response_format`, so the choice is either to accept and ignore a fixed list of them, or to support only our own clients.
+- **Relay API:** two routes, `POST /v1/audio/speech` and `GET /v1/audio/voices`, which Lion Reader's `selfhosted.ts` also calls. They go through `hyper`/`axum` with a body-size cap. `/v1/audio/speech` returns `audio/pcm` (24 kHz s16le), with no encoding. The API stays on Fly's private network, so only the agent's connection endpoint is public, and auth is checked before reading a body or accepting an upgrade. That's a small, well-fuzzed surface, and Lion Reader and clawed-abode keep working. **Decided (Brendan, 2026-11-03):** support only our own clients. The API takes exactly the fields Lion Reader and clawed-abode send (`model`, ignored; `input`, `voice`, `speed`, `response_format: "pcm"`, `stream`) and refuses any other with 400 (`divergences.md`).
 
 ### Audio
 
@@ -137,4 +137,5 @@ Phase 2 is where the time goes, and the production switch waits for all of it. P
 ## Open questions
 
 - Which GPU in production: the 3060 Ti only, or cloud? This sets the batch size and the bucket boundaries.
-- Do we support generic OpenAI clients (accept and ignore their extra fields), or only Lion Reader and clawed-abode (strict schema)?
+- ~~Do we support generic OpenAI clients, or only Lion Reader and clawed-abode?~~ Only those two, with a strict schema (Brendan, 2026-11-03).
+

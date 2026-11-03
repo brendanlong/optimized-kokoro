@@ -2,11 +2,12 @@ mod common;
 
 use common::*;
 use kokoro_server::StubPipeline;
+use kokoro_server::pipeline::{Chunk, Lang, Pipeline, PipelineError};
 use kokoro_server::protocol::FailCode;
 use kokoro_server::protocol::worker_side::{self, FrontFrame};
 use serde_json::json;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -68,17 +69,22 @@ async fn refuses_bad_requests_before_text_processing() {
         pcm(&"é".repeat(51)),
         json!({ "input": "Hi.", "voice": "af_heart" }),
         json!({ "input": "Hi.", "response_format": "mp3" }),
-        json!({ "input": "Hi.", "response_format": "pcm", "ssml": true }),
         json!({ "input": "Hi.", "response_format": "pcm", "stream": false }),
-        json!({ "input": "Hi.", "response_format": "pcm", "speed": 4.5 }),
-        json!({ "input": "Hi.", "response_format": "pcm", "speed": 0.1 }),
-        json!({ "input": "Hi.", "response_format": "pcm", "volume_multiplier": 11 }),
+        json!({ "input": "Hi.", "response_format": "pcm", "speed": 4.01 }),
+        json!({ "input": "Hi.", "response_format": "pcm", "speed": 0.24 }),
+        json!({ "input": "Hi.", "response_format": "pcm", "speed": "fast" }),
+        json!({ "input": "Hi.", "response_format": "pcm", "voice": "x".repeat(65) }),
+        json!({ "response_format": "pcm" }),
+        // Fields Kokoro-FastAPI or OpenAI take and this server doesn't, even at their defaults.
+        json!({ "input": "Hi.", "response_format": "pcm", "ssml": false }),
+        json!({ "input": "Hi.", "response_format": "pcm", "volume_multiplier": 1 }),
+        json!({ "input": "Hi.", "response_format": "pcm", "lang_code": "a" }),
+        json!({ "input": "Hi.", "response_format": "pcm", "normalization_options": {} }),
+        json!({ "input": "Hi.", "response_format": "pcm", "allow_voice_tags": false }),
+        json!({ "input": "Hi.", "response_format": "pcm", "instructions": "Speak calmly." }),
+        json!({ "input": "Hi.", "response_format": "pcm", "stream_format": "audio" }),
         json!({ "input": "Hi.", "response_format": "pcm", "voice_aliases": {} }),
         json!({ "input": "Hi.", "response_format": "pcm", "return_download_link": true }),
-        json!({ "input": "Hi.", "response_format": "pcm", "stream_format": "sse" }),
-        json!({ "input": "Hi.", "response_format": "pcm", "normalization_options": { "bogus": true } }),
-        json!({ "input": "Hi.", "response_format": "pcm", "speed": "fast" }),
-        json!({ "response_format": "pcm" }),
     ];
     for body in cases {
         let response = speak(server.addr, body.clone()).await;
@@ -91,24 +97,51 @@ async fn refuses_bad_requests_before_text_processing() {
 
     let after_parsing = [
         json!({ "input": "Hi.", "response_format": "pcm", "voice": "nobody" }),
+        json!({ "input": "Hi.", "response_format": "pcm", "voice": "af_heart+af_sky" }),
+        json!({ "input": "Hi.", "response_format": "pcm", "voice": "af_bella(2)+af_sky" }),
         json!({ "input": "Hi.", "response_format": "pcm", "voice": "af_heart-af_sky" }),
-        json!({ "input": "Hi.", "response_format": "pcm", "lang_code": "xx" }),
+        json!({ "input": "Hi.", "response_format": "pcm", "voice": "alloy" }),
+        json!({ "input": "Hi.", "response_format": "pcm", "voice": "jf_alpha" }),
         json!({ "input": "   ", "response_format": "pcm" }),
-        json!({ "input": "[voice:af_sky]", "response_format": "pcm", "allow_voice_tags": true }),
-        json!({ "input": "Hi [voice:nobody] there.", "response_format": "pcm", "allow_voice_tags": true }),
         json!({ "input": format!("a {}", "[pause:60s] ".repeat(6)), "response_format": "pcm" }),
     ];
     for body in after_parsing {
-        assert_eq!(speak(server.addr, body.clone()).await.status(), 400, "{body}");
+        let response = speak(server.addr, body.clone()).await;
+        assert_eq!(response.status(), 400, "{body}");
+        assert_eq!(json_body(response).await["detail"]["error"], "validation_error");
     }
     assert_eq!(pipeline.calls.load(Ordering::SeqCst), 0);
 }
 
+/// What the two clients send: Lion Reader's streamed request and clawed-abode's with a speed.
 #[tokio::test]
-async fn voice_tags_can_be_disabled() {
-    let (server, _worker) = with_scripted(|c| c.enable_voice_tags = false).await;
-    let body = json!({ "input": "Hi.", "response_format": "pcm", "allow_voice_tags": true });
-    assert_eq!(speak(server.addr, body).await.status(), 403);
+async fn the_clients_requests_are_served() {
+    let (server, mut worker) = with_scripted(|_| {}).await;
+    let lion_reader = json!({ "model": "tts-1", "voice": "af_heart", "input": "Hi.", "response_format": "pcm", "stream": true });
+    let clawed_abode = json!({ "model": "kokoro", "input": "Hi.", "voice": "am_adam", "speed": 1.25, "response_format": "pcm" });
+    for (body, voice, speed) in [(lion_reader, 0, 100), (clawed_abode, 3, 125)] {
+        let client = tokio::spawn(speak(server.addr, body));
+        let (slot, _, got_speed, got_voice, ids) = worker.synthesize().await;
+        assert_eq!((got_voice, got_speed), (voice, speed));
+        worker.send(respond(slot, &ids));
+        let response = client.await.unwrap();
+        assert_eq!(response.status(), 200);
+        assert_eq!(samples(&body_bytes(response).await.unwrap()), expected_audio("Hi."));
+    }
+}
+
+/// Speed travels in hundredths, the nearest to what was asked.
+#[tokio::test]
+async fn speed_is_rounded_to_hundredths() {
+    let (server, mut worker) = with_scripted(|_| {}).await;
+    for (asked, sent) in [(0.25, 25), (1.234, 123), (1.235, 124), (4.0, 400)] {
+        let body = json!({ "input": "Hi.", "response_format": "pcm", "speed": asked });
+        let client = tokio::spawn(speak(server.addr, body));
+        let (slot, _, speed, _, ids) = worker.synthesize().await;
+        assert_eq!(speed, sent, "{asked}");
+        worker.send(respond(slot, &ids));
+        assert_eq!(client.await.unwrap().status(), 200);
+    }
 }
 
 #[tokio::test]
@@ -165,22 +198,17 @@ async fn pauses_become_silence_and_options_reach_the_worker() {
     let (server, mut worker) = with_scripted(|_| {}).await;
     let body = json!({
         "input": "Hello there. [pause:0.5s] Bye now.",
-        "voice": "af_bella(2)+af_sky",
+        "voice": "af_bella",
         "response_format": "pcm",
         "speed": 1.5,
-        "volume_multiplier": 0.5,
     });
     let client = tokio::spawn(speak(server.addr, body));
     let mut expected = Vec::new();
     for _ in 0..2 {
-        let (id, _, speed, voices, ids) = worker.synthesize().await;
-        assert_eq!(speed, 1.5);
-        assert_eq!(voices, [(1, 2.0), (2, 1.0)]);
-        worker.send(respond(id, &ids));
-        let (_, mut pcm) = render(&ids);
-        for s in &mut pcm {
-            *s /= 2;
-        }
+        let (slot, _, speed, voice, ids) = worker.synthesize().await;
+        assert_eq!((speed, voice), (150, 1));
+        worker.send(respond(slot, &ids));
+        let (_, pcm) = render(&ids);
         // At 1.5x, the trailing pad is shorter than the chunk, so it still reaches the end.
         expected.push(pcm[24..pcm.len() - 24].to_vec());
     }
@@ -193,25 +221,48 @@ async fn pauses_become_silence_and_options_reach_the_worker() {
     assert_eq!(audio, want);
 }
 
+/// Voice and rate tags aren't supported, so they're read as text, in the request's one voice.
 #[tokio::test]
-async fn voice_and_rate_tags_switch_voice_and_speed() {
+async fn voice_and_rate_tags_are_text() {
     let (server, mut worker) = with_scripted(|_| {}).await;
-    let body = json!({
-        "input": "Hello there. [voice:bf_emma] Cheerio. [rate:2] Quickly.",
-        "response_format": "pcm",
-        "allow_voice_tags": true,
-    });
-    let client = tokio::spawn(speak(server.addr, body));
-    let mut seen = Vec::new();
-    for _ in 0..3 {
-        let (id, _, speed, voices, ids) = worker.synthesize().await;
-        seen.push((speed, voices));
-        worker.send(respond(id, &ids));
+    let text = "Hello there. [voice:bf_emma] Cheerio. [rate:2] Quickly.";
+    let client = tokio::spawn(speak(server.addr, pcm(text)));
+    let chunks = stub_chunks(text);
+    for chunk in &chunks {
+        let (slot, _, speed, voice, ids) = worker.synthesize().await;
+        assert_eq!((speed, voice, &ids), (100, 0, &chunk.ids));
+        worker.send(respond(slot, &ids));
     }
-    assert_eq!(seen, [(1.0, vec![(0, 1.0)]), (1.0, vec![(4, 1.0)]), (2.0, vec![(4, 1.0)])]);
-    let chunks = stub_chunks("Hello there. Cheerio. Quickly.");
     assert_eq!(worker.style_lens, chunks.iter().map(|c| c.ids.len() as u16).collect::<Vec<_>>());
-    assert_eq!(client.await.unwrap().status(), 200);
+    let response = client.await.unwrap();
+    assert_eq!(samples(&body_bytes(response).await.unwrap()), expected_audio(text));
+}
+
+/// The stub pipeline, recording the language of each request.
+#[derive(Default)]
+struct LangRecorder(Mutex<Vec<Lang>>);
+
+impl Pipeline for LangRecorder {
+    fn chunks<'a>(&'a self, lang: Lang, text: &'a str) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
+        self.0.lock().unwrap().push(lang);
+        StubPipeline.chunks(lang, text)
+    }
+}
+
+#[tokio::test]
+async fn the_voice_sets_the_language() {
+    let pipeline = Arc::new(LangRecorder::default());
+    let server = start(|_| {}, pipeline.clone()).await;
+    let mut worker = ScriptedWorker::listen(&server.socket, worker_side::hello(&hello()));
+    server.worker.connected().await;
+    for voice in ["bf_emma", "am_adam"] {
+        let body = json!({ "input": "Hi.", "voice": voice, "response_format": "pcm" });
+        let client = tokio::spawn(speak(server.addr, body));
+        let (slot, _, _, _, ids) = worker.synthesize().await;
+        worker.send(respond(slot, &ids));
+        assert_eq!(client.await.unwrap().status(), 200);
+    }
+    assert_eq!(*pipeline.0.lock().unwrap(), [Lang::BritishEnglish, Lang::AmericanEnglish]);
 }
 
 #[tokio::test]
@@ -232,14 +283,17 @@ async fn disconnecting_cancels_queued_chunks() {
     let mut cancelled = Vec::new();
     while cancelled.len() < 3 {
         match worker.next().await {
-            Event::Frame(FrontFrame::Cancel { id }) => cancelled.push(id),
+            Event::Frame(FrontFrame::Cancel { slot }) => cancelled.push(slot),
             other => panic!("expected only cancellations, got {other:?}"),
         }
     }
+    let mut queued = [id1, id2, id3];
+    queued.sort();
     cancelled.sort();
-    assert_eq!(cancelled, [id1, id2, id3]);
-    for id in &cancelled {
-        worker.send(worker_side::failed(*id, FailCode::Cancelled));
+    assert_eq!(cancelled, queued);
+    assert_eq!(id3, id0, "the first chunk's slot was free again");
+    for slot in &cancelled {
+        worker.send(worker_side::failed(*slot, FailCode::Cancelled));
     }
     assert_eq!(worker.quiet(Duration::from_millis(300)).await, None);
 
@@ -308,29 +362,34 @@ async fn requests_while_the_worker_is_down_get_503() {
 #[tokio::test]
 async fn malformed_worker_frames_close_the_connection() {
     let (server, mut worker) = with_scripted(|_| {}).await;
-    type Bad = fn(u64, &[u8]) -> Vec<u8>;
-    let bad: [(&str, Bad); 12] = [
-        ("audio before durations", |id, ids| worker_side::audio(id, &render(ids).1)),
-        ("audio too short", |id, ids| {
+    type Bad = fn(u16, &[u8]) -> Vec<u8>;
+    /// A Result with `durations` and the audio they imply.
+    fn with_durations(slot: u16, durations: &[u16]) -> Vec<u8> {
+        let units: usize = durations.iter().map(|&d| usize::from(d)).sum();
+        worker_side::result(slot, durations, &vec![1000; 600 * units])
+    }
+    let bad: [(&str, Bad); 14] = [
+        ("audio too short", |slot, ids| {
             let (d, pcm) = render(ids);
-            let mut out = worker_side::durations(id, &d);
-            out.extend(worker_side::audio(id, &pcm[1..]));
-            out
+            worker_side::result(slot, &d, &pcm[1..])
         }),
-        ("durations count", |id, ids| worker_side::durations(id, &vec![1; ids.len()])),
-        ("duration too long", |id, ids| worker_side::durations(id, &vec![52; ids.len() + 2])),
-        ("zero duration", |id, ids| {
+        ("audio too long", |slot, ids| {
+            let (d, mut pcm) = render(ids);
+            pcm.push(0);
+            worker_side::result(slot, &d, &pcm)
+        }),
+        ("too few durations", |slot, ids| with_durations(slot, &vec![1; ids.len() + 1])),
+        ("too many durations", |slot, ids| with_durations(slot, &vec![1; ids.len() + 3])),
+        ("duration over ceil(50 / speed)", |slot, ids| with_durations(slot, &vec![51; ids.len() + 2])),
+        ("zero duration", |slot, ids| {
             let mut d = vec![1; ids.len() + 2];
             d[1] = 0;
-            worker_side::durations(id, &d)
+            with_durations(slot, &d)
         }),
-        ("durations then something other than its audio", |id, ids| {
-            let mut out = worker_side::durations(id, &render(ids).0);
-            out.extend(worker_side::failed(id, FailCode::Internal));
-            out
-        }),
-        ("unknown id", |id, ids| respond(id + 1000, ids)),
-        ("cancelled but not cancelled", |id, _| worker_side::failed(id, FailCode::Cancelled)),
+        ("result for a free slot", |slot, ids| respond(slot + 1, ids)),
+        ("result for a slot past the table", |_, ids| respond(5000, ids)),
+        ("failure for a free slot", |slot, _| worker_side::failed(slot + 1, FailCode::Internal)),
+        ("cancelled but not cancelled", |slot, _| worker_side::failed(slot, FailCode::Cancelled)),
         ("second hello", |_, _| worker_side::hello(&hello())),
         ("unknown type", |_, _| vec![1, 0, 0, 0, 0x7f]),
         ("bad failure code", |id, _| {
@@ -342,8 +401,8 @@ async fn malformed_worker_frames_close_the_connection() {
     ];
     for (what, frame) in bad {
         let client = tokio::spawn(speak(server.addr, pcm("Hi.")));
-        let (id, _, _, _, ids) = worker.synthesize().await;
-        worker.send(frame(id, &ids));
+        let (slot, _, _, _, ids) = worker.synthesize().await;
+        worker.send(frame(slot, &ids));
         assert_eq!(worker.next().await, Event::Closed, "{what}");
         let response = client.await.unwrap();
         assert_eq!(response.status(), 503, "{what}");
@@ -436,15 +495,14 @@ async fn unsupported_sentences_are_skipped() {
 
 #[tokio::test]
 async fn speaks_english_with_the_real_pipeline() {
-    use kokoro_server::Pipeline;
     let pipelines = Arc::new(kokoro_server::kokoro::KokoroPipelines::load().unwrap());
     let server = start(|_| {}, pipelines.clone()).await;
     let mut worker = ScriptedWorker::listen(&server.socket, worker_side::hello(&hello()));
     server.worker.connected().await;
     let text = "The quick brown fox jumps over the lazy dog. It costs $5.";
     let client = tokio::spawn(speak(server.addr, pcm(text)));
-    let options = kokoro_text::Options::default();
-    let chunks: Vec<_> = pipelines.chunks("a", text, &options).map(Result::unwrap).collect();
+    let chunks: Vec<_> = pipelines.chunks(Lang::AmericanEnglish, text).map(Result::unwrap).collect();
+
     assert_eq!(chunks.len(), 2);
     let mut expected = Vec::new();
     for chunk in &chunks {

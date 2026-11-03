@@ -7,7 +7,7 @@
 //! characters the patterns react to.
 
 use kokoro_text::{Limits, Options, check_pause_budget, check_speakable, join_lines, normalize, sentences};
-use kokoro_text::{smart_split, split_by_voice, strip_emoji};
+use kokoro_text::{smart_split, strip_emoji};
 use std::time::{Duration, Instant};
 
 type Stage = (String, Box<dyn Fn(&str)>);
@@ -24,10 +24,9 @@ fn stages() -> Vec<Stage> {
     })));
     stages.push(("join_lines".into(), Box::new(|t| drop(join_lines(t)))));
     stages.push(("sentences".into(), Box::new(|t| drop(sentences(t)))));
-    stages.push(("split_by_voice".into(), Box::new(|t| drop(split_by_voice(t, "af_heart")))));
     let opts = all.clone();
     stages.push(("checks".into(), Box::new(move |t| {
-        let _ = check_speakable(t, true, Some(&opts));
+        let _ = check_speakable(t, &opts);
         let _ = check_pause_budget(t, &Limits::default());
     })));
     stages.push(("strip_emoji".into(), Box::new(|t| drop(strip_emoji(t)))));

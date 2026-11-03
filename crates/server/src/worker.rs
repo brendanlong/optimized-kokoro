@@ -4,31 +4,34 @@
 //! Every frame the worker sends is checked against what the front asked for. Anything unexpected
 //! closes the connection, and every request in flight on it fails; nothing is resubmitted.
 //!
-//! Resources are charged before they're used and released only when the worker is done:
-//! - each request holds an admission slot from submission until its final Audio or Failed frame,
-//!   so cancelled requests the worker hasn't acknowledged still count, and the outgoing frame
-//!   queue (at most a Synthesize and a Cancel per slot) is bounded;
-//! - a request's audio is at most the worker's chunk cap at its speed (Durations implying more
-//!   are a violation), so memory is bounded by how many chunks can be in flight, which the
-//!   request, lookahead and admission limits fix. An [`AudioGauge`] counts what's held.
+//! Requests live in slots (`docs/worker-protocol.md`): a fixed table, as large as the worker's
+//! Hello and the configured limit allow. A request takes a free slot when it's submitted and
+//! gives it back only when the worker's Result or Failed for that slot arrives, so cancelled
+//! requests the worker hasn't acknowledged still hold theirs, and the outgoing frame queue is
+//! bounded: at most three frames per slot (a stale Cancel for its previous request, which the
+//! worker ignores, then a Synthesize and a Cancel).
+//!
+//! A request's audio is at most the worker's chunk cap at its speed (durations implying more are
+//! a violation), so memory is bounded by how many chunks can be in flight, which the request and
+//! lookahead limits fix. An [`AudioGauge`] counts what's held.
 //!
 //! A worker that doesn't say hello in time, or makes no progress while it has work, is
 //! disconnected.
 
 use crate::protocol::{
-    self, FailCode, Hello, Priority, ReadError, SAMPLES_PER_FRAME, Synthesize, WorkerFrame, encode_cancel,
+    self, Expected, FailCode, Hello, Priority, ReadError, Speed, Synthesize, WorkerFrame, encode_cancel,
     encode_synthesize,
 };
 use std::collections::HashMap;
 use std::fmt;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 use tokio::net::UnixStream;
 use tokio::net::unix::OwnedReadHalf;
-use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore, mpsc, oneshot, watch};
+use tokio::sync::{Notify, Semaphore, mpsc, oneshot, watch};
 use tokio::time::Instant;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -95,8 +98,8 @@ pub struct Synthesized {
 /// What the scheduler asks the worker to render.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SynthRequest {
-    pub speed: f32,
-    pub voices: Arc<[(u16, f32)]>,
+    pub speed: Speed,
+    pub voice: u16,
     pub ids: Vec<u8>,
     /// The style row to use, plus one: `ids.len()`, or the whole clause's length for a piece of a
     /// stitched chunk.
@@ -105,23 +108,32 @@ pub struct SynthRequest {
 
 type Reply = oneshot::Sender<Result<Synthesized, SynthError>>;
 
+/// A busy slot.
 struct Pending {
-    n_ids: usize,
-    max_duration: u16,
-    max_samples: u64,
-    durations: Option<Vec<u16>>,
-    /// `None` once cancelled: the worker still owes a final Audio or Failed frame.
+    /// Which submission holds the slot, so a late cancel from an earlier holder can't touch it.
+    ticket: u64,
+    expected: Expected,
+    /// `None` once cancelled: the worker still owes a Result or Failed for the slot.
     reply: Option<Reply>,
-    _slot: OwnedSemaphorePermit,
 }
 
 struct State {
     open: bool,
-    pending: HashMap<u64, Pending>,
+    slots: Vec<Option<Pending>>,
+    free: Vec<u16>,
+    next_ticket: u64,
     /// When the worker last finished a frame, or was last given work while idle.
     last_progress: Instant,
-    /// The request whose Durations just arrived: its Audio must be the very next frame.
-    awaiting_audio: Option<u64>,
+}
+
+impl State {
+    fn busy(&self) -> usize {
+        self.slots.len() - self.free.len()
+    }
+
+    fn pending(&mut self, slot: u16) -> Option<&mut Pending> {
+        self.slots.get_mut(usize::from(slot))?.as_mut()
+    }
 }
 
 /// Limits on the worker and how long it may take.
@@ -132,8 +144,8 @@ pub struct Settings {
     pub hello_timeout: Duration,
     /// Longest the worker may go without sending a whole frame while it has work.
     pub progress_timeout: Duration,
-    /// Requests submitted and not yet finished by the worker, cancelled ones included.
-    pub max_outstanding: usize,
+    /// The most slots the front uses, whatever the worker announces.
+    pub slots: u16,
     /// The largest `max_chunk_samples` a worker may announce; a hello above it is refused, since
     /// the cap is what bounds the audio the server holds.
     pub max_chunk_samples: u32,
@@ -143,30 +155,33 @@ pub struct Connection {
     hello: Hello,
     voice_index: HashMap<String, u16>,
     outgoing: mpsc::Sender<Vec<u8>>,
-    slots: Arc<Semaphore>,
+    /// One permit per free slot, so submitting waits for one.
+    free_slots: Semaphore,
     gauge: AudioGauge,
     state: Mutex<State>,
     reset: Notify,
-    next_id: AtomicU64,
 }
 
 impl Connection {
-    pub(crate) fn new(
-        hello: Hello,
-        outgoing: mpsc::Sender<Vec<u8>>,
-        max_outstanding: usize,
-        gauge: AudioGauge,
-    ) -> Self {
+    /// A connection using the first `slots` of the worker's slots (at most `hello.slots`).
+    pub(crate) fn new(hello: Hello, outgoing: mpsc::Sender<Vec<u8>>, slots: u16, gauge: AudioGauge) -> Self {
+        let slots = slots.min(hello.slots);
         let voice_index = hello.voices.iter().enumerate().map(|(i, v)| (v.clone(), i as u16)).collect();
+        let state = State {
+            open: true,
+            slots: (0..slots).map(|_| None).collect(),
+            free: (0..slots).rev().collect(),
+            next_ticket: 0,
+            last_progress: Instant::now(),
+        };
         Self {
             hello,
             voice_index,
             outgoing,
-            slots: Arc::new(Semaphore::new(max_outstanding)),
+            free_slots: Semaphore::new(slots.into()),
             gauge,
-            state: Mutex::new(State { open: true, pending: HashMap::new(), last_progress: Instant::now(), awaiting_audio: None }),
+            state: Mutex::new(state),
             reset: Notify::new(),
-            next_id: AtomicU64::new(0),
         }
     }
 
@@ -186,132 +201,114 @@ impl Connection {
         &self.gauge
     }
 
-    /// Requests the worker hasn't finished, cancelled ones included.
-    pub fn outstanding(&self) -> usize {
-        self.state.lock().unwrap().pending.len()
+    /// The slots the front uses on this connection.
+    pub fn slots(&self) -> usize {
+        self.state.lock().unwrap().slots.len()
+    }
+
+    /// Slots holding a request the worker hasn't finished, cancelled ones included.
+    pub fn busy_slots(&self) -> usize {
+        self.state.lock().unwrap().busy()
     }
 
     fn valid(&self, r: &SynthRequest) -> bool {
-        let ids_ok = !r.ids.is_empty()
+        !r.ids.is_empty()
             && r.ids.len() <= usize::from(self.hello.max_phonemes)
             && (1..=self.hello.max_phonemes).contains(&r.style_len)
-            && r.ids.iter().all(|&id| id >= 1 && u16::from(id) < self.hello.vocab_size);
-        let voices_ok = (1..=protocol::MAX_VOICES_PER_MIX).contains(&r.voices.len())
-            && r.voices
-                .iter()
-                .all(|&(i, w)| usize::from(i) < self.hello.voices.len() && w.is_finite() && w > 0.0);
-        let speed_ok = (protocol::SPEED_MIN..=protocol::SPEED_MAX).contains(&r.speed);
-        ids_ok && voices_ok && speed_ok
+            && r.ids.iter().all(|&id| id >= 1 && u16::from(id) < self.hello.vocab_size)
+            && usize::from(r.voice) < self.hello.voices.len()
     }
 
-    /// Queues a request on the worker, first waiting for an admission slot. Dropping the future
-    /// while it waits gives the slot back.
+    /// Queues a request on the worker, first waiting for a free slot. Dropping the future while
+    /// it waits takes no slot.
     pub async fn submit(self: &Arc<Self>, priority: Priority, request: &SynthRequest) -> Result<Ticket, SynthError> {
         if !self.valid(request) {
             return Err(SynthError::Unrenderable);
         }
-        let slot = self.slots.clone().acquire_owned().await.map_err(|_| SynthError::ConnectionLost)?;
-        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        self.free_slots.acquire().await.map_err(|_| SynthError::ConnectionLost)?.forget();
         let (tx, rx) = oneshot::channel();
-        {
-            let mut state = self.state.lock().unwrap();
-            if !state.open {
-                return Err(SynthError::ConnectionLost);
-            }
-            let frame = encode_synthesize(&Synthesize {
-                id,
-                priority,
-                speed: request.speed,
-                voices: &request.voices,
-                ids: &request.ids,
-                style_len: request.style_len,
-            });
-            if self.outgoing.try_send(frame).is_err() {
-                drop(state);
-                self.close();
-                return Err(SynthError::ConnectionLost);
-            }
-            if state.pending.is_empty() {
-                state.last_progress = Instant::now();
-            }
-            let pending = Pending {
-                n_ids: request.ids.len(),
-                max_duration: protocol::max_duration(request.speed),
-                max_samples: protocol::chunk_cap(self.hello.max_chunk_samples, request.speed),
-                durations: None,
-                reply: Some(tx),
-                _slot: slot,
-            };
-            state.pending.insert(id, pending);
+        let mut state = self.state.lock().unwrap();
+        if !state.open {
+            return Err(SynthError::ConnectionLost);
         }
-        Ok(Ticket { id, connection: self.clone(), reply: rx, finished: false })
+        let slot = state.free.pop().expect("a permit means a free slot");
+        let frame = encode_synthesize(&Synthesize {
+            slot,
+            priority,
+            speed: request.speed,
+            voice: request.voice,
+            ids: &request.ids,
+            style_len: request.style_len,
+        });
+        if self.outgoing.try_send(frame).is_err() {
+            drop(state);
+            self.close();
+            return Err(SynthError::ConnectionLost);
+        }
+        if state.busy() == 1 {
+            state.last_progress = Instant::now();
+        }
+        let ticket = state.next_ticket;
+        state.next_ticket += 1;
+        let expected = Expected {
+            n_ids: request.ids.len() as u16,
+            speed: request.speed,
+            max_chunk_samples: self.hello.max_chunk_samples,
+        };
+        state.slots[usize::from(slot)] = Some(Pending { ticket, expected, reply: Some(tx) });
+        drop(state);
+        Ok(Ticket { slot, ticket, connection: self.clone(), reply: rx, finished: false })
     }
 
-    fn cancel(&self, id: u64) {
+    fn cancel(&self, slot: u16, ticket: u64) {
         let mut state = self.state.lock().unwrap();
         if !state.open {
             return;
         }
-        if let Some(pending) = state.pending.get_mut(&id)
+        if let Some(pending) = state.pending(slot)
+            && pending.ticket == ticket
             && pending.reply.take().is_some()
-            && self.outgoing.try_send(encode_cancel(id)).is_err()
+            && self.outgoing.try_send(encode_cancel(slot)).is_err()
         {
             drop(state);
             self.close();
         }
     }
 
-    fn expected_samples(&self, id: u64) -> Option<u64> {
-        let state = self.state.lock().unwrap();
-        let durations = state.pending.get(&id)?.durations.as_ref()?;
-        Some(durations.iter().map(|&d| u64::from(d)).sum::<u64>() * SAMPLES_PER_FRAME)
+    fn expected(&self, slot: u16) -> Option<Expected> {
+        self.state.lock().unwrap().pending(slot).map(|p| p.expected)
+    }
+
+    /// Ends the request in `slot` and frees the slot.
+    fn finish(&self, state: &mut State, slot: u16) -> Result<Pending, String> {
+        let pending = state
+            .slots
+            .get_mut(usize::from(slot))
+            .and_then(Option::take)
+            .ok_or(format!("a reply for slot {slot}, which is free"))?;
+        state.free.push(slot);
+        self.free_slots.add_permits(1);
+        Ok(pending)
     }
 
     fn dispatch(&self, frame: WorkerFrame) -> Result<(), String> {
         let mut state = self.state.lock().unwrap();
         state.last_progress = Instant::now();
-        if let Some(expected) = state.awaiting_audio.take()
-            && !matches!(frame, WorkerFrame::Audio { id, .. } if id == expected)
-        {
-            return Err(format!("request {expected}: its durations weren't followed by its audio"));
-        }
         match frame {
             WorkerFrame::Hello(_) => Err("second hello".into()),
-            WorkerFrame::Durations { id, durations } => {
-                let pending = state.pending.get_mut(&id).ok_or(format!("durations for unknown request {id}"))?;
-                if pending.durations.is_some() {
-                    return Err(format!("second durations for request {id}"));
-                }
-                if durations.len() != pending.n_ids + 2 {
-                    return Err(format!("request {id}: {} durations for {} ids", durations.len(), pending.n_ids));
-                }
-                if durations.iter().any(|&d| d == 0 || d > pending.max_duration) {
-                    return Err(format!("request {id}: a duration of 0 or over {}", pending.max_duration));
-                }
-                let samples = durations.iter().map(|&d| u64::from(d)).sum::<u64>() * SAMPLES_PER_FRAME;
-                if samples > pending.max_samples {
-                    return Err(format!("request {id}: {samples} samples, over the chunk cap {}", pending.max_samples));
-                }
-                pending.durations = Some(durations);
-                state.awaiting_audio = Some(id);
-                Ok(())
-            }
-            WorkerFrame::Audio { id, pcm } => {
-                let pending = state.pending.remove(&id).expect("read_frame only accepts audio we expect");
-                if let Some(reply) = pending.reply {
-                    let durations = pending.durations.expect("audio is only expected after durations");
+            WorkerFrame::Result { slot, durations, pcm } => {
+                if let Some(reply) = self.finish(&mut state, slot)?.reply {
                     let held = self.gauge.hold(2 * pcm.len());
                     let _ = reply.send(Ok(Synthesized { pcm, durations, held }));
                 }
                 Ok(())
             }
-            WorkerFrame::Failed { id, code } => {
-                let pending = state.pending.get(&id).ok_or(format!("failure for unknown request {id}"))?;
-                if code == FailCode::Cancelled && pending.reply.is_some() {
-                    return Err(format!("request {id} reported cancelled, but it wasn't"));
+            WorkerFrame::Failed { slot, code } => {
+                let cancelled = state.pending(slot).is_some_and(|p| p.reply.is_none());
+                if code == FailCode::Cancelled && !cancelled {
+                    return Err(format!("slot {slot} reported cancelled, but it wasn't"));
                 }
-                let pending = state.pending.remove(&id).expect("just found");
-                if let Some(reply) = pending.reply {
+                if let Some(reply) = self.finish(&mut state, slot)?.reply {
                     let error = match code {
                         FailCode::TooLong => SynthError::Unrenderable,
                         FailCode::Cancelled | FailCode::Internal => SynthError::WorkerFailed,
@@ -326,26 +323,28 @@ impl Connection {
     /// Whether the worker has had work and sent no whole frame for `timeout`.
     fn stalled(&self, timeout: Duration) -> bool {
         let state = self.state.lock().unwrap();
-        !state.pending.is_empty() && state.last_progress.elapsed() >= timeout
+        state.busy() > 0 && state.last_progress.elapsed() >= timeout
     }
 
     /// Fails everything in flight and tells the connection task to hang up.
     fn close(&self) {
         let mut state = self.state.lock().unwrap();
         state.open = false;
-        self.slots.close();
-        for (_, pending) in state.pending.drain() {
+        self.free_slots.close();
+        for pending in state.slots.iter_mut().filter_map(Option::take) {
             if let Some(reply) = pending.reply {
                 let _ = reply.send(Err(SynthError::ConnectionLost));
             }
         }
+        state.free = (0..state.slots.len() as u16).rev().collect();
         self.reset.notify_one();
     }
 }
 
 /// A submitted request. Dropping it before its result arrives cancels it on the worker.
 pub struct Ticket {
-    id: u64,
+    slot: u16,
+    ticket: u64,
     connection: Arc<Connection>,
     reply: oneshot::Receiver<Result<Synthesized, SynthError>>,
     finished: bool,
@@ -362,7 +361,7 @@ impl Ticket {
 impl Drop for Ticket {
     fn drop(&mut self) {
         if !self.finished {
-            self.connection.cancel(self.id);
+            self.connection.cancel(self.slot, self.ticket);
         }
     }
 }
@@ -438,9 +437,11 @@ async fn serve(
             hello.max_chunk_samples, settings.max_chunk_samples
         )));
     }
-    tracing::info!("worker connected: {} voices, max batch {}", hello.voices.len(), hello.max_batch);
-    let (out_tx, mut out_rx) = mpsc::channel::<Vec<u8>>(2 * settings.max_outstanding);
-    let connection = Arc::new(Connection::new(hello, out_tx, settings.max_outstanding, gauge.clone()));
+    let slots = settings.slots.min(hello.slots);
+    tracing::info!("worker connected: {} voices, max batch {}, {slots} slots", hello.voices.len(), hello.max_batch);
+    let (out_tx, mut out_rx) = mpsc::channel::<Vec<u8>>(3 * usize::from(slots));
+
+    let connection = Arc::new(Connection::new(hello, out_tx, slots, gauge.clone()));
     publish.send_replace(Some(connection.clone()));
 
     let read = read_loop(&mut reader, &connection, settings.progress_timeout);
@@ -462,7 +463,7 @@ async fn serve(
 async fn read_loop(reader: &mut OwnedReadHalf, connection: &Connection, timeout: Duration) -> Result<(), ReadError> {
     let check_every = timeout / 4;
     loop {
-        let read = protocol::read_frame(reader, |id| connection.expected_samples(id));
+        let read = protocol::read_frame(reader, |slot| connection.expected(slot));
         tokio::pin!(read);
         let frame = loop {
             tokio::select! {

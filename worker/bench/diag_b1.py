@@ -21,7 +21,7 @@ models = sys.argv[1]
 synth = Synth(models)
 vocab = json.load(open(os.path.join(models, "config.json")))["vocab"]
 chunks = [ids for _, ids in sentences.load(vocab)][:120]
-reqs = [Request(ids, synth.style([(0, 1.0)], len(ids)), 1.0) for ids in chunks]
+reqs = [Request(ids, synth.style(0, len(ids)), 100) for ids in chunks]
 
 timing = {"text": 0.0, "decode": 0.0}
 orig_durations, orig_decode = synth._durations, synth._decode
@@ -58,7 +58,7 @@ def bench(label):
 
 bench("B=1 only compiled")
 for lengths in ([50, 50], [40, 44], [100, 104, 110]):
-    list(synth.run([Request(chunks[0][:n] if len(chunks[0]) >= n else chunks[0], reqs[0].ref_s, 1.0)
+    list(synth.run([Request(chunks[0][:n] if len(chunks[0]) >= n else chunks[0], reqs[0].ref_s, 100)
                     for n in lengths]))
     list(synth.run([reqs[i] for i in range(len(lengths))]))
 bench("after B>1 compiled")

@@ -27,7 +27,7 @@ import torch.nn.functional as F
 from safetensors.torch import load_file
 
 from . import masked
-from .protocol import chunk_cap
+from .protocol import chunk_cap, max_duration
 
 SAMPLES_PER_FRAME = 600  # 2x upsample in the decoder, then 10 * 6 in the generator, then hop 5
 VOICE_NAME = re.compile(r"[a-z0-9_]{1,64}")
@@ -117,7 +117,7 @@ def _packed_lstm(lstm: torch.nn.LSTM, x: torch.Tensor, lengths: torch.Tensor) ->
 class Request:
     ids: list[int]  # phoneme ids, without the boundary 0s
     ref_s: torch.Tensor  # [256] style vector on the model's device
-    speed: float
+    speed: int  # hundredths
 
 
 @dataclass
@@ -189,12 +189,9 @@ class Synth:
             self._single = {k: torch.compile(_fresh(f, "single"), dynamic=True) for k, f in eager.items()}
             self._batched = {k: torch.compile(_fresh(f, "batched"), dynamic=True) for k, f in eager.items()}
 
-    def style(self, voices: list[tuple[int, float]], style_len: int) -> torch.Tensor:
-        """Weighted mix of voice packs at row style_len - 1 (KPipeline's pack[len(ps) - 1]). Weights sum to 1."""
-        total = sum(w for _, w in voices)
-        index = torch.tensor([v for v, _ in voices], device=self.device)
-        weight = torch.tensor([w / total for _, w in voices], device=self.device, dtype=torch.float32)
-        return (self.voices[index, style_len - 1] * weight[:, None]).sum(0)
+    def style(self, voice: int, style_len: int) -> torch.Tensor:
+        """Voice pack `voice` at row style_len - 1 (KPipeline's pack[len(ps) - 1])."""
+        return self.voices[voice, style_len - 1]
 
     def _text_cnn_eager(self, ids: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         te = self.model.text_encoder
@@ -214,7 +211,7 @@ class Synth:
             n = block(n, s)
         return p.F0_proj(f0).squeeze(1), p.N_proj(n).squeeze(1)
 
-    def _durations(self, ids, mask, lengths, s, speed):
+    def _durations(self, ids, mask, lengths, s, speed, max_dur):
         """Text side for the whole batch: (pred_dur [B, T] with 0 at padding, d [B, T, 640], t_en [B, 512, T])."""
         m = self.model
         keep = (~mask)[..., None]
@@ -234,7 +231,9 @@ class Synth:
         d = x  # [B, T, 640]
         x = _packed_lstm(m.predictor.lstm, d, lengths)
         duration = torch.sigmoid(m.predictor.duration_proj(x)).sum(-1) / speed[:, None]
-        pred_dur = torch.round(duration).clamp(min=1).long().masked_fill(mask, 0)
+        # The clamp to ceil(50 / speed) never binds (the sum is at most 50); it makes the bound the
+        # front checks hold whatever the float rounding.
+        pred_dur = torch.round(duration).long().clamp(min=1).minimum(max_dur).masked_fill(mask, 0)
         return pred_dur, d, t_en
 
     def _groups(self, frames: list[int], order: list[int]) -> list[list[int]]:
@@ -274,10 +273,12 @@ class Synth:
         mask = torch.arange(width, device=dev)[None, :] >= lengths.to(dev)[:, None]
         ref = torch.stack([r.ref_s for r in requests])
         s = ref[:, 128:]
-        speed = torch.tensor([r.speed for r in requests], device=dev)
+        speed = torch.tensor([r.speed / 100 for r in requests], device=dev)
+        max_dur = torch.tensor([[max_duration(r.speed)] for r in requests], device=dev)
 
         with torch.autocast(dev.type, dtype=torch.float16, enabled=self.half):
-            pred_dur, d, t_en = self._durations(ids, mask, lengths, s, speed)
+            pred_dur, d, t_en = self._durations(ids, mask, lengths, s, speed, max_dur)
+
         pred_cpu = pred_dur.cpu()
         frames = pred_cpu.sum(1).tolist()
         durations = [pred_cpu[i, : lengths[i]].tolist() for i in range(n)]

@@ -1,10 +1,18 @@
 //! The text side as the server sees it: text in, chunks of phoneme ids out.
 //!
-//! `kokoro-pipeline` (normalization, G2P, chunking) is being written separately. This trait is
-//! the narrow surface the server needs from it, so swapping it in means one adapter.
+//! [`crate::kokoro::KokoroPipelines`] is the real one; this trait is the narrow surface the server
+//! needs from it, so tests can stand in their own.
 
 use kokoro_text::{Limits, Options, Piece, smart_split};
 use std::fmt;
+
+pub use kokoro_pipeline::Lang;
+
+/// The language a voice speaks, by Kokoro's convention that a voice name's first letter is its
+/// language code (`af_heart` is American English). Only English pipelines exist so far.
+pub fn voice_lang(voice: &str) -> Option<Lang> {
+    voice.get(..1).and_then(Lang::from_code)
+}
 
 /// One chunk of a request's text: either speech, or a pause from a `[pause:Xs]` tag.
 #[derive(Debug, Clone, PartialEq)]
@@ -36,22 +44,11 @@ impl fmt::Display for PipelineError {
 impl std::error::Error for PipelineError {}
 
 pub trait Pipeline: Send + Sync + 'static {
-    /// Whether `lang` (a Kokoro language code such as `a` or `en-us`) has a pipeline.
-    fn supports(&self, lang: &str) -> bool;
-
-    /// The chunks of `text`, phonemized lazily as they're taken. Runs on a blocking thread. An
-    /// error stands in for the sentence it happened in; later sentences still follow.
-    fn chunks<'a>(
-        &'a self,
-        lang: &'a str,
-        text: &'a str,
-        options: &'a Options,
-    ) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a>;
+    /// The chunks of `text`, normalized with the default options and phonemized lazily as they're
+    /// taken. Runs on a blocking thread. An error stands in for the sentence it happened in; later
+    /// sentences still follow.
+    fn chunks<'a>(&'a self, lang: Lang, text: &'a str) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a>;
 }
-
-/// Kokoro's language codes and their aliases (`kokoro.pipeline.LANG_CODES`).
-pub const LANG_CODES: &[&str] =
-    &["a", "b", "e", "f", "h", "i", "p", "j", "z", "en-us", "en-gb", "es", "fr-fr", "hi", "it", "pt-br", "ja", "zh"];
 
 /// A test pipeline: Kokoro-FastAPI's chunking (from `kokoro-text`) with a fake G2P that keeps
 /// ASCII letters, spaces and basic punctuation as their own phonemes. The audio it produces is
@@ -77,18 +74,10 @@ fn stub_id(c: char) -> u8 {
 }
 
 impl Pipeline for StubPipeline {
-    fn supports(&self, lang: &str) -> bool {
-        LANG_CODES.contains(&lang)
-    }
-
-    fn chunks<'a>(
-        &'a self,
-        lang: &'a str,
-        text: &'a str,
-        options: &'a Options,
-    ) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
+    fn chunks<'a>(&'a self, lang: Lang, text: &'a str) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
         static LIMITS: std::sync::LazyLock<Limits> = std::sync::LazyLock::new(Limits::default);
-        let split = smart_split(text, lang, options, &LIMITS, kokoro_text::DEFAULT_MAX_TOKENS, stub_g2p);
+        static OPTIONS: std::sync::LazyLock<Options> = std::sync::LazyLock::new(Options::default);
+        let split = smart_split(text, lang.code(), &OPTIONS, &LIMITS, kokoro_text::DEFAULT_MAX_TOKENS, stub_g2p);
         Box::new(split.map(|chunk| {
             Ok(match chunk {
                 kokoro_text::Chunk::Speech(Piece { text, phonemes }) => {
@@ -100,5 +89,18 @@ impl Pipeline for StubPipeline {
                 }
             })
         }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_voice_speaks_the_language_of_its_first_letter() {
+        assert_eq!(voice_lang("af_heart"), Some(Lang::AmericanEnglish));
+        assert_eq!(voice_lang("bm_george"), Some(Lang::BritishEnglish));
+        assert_eq!(voice_lang("jf_alpha"), None);
+        assert_eq!(voice_lang(""), None);
     }
 }

@@ -7,7 +7,7 @@ mod common;
 use common::*;
 use kokoro_server::StubPipeline;
 use kokoro_server::protocol::worker_side;
-use kokoro_server::protocol::{FailCode, read_frame};
+use kokoro_server::protocol::{Expected, FailCode, Speed, read_frame};
 use std::sync::Arc;
 
 struct Rng(u64);
@@ -24,18 +24,37 @@ impl Rng {
     }
 }
 
+/// Slots 0 to 3 are busy, slot `s` with a request of `s + 1` ids; the rest are free.
+const BUSY: u16 = 4;
+
+/// What slot `slot` holds, at `speed` and a chunk cap of `cap` samples.
+fn busy(slot: u16, speed: Speed, cap: u32) -> Option<Expected> {
+    (slot < BUSY).then(|| Expected { n_ids: slot + 1, speed, max_chunk_samples: cap })
+}
+
 fn valid_frames(rng: &mut Rng) -> Vec<u8> {
     let mut out = worker_side::hello(&hello());
     for _ in 0..rng.below(4) {
-        let id = rng.below(4) as u64;
-        let ids: Vec<u8> = (0..1 + rng.below(5)).map(|_| 1 + rng.below(177) as u8).collect();
+        let slot = rng.below(BUSY.into()) as u16;
+        let ids: Vec<u8> = (0..=slot).map(|_| 1 + rng.below(177) as u8).collect();
         match rng.below(3) {
-            0 => out.extend(respond(id, &ids)),
-            1 => out.extend(worker_side::failed(id, if rng.below(2) == 0 { FailCode::Cancelled } else { FailCode::Internal })),
-            _ => out.extend(worker_side::durations(id, &render(&ids).0)),
+            0 => out.extend(respond(slot, &ids)),
+            1 => out.extend(worker_side::failed(slot, if rng.below(2) == 0 { FailCode::Cancelled } else { FailCode::Internal })),
+            _ => {
+                let durations: Vec<u16> = (0..ids.len() + 2).map(|_| 1 + rng.below(3) as u16).collect();
+                let units: usize = durations.iter().map(|&d| usize::from(d)).sum();
+                out.extend(worker_side::result(slot, &durations, &vec![-7; 600 * units]));
+            }
         }
     }
     out
+}
+
+/// A speed and chunk cap for the reader to expect: mostly the defaults, sometimes the extremes.
+fn limits(rng: &mut Rng) -> (Speed, u32) {
+    let speed = [Speed::NORMAL, Speed::NORMAL, Speed::MIN, Speed::MAX, Speed::from_hundredths(117).unwrap()];
+    let cap = [2_880_000, 2_880_000, 600 * 40, 1, u32::MAX];
+    (speed[rng.below(speed.len())], cap[rng.below(cap.len())])
 }
 
 fn mutate(rng: &mut Rng, bytes: &mut Vec<u8>) {
@@ -74,10 +93,10 @@ async fn decoder_survives_mutated_frames() {
         let mut bytes = valid_frames(&mut rng);
         mutate(&mut rng, &mut bytes);
         let mut reader = &bytes[..];
-        let expect = [None, Some(0), Some(600), Some(600 * 7), Some(u64::MAX)][rng.below(5)];
+        let (speed, cap) = limits(&mut rng);
         while !reader.is_empty() {
             let before = reader.len();
-            match read_frame(&mut reader, |_| expect).await {
+            match read_frame(&mut reader, |slot| busy(slot, speed, cap)).await {
                 Ok(_) => accepted += 1,
                 Err(_) => break,
             }
@@ -95,7 +114,8 @@ async fn decoder_survives_random_bytes() {
         let bytes: Vec<u8> = (0..len).map(|_| rng.next() as u8).collect();
         let mut reader = &bytes[..];
         while !reader.is_empty() {
-            if read_frame(&mut reader, |_| Some(rng.next() % 64)).await.is_err() {
+            let (speed, cap) = limits(&mut rng);
+            if read_frame(&mut reader, |slot| busy(slot, speed, cap)).await.is_err() {
                 break;
             }
         }
@@ -114,8 +134,9 @@ async fn connection_survives_mutated_replies() {
         while worker.next().await != Event::Connected {}
         server.worker.connected().await;
         let client = tokio::spawn(speak(server.addr, pcm("Hi.")));
-        let (id, _, _, _, ids) = worker.synthesize().await;
-        let mut reply = respond(id, &ids);
+        let (slot, _, _, _, ids) = worker.synthesize().await;
+        let mut reply = respond(slot, &ids);
+
         if rng.below(10) != 0 {
             mutate(&mut rng, &mut reply);
         }

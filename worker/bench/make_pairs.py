@@ -46,7 +46,7 @@ def main():
     for exact in (True, False):
         synth = Synth(args.models, compile=not args.no_compile, pad_slack=100.0, frame_budget=10**9, exact=exact)
         voice = synth.voice_names.index("af_heart")
-        reqs = [Request(ids, synth.style([(voice, 1.0)], len(ids)), 1.0) for _, ids in batch]
+        reqs = [Request(ids, synth.style(voice, len(ids)), 100) for _, ids in batch]
         for r in reqs[:2]:  # compile and warm before the real runs
             list(synth.run([r]))
         list(synth.run(reqs))

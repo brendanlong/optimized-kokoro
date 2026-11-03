@@ -1,6 +1,7 @@
 //! Settings, from an optional TOML file plus `KOKORO_API_KEYS` (comma-separated) from the
 //! environment.
 
+use crate::protocol::Speed;
 use crate::worker;
 use serde::Deserialize;
 use std::net::SocketAddr;
@@ -53,18 +54,16 @@ pub struct Config {
     /// Longest the worker may go without sending a whole frame while it has work; then it's
     /// disconnected and its requests fail.
     pub worker_progress_timeout_ms: u64,
-    /// Requests on the worker at once, counting cancelled ones until the worker acknowledges
-    /// them. Defaults to `max_concurrent_requests × lookahead`; never more than the protocol's
-    /// 1024.
-    pub worker_max_outstanding: Option<usize>,
+    /// Worker slots the server uses: requests on the worker at once, counting cancelled ones until
+    /// the worker acknowledges them. Defaults to `max_concurrent_requests × lookahead`; the
+    /// worker's hello may lower it.
+    pub worker_slots: Option<u16>,
     /// The largest per-chunk audio cap (samples at speed 1) a worker may announce in its hello.
     /// It bounds the audio the server holds (see [`Config::audio_bound`]); a worker announcing
     /// more is refused. Default 120 s.
     pub worker_max_chunk_samples: u32,
     /// On shutdown, how long open connections get to finish before they're dropped.
     pub shutdown_grace_ms: u64,
-    /// Whether requests may set `allow_voice_tags`.
-    pub enable_voice_tags: bool,
 }
 
 impl Default for Config {
@@ -84,12 +83,11 @@ impl Default for Config {
             request_body_timeout_ms: 10_000,
             worker_hello_timeout_ms: 30_000,
             worker_progress_timeout_ms: 30_000,
-            worker_max_outstanding: None,
+            worker_slots: None,
             worker_max_chunk_samples: 2_880_000,
             shutdown_grace_ms: 10_000,
             lookahead: 3,
             reconnect_interval_ms: 500,
-            enable_voice_tags: true,
         }
     }
 }
@@ -123,7 +121,7 @@ impl Config {
             ("max_streams_per_key", self.max_streams_per_key),
             ("max_connections", self.max_connections),
             ("max_requests_per_connection", self.max_requests_per_connection),
-            ("worker_max_outstanding", self.worker_max_outstanding()),
+            ("worker_slots", self.worker_slots().into()),
             ("worker_max_chunk_samples", self.worker_max_chunk_samples as usize),
         ];
         if let Some((name, _)) = counts.iter().find(|(_, n)| *n == 0) {
@@ -160,29 +158,30 @@ impl Config {
         Duration::from_millis(self.reconnect_interval_ms)
     }
 
-    pub fn worker_max_outstanding(&self) -> usize {
-        self.worker_max_outstanding
-            .unwrap_or(self.max_concurrent_requests.saturating_mul(self.lookahead))
-            .min(crate::protocol::MAX_OUTSTANDING)
+    pub fn worker_slots(&self) -> u16 {
+        self.worker_slots.unwrap_or_else(|| {
+            let wanted = self.max_concurrent_requests.saturating_mul(self.lookahead);
+            u16::try_from(wanted).unwrap_or(u16::MAX)
+        })
     }
 
     /// The most audio, in bytes, the server can hold at once when the worker's chunk cap is
     /// `max_chunk_samples` (at most `worker_max_chunk_samples`) and every request runs at `speed`
-    /// (use `protocol::SPEED_MIN` for the worst case). There is no byte budget; this bound comes
-    /// from counts.
+    /// (`Speed::MIN` for the worst case). There is no byte budget; this bound comes from counts.
     ///
     /// Each speech request holds at most `lookahead + 2` chunks: `lookahead - 1` finished ones
     /// waiting in its window for an earlier one, one waiting to enter the response channel, one in
     /// the channel, and one hyper is writing (plus up to `HYPER_QUEUE_BYTES` of smaller frames
     /// hyper queues before it stops polling the body). A chunk is at most the request's chunk cap,
-    /// or one pause. The worker connection reads one more Audio frame at a time; audio for
-    /// cancelled requests is dropped as it arrives.
+    /// or one pause. The worker connection reads one more Result at a time; audio for cancelled
+    /// requests is dropped as it arrives. Worker slots don't add to this: a slot is freed when its
+    /// Result arrives, and its audio then counts against its request.
     ///
     /// Defaults with the worker's 120 s cap: 16 × 5 × 5.76 MB ≈ 467 MB at speed 1, and about
     /// 1.85 GB if every request asks for speed 0.25 with chunks that hit the cap. Real sentences
     /// are around 5 s (240 KB), so typical use holds a few MB.
-    pub fn audio_bound(&self, max_chunk_samples: u32, speed: f32) -> usize {
-        let chunk_samples = crate::protocol::chunk_cap(max_chunk_samples, speed).max(MAX_PAUSE_SAMPLES);
+    pub fn audio_bound(&self, max_chunk_samples: u32, speed: Speed) -> usize {
+        let chunk_samples = speed.chunk_cap(max_chunk_samples).max(MAX_PAUSE_SAMPLES);
         let chunk = usize::try_from(2 * chunk_samples).unwrap_or(usize::MAX);
         let per_stream = (self.lookahead + 2).saturating_mul(chunk).saturating_add(HYPER_QUEUE_BYTES);
         self.max_concurrent_requests.saturating_mul(per_stream).saturating_add(chunk)
@@ -198,7 +197,7 @@ impl Config {
             retry_interval: self.reconnect_interval(),
             hello_timeout: Duration::from_millis(self.worker_hello_timeout_ms),
             progress_timeout: Duration::from_millis(self.worker_progress_timeout_ms),
-            max_outstanding: self.worker_max_outstanding(),
+            slots: self.worker_slots(),
             max_chunk_samples: self.worker_max_chunk_samples,
         }
     }
