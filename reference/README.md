@@ -12,3 +12,10 @@ python3 fetch_corpus.py         # optional: books and Wikipedia paragraphs into 
 `dump.py` documents the output format; `crates/reference` reads it. `fixtures/hard_cases.out.jsonl` is committed so tests run without the Python setup. Dumps of the downloaded corpus go in `out/`, and the parity tests pick them up when present.
 
 Differences from the deployed image: espeak reads the same espeak-ng 1.52 data (bundled with espeakng-loader), from a copy at a shorter path (see `setup.sh`).
+
+`crates/spacy-en` has its own recorder for spaCy alone, which covers far more text per second than `dump.py`. Its parity test reads `out/spacy-en/*.jsonl`:
+
+```sh
+mkdir -p out/spacy-en
+.cache/kfa/.venv/bin/python -I ../crates/spacy-en/reference.py out/spacy-en/corpus.jsonl corpus/*.jsonl
+```
