@@ -5,8 +5,8 @@ The Rust port has to produce the same phonemes as the deployed Python server, Ko
 ```sh
 ./setup.sh                      # Kokoro-FastAPI venv in .cache/ (CPU torch, UniDic for Japanese)
 python3 fetch_corpus.py         # optional: books and Wikipedia paragraphs into corpus/ (not committed)
-.cache/kfa/.venv/bin/python -I dump.py fixtures/hard_cases.jsonl fixtures/hard_cases.out.jsonl
-.cache/kfa/.venv/bin/python -I dump.py corpus/gutenberg.jsonl out/gutenberg.jsonl
+.cache/kfa/.venv/bin/python dump.py fixtures/hard_cases.jsonl fixtures/hard_cases.out.jsonl
+.cache/kfa/.venv/bin/python dump.py corpus/gutenberg.jsonl out/gutenberg.jsonl
 ```
 
 `dump.py` documents the output format; `crates/reference` reads it. `fixtures/hard_cases.out.jsonl` is committed so tests run without the Python setup. Dumps of the downloaded corpus go in `out/`, and the parity tests pick them up when present.

@@ -11,9 +11,12 @@ git -C .cache/kfa fetch -q origin "$KFA_SHA"
 git -C .cache/kfa checkout -q "$KFA_SHA"
 cd .cache/kfa
 uv sync --no-config --frozen --extra cpu --python 3.12
-# misaki's Japanese G2P (cutlet) needs the full UniDic dictionary.
-if [ ! -f "$(.venv/bin/python -I -c 'import unidic, os; print(os.path.join(unidic.DICDIR, "dicrc"))')" ]; then
-  .venv/bin/python -I -m unidic download
+# misaki's Japanese G2P (cutlet) needs the full UniDic dictionary: the version the deployed image has.
+UNIDIC=3.1.0+2021-08-31
+DICDIR="$(.venv/bin/python -I -c 'import unidic; print(unidic.DICDIR)')"
+if [ "$(cat "$DICDIR/version" 2>/dev/null)" != "unidic-$UNIDIC" ]; then
+  .venv/bin/python -I -m unidic download "$UNIDIC"
+  [ "$(cat "$DICDIR/version")" = "unidic-$UNIDIC" ]
 fi
 # espeak-ng keeps its data path in a fixed-size buffer that the venv's site-packages path overflows,
 # so dump.py points it at a copy of the same data with a shorter path.
