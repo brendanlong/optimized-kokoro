@@ -75,6 +75,21 @@ Rejected alternatives (measured in session decf45d1):
 
 espeak-ng-rs check: 19 of 25 sentences across en/ru/el/ko/ar/he/hi/cmn matched C espeak exactly. The misses were small: a dropped vowel in "Tchaikovsky", one Korean liquid, one Arabic and one Hindi stress or schwa, and Mandarin tones, which we don't use. Usable, with fixes sent upstream as the harness finds them.
 
+### Matching the reference vs simplifying it
+
+**Decided (Brendan, 2026-11-02):** part of the goal is simplification. Where misaki or Kokoro-FastAPI does something overly complex, or wrong, we can do it a better way, as long as the final model still pronounces the result reasonably.
+
+How that works:
+- **Port exactly first** where it's cheap. An exact port, proven by the reference harness, shows we understand the behaviour, and turns every later change into a measured diff instead of an accident. The spaCy, text and misaki-English ports did this.
+- **Every intentional difference is listed** in `docs/divergences.md`, with the reason, how many corpus records it changes, and how it was checked. The parity tests then compare against the reference *plus* the listed differences, so nothing else drifts.
+- **"Pronounced reasonably" is checked on audio, not phoneme strings**: synthesize the changed sentences with both versions, compare automatic transcriptions (two ASR models), and have Brendan listen to a sample of what changed.
+- **For ports not started yet (zh, ja, the espeak wrappers)**, prefer the simplest implementation that gives the same phonemes, or better-sounding ones, over a line-by-line port. Only invest in exact parity where behaviour is subtle and we have no better idea.
+
+First candidates (my proposals, not decided):
+- **One number path.** The normalizer spells out most numbers, money and years before misaki sees them, so misaki's number and currency code (and our num2words port) mostly sees leftovers. Two implementations disagree in places: "$1" → "one dollars", "1900" → "nineteen zero", "5 Ω" drops the number. Keep one number reader, and delete the other.
+- **Crashes in the reference** (misaki Japanese asserting on digits in 3% of Japanese Wikipedia paragraphs; misaki English on `İ` after punctuation): do whatever reads well instead.
+- **spaCy's full tagger** is only needed for the tag-dependent rules. If a smaller rule set gives the same audio, it could go, but the port is already exact and fast (0.38 ms per sentence), so this is low priority.
+
 ### Licensing
 
 To publish, we need one license for the combined work. Component licenses:
