@@ -1,0 +1,17 @@
+[package]
+name = "kokoro-g2p-zh"
+version = "0.1.0"
+description = "Port of misaki's legacy Chinese G2P (jieba, pypinyin, cn2an) as Kokoro-82M v1.0 uses it"
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+kokoro-text = { path = "../text" }
+rustc-hash = "2"
+
+[dev-dependencies]
+serde.workspace = true
+serde_json.workspace = true
