@@ -15,7 +15,7 @@
 #
 # Environment:
 #   KOKORO_GPU         CDI device name: an index or a GPU UUID (default 0; `all` is refused)
-#   KOKORO_MEMORY_MAX  host RAM for podman, gVisor and the worker (default 8G)
+#   KOKORO_MEMORY_MAX  host RAM for podman, gVisor and the worker (default 12G)
 #   KOKORO_CPU_QUOTA   CPU time, 100% = one core (default 400%)
 #   KOKORO_TASKS_MAX   host threads (default 1024; gVisor runs guest threads on a few of these)
 #   KOKORO_NO_LIMITS=1 skip the systemd scope (no RAM/CPU limits; for hosts without a user systemd)
@@ -84,7 +84,7 @@ if [ "${KOKORO_NO_LIMITS:-0}" != 1 ]; then
     # runsc's own cgroup support needs root (rootless podman passes ignore-cgroups), and podman
     # won't run runsc without cgroups, so --cgroups=split keeps everything inside this scope.
     limits=(systemd-run --user --scope --quiet --collect --unit "$name-$$"
-        -p "MemoryMax=${KOKORO_MEMORY_MAX:-8G}" -p MemorySwapMax=0
+        -p "MemoryMax=${KOKORO_MEMORY_MAX:-12G}" -p MemorySwapMax=0
         -p "CPUQuota=${KOKORO_CPU_QUOTA:-400%}" -p "TasksMax=${KOKORO_TASKS_MAX:-1024}")
 fi
 

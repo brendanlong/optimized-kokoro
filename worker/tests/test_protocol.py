@@ -97,3 +97,12 @@ def test_fuzz_only_protocol_errors():
             P.parse_request(body, 3, VOCAB, 510)
         except P.ProtocolError:
             pass
+
+
+def test_extreme_valid_weights_accepted():
+    biggest = struct.unpack("<f", struct.pack("<I", 0x7F7FFFFF))[0]
+    smallest = struct.unpack("<f", struct.pack("<I", 0x00000001))[0]
+    msg = parse(P.synthesize(1, [1], [(i % 3, biggest) for i in range(8)]))
+    assert all(w == biggest for _, w in msg.voices)
+    msg = parse(P.synthesize(1, [1], [(0, biggest), (1, smallest)]))
+    assert msg.voices[1][1] == smallest

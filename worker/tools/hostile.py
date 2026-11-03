@@ -55,7 +55,7 @@ def fr(body):
 def synth(rid, ids, voices=((0, 1.0),), speed=1.0, prio=0, style_len=None, n_ids=None, raw_speed=None, raw_voices=None):
     body = struct.pack("<BQB", 0x10, rid, prio)
     body += raw_speed if raw_speed is not None else struct.pack("<f", speed)
-    body += struct.pack("<B", len(voices))
+    body += struct.pack("<B", len(raw_voices) if raw_voices is not None else len(voices))
     for v in (raw_voices or [struct.pack("<Hf", i, w) for i, w in voices]):
         body += v
     body += struct.pack("<HH", len(ids) if n_ids is None else n_ids, len(ids) if style_len is None else style_len)
