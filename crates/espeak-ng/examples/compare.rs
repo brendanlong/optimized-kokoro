@@ -6,8 +6,8 @@
 //! clauses `espeak_TextToPhonemes` returned in phonemizer's mode (see `scratch/tools/oracle.py`).
 //! Prints the exact-match rate per voice, per call and per word, then mismatches. Calls marked
 //! `ub` (C read memory out of bounds or uninitialised; see `oracle.py --ub`) run but aren't scored;
-//! the `ub` column counts them and `ub-same` how many still match. With `FRESH=1` each call gets
-//! a new engine, as with `oracle.py fresh`.
+//! the `ub` column counts them and `ub-same` how many still match. Each call starts from fresh
+//! state, so the answers must come from `oracle.py pairs` without `--history`.
 
 use kokoro_espeak_ng::{Espeak, EspeakData, PHONEMES_IPA_TIE};
 use serde::Deserialize;
@@ -48,14 +48,13 @@ fn main() {
     let mut tallies: BTreeMap<String, Tally> = BTreeMap::new();
     let mut shown: HashMap<String, usize> = HashMap::new();
     let text = std::fs::read_to_string(path).unwrap();
-    let fresh = std::env::var_os("FRESH").is_some();
     let start = std::time::Instant::now();
     for line in text.lines() {
         let call: Call = serde_json::from_str(line).unwrap();
         if only.as_ref().is_some_and(|v| *v != call.voice) {
             continue;
         }
-        if fresh || call.reset {
+        if call.reset {
             engines.remove(&call.voice);
         }
         if call.reset {

@@ -52,6 +52,7 @@ pub fn default_data_dir() -> std::path::PathBuf {
 }
 
 use engine::Tr;
+use std::sync::Arc;
 
 /// `espeakPHONEMES_IPA`.
 pub const PHONEMES_IPA: i32 = 0x02;
@@ -61,36 +62,94 @@ pub const PHONEMES_TIE: i32 = 0x80;
 pub const PHONEMES_IPA_TIE: i32 = PHONEMES_IPA | PHONEMES_TIE | (0x361 << 8);
 
 impl Espeak {
-    /// One call of `espeak_TextToPhonemes`: decodes `text` (a UTF-8 C string; it ends at its
-    /// first NUL), translates its first clause, and returns the clause's phonemes together with
-    /// the text not yet read (`None` at the end, like C's `*textptr`).
-    pub fn text_to_phonemes_clause<'t>(&mut self, text: &'t [u8], phoneme_mode: i32) -> Option<(String, Option<&'t [u8]>)> {
-        if !self.voice_loaded || self.translator.is_none() {
-            return None;
-        }
-        let text = &text[..text.iter().position(|&c| c == 0).unwrap_or(text.len())];
-        self.decoder.decode_string(text);
-        self.translate_clause(Tr::Main);
-        let remaining = self.decoder.remaining().map(|r| r.len());
-        let phonemes = self.get_translated_phoneme_string(phoneme_mode);
-        let rest = remaining.map(|n| &text[text.len() - n..]);
-        Some((String::from_utf8_lossy(&phonemes).into_owned(), rest))
+    /// `espeak_SetVoiceByName` on a freshly initialised library: `name` is a voice file name
+    /// (e.g. `gmw/en-US`) or voice name.
+    pub fn set_voice_by_name(&mut self, name: &str) -> Result<()> {
+        *self = Espeak::new(self.data.clone());
+        self.set_voice_by_name_c(name)?;
+        debug_assert!(self.buffers_are_default());
+        let mut snapshot = self.clone();
+        snapshot.phoneme_list = Vec::new();
+        snapshot.ph_list2 = Vec::new();
+        snapshot.ph_list3 = Vec::new();
+        snapshot.clause_sbuf = Vec::new();
+        snapshot.clause_words = Vec::new();
+        snapshot.clause_charix = Vec::new();
+        snapshot.source = Vec::new();
+        self.after_set_voice = Some(Arc::new(snapshot));
+        Ok(())
+    }
+
+    /// Puts every field back to its value in `after_set_voice`. The large buffers, which are all
+    /// default there, are cleared in place instead of copied.
+    fn reset(&mut self, after_set_voice: Arc<Espeak>) {
+        let mut phoneme_list = std::mem::take(&mut self.phoneme_list);
+        let mut ph_list2 = std::mem::take(&mut self.ph_list2);
+        let mut ph_list3 = std::mem::take(&mut self.ph_list3);
+        let mut sbuf = std::mem::take(&mut self.clause_sbuf);
+        let mut words = std::mem::take(&mut self.clause_words);
+        let mut charix = std::mem::take(&mut self.clause_charix);
+        let mut source = std::mem::take(&mut self.source);
+        self.clone_from(&after_set_voice);
+        self.after_set_voice = Some(after_set_voice);
+        phoneme_list.fill(Default::default());
+        ph_list2.fill(Default::default());
+        ph_list3.fill(Default::default());
+        sbuf.fill(0);
+        words.fill(Default::default());
+        charix.fill(0);
+        source.fill(0);
+        self.phoneme_list = phoneme_list;
+        self.ph_list2 = ph_list2;
+        self.ph_list3 = ph_list3;
+        self.clause_sbuf = sbuf;
+        self.clause_words = words;
+        self.clause_charix = charix;
+        self.source = source;
+    }
+
+    fn buffers_are_default(&self) -> bool {
+        self.phoneme_list.iter().all(|p| *p == Default::default())
+            && self.ph_list2.iter().all(|p| *p == Default::default())
+            && self.ph_list3.iter().all(|p| *p == Default::default())
+            && self.clause_sbuf.iter().all(|&b| b == 0)
+            && self.clause_words.iter().all(|w| *w == Default::default())
+            && self.clause_charix.iter().all(|&c| c == 0)
+            && self.source.iter().all(|&b| b == 0)
     }
 
     /// Calls `espeak_TextToPhonemes` until the text is used up, as phonemizer does, returning
     /// each clause's phonemes.
     ///
-    /// C decodes the remaining text again on each call. The UTF-8 decoder carries no state
+    /// Each call starts from the state a new library has after `espeak_SetVoiceByName`. C keeps
+    /// its globals from one call to the next, so in C (and phonemizer) an embedded command such
+    /// as `\x01B` or a character read ahead at the end of one text changes later calls; here
+    /// it can't (docs/divergences.md).
+    ///
+    /// C decodes the remaining text again for each clause. The UTF-8 decoder carries no state
     /// between characters, so decoding once and continuing from where the last clause stopped
     /// gives the same characters, in time linear in the length of the text.
     pub fn text_to_phonemes(&mut self, text: &str, phoneme_mode: i32) -> Vec<String> {
+        self.translate_text(text, phoneme_mode, |_| {})
+    }
+
+    /// [`text_to_phonemes`](Self::text_to_phonemes), calling `after_clause` after each clause,
+    /// e.g. to print [`debug_phoneme_list`](Self::debug_phoneme_list).
+    #[doc(hidden)]
+    pub fn translate_text(&mut self, text: &str, phoneme_mode: i32, mut after_clause: impl FnMut(&Self)) -> Vec<String> {
         let mut out = Vec::new();
+        if self.used {
+            let Some(after_set_voice) = self.after_set_voice.clone() else { return out };
+            self.reset(after_set_voice);
+        }
+        self.used = true;
         if !self.voice_loaded || self.translator.is_none() {
             return out;
         }
         self.decoder.decode_string(text.as_bytes());
         loop {
             self.translate_clause(Tr::Main);
+            after_clause(self);
             let done = self.decoder.remaining().is_none();
             out.push(String::from_utf8_lossy(&self.get_translated_phoneme_string(phoneme_mode)).into_owned());
             if done {

@@ -2,10 +2,9 @@
 //!
 //! `c_calls.jsonl` holds `espeak_TextToPhonemes` results from C in phonemizer's mode: corpus
 //! words, adversarial texts and minimized regression cases for the voices whose data ships with
-//! the crate. Calls replay in file order with one engine per voice, since C carries state from
-//! one call to the next; `{"reset": true}` lines start that voice afresh. Calls marked `ub` (C
-//! read memory out of bounds or uninitialised) still run, for the state they leave, but aren't
-//! compared.
+//! the crate, each from a C process forked after `espeak_SetVoiceByName` (`oracle.py pairs`), as
+//! each engine call starts from that state. `{"reset": true}` lines are calls where C crashed.
+//! Calls marked `ub` (C read memory out of bounds or uninitialised) run but aren't compared.
 //!
 //! `ESPEAK_NG_CALLS` adds more call files (separated by `:`), read with the data in
 //! `ESPEAK_NG_DATA` when set, e.g. the full espeak-ng-data that `reference/` installs.
@@ -122,6 +121,25 @@ fn earlier_text_does_not_change_number_reading() {
         texts.iter().map(|t| e.text_to_phonemes(t, PHONEMES_IPA_TIE)).last().unwrap()
     };
     assert_eq!(run(&[earlier, later]), run(&[later]));
+}
+
+/// In C, `\x01B` (speak punctuation) and `\x01…Y` (say-as) stay on for later calls, and a
+/// character read ahead at the end of one call starts the next. Each call here starts fresh
+/// (docs/divergences.md), so no earlier text changes a later call.
+#[test]
+fn earlier_text_does_not_change_later_calls() {
+    let data = EspeakData::load(default_data_dir()).unwrap();
+    let later = "Hello, world. 42 cats.";
+    let mut fresh = Espeak::new(data.clone());
+    fresh.set_voice_by_name("gmw/en-US").unwrap();
+    let expected = fresh.text_to_phonemes(later, PHONEMES_IPA_TIE);
+    assert_eq!(expected, ["həlˈo͡ʊ", "wˈɜːld", "fˈɔː͡ɹɾi tˈuː kˈæts"]);
+    let mut e = Espeak::new(data);
+    e.set_voice_by_name("gmw/en-US").unwrap();
+    for earlier in ["\\\x01B.,", "xx \x011B yy, zz.", "\x012Y abc, def.", "abc.", "[[h@l'oU", "\x01"] {
+        e.text_to_phonemes(earlier, PHONEMES_IPA_TIE);
+        assert_eq!(e.text_to_phonemes(later, PHONEMES_IPA_TIE), expected, "after {earlier:?}");
+    }
 }
 
 #[test]

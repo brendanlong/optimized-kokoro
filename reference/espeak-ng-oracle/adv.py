@@ -1,6 +1,6 @@
 """Differential runs on generated texts: adv.py [--ub] GENERATOR FIRST_SEED COUNT N VOICE...
 
-For each seed: generate N texts, get C's answers with per-voice history (oracle.py pairs, with
+For each seed: generate N texts, get C's answers, each from fresh state (oracle.py pairs, with
 --ub also flagging calls where C reads undefined memory), and compare with the Rust engine.
 Prints the compare summary lines that aren't 100%.
 """

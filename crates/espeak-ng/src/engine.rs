@@ -22,8 +22,18 @@ pub(crate) struct ReplacePhonemes {
     pub typ: i8,
 }
 
+/// A text-to-phoneme engine for one voice: C espeak-ng's global state, over data shared with
+/// other engines. Each [`text_to_phonemes`](Espeak::text_to_phonemes) call starts from the state
+/// C has right after `espeak_SetVoiceByName`, so nothing one call reads (embedded commands,
+/// look-ahead characters, buffer contents) can affect another.
+#[derive(Clone)]
 pub struct Espeak {
     pub(crate) data: Arc<EspeakData>,
+    /// The state right after `set_voice_by_name`, copied back before each call. It leaves out
+    /// the large buffers, which are all default at that point and are cleared instead.
+    pub(crate) after_set_voice: Option<Arc<Espeak>>,
+    /// The state has been used by a call since it was copied from `after_set_voice`.
+    pub(crate) used: bool,
 
     // synthdata.c
     pub(crate) phoneme_tab: [Option<PhonemeTab>; N_PHONEME_TAB],
@@ -134,6 +144,8 @@ impl Espeak {
         let dummy = Box::new(crate::tr_languages::select_translator(b""));
         let mut e = Espeak {
             data,
+            after_set_voice: None,
+            used: false,
             phoneme_tab: [None; N_PHONEME_TAB],
             n_phoneme_tab: 0,
             current_phoneme_table: -1,

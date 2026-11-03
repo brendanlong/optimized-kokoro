@@ -1,7 +1,14 @@
 // Oracle driver: reads records "voice\0text\0" from stdin, writes the clauses
 // espeak_TextToPhonemes returns (phonemizer's mode: IPA, tie U+0361), each
 // followed by '\n', then '\0' per record.
+//
+// With TTP_FORK set, each record runs in a child forked after
+// espeak_SetVoiceByName, so it starts from the state of a new process with
+// that voice, as if every call had its own library. A child that dies writes
+// "\x01ttp-crashed\n" as its record.
 #include <stdio.h>
+#include <sys/wait.h>
+#include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
 #include <locale.h>
@@ -62,19 +69,47 @@ int main(int argc, char **argv) {
 			if (espeak_SetVoiceByName(voice) != 0) fprintf(stderr, "voice %s failed\n", voice);
 			snprintf(current, sizeof current, "%s", voice);
 		}
-		const void *p = text;
-		while (p != NULL) {
-			const char *ph = espeak_TextToPhonemes(&p, espeakCHARS_UTF8, mode);
-			if (getenv("ESPEAK_DUMP"))
-				dump_phoneme_list();
-			fputs(ph ? ph : "", stdout);
-			putchar('\n');
+		int fork_mode = getenv("TTP_FORK") != NULL;
+		pid_t pid = 0;
+		if (fork_mode) {
+			fflush(stdout);
+			fflush(stderr);
+			pid = fork();
 		}
-		putchar(0);
-		fflush(stdout);
-		// memcheck reports each distinct error once, but counts every occurrence.
-		if (getenv("TTP_MARK_RECORDS"))
-			fprintf(stderr, "\n@@ttp-errors %d\n", (int)VALGRIND_COUNT_ERRORS);
+		if (pid == 0) {
+			// memcheck reports each distinct error once, but counts every occurrence.
+			int errors_before = VALGRIND_COUNT_ERRORS;
+			char *out = NULL;
+			size_t out_len = 0;
+			FILE *f = open_memstream(&out, &out_len);
+			const void *p = text;
+			while (p != NULL) {
+				const char *ph = espeak_TextToPhonemes(&p, espeakCHARS_UTF8, mode);
+				if (getenv("ESPEAK_DUMP"))
+					dump_phoneme_list();
+				fputs(ph ? ph : "", f);
+				fputc('\n', f);
+			}
+			fputc(0, f);
+			fclose(f);
+			fwrite(out, 1, out_len, stdout);
+			free(out);
+			fflush(stdout);
+			if (getenv("TTP_MARK_RECORDS"))
+				fprintf(stderr, "\n@@ttp-errors %d\n", (int)VALGRIND_COUNT_ERRORS - errors_before);
+			if (fork_mode) {
+				fflush(stderr);
+				_exit(0);
+			}
+		} else {
+			int status = 0;
+			waitpid(pid, &status, 0);
+			if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+				fputs("\x01ttp-crashed\n", stdout);
+				putchar(0);
+				fflush(stdout);
+			}
+		}
 		free(voice);
 		free(text);
 	}

@@ -5,13 +5,16 @@
         checked against the answers phonemizer recorded
     python3 oracle.py texts VOICE < lines.txt > calls.jsonl
         one call per input line
-    python3 oracle.py pairs [--ub] < pairs.jsonl > calls.jsonl
-        {"voice", "text"} lines; each voice runs in its own process, in input order, so the
-        library state each call sees matches one Espeak instance per voice. With --ub, the same
-        sequences also run under ASan (ttp-asan) and valgrind's memcheck (ttp-memcheck; `make
-        sanitized`), and calls where C reads out of bounds or reads uninitialised memory get
-        "ub": [reports]. ASan stops at its first report, so after one the ASan run restarts with
-        fresh state at the next call. Their clauses depend on whatever memory C read, so they are not C's answer.
+    python3 oracle.py pairs [--ub] [--history] < pairs.jsonl > calls.jsonl
+        {"voice", "text"} lines. Each call runs in a child forked after espeak_SetVoiceByName
+        (ttp's TTP_FORK), so it sees the state of a new library with that voice, as each
+        kokoro-espeak-ng call does. With --history, a voice's calls instead run in input order
+        in one process, carrying C's state from call to call as phonemizer does. A call where C
+        crashes gets {"reset": true} and no answer.
+        With --ub, the same calls also run under ASan (ttp-asan) and valgrind's memcheck
+        (ttp-memcheck; `make sanitized`), and calls where C reads out of bounds or reads
+        uninitialised memory get "ub": [reports]. Their clauses depend on whatever memory C
+        read, so they are not C's answer.
     python3 oracle.py one VOICE TEXT
 """
 
@@ -31,6 +34,8 @@ OUT = os.environ.get("ORACLE_OUT", os.path.join(ROOT, "scratch", "out"))
 TTP_ASAN = os.path.join(HERE, "ttp-asan")
 TTP_MEMCHECK = os.path.join(HERE, "ttp-memcheck")
 VALGRIND = os.environ.get("VALGRIND", "valgrind")
+FRESH = "--history" not in sys.argv
+CRASHED = "\x01ttp-crashed"
 VOICES = {
     "en-us": "gmw/en-US", "en-gb": "gmw/en", "es": "roa/es", "fr-fr": "roa/fr", "it": "roa/it",
     "pt-br": "roa/pt-BR", "hi": "inc/hi", "ru": "zle/ru", "el": "grk/el", "ko": "ko", "ar": "sem/ar",
@@ -40,7 +45,8 @@ VOICES = {
 
 def run(pairs):
     payload = b"".join(v.encode() + b"\0" + t.encode("utf-8", "surrogateescape") + b"\0" for v, t in pairs)
-    proc = subprocess.run([TTP, DATA], input=payload, capture_output=True)
+    env = dict(os.environ, **({"TTP_FORK": "1"} if FRESH else {}))
+    proc = subprocess.run([TTP, DATA], input=payload, capture_output=True, env=env)
     sys.stderr.write(proc.stderr.decode(errors="replace"))
     if proc.returncode != 0 and len(pairs) > 1:
         print(f"ttp exited with {proc.returncode}", file=sys.stderr)
@@ -49,7 +55,8 @@ def run(pairs):
     # the piece after the last terminator is unfinished (empty if the process ended cleanly)
     records = records[:-1][: len(pairs)]
     records += [None] * (len(pairs) - len(records))
-    return [None if r is None else r.decode(errors="replace").split("\n")[:-1] for r in records]
+    clauses = [None if r is None else r.decode(errors="replace").split("\n")[:-1] for r in records]
+    return [None if c == [CRASHED] else c for c in clauses]
 
 
 def payload(voice, texts):
@@ -71,20 +78,20 @@ def symbolize(offset):
 def sanitized_run(tool, voice, texts):
     """Reports per text from one sanitized process (None where clean), and how many records it
     finished."""
-    env = dict(os.environ, TTP_MARK_RECORDS="1")
+    env = dict(os.environ, TTP_MARK_RECORDS="1", **({"TTP_FORK": "1"} if FRESH else {}))
     if tool == "asan":
         cmd = [TTP_ASAN, DATA]
-        # Stop at the first report: after one, C can loop reporting for a long time. The caller
-        # restarts after the reported call. Symbolizing is slow; the first frame in ttp-asan is
-        # symbolized once below.
+        # Stop at the first report: after one, C can loop reporting for a long time. Without
+        # TTP_FORK the caller restarts after the reported call. Symbolizing is slow; the first
+        # frame in ttp-asan is symbolized once below.
         env["ASAN_OPTIONS"] = "detect_leaks=0:symbolize=0"
     else:
         cmd = [VALGRIND, "--error-limit=no", "--log-fd=2", TTP_MEMCHECK, DATA]
     proc = subprocess.run(cmd, input=payload(voice, texts), capture_output=True, env=env)
     finished = proc.stdout.count(b"\0")
+    crashed = [r == CRASHED.encode() + b"\n" for r in proc.stdout.split(b"\0")[:-1]]
     reports = [None] * len(texts)
     sections = re.split(r"\n@@ttp-record (\d+)\n", proc.stderr.decode(errors="replace"))
-    errors_before = 0
     for ix in range(1, len(sections) - 1, 2):
         record, body = int(sections[ix]), sections[ix + 1]
         if record >= len(texts):
@@ -99,13 +106,14 @@ def sanitized_run(tool, voice, texts):
                 reports[record] = sorted(set(found))
         else:
             m = re.search(r"@@ttp-errors (\d+)", body)
-            errors = int(m.group(1)) if m else errors_before
-            if errors > errors_before or (record >= finished and record < len(texts)):
+            errors = int(m.group(1)) if m else 0
+            if errors:
                 sites = re.findall(r"^==\d+== (\S.*)\n==\d+==    at 0x[0-9A-F]+: (\S+ \(\S+\))", body, re.M)
                 reports[record] = sorted({f"memcheck: {what} at {where}" for what, where in sites}) or [
-                    f"memcheck: {errors - errors_before} errors (repeated)"
+                    f"memcheck: {errors} errors (repeated)"
                 ]
-            errors_before = errors
+        if record < len(crashed) and crashed[record] and not reports[record]:
+            reports[record] = [f"{tool}: crashed"]
     if finished < len(texts) and not reports[finished]:
         reports[finished] = [f"{tool}: crashed"]
     return reports, finished
@@ -160,13 +168,14 @@ def main():
             print(json.dumps({"voice": v, "text": t, "clauses": cl}, ensure_ascii=False))
     elif sys.argv[1] == "pairs":
         check_ub = "--ub" in sys.argv[2:]
+        # if C crashes, the call gets a {"reset": true} record; without TTP_FORK, C restarts
+        # with fresh state at the next call
         by_voice = collections.defaultdict(list)
         order = []
         for line in sys.stdin:
             r = json.loads(line)
             by_voice[r["voice"]].append(r["text"])
             order.append(r["voice"])
-        # if C crashes, the call gets a {"reset": true} record and C restarts with fresh state
         def one_voice(voice, texts):
             out = []
             while len(out) < len(texts):
@@ -197,15 +206,6 @@ def main():
             if ub:
                 rec["ub"] = ub
             print(json.dumps(rec, ensure_ascii=False))
-    elif sys.argv[1] == "fresh":
-        # each call in a new process; calls where C crashes are reported and skipped
-        for line in sys.stdin:
-            r = json.loads(line)
-            cl = run([(r["voice"], r["text"])])[0]
-            if cl is None:
-                print(f"C crashed: {r['voice']} {r['text']!r}", file=sys.stderr)
-                continue
-            print(json.dumps({"voice": r["voice"], "text": r["text"], "clauses": cl}, ensure_ascii=False))
     elif sys.argv[1] == "one":
         for cl in run([(sys.argv[2], " ".join(sys.argv[3:]))])[0]:
             print(cl)

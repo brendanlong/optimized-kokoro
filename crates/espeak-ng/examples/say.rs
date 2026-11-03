@@ -11,13 +11,12 @@ fn main() {
     e.set_voice_by_name(&args[1]).unwrap();
     let dump = std::env::var_os("ESPEAK_DUMP").is_some();
     let text = args[2..].join(" ");
-    let mut rest = Some(text.as_bytes());
-    while let Some(t) = rest {
-        let Some((clause, r)) = e.text_to_phonemes_clause(t, PHONEMES_IPA_TIE) else { break };
+    let clauses = e.translate_text(&text, PHONEMES_IPA_TIE, |e| {
         if dump {
             eprint!("{}", e.debug_phoneme_list());
         }
+    });
+    for clause in clauses {
         println!("{clause}");
-        rest = r;
     }
 }

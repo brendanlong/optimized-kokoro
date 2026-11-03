@@ -484,7 +484,7 @@ pub const ESPEAK_PHONEMES_TIE: i32 = 0x80;
 pub const ESPEAKNG_DEFAULT_VOICE: &[u8] = b"en";
 
 /// `WORD_TAB`.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct WordTab {
     pub flags: u32,
     pub start: u16,
@@ -637,7 +637,7 @@ pub struct Translator {
 }
 
 /// `PHONEME_LIST2`.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct PhonemeList2 {
     pub synthflags: u16,
     pub phcode: u8,
@@ -648,7 +648,7 @@ pub struct PhonemeList2 {
 }
 
 /// `PHONEME_LIST`, without the synthesis-only fields.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct PhonemeList {
     pub synthflags: u16,
     pub phcode: u8,

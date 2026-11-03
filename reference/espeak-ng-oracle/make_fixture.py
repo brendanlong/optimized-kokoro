@@ -7,7 +7,7 @@ sanitized` and valgrind): calls.jsonl from the corpus calls (`oracle.py calls` o
 espeak_dump.py dump, then rerun as pairs), and gen_adversarial-2.jsonl from
 `adv.py --ub gen_adversarial.py 2 1 3000` with the twelve voices below.
 
-Sections, each replayed with one engine per voice in file order (as compare.rs does):
+Sections, each call answered by C from fresh state (oracle.py pairs):
   - the first 250 corpus calls per voice from calls.jsonl
   - the first 30 adversarial calls per voice from gen_adversarial-2.jsonl
   - minimized regression cases, run through the C oracle with fresh state
@@ -35,10 +35,6 @@ def head_per_voice(path, n):
             count[v] += 1
         out.append(r)
     return out
-
-
-def reset_all():
-    return [{"voice": v, "text": "", "reset": True} for v in VOICES + ["inc/si"]]
 
 
 regression = [
@@ -75,9 +71,7 @@ assert len(regression_calls) == len(regression), proc.stderr.decode()
 
 records = (
     head_per_voice(os.path.join(OUT, "calls.jsonl"), 250)
-    + reset_all()
     + head_per_voice(os.path.join(OUT, "gen_adversarial-2.jsonl"), 30)
-    + reset_all()
     + regression_calls
 )
 with open(sys.argv[1], "w") as f:

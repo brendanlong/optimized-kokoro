@@ -275,8 +275,9 @@ impl Espeak {
         true
     }
 
-    /// `espeak_SetVoiceByName`: `name` is a voice file name (e.g. `gmw/en-US`) or voice name.
-    pub fn set_voice_by_name(&mut self, name: &str) -> Result<()> {
+    /// `espeak_SetVoiceByName` on the current state: `name` is a voice file name (e.g.
+    /// `gmw/en-US`) or voice name.
+    pub(crate) fn set_voice_by_name_c(&mut self, name: &str) -> Result<()> {
         let mut buf: String = name.chars().take(59).collect();
         if let Some(p) = buf.find('+') {
             // voice variants only change synthesis parameters
