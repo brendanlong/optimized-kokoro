@@ -1,5 +1,8 @@
 # The sandboxed GPU worker (worker/run.sh serve), installed by deploy/deploy.sh.
 [Unit]
+# Give up (and show as failed) after 5 failed starts in 10 minutes rather than looping forever.
+StartLimitIntervalSec=600
+StartLimitBurst=5
 Description=optimized-kokoro GPU worker (gVisor)
 After=podman-user-wait-network-online.service
 
@@ -19,9 +22,9 @@ ExecStartPre=-/usr/bin/podman rm -f -i kokoro-worker
 ExecStart=%h/.local/share/optimized-kokoro/worker/run.sh serve %t/optimized-kokoro %h/.local/share/optimized-kokoro/models
 ExecStopPost=-/usr/bin/podman rm -f -i kokoro-worker
 KillMode=mixed
-Restart=always
-RestartSec=5
-TimeoutStartSec=900
+Restart=on-failure
+RestartSec=30
+TimeoutStopSec=30
 
 [Install]
 WantedBy=default.target
