@@ -423,3 +423,26 @@ async fn unsupported_sentences_are_skipped() {
     assert_eq!(response.status(), 200);
     assert_eq!(samples(&body_bytes(response).await.unwrap()), expected);
 }
+
+#[tokio::test]
+async fn speaks_english_with_the_real_pipeline() {
+    use kokoro_server::Pipeline;
+    let pipelines = Arc::new(kokoro_server::kokoro::KokoroPipelines::load().unwrap());
+    let server = start(|_| {}, pipelines.clone()).await;
+    let mut worker = ScriptedWorker::listen(&server.socket, worker_side::hello(&hello()));
+    server.worker.connected().await;
+    let text = "The quick brown fox jumps over the lazy dog. It costs $5.";
+    let client = tokio::spawn(speak(server.addr, pcm(text)));
+    let options = kokoro_text::Options::default();
+    let chunks: Vec<_> = pipelines.chunks("a", text, &options).map(Result::unwrap).collect();
+    assert_eq!(chunks.len(), 2);
+    let mut expected = Vec::new();
+    for chunk in &chunks {
+        let (id, _, _, _, ids) = worker.synthesize().await;
+        assert_eq!(ids, chunk.ids);
+        worker.send(respond(id, &ids));
+        expected.extend(expected_chunk(&ids));
+    }
+    let response = client.await.unwrap();
+    assert_eq!(samples(&body_bytes(response).await.unwrap()), expected);
+}

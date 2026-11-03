@@ -5,6 +5,7 @@
 pub mod audio;
 pub mod config;
 pub mod http;
+pub mod kokoro;
 pub mod pipeline;
 pub mod protocol;
 pub mod request;

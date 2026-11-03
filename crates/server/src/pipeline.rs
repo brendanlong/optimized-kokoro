@@ -53,9 +53,9 @@ pub trait Pipeline: Send + Sync + 'static {
 pub const LANG_CODES: &[&str] =
     &["a", "b", "e", "f", "h", "i", "p", "j", "z", "en-us", "en-gb", "es", "fr-fr", "hi", "it", "pt-br", "ja", "zh"];
 
-/// A stand-in until `kokoro-pipeline` lands: Kokoro-FastAPI's chunking (from `kokoro-text`) with
-/// a fake G2P that keeps ASCII letters, spaces and basic punctuation as their own phonemes. The
-/// audio it produces is not speech.
+/// A test pipeline: Kokoro-FastAPI's chunking (from `kokoro-text`) with a fake G2P that keeps
+/// ASCII letters, spaces and basic punctuation as their own phonemes. The audio it produces is
+/// not speech; the server uses [`crate::kokoro::KokoroPipelines`].
 pub struct StubPipeline;
 
 const STUB_PUNCTUATION: &str = ";:,.!?";

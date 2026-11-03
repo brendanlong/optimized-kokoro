@@ -1,4 +1,5 @@
-use kokoro_server::{Config, StubPipeline, Worker, http, serve};
+use kokoro_server::kokoro::KokoroPipelines;
+use kokoro_server::{Config, Worker, http, serve};
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -42,11 +43,17 @@ async fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    tracing::warn!("using the stub text pipeline: audio will not be speech until kokoro-pipeline is wired in");
+    let pipelines = match KokoroPipelines::load() {
+        Ok(pipelines) => pipelines,
+        Err(e) => {
+            eprintln!("loading the text pipelines: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
     let worker = Worker::spawn(config.worker_socket.clone(), config.reconnect_interval());
     tracing::info!("listening on {}, worker socket {}", config.listen, config.worker_socket.display());
     let limits = serve::Limits::from(&config);
-    let app = http::router(config, worker, Arc::new(StubPipeline));
+    let app = http::router(config, worker, Arc::new(pipelines));
     serve::serve(listener, app, limits, shutdown_signal()).await;
     ExitCode::SUCCESS
 }
