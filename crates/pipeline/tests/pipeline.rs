@@ -99,17 +99,48 @@ fn a_foreign_run_is_one_token_per_word() {
 }
 
 #[test]
-fn han_and_kana_are_unsupported_without_their_g2p() {
-    for (text, language, run) in [
-        ("他说：“我们走吧，明天见。”", Language::Chinese, "他说"),
-        ("labeled with elements—土火水木金—rather than numbers.", Language::Chinese, "土火水木金"),
-        ("東京へ行く", Language::Japanese, "東京へ行く"),
+fn runs_without_a_g2p_are_read_as_their_name() {
+    for (text, expected) in [
+        ("The Chinese word 你好 means hello.", "ðə ʧˌInˈiz wˈɜɹd ʧˌInˈiz tˈɛkst mˈinz həlˈO."),
+        ("東京へ行く", "ʤˌæpənˈiz tˈɛkst"),
+        ("你好 世界", "ʧˌInˈiz tˈɛkst"),
+        ("He wrote 兙 on the board.", "hˌi ɹˈOt ʧˌInˈiz tˈɛkst ˌɔn ðə bˈɔɹd."),
+        ("The word你好means hello.", "ðə wˈɜɹd ʧˌInˈiz tˈɛkst mˈinz həlˈO."),
+        ("Wake Station (和気駅, Wake-eki).", "wˈAk stˈAʃən (ʧˌInˈiz tˈɛkst, wˈAkˈɛki)."),
+        ("Thai สวัสดี ครับ is hello.", "tˈI tˈI tˈɛkst ɪz həlˈO."),
+        ("Mongolian ᠮᠣᠩᠭᠣᠯ script.", "mɑŋɡˈOljən mɑŋɡˈOljən tˈɛkst skɹˈɪpt."),
     ] {
-        match pipeline().phonemize(text) {
-            Err(Error::Unsupported { language: l, text: t }) => assert_eq!((l, t.as_str()), (language, run)),
-            other => panic!("{text}: {other:?}"),
-        }
+        assert_eq!(phonemize(text), expected, "{text}");
     }
+}
+
+#[test]
+fn a_placeholder_is_one_word_holding_the_run() {
+    let (_, tokens) = pipeline().phonemize("Say 你好 世界 now").unwrap();
+    let texts: Vec<&str> = tokens.iter().map(|t| t.text.as_str()).collect();
+    assert_eq!(texts, ["Say", "你好 世界", "", "now"]);
+}
+
+#[test]
+fn other_scripts_are_read_by_the_voice_espeak_switches_to() {
+    for (text, word, voice) in [
+        ("Georgian გამარჯობა is hello.", "გამარჯობა", "ka"),
+        ("Armenian Բարեւ is hello.", "Բարեւ", "hy"),
+        ("Tamil வணக்கம் is hello.", "வணக்கம்", "ta"),
+    ] {
+        let ps = phonemize(text);
+        assert!(ps.contains(&espeak(voice, word)) && !ps.contains(['(', ')']), "{text}: {ps}");
+    }
+}
+
+#[test]
+fn every_voice_a_run_may_go_to_loads() {
+    let voices = kokoro_pipeline::foreign::espeak_voices();
+    for voice in ["ar", "bn", "el", "he", "hi", "hy", "ka", "ko", "ru", "ta"] {
+        assert!(voices.contains(&voice), "{voices:?}");
+    }
+    Pipeline::new(Lang::BritishEnglish).unwrap();
+    assert!(phonemize("Shavian 𐑖𐑱𐑝𐑾𐑯.").starts_with("ʃˈAviən "));
 }
 
 /// Stands in for misaki's Chinese G2P: one syllable per character, with a tone arrow.
@@ -172,13 +203,12 @@ fn speech(chunks: &[Result<Chunk, Error>]) -> Vec<Result<&str, String>> {
 }
 
 #[test]
-fn an_unsupported_sentence_is_an_error_and_the_rest_follows() {
+fn placeholders_are_counted_and_a_sentence_of_one_is_spoken() {
     let options = NormalizationOptions::default();
-    let chunks: Vec<_> = pipeline().chunks("Hello there. They said 東京. Goodbye now.", &options).collect();
-    assert_eq!(
-        speech(&chunks),
-        [Ok("Hello there."), Err("no G2P for zh text yet: \"東京\"".to_owned()), Ok("Goodbye now.")]
-    );
+    let chunks: Vec<_> = pipeline().chunks("Hello there. 東京。 [pause:0.5s] ありがとう, Goodbye 你好. สวัสดี", &options).collect();
+    assert_eq!(speech(&chunks), [Ok("Hello there."), Ok("東京."), Ok("<pause>"), Ok("ありがとう, Goodbye 你好."), Ok("สวัสดี")]);
+    let unread: Vec<usize> = chunks.iter().map(|c| c.as_ref().unwrap().unread).collect();
+    assert_eq!(unread, [0, 1, 0, 2, 1]);
 }
 
 #[test]

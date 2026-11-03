@@ -92,6 +92,17 @@ pub fn alphabet_from_char(c: i32) -> Option<&'static Alphabet> {
     None
 }
 
+/// The language espeak switches to for a letter of another alphabet (`AlphabetFromChar`'s
+/// `language`), if it names one.
+pub fn alphabet_language(c: char) -> Option<&'static str> {
+    static NAMES: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
+        ALPHABETS.iter().map(|a| String::from_utf8_lossy(&word_to_string2(a.language)).into_owned()).collect()
+    });
+    let alphabet = alphabet_from_char(c as i32)?;
+    let i = ALPHABETS.iter().position(|a| std::ptr::eq(a, alphabet))?;
+    Some(NAMES[i].as_str()).filter(|name| !name.is_empty())
+}
+
 fn set_letter_vowel(tr: &mut Translator, c: usize) {
     tr.letter_bits[c] = (tr.letter_bits[c] & 0x40) | 0x81; // keep value for group 6 (front vowels e,i,y)
 }
@@ -1537,5 +1548,9 @@ mod tests {
         assert!(alphabet_from_char(0x800).is_none());
         assert!(alphabet_from_char(b'a' as i32).is_none());
         assert!(alphabet_from_char(-1).is_none());
+        assert_eq!(alphabet_language('ა'), Some("ka"));
+        assert_eq!(alphabet_language('ਕ'), Some("pa"));
+        assert_eq!(alphabet_language('ส'), None);
+        assert_eq!(alphabet_language('a'), None);
     }
 }

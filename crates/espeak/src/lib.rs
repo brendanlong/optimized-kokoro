@@ -1,19 +1,21 @@
 //! misaki 0.9.4's two espeak-ng wrappers (`misaki/espeak.py`), on `kokoro-espeak-ng` (a port of
 //! espeak-ng 1.52's text-to-phoneme engine) instead of C espeak-ng:
 //! - [`EspeakFallback`] reads English words missing from misaki's lexicons;
-//! - [`EspeakG2P`] reads whole segments of es, fr-fr, hi, it, pt-br, and the ar, el, he, hi, ko and ru
-//!   runs kokoro's `foreign.py` hands to espeak.
+//! - [`EspeakG2P`] reads whole segments of es, fr-fr, hi, it, pt-br, and the runs of other scripts
+//!   the English pipelines hand to espeak (kokoro's `foreign.py`: ar, el, he, hi, ko and ru; here
+//!   also the languages espeak switches to for other alphabets, [`alphabet_language`]).
 //!
-//! Both match the deployed pipeline, which passes no `version` to either.
+//! Both match the deployed pipeline, which passes no `version` to either, except that the fallback
+//! drops espeak's language-switch flags as `EspeakG2P` does (`docs/divergences.md`).
 #![forbid(unsafe_code)]
 
 pub mod phonemizer;
 
-use phonemizer::{Backend, LanguageSwitch, py_strip};
+use phonemizer::{Backend, py_strip};
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
-pub use kokoro_espeak_ng::{EspeakData, Error, Result, default_data_dir};
+pub use kokoro_espeak_ng::{EspeakData, Error, Result, alphabet_language, default_data_dir};
 
 /// The data in [`default_data_dir`], loaded once per process.
 pub fn default_data() -> Result<Arc<EspeakData>> {
@@ -25,7 +27,8 @@ pub fn default_data() -> Result<Arc<EspeakData>> {
     Ok(DATA.get_or_init(|| d).clone())
 }
 
-/// `misaki.espeak.EspeakFallback`, the last resort for English words.
+/// `misaki.espeak.EspeakFallback`, the last resort for English words. Unlike misaki's, it drops
+/// espeak's language-switch flags (`(ka)…(en-us)`) instead of reading them out as phonemes.
 pub struct EspeakFallback {
     british: bool,
     backend: Backend,
@@ -43,7 +46,7 @@ impl EspeakFallback {
 
     pub fn with_data(british: bool, data: Arc<EspeakData>) -> Result<Self> {
         let language = if british { "en-gb" } else { "en-us" };
-        let backend = Backend::new(language, LanguageSwitch::KeepFlags, data)?;
+        let backend = Backend::new(language, data)?;
         // Python sorts the dict items by descending length, keeping insertion order among equals.
         let mut e2m = vec![
             ("ʔˌn\u{329}", "ʔn"),
@@ -139,7 +142,7 @@ impl EspeakG2P {
     }
 
     pub fn with_data(language: &str, data: Arc<EspeakData>) -> Result<Self> {
-        let backend = Backend::new(language, LanguageSwitch::RemoveFlags, data)?;
+        let backend = Backend::new(language, data)?;
         let mut e2m = vec![
             ("a^ɪ", "I"),
             ("a^ʊ", "W"),
@@ -180,5 +183,21 @@ impl EspeakG2P {
             ps = ps.replace(old, new);
         }
         Ok(ps.replace(['^', '-'], "").replace('«', "(").replace('»', ")"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn language_switch_flags_are_dropped_and_parentheses_kept() {
+        let fallback = EspeakFallback::new(false).unwrap();
+        let georgian = fallback.phonemize("გამარჯობა").unwrap().unwrap();
+        assert!(!georgian.contains(['(', ')']), "{georgian}");
+        assert!(fallback.phonemize("(qzx)").unwrap().unwrap().starts_with('('));
+        let russian = EspeakG2P::new("ru").unwrap();
+        let word = russian.phonemize("Привет").unwrap();
+        assert_eq!(russian.phonemize("(Привет)").unwrap(), format!("({word})"));
     }
 }

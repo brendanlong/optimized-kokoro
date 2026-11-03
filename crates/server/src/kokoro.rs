@@ -26,10 +26,10 @@ impl Pipeline for KokoroPipelines {
             Lang::AmericanEnglish => &self.american,
             Lang::BritishEnglish => &self.british,
         };
-        Box::new(pipeline.chunks(text, &self.options).map(|chunk| match chunk {
-            Ok(c) => Ok(Chunk { text: c.text, phonemes: c.phonemes, ids: c.ids, pause: c.pause }),
-            Err(e @ Error::Unsupported { .. }) => Err(PipelineError::Unsupported(e.to_string())),
-            Err(e) => Err(PipelineError::Failed(e.to_string())),
+        Box::new(pipeline.chunks(text, &self.options).map(|chunk| {
+            chunk
+                .map(|c| Chunk { text: c.text, phonemes: c.phonemes, ids: c.ids, pause: c.pause, unread: c.unread })
+                .map_err(|e| PipelineError(e.to_string()))
         }))
     }
 }
@@ -39,14 +39,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn reads_english_and_skips_what_it_cant() {
+    fn reads_english_and_names_what_it_cant_read() {
         let pipelines = KokoroPipelines::load().unwrap();
-        let chunks: Vec<_> = pipelines.chunks(Lang::AmericanEnglish, "Hello there. [pause:0.5s] 東京 is big.").collect();
-        let first = chunks[0].as_ref().unwrap();
-        assert_eq!(first.text, "Hello there.");
-        assert!(!first.ids.is_empty() && first.ids.len() == first.phonemes.chars().count());
-        assert_eq!(chunks[1].as_ref().unwrap().pause, Some(0.5));
-        assert!(matches!(chunks[2], Err(PipelineError::Unsupported(_))), "{:?}", chunks[2]);
+        let chunks: Vec<_> =
+            pipelines.chunks(Lang::AmericanEnglish, "Hello there. [pause:0.5s] 東京 is big.").map(Result::unwrap).collect();
+        assert_eq!(chunks[0].text, "Hello there.");
+        assert!(!chunks[0].ids.is_empty() && chunks[0].ids.len() == chunks[0].phonemes.chars().count());
+        assert_eq!(chunks[1].pause, Some(0.5));
+        assert_eq!((chunks[2].phonemes.as_str(), chunks[2].unread), ("ʧˌInˈiz tˈɛkst ɪz bˈɪɡ.", 1));
     }
 
     #[test]

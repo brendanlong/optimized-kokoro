@@ -1,62 +1,82 @@
 //! kokoro's `foreign.py` (brendanlong/kokoro at the commit Kokoro-FastAPI pins) for the English
 //! pipelines: finds runs of other scripts so each is read by its own language's G2P, in the
 //! English voice, and post-processes their phonemes.
+//!
+//! `foreign.py` looks for six scripts besides Han and kana; here every non-Latin script makes
+//! runs, read by the espeak voice espeak-ng itself switches to for that alphabet
+//! ([`kokoro_espeak::alphabet_language`]). The six keep `foreign.py`'s voices.
 
+pub use crate::tables::Script;
 use crate::tables::{NONSPACING_MARKS, SCRIPTS};
 use kokoro_text::py;
 use std::cmp::Ordering;
 
-/// The scripts `foreign.py` looks for.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Script {
-    Han,
-    Hiragana,
-    Katakana,
-    Latin,
-    Arabic,
-    Cyrillic,
-    Devanagari,
-    Greek,
-    Hangul,
-    Hebrew,
-}
-
 /// A language other than the pipeline's, which reads a run of its script.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Language {
-    Arabic,
     Chinese,
-    Greek,
-    Hebrew,
-    Hindi,
     Japanese,
-    Korean,
-    Russian,
+    /// Read by espeak, with the voice for this language code.
+    Espeak(&'static str),
+    /// A script espeak has no voice for.
+    Unvoiced(Script),
 }
 
 impl Language {
-    /// The reference's language code (`foreign.py`'s `SCRIPT_LANGUAGES`, and `zh`/`ja`).
+    /// The reference's language code (`zh`, `ja`, or the espeak voice's), or the script's name.
     pub fn code(self) -> &'static str {
         match self {
-            Language::Arabic => "ar",
             Language::Chinese => "zh",
-            Language::Greek => "el",
-            Language::Hebrew => "he",
-            Language::Hindi => "hi",
             Language::Japanese => "ja",
-            Language::Korean => "ko",
-            Language::Russian => "ru",
+            Language::Espeak(code) => code,
+            Language::Unvoiced(script) => script.name(),
         }
     }
 
-    /// The espeak voice that reads this language, or `None` for Chinese and Japanese, which have
-    /// G2Ps of their own.
+    /// The espeak voice that reads this language: none for Chinese and Japanese, which have G2Ps
+    /// of their own, or for a script espeak doesn't read.
     pub fn espeak(self) -> Option<&'static str> {
         match self {
-            Language::Chinese | Language::Japanese => None,
-            other => Some(other.code()),
+            Language::Espeak(code) => Some(code),
+            _ => None,
         }
     }
+
+    /// The English name a run is read as when there's no G2P for it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Language::Chinese => "Chinese",
+            Language::Japanese => "Japanese",
+            Language::Espeak(code) => code,
+            Language::Unvoiced(script) => script.name(),
+        }
+    }
+
+    /// The language that reads a run of `script` starting with `first`, or `None` for Latin,
+    /// which is the pipeline's own.
+    fn of_run(script: Script, first: char) -> Option<Language> {
+        Some(match script {
+            Script::Latin => return None,
+            Script::Arabic => Language::Espeak("ar"),
+            Script::Cyrillic => Language::Espeak("ru"),
+            Script::Devanagari => Language::Espeak("hi"),
+            Script::Greek => Language::Espeak("el"),
+            Script::Hangul => Language::Espeak("ko"),
+            Script::Hebrew => Language::Espeak("he"),
+            _ => kokoro_espeak::alphabet_language(first).map_or(Language::Unvoiced(script), Language::Espeak),
+        })
+    }
+}
+
+/// Every espeak voice a run may go to.
+pub fn espeak_voices() -> Vec<&'static str> {
+    let mut voices: Vec<&'static str> = SCRIPTS
+        .iter()
+        .flat_map(|&(lo, hi, script)| (lo..=hi).filter_map(move |c| Language::of_run(script, c)?.espeak()))
+        .collect();
+    voices.sort_unstable();
+    voices.dedup();
+    voices
 }
 
 fn in_ranges(table: &[(char, char)], c: char) -> bool {
@@ -73,7 +93,7 @@ fn order(lo: char, hi: char, c: char) -> Ordering {
     }
 }
 
-/// `\p{Script}`, for the scripts `foreign.py` names.
+/// `\p{Script}`, for every script but Common, Inherited and Unknown.
 pub fn script(c: char) -> Option<Script> {
     SCRIPTS.binary_search_by(|&(lo, hi, _)| order(lo, hi, c)).ok().map(|i| SCRIPTS[i].2)
 }
@@ -91,7 +111,7 @@ fn is_cjk(c: char) -> bool {
 }
 
 /// `[ '’\-]`: what may join two words of one run.
-fn is_joiner(c: char) -> bool {
+pub fn is_joiner(c: char) -> bool {
     matches!(c, ' ' | '\'' | '’' | '-')
 }
 
@@ -200,14 +220,10 @@ pub fn split(text: &str, reads: impl Fn(char) -> bool) -> Vec<(&str, Option<Lang
                 }
                 continue;
             }
-            Some(Script::Latin) => continue,
-            Some(Script::Arabic) => Language::Arabic,
-            Some(Script::Cyrillic) => Language::Russian,
-            Some(Script::Devanagari) => Language::Hindi,
-            Some(Script::Greek) => Language::Greek,
-            Some(Script::Hangul) => Language::Korean,
-            Some(Script::Hebrew) => Language::Hebrew,
-            Some(Script::Han | Script::Hiragana | Script::Katakana) => unreachable!("CJK runs have no script"),
+            Some(script) => match Language::of_run(script, run_text.chars().next().expect("runs aren't empty")) {
+                Some(language) => language,
+                None => continue,
+            },
         };
         push(run.start, run.end, language);
     }
@@ -220,7 +236,7 @@ pub fn split(text: &str, reads: impl Fn(char) -> bool) -> Vec<(&str, Option<Lang
 /// What goes to the language's G2P: Hebrew loses its vowel points, which espeak reads as
 /// letter names.
 pub fn prepare(segment: &str, language: Language) -> std::borrow::Cow<'_, str> {
-    if language == Language::Hebrew && segment.chars().any(is_mark) {
+    if language == Language::Espeak("he") && segment.chars().any(is_mark) {
         segment.chars().filter(|&c| !is_mark(c)).collect::<String>().into()
     } else {
         segment.into()
@@ -348,11 +364,28 @@ mod tests {
     #[test]
     fn marks_belong_to_the_letter_before() {
         assert_eq!(shape("שָׁלוֹם"), [("שָׁלוֹם", Some("he"))]);
-        assert_eq!(prepare("שָׁלוֹם", Hebrew), "שלום");
+        assert_eq!(prepare("שָׁלוֹם", Espeak("he")), "שלום");
         assert_eq!(shape("\u{301}Привет"), [("\u{301}", None), ("Привет", Some("ru"))]);
         assert_eq!(shape("ट्रांसपोर्टरों"), [("ट्रांसपोर्टरों", Some("hi"))]);
         assert_eq!(shape("a\u{483}b"), [("a\u{483}b", None)]);
         assert_eq!(shape("Ελλ\u{301}ηνικά"), [("Ελλ\u{301}ηνικά", Some("el"))]);
+    }
+
+    #[test]
+    fn other_scripts_go_to_the_voice_espeak_switches_to() {
+        assert_eq!(shape("Georgian გამარჯობა is"), [("Georgian ", None), ("გამარჯობა", Some("ka")), (" is", None)]);
+        assert_eq!(shape("Armenian Բարեւ"), [("Armenian ", None), ("Բարեւ", Some("hy"))]);
+        assert_eq!(shape("வணக்கம்"), [("வணக்கம்", Some("ta"))]);
+        assert_eq!(shape("ਸਤਿ ਸ੍ਰੀ"), [("ਸਤਿ ਸ੍ਰੀ", Some("pa"))]);
+    }
+
+    #[test]
+    fn scripts_espeak_has_no_voice_for_are_unvoiced() {
+        assert_eq!(shape("Thai สวัสดี ครับ."), [("Thai ", None), ("สวัสดี ครับ", Some("Thai")), (".", None)]);
+        assert_eq!(shape("ሰላም"), [("ሰላም", Some("Ethiopic"))]);
+        assert_eq!(shape("ᠮᠣᠩᠭᠣᠯ"), [("ᠮᠣᠩᠭᠣᠯ", Some("Mongolian"))]);
+        assert_eq!(split("ᐊᑎᒍ", |_| true), [("ᐊᑎᒍ", Some(Unvoiced(Script::CanadianAboriginal)))]);
+        assert_eq!(Unvoiced(Script::CanadianAboriginal).name(), "Canadian Aboriginal");
     }
 
     #[test]
@@ -373,10 +406,10 @@ mod tests {
 
     #[test]
     fn nearest_phonemes_and_mandarin() {
-        assert_eq!(finish(" maɾħaba ʕali ", Arabic), "maɾhaba ʔali");
+        assert_eq!(finish(" maɾħaba ʕali ", Espeak("ar")), "maɾhaba ʔali");
         assert_eq!(finish("pei↓ʨiŋ→", Chinese), "bˈeiʨˈiŋ");
         assert_eq!(finish("tʰa→ n↗", Chinese), "tˈa ˈn");
-        assert_eq!(finish("pei↓", Russian), "pei↓");
+        assert_eq!(finish("pei↓", Espeak("ru")), "pei↓");
     }
 
     #[test]

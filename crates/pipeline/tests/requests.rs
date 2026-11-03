@@ -9,8 +9,16 @@
 //! When the reference fails a request, the port yields `Err` for that sentence and carries on
 //! (docs/divergences.md), so only the chunks before the failure are compared, and the port must
 //! report an error, except where the failure is a listed divergence the port reads instead.
+//!
+//! Where the reference's English fallback left espeak's language-switch flags in the phonemes, the
+//! port drops them, which moves every id and word span after them: those requests are counted apart
+//! and compared on text and phonemes, without the flags, unless the shorter phonemes packed the
+//! clauses into different chunks. Requests with letters of scripts `foreign.py` leaves to the
+//! English G2P, which the port reads with espeak or as "<script> text", aren't compared.
 
+use kokoro_pipeline::foreign::{Script, script};
 use kokoro_pipeline::{Lang, NormalizationOptions, Pipeline};
+use kokoro_reference::without_language_flags;
 use serde::Deserialize;
 use std::path::PathBuf;
 
@@ -54,6 +62,13 @@ fn cases() -> Vec<Case> {
         .collect()
 }
 
+fn uses_new_script(text: &str) -> bool {
+    use Script::*;
+    text.chars().filter_map(script).any(|s| {
+        !matches!(s, Latin | Han | Hiragana | Katakana | Arabic | Cyrillic | Devanagari | Greek | Hangul | Hebrew)
+    })
+}
+
 #[test]
 fn requests_match_the_reference() {
     let american = Pipeline::new(Lang::AmericanEnglish).unwrap();
@@ -61,7 +76,12 @@ fn requests_match_the_reference() {
     let options = NormalizationOptions::default();
     let cases = cases();
     let mut failures = Vec::new();
+    let (mut flagged, mut rechunked, mut new_script) = (0, 0, 0);
     for case in &cases {
+        if uses_new_script(&case.text) {
+            new_script += 1;
+            continue;
+        }
         let pipeline = if case.lang == "b" { &british } else { &american };
         let mut actual = Vec::new();
         for chunk in pipeline.chunks(&case.text, &options) {
@@ -87,7 +107,22 @@ fn requests_match_the_reference() {
         if error.is_some() {
             expected.pop();
         }
-        let prefix_matches = expected.len() <= actual.len() && expected.iter().zip(&actual).all(|(e, a)| *e == a);
+        let flags = expected.iter().any(|e| matches!(e, Expected::Speech { phonemes, .. } if without_language_flags(phonemes).is_some()));
+        let texts = |chunks: &mut dyn Iterator<Item = &Expected>| -> Vec<String> {
+            chunks.filter_map(|c| if let Expected::Speech { text, .. } = c { Some(text.clone()) } else { None }).collect()
+        };
+        if flags && texts(&mut expected.iter().copied()) != texts(&mut actual.iter().take(expected.len())) {
+            rechunked += 1;
+            continue;
+        }
+        flagged += usize::from(flags);
+        let same = |e: &Expected, a: &Expected| match (e, a) {
+            (Expected::Speech { text, phonemes, .. }, Expected::Speech { text: t, phonemes: p, .. }) if flags => {
+                text == t && without_language_flags(phonemes).as_ref().unwrap_or(phonemes) == p
+            }
+            _ => e == a,
+        };
+        let prefix_matches = expected.len() <= actual.len() && expected.iter().zip(&actual).all(|(e, a)| same(e, a));
         let ok = match error {
             // misaki's `TypeError` on `İ` after punctuation: the port reads it (docs/divergences.md).
             Some(e) if e.starts_with("TypeError: ord() expected a character") => prefix_matches,
@@ -95,7 +130,8 @@ fn requests_match_the_reference() {
             None => prefix_matches && expected.len() == actual.len(),
         };
         if !ok {
-            let first = expected.iter().zip(&actual).position(|(e, a)| **e != *a).unwrap_or(expected.len().min(actual.len()));
+            let first =
+                expected.iter().zip(&actual).position(|(e, a)| !same(e, a)).unwrap_or(expected.len().min(actual.len()));
             failures.push(format!(
                 "{} {:?}\n  expected: {:?}\n  actual:   {:?}",
                 case.id,
@@ -105,7 +141,12 @@ fn requests_match_the_reference() {
             ));
         }
     }
-    println!("{} of {} requests match", cases.len() - failures.len(), cases.len());
+    let compared = cases.len() - new_script - rechunked;
+    println!(
+        "{} of {compared} requests match ({flagged} of them once espeak's language-switch flags are dropped from the reference's); \
+         not compared: {rechunked} chunked differently without the flags, {new_script} with other scripts",
+        compared - failures.len(),
+    );
     for f in failures.iter().take(10) {
         println!("{f}");
     }

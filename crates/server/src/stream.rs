@@ -103,13 +103,13 @@ fn units(chunk: Chunk, speech: &Speech) -> Vec<Unit> {
         .collect()
 }
 
-/// Phonemizes the request and sends its units, then how it ended. Sentences in a language with
-/// no G2P yet are skipped, and logged once per request, as a count: the reasons quote the text.
+/// Phonemizes the request and sends its units, then how it ended. Runs of text with no G2P yet
+/// are logged once per request, as a count, since the text itself mustn't reach the logs.
 fn produce(pipeline: &dyn Pipeline, speech: &Speech, max_ids: usize, out: &mpsc::Sender<Produced>) {
-    let mut skipped = 0usize;
-    let end = produce_units(pipeline, speech, max_ids, out, &mut skipped);
-    if skipped > 0 {
-        crate::warn!("skipped {skipped} sentences in a language with no G2P yet");
+    let mut unread = 0usize;
+    let end = produce_units(pipeline, speech, max_ids, out, &mut unread);
+    if unread > 0 {
+        crate::warn!("read {unread} runs of text with no G2P for their language or script as their name");
     }
     if let Some(end) = end {
         let _ = out.blocking_send(end);
@@ -122,15 +122,14 @@ fn produce_units(
     speech: &Speech,
     max_ids: usize,
     out: &mpsc::Sender<Produced>,
-    skipped: &mut usize,
+    unread: &mut usize,
 ) -> Option<Produced> {
     let mut ids = 0usize;
     for chunk in pipeline.chunks(speech.lang, &speech.text) {
         let units = match chunk {
-            Ok(chunk) => units(chunk, speech),
-            Err(PipelineError::Unsupported(_)) => {
-                *skipped += 1;
-                continue;
+            Ok(chunk) => {
+                *unread += chunk.unread;
+                units(chunk, speech)
             }
             Err(e) => return Some(Produced::Failed(StreamError::Pipeline(e))),
         };
@@ -331,20 +330,22 @@ mod tests {
     use crate::pipeline::Lang;
     use crate::protocol::Speed;
 
-    /// Every sentence in a language with no G2P, quoting the text in its reason.
-    struct AllUnsupported(usize);
+    /// `n` chunks, each holding two runs read as their name.
+    struct AllUnread(usize);
 
-    impl Pipeline for AllUnsupported {
+    impl Pipeline for AllUnread {
         fn chunks<'a>(&'a self, _: Lang, text: &'a str) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
-            Box::new((0..self.0).map(move |_| Err(PipelineError::Unsupported(format!("no G2P for {text:?}")))))
+            Box::new((0..self.0).map(move |_| {
+                Ok(Chunk { text: text.into(), phonemes: String::new(), ids: Vec::new(), pause: None, unread: 2 })
+            }))
         }
     }
 
     #[test]
-    fn skipped_sentences_are_logged_once_without_their_text() {
+    fn unread_runs_are_logged_once_without_their_text() {
         let speech = Speech { lang: Lang::AmericanEnglish, text: "SECRET".into(), voice: 0, speed: Speed::NORMAL };
         let (tx, mut rx) = mpsc::channel(1);
-        let lines = crate::log::capture(|| produce(&AllUnsupported(6666), &speech, 60_000, &tx));
+        let lines = crate::log::capture(|| produce(&AllUnread(3333), &speech, 60_000, &tx));
         assert_eq!(lines.len(), 1, "{lines:?}");
         assert!(lines[0].contains("6666") && !lines[0].contains("SECRET"), "{}", lines[0]);
         assert!(matches!(rx.try_recv(), Ok(Produced::End)));
