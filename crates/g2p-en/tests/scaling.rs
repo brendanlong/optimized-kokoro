@@ -95,3 +95,19 @@ fn grows_linearly() {
     check("numbers and money", true, |n| "$1 2nd 1990s 3.5 ".repeat(n));
     check("unknown words", true, |n| "qzx ".repeat(n));
 }
+
+/// Without a fallback, every subtoken of a run is looked up in up to `MAX_SPAN` spans. Spans that
+/// can't have a reading (non-letter, non-ASCII characters such as combining marks) must cost no
+/// more than ordinary ones: they once took 4× as long, 3.7 s for 128 K marks.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "timing test; run with --release")]
+fn unreadable_runs_cost_no_more_than_readable_ones() {
+    g2p();
+    check("combining marks, no fallback", false, |n| format!("a{}", "\u{301}".repeat(n)));
+    check("emoji run, no fallback", false, |n| "😀".repeat(n));
+    let n = 8000;
+    let marks = time(&format!("a{}", "\u{301}".repeat(n)), false);
+    let hyphens = time(&format!("{}qx", "qx-".repeat(n / 2)), false);
+    println!("{n} subtokens: marks {marks:?}, hyphenated run {hyphens:?}");
+    assert!(marks < hyphens * 3, "{marks:?} for {n} marks but {hyphens:?} for {n} hyphenated subtokens");
+}

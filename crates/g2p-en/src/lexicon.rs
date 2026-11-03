@@ -731,6 +731,12 @@ impl Lexicon {
         } else {
             Cow::Owned(word.chars().map(|c| text::digit_value(c).map_or(c, |d| char::from(b'0' + d))).collect())
         };
+        // Every lexicon key is ASCII, numbers are ASCII digits by now, and the special cases need
+        // letters, so a non-ASCII character that isn't a letter leaves no reading. Checking first
+        // keeps runs of such characters (combining marks) from paying for every span tried.
+        if word.chars().any(|c| !c.is_ascii() && !text::is_alpha(c)) {
+            return Ok(None);
+        }
         let stress = if is_lower(&word) {
             None
         } else if is_upper(&word) {
@@ -792,6 +798,15 @@ mod tests {
         assert_eq!(apply_stress("hˌɛlO", Some(2.0)), "hˈɛlO");
         assert_eq!(apply_stress("hˈɛlˌO", Some(-2.0)), "hɛlO");
         assert_eq!(apply_stress("hm", Some(2.0)), "hm");
+    }
+
+    /// `get` relies on this to give up early on words with other non-ASCII characters.
+    #[test]
+    fn every_key_is_ascii() {
+        for british in [false, true] {
+            let lexicon = Lexicon::new(british);
+            assert!(lexicon.golds.keys().chain(lexicon.silvers.keys()).all(|k| k.is_ascii()));
+        }
     }
 
     #[test]
