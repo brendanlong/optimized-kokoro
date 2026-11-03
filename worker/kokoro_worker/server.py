@@ -9,6 +9,7 @@ runs the GPU loop. Any protocol violation closes the connection; queued work is 
 import argparse
 import logging
 import os
+import shutil
 import socket
 import struct
 import sys
@@ -143,14 +144,16 @@ class Connection:
 
 
 def warmup(synth, max_batch: int) -> None:
-    """Compile before accepting connections. Batch 1 and >1 specialize, and a decoder group with
-    padding takes the masked path, so warm each of those."""
+    """Compile before accepting connections. Batch 1 and >1 compile separately, and a decoder group
+    with padding takes the masked path, so warm each of those. Batches go first: dynamo tries the
+    newest graph first, and batch-of-one calls are faster on the graph specialized for them."""
     from .model import Request
 
     ids = sorted(synth.vocab_ids)
-    shapes = [[12], [60], [180], [400]]
+    shapes = []
     if max_batch >= 2:
         shapes += [[50, 50], [40, 44], [100, 104, 110][:max_batch]]
+    shapes += [[12], [60], [180], [400]]
     for lengths in shapes:
         reqs = [Request([ids[(i * 7 + n) % len(ids)] for i in range(n)], synth.style([(0, 1.0)], n), 1.0)
                 for n in lengths]
@@ -158,6 +161,26 @@ def warmup(synth, max_batch: int) -> None:
         for _ in synth.run(reqs):
             pass
         log.info("warmup %s: %.1f s", lengths, time.monotonic() - t)
+
+
+CACHE_DIRS = ("TORCHINDUCTOR_CACHE_DIR", "TRITON_CACHE_DIR")
+
+
+def copy_caches(src_root: str | None, dst_root: str | None) -> None:
+    """Copy the compile caches between their env-var locations and a seed directory.
+
+    KOKORO_CACHE_SEED (read-only mount): copied into the tmpfs caches before compiling.
+    KOKORO_CACHE_EXPORT: the caches are copied there after warmup, before any connection,
+    so a seed is only ever written by a worker that hasn't seen a request."""
+    for var in CACHE_DIRS:
+        live = os.environ.get(var)
+        if not live:
+            continue
+        name = os.path.basename(live.rstrip("/"))
+        src = os.path.join(src_root, name) if src_root else live
+        dst = os.path.join(dst_root, name) if dst_root else live
+        if os.path.isdir(src):
+            shutil.copytree(src, dst, dirs_exist_ok=True)
 
 
 def main() -> None:
@@ -180,6 +203,12 @@ def main() -> None:
         parser.error("--max-frames: Audio frames must fit the protocol's 8 MiB cap")
     logging.basicConfig(level=logging.INFO, stream=sys.stderr, format="%(asctime)s %(levelname)s %(message)s")
 
+    seed, export = os.environ.get("KOKORO_CACHE_SEED"), os.environ.get("KOKORO_CACHE_EXPORT")
+    if seed and os.path.isdir(seed):
+        t = time.monotonic()
+        copy_caches(seed, None)
+        log.info("compile caches seeded from %s in %.1f s", seed, time.monotonic() - t)
+
     from .model import Synth
 
     t = time.monotonic()
@@ -187,6 +216,9 @@ def main() -> None:
                   max_frames=args.max_frames, pad_slack=args.pad_slack, exact=not args.no_exact)
     log.info("loaded in %.1f s: %d voices", time.monotonic() - t, len(synth.voice_names))
     warmup(synth, args.max_batch)
+    if export:
+        copy_caches(None, export)
+        log.info("compile caches exported to %s", export)
     log.info("ready in %.1f s", time.monotonic() - t)
 
     try:
