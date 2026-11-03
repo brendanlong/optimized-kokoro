@@ -61,7 +61,8 @@ try:
     asr = pipeline("automatic-speech-recognition", model="openai/whisper-base.en", device="cpu")
     for name in ["lion-reader", "clawed-abode"]:
         pcm = np.fromfile(f"results/{name}.pcm", dtype="<i2").astype(np.float32) / 32768
-        print(f"{name} transcript: {asr({'raw': pcm, 'sampling_rate': 24000})['text']!r}")
+        at_16k = np.interp(np.arange(0, len(pcm), 1.5), np.arange(len(pcm)), pcm).astype(np.float32)
+        print(f"{name} transcript: {asr({'raw': at_16k, 'sampling_rate': 16000})['text']!r}")
 except Exception as e:
     print("transcription skipped:", e)
 EOF

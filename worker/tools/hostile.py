@@ -243,7 +243,7 @@ for i in range(300):
         op = rng.random()
         if op < 0.5 and len(p) > 4:
             p[rng.randrange(4, len(p))] = rng.randrange(256)
-        elif op < 0.75:
+        elif op < 0.75 and p:
             p[rng.randrange(len(p))] = rng.randrange(256)
         elif op < 0.9:
             del p[rng.randrange(len(p)):]
