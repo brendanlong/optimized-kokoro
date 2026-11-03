@@ -139,8 +139,7 @@ for i, (t, n) in enumerate(smart_split):
         out.append({"kind": "smart_split", "id": f"split-{i}-{o}", "text": t, "options": o, "max_tokens": n})
 for t in ["[voice:af_sky]Hi[voice:af_sky] there", "[rate:2]fast[rate:2]still", "x [baserate:2][rate:3] y",
           "[voice:af_sky(2)+af_bella]mixed", "[voice:   ]", "[pause:301s]", "[pause:60s]" * 5 + "[pause:0.1s]"]:
-    out.append({"kind": "voices", "id": f"voices-{t}", "text": t, "voice": "af_heart"})
-    out.append({"kind": "checks", "id": f"checks-{t}", "text": t, "allow_voice_tags": True, "remove_emoji": True})
+    out.append({"kind": "checks", "id": f"checks-{t}", "text": t, "allow_voice_tags": False, "remove_emoji": True})
 with open(sys.argv[1], "w") as f:
     for case in out:
         f.write(json.dumps(case, ensure_ascii=False) + "\n")

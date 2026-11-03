@@ -22,7 +22,7 @@ synth = Synth(models)
 warmup(synth, max_batch)
 vocab = json.load(open(os.path.join(models, "config.json")))["vocab"]
 chunks = [ids for _, ids in sentences.load(vocab)][:150]
-reqs = [Request(ids, synth.style([(0, 1.0)], len(ids)), 1.0) for ids in chunks]
+reqs = [Request(ids, synth.style(0, len(ids)), 100) for ids in chunks]
 for p in range(2):
     torch.cuda.synchronize()
     t = time.perf_counter()

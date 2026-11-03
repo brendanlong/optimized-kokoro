@@ -3,7 +3,7 @@
 
 use crate::config::Config;
 use crate::pipeline::Pipeline;
-use crate::request::{self, Refusal, SpeechRequest};
+use crate::request::{self, SpeechRequest};
 use crate::stream::{self, StreamError};
 use crate::worker::{SynthError, Worker};
 use axum::Router;
@@ -145,8 +145,8 @@ async fn speech(State(state): State<Arc<AppState>>, Extension(key): Extension<Ke
         Ok(request) => request,
         Err(e) => return invalid(e.to_string()),
     };
-    if let Err(refusal) = request::check_fields(&request, &state.config) {
-        return refused(refusal);
+    if let Err(message) = request::check_fields(&request, &state.config) {
+        return invalid(message);
     }
     let Some(connection) = state.worker.current() else {
         return unavailable("The model worker is not connected");
@@ -163,22 +163,20 @@ async fn speech(State(state): State<Arc<AppState>>, Extension(key): Extension<Ke
         return unavailable("Too many requests in progress");
     };
 
-    // The permits go with the planning work, so they stay taken until it ends even if the client
-    // leaves meanwhile, and then on to the response body.
+    // The text checks scan the whole input, so they run on the blocking pool. The permits go with
+    // that work, so they stay taken until it ends even if the client leaves meanwhile, and then on
+    // to the response body.
     let permits = (permit, key_permit);
     let planned = {
         let state = state.clone();
         let connection = connection.clone();
-        tokio::task::spawn_blocking(move || {
-            let planned = request::plan(request, &state.config, &connection, state.pipeline.as_ref());
-            (planned, permits)
-        })
-        .await
-        .expect("planning doesn't panic")
+        tokio::task::spawn_blocking(move || (request::plan(request, &state.config, &connection), permits))
+            .await
+            .expect("planning doesn't panic")
     };
     let (speech, permits) = match planned {
         (Ok(speech), permits) => (speech, permits),
-        (Err(refusal), _) => return refused(refusal),
+        (Err(message), _) => return invalid(message),
     };
     let mut audio = stream::start(speech, connection, state.pipeline.clone(), state.config.lookahead, permits);
 
@@ -199,11 +197,4 @@ async fn speech(State(state): State<Arc<AppState>>, Extension(key): Extension<Ke
         body,
     )
         .into_response()
-}
-
-fn refused(refusal: Refusal) -> Response {
-    match refusal {
-        Refusal::Invalid(message) => invalid(message),
-        Refusal::Forbidden(message) => error(StatusCode::FORBIDDEN, "permission_denied", "permission_error", message),
-    }
 }

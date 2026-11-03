@@ -63,7 +63,7 @@ def main():
     rng = np.random.default_rng(0)
     picks = [chunks[i][1] for i in rng.choice(len(chunks), args.n, replace=False)]
     voice = synth.voice_names.index("af_heart")
-    reqs = [Request(ids, synth.style([(voice, 1.0)], len(ids)), 1.0) for ids in picks]
+    reqs = [Request(ids, synth.style(voice, len(ids)), 100) for ids in picks]
 
     # 1. vs the fork's forward
     if not args.compile:
@@ -103,7 +103,7 @@ def main():
         bad = []
         for n in range(1, args.nan_lengths + 1):
             ids = [ids_all[(i * 11 + n) % len(ids_all)] for i in range(n)]
-            r = run(synth, [Request(ids, synth.style([(voice, 1.0)], n), 1.0)], n)[0]
+            r = run(synth, [Request(ids, synth.style(voice, n), 100)], n)[0]
             if r.pcm is None:
                 bad.append(n)
         print(f"non-finite outputs at batch 1 over lengths 1..{args.nan_lengths}: {len(bad)} {bad[:20]}")

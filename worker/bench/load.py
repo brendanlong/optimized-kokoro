@@ -39,39 +39,37 @@ def pct(xs, p):
 
 def run(client: Client, chunks, concurrency: int, n_requests: int, voice: int, offset: int = 0):
     streams = [(offset + k * len(chunks) // concurrency) % len(chunks) for k in range(concurrency)]
-    sent_at, stream_of = {}, {}
-    next_id = 1
+    # Each stream has one request out at a time, so its index is its slot.
+    sent_at = {}
+    sent = 0
     latencies, audio_s = [], 0.0
     failures = 0
 
     def send(stream: int):
-        nonlocal next_id
+        nonlocal sent
         ids = chunks[streams[stream] % len(chunks)][1]
         streams[stream] += 1
-        rid = next_id
-        next_id += 1
-        sent_at[rid] = time.monotonic()
-        stream_of[rid] = stream
-        client.send(P.synthesize(rid, ids, [(voice, 1.0)]))
+        sent += 1
+        sent_at[stream] = time.monotonic()
+        client.send(P.synthesize(stream, ids, voice))
 
     start = time.monotonic()
     for k in range(min(concurrency, n_requests)):
         send(k)
     done = 0
     while done < n_requests:
-        kind, rid, payload = client.receive()
-        if kind == "durations":
-            continue
+        kind, slot, payload = client.receive()
         now = time.monotonic()
         done += 1
-        if kind == "audio":
-            latencies.append(now - sent_at.pop(rid))
-            audio_s += len(payload) / 2 / P.SAMPLE_RATE
+        latency = now - sent_at.pop(slot)
+        if kind == "result":
+            latencies.append(latency)
+            audio_s += len(payload[1]) / 2 / P.SAMPLE_RATE
         else:
             failures += 1
-            sent_at.pop(rid)
-        if next_id <= n_requests:
-            send(stream_of.pop(rid))
+        if sent < n_requests:
+            send(slot)
+
     wall = time.monotonic() - start
     return {
         "concurrency": concurrency,

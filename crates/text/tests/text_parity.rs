@@ -2,7 +2,7 @@
 //! (`reference/fixtures/text_cases.out.jsonl`, written by `reference/dump_text.py`).
 
 use kokoro_text::{Chunk, Limits, Options, check_pause_budget, check_speakable, join_lines, py, sentences, smart_split};
-use kokoro_text::{split, split_by_voice, strip_emoji};
+use kokoro_text::{split, strip_emoji};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
@@ -51,14 +51,10 @@ fn run(case: &Value) -> (Value, Value) {
                 .collect();
             (case["chunks"].clone(), json!(chunks))
         }
-        "voices" => {
-            let segments: Vec<Value> =
-                split_by_voice(text, str_of(case, "voice")).into_iter().map(|s| json!([&*s.voice, s.rate, s.text])).collect();
-            (case["segments"].clone(), json!(segments))
-        }
         "checks" => {
+            assert_eq!(case["allow_voice_tags"], false, "voice tags aren't supported");
             let opts = Options { remove_emoji: case["remove_emoji"].as_bool().unwrap(), ..Options::default() };
-            let speakable = check_speakable(text, case["allow_voice_tags"].as_bool().unwrap(), Some(&opts)).is_ok();
+            let speakable = check_speakable(text, &opts).is_ok();
             let budget = check_pause_budget(text, &Limits::default()).err().map(|e| e.to_string());
             (
                 json!({ "speakable": case["speakable"], "pause_budget": case["pause_budget"] }),

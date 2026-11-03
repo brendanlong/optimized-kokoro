@@ -1,4 +1,4 @@
-"""The request queue: (priority, arrival) order, cancellation, and batch picking. No torch here."""
+"""The request queue: slots, (priority, arrival) order, cancellation, and batch picking. No torch here."""
 
 import threading
 from collections import deque
@@ -11,33 +11,36 @@ class Closed(Exception):
 
 
 class RequestQueue:
-    """Shared by the connection's reader thread (put/cancel/close) and the GPU loop (take/done)."""
+    """Shared by the connection's reader thread (put/cancel/close) and the GPU loop (take/done).
 
-    def __init__(self, max_outstanding: int):
-        self.max_outstanding = max_outstanding
+    A slot is busy from its Synthesize until done() (or a successful cancel()), which the caller
+    calls before sending the slot's terminal reply, so the front can reuse it as soon as it sees
+    the reply."""
+
+    def __init__(self, slots: int):
         self._cond = threading.Condition()
         self._queues = (deque(), deque())  # by priority
-        self._outstanding: set[int] = set()  # queued or running, until its last frame is sent
+        self._busy = [False] * slots
         self._closed = False
 
     def put(self, request: Synthesize) -> bool:
-        """False if the request id is already outstanding or there are too many outstanding."""
+        """False if the request's slot is busy."""
         with self._cond:
-            if request.request_id in self._outstanding or len(self._outstanding) >= self.max_outstanding:
+            if self._busy[request.slot]:
                 return False
-            self._outstanding.add(request.request_id)
+            self._busy[request.slot] = True
             self._queues[request.priority].append(request)
             self._cond.notify()
             return True
 
-    def cancel(self, request_id: int) -> bool:
-        """True if the request was still queued; it is then dropped and no longer outstanding."""
+    def cancel(self, slot: int) -> bool:
+        """True if the slot's request was still queued; it is then dropped and the slot freed."""
         with self._cond:
             for q in self._queues:
                 for request in q:
-                    if request.request_id == request_id:
+                    if request.slot == slot:
                         q.remove(request)
-                        self._outstanding.discard(request_id)
+                        self._busy[slot] = False
                         return True
             return False
 
@@ -56,14 +59,14 @@ class RequestQueue:
                     batch.append(q.popleft())
             return batch
 
-    def done(self, request_id: int) -> None:
+    def done(self, slot: int) -> None:
         with self._cond:
-            self._outstanding.discard(request_id)
+            self._busy[slot] = False
 
     def close(self) -> None:
         with self._cond:
             self._closed = True
             self._queues[0].clear()
             self._queues[1].clear()
-            self._outstanding.clear()
+            self._busy = [False] * len(self._busy)
             self._cond.notify_all()

@@ -2,7 +2,9 @@
 
 The book and Wikipedia corpora rarely reach the normalizer's URL, email, phone, unit, money, time
 and caps passes, or the tag handling. This runs those functions directly on hand-written
-cases (text_cases.jsonl) plus seeded random combinations of the tokens they react to.
+cases (text_cases.jsonl) plus seeded random combinations of the tokens they react to. The port
+doesn't support voice and rate tags (docs/divergences.md), so the checks run with
+allow_voice_tags false, the reference's default.
 
 Usage (from reference/, after ./setup.sh):
     .cache/kfa/.venv/bin/python -I dump_text.py fixtures/text_cases.jsonl fixtures/text_cases.out.jsonl
@@ -14,7 +16,6 @@ exception's type) where the reference raises:
     smart_split   text, lang, options, max_tokens -> chunks: [text, phonemes] or a pause in
                                            seconds, with a stand-in G2P (phonemes = text, or ""
                                            when it has nothing alphanumeric)
-    voices        text, voice           -> segments: [voice, rate, text] from split_by_voice
     checks        text, allow_voice_tags, remove_emoji -> speakable, pause_budget (error text or null)
     emoji         text                  -> stripped
 """
@@ -93,8 +94,6 @@ async def run(case):
         ):
             chunks.append(pause if phonemes is None else [text, phonemes.phonemes])
         out["chunks"] = chunks
-    elif kind == "voices":
-        out["segments"] = [list(s) for s in tp.split_by_voice(case["text"], case["voice"])]
     elif kind == "checks":
         opts = NormalizationOptions(remove_emoji=case["remove_emoji"])
         speakable = guarded(lambda: tp.check_speakable(case["text"], case["allow_voice_tags"], opts))
@@ -165,9 +164,11 @@ def generated(rng):
             "[baserate:1.5]", "[rate:9]", "[voice:]", "[pause:3s]", "😀", " ", "hello", "world.", "\n"]
     for n in range(300):
         text = "".join(rng.choice(tags) for _ in range(rng.randint(1, 8)))
-        yield {"kind": "voices", "id": f"fuzz-voices-{n}", "text": text, "voice": "af_heart"}
-        yield {"kind": "checks", "id": f"fuzz-checks-{n}", "text": text, "allow_voice_tags": rng.random() < 0.5,
-               "remove_emoji": rng.random() < 0.5}
+        # The draw that used to pick allow_voice_tags stays, so the seed gives the same cases.
+        allow_voice_tags, remove_emoji = rng.random() < 0.5, rng.random() < 0.5
+        if not allow_voice_tags:
+            yield {"kind": "checks", "id": f"fuzz-checks-{n}", "text": text, "allow_voice_tags": False,
+                   "remove_emoji": remove_emoji}
     for n in range(200):
         yield {"kind": "emoji", "id": f"fuzz-emoji-{n}", "text": fuzz_text(rng)}
 

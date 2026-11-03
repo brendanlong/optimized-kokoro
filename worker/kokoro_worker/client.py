@@ -9,7 +9,6 @@ allocating, known types, exact body sizes. No torch needed.
 
 import argparse
 import json
-import math
 import socket
 import struct
 import wave
@@ -17,7 +16,7 @@ from dataclasses import dataclass
 
 from . import protocol as P
 
-HELLO_MAX = 23 + 65535 * 65
+HELLO_MAX = 25 + 65535 * 65
 
 
 class WorkerError(Exception):
@@ -30,6 +29,7 @@ class Hello:
     vocab_size: int
     max_phonemes: int
     max_batch: int
+    slots: int
     sample_rate: int
     max_chunk_samples: int
     voices: list[str]
@@ -59,9 +59,10 @@ class Client:
 
     def read(self) -> tuple[int, bytes]:
         (length,) = struct.unpack("<I", _recv_exact(self.sock, 4))
-        # Before Hello, the bound is Hello's; after it, Audio at the slowest speed is the largest.
+        # Before Hello, the bound is Hello's; after it, a Result at the slowest speed is the largest.
         hello = getattr(self, "hello", None)
-        bound = HELLO_MAX if hello is None else 13 + 2 * P.chunk_cap(hello.max_chunk_samples, P.MIN_SPEED)
+        bound = HELLO_MAX if hello is None else (
+            5 + 2 * (hello.max_phonemes + 2) + 2 * P.chunk_cap(hello.max_chunk_samples, P.MIN_SPEED))
         if not 1 <= length <= bound:
             raise WorkerError(f"frame length {length}")
         body = _recv_exact(self.sock, length)
@@ -69,12 +70,12 @@ class Client:
 
     @staticmethod
     def _parse_hello(b: bytes) -> Hello:
-        if len(b) < 22:
+        if len(b) < 24:
             raise WorkerError("short Hello")
-        magic, version, vocab, max_ph, max_batch, rate, cap, n = struct.unpack_from("<4sHHHHIIH", b)
+        magic, version, vocab, max_ph, max_batch, slots, rate, cap, n = struct.unpack_from("<4sHHHHHIIH", b)
         if magic != P.MAGIC or version != P.VERSION:
             raise WorkerError("bad magic or version")
-        pos, voices = 22, []
+        pos, voices = 24, []
         for _ in range(n):
             if pos >= len(b):
                 raise WorkerError("short Hello")
@@ -86,27 +87,28 @@ class Client:
             pos += 1 + k
         if pos != len(b):
             raise WorkerError("long Hello")
-        return Hello(version, vocab, max_ph, max_batch, rate, cap, voices)
+        return Hello(version, vocab, max_ph, max_batch, slots, rate, cap, voices)
 
     def send(self, data: bytes) -> None:
         self.sock.sendall(data)
 
     def receive(self):
-        """Next response: ("audio", id, pcm bytes) | ("durations", id, [int]) | ("failed", id, code)."""
+        """Next response: ("result", slot, ([durations], pcm bytes)) | ("failed", slot, code).
+
+        Checks the frame's structure; the caller checks it against its request."""
         kind, b = self.read()
-        if kind == P.AUDIO and len(b) >= 12:
-            rid, n = struct.unpack_from("<QI", b)
-            if len(b) != 12 + 2 * n:
-                raise WorkerError("Audio length")
-            return "audio", rid, b[12:]
-        if kind == P.DURATIONS and len(b) >= 10:
-            rid, n = struct.unpack_from("<QH", b)
-            if len(b) != 10 + 2 * n:
-                raise WorkerError("Durations length")
-            return "durations", rid, list(struct.unpack_from(f"<{n}H", b, 10))
-        if kind == P.FAILED and len(b) == 9:
-            rid, code = struct.unpack("<QB", b)
-            return "failed", rid, code
+        if kind == P.RESULT and len(b) >= 4:
+            slot, n = struct.unpack_from("<HH", b)
+            if len(b) < 4 + 2 * n:
+                raise WorkerError("Result length")
+            durations = list(struct.unpack_from(f"<{n}H", b, 4))
+            pcm = b[4 + 2 * n:]
+            if len(pcm) != 2 * P.SAMPLES_PER_FRAME * sum(durations):
+                raise WorkerError("Result: audio length doesn't match the durations")
+            return "result", slot, (durations, pcm)
+        if kind == P.FAILED and len(b) == 3:
+            slot, code = struct.unpack("<HB", b)
+            return "failed", slot, code
         raise WorkerError(f"bad frame type {kind:#x} or length")
 
 
@@ -123,8 +125,8 @@ def main() -> None:
     ap.add_argument("socket")
     ap.add_argument("--config", required=True, help="the model's config.json, for the phoneme vocab")
     ap.add_argument("--phonemes", required=True)
-    ap.add_argument("--voice", default="af_heart", help="a name, or a mix like af_heart:2,am_adam:1")
-    ap.add_argument("--speed", type=float, default=1.0)
+    ap.add_argument("--voice", default="af_heart")
+    ap.add_argument("--speed", type=float, default=1.0, help="0.25 to 4, sent in hundredths")
     ap.add_argument("--out", default="out.wav")
     args = ap.parse_args()
 
@@ -132,32 +134,23 @@ def main() -> None:
     ids = [vocab[c] for c in args.phonemes if c in vocab]
     client = Client(args.socket)
     print(f"worker: {client.hello.max_batch=} {len(client.hello.voices)} voices")
-    mix = []
-    for part in args.voice.split(","):
-        name, _, weight = part.partition(":")
-        mix.append((client.hello.voices.index(name), float(weight or 1)))
-    client.send(P.synthesize(1, ids, mix, args.speed))
-    durations = None
-    while True:
-        kind, rid, payload = client.receive()
-        if rid != 1:
-            raise WorkerError(f"unexpected request id {rid}")
-        if kind == "durations":
-            if len(payload) != len(ids) + 2 or not all(1 <= d <= math.ceil(50 / args.speed) for d in payload):
-                raise WorkerError("bad Durations")
-            durations = payload
-            print(f"durations: {payload}")
-        elif kind == "audio":
-            if durations is None or len(payload) != 2 * 600 * sum(durations):
-                raise WorkerError("Audio length doesn't match Durations")
-            if len(payload) // 2 > P.chunk_cap(client.hello.max_chunk_samples, args.speed):
-                raise WorkerError("Audio over the chunk cap")
-            write_wav(args.out, payload, client.hello.sample_rate)
-            print(f"wrote {args.out}: {len(payload) // 2 / client.hello.sample_rate:.2f} s")
-            break
-        else:
-            raise SystemExit(f"request failed, code {payload}")
+    speed = round(args.speed * 100)
+    client.send(P.synthesize(0, ids, client.hello.voices.index(args.voice), speed))
+    kind, slot, payload = client.receive()
+    if slot != 0:
+        raise WorkerError(f"a reply for slot {slot}, which is free")
+    if kind == "failed":
+        raise SystemExit(f"request failed, code {payload}")
+    durations, pcm = payload
+    if len(durations) != len(ids) + 2 or not all(1 <= d <= P.max_duration(speed) for d in durations):
+        raise WorkerError("bad durations")
+    if len(pcm) // 2 > P.chunk_cap(client.hello.max_chunk_samples, speed):
+        raise WorkerError("audio over the chunk cap")
+    print(f"durations: {durations}")
+    write_wav(args.out, pcm, client.hello.sample_rate)
+    print(f"wrote {args.out}: {len(pcm) // 2 / client.hello.sample_rate:.2f} s")
     client.close()
+
 
 
 if __name__ == "__main__":

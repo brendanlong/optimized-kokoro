@@ -348,17 +348,10 @@
 {"kind": "smart_split", "id": "split-8-all", "text": "Hello\n\nWorld\nagain", "options": "all", "max_tokens": 450}
 {"kind": "smart_split", "id": "split-9-default", "text": "Price $5.50, time 10:30, call 555-123-4567.", "options": "default", "max_tokens": 25}
 {"kind": "smart_split", "id": "split-9-all", "text": "Price $5.50, time 10:30, call 555-123-4567.", "options": "all", "max_tokens": 25}
-{"kind": "voices", "id": "voices-[voice:af_sky]Hi[voice:af_sky] there", "text": "[voice:af_sky]Hi[voice:af_sky] there", "voice": "af_heart"}
-{"kind": "checks", "id": "checks-[voice:af_sky]Hi[voice:af_sky] there", "text": "[voice:af_sky]Hi[voice:af_sky] there", "allow_voice_tags": true, "remove_emoji": true}
-{"kind": "voices", "id": "voices-[rate:2]fast[rate:2]still", "text": "[rate:2]fast[rate:2]still", "voice": "af_heart"}
-{"kind": "checks", "id": "checks-[rate:2]fast[rate:2]still", "text": "[rate:2]fast[rate:2]still", "allow_voice_tags": true, "remove_emoji": true}
-{"kind": "voices", "id": "voices-x [baserate:2][rate:3] y", "text": "x [baserate:2][rate:3] y", "voice": "af_heart"}
-{"kind": "checks", "id": "checks-x [baserate:2][rate:3] y", "text": "x [baserate:2][rate:3] y", "allow_voice_tags": true, "remove_emoji": true}
-{"kind": "voices", "id": "voices-[voice:af_sky(2)+af_bella]mixed", "text": "[voice:af_sky(2)+af_bella]mixed", "voice": "af_heart"}
-{"kind": "checks", "id": "checks-[voice:af_sky(2)+af_bella]mixed", "text": "[voice:af_sky(2)+af_bella]mixed", "allow_voice_tags": true, "remove_emoji": true}
-{"kind": "voices", "id": "voices-[voice:   ]", "text": "[voice:   ]", "voice": "af_heart"}
-{"kind": "checks", "id": "checks-[voice:   ]", "text": "[voice:   ]", "allow_voice_tags": true, "remove_emoji": true}
-{"kind": "voices", "id": "voices-[pause:301s]", "text": "[pause:301s]", "voice": "af_heart"}
-{"kind": "checks", "id": "checks-[pause:301s]", "text": "[pause:301s]", "allow_voice_tags": true, "remove_emoji": true}
-{"kind": "voices", "id": "voices-[pause:60s][pause:60s][pause:60s][pause:60s][pause:60s][pause:0.1s]", "text": "[pause:60s][pause:60s][pause:60s][pause:60s][pause:60s][pause:0.1s]", "voice": "af_heart"}
-{"kind": "checks", "id": "checks-[pause:60s][pause:60s][pause:60s][pause:60s][pause:60s][pause:0.1s]", "text": "[pause:60s][pause:60s][pause:60s][pause:60s][pause:60s][pause:0.1s]", "allow_voice_tags": true, "remove_emoji": true}
+{"kind": "checks", "id": "checks-[voice:af_sky]Hi[voice:af_sky] there", "text": "[voice:af_sky]Hi[voice:af_sky] there", "allow_voice_tags": false, "remove_emoji": true}
+{"kind": "checks", "id": "checks-[rate:2]fast[rate:2]still", "text": "[rate:2]fast[rate:2]still", "allow_voice_tags": false, "remove_emoji": true}
+{"kind": "checks", "id": "checks-x [baserate:2][rate:3] y", "text": "x [baserate:2][rate:3] y", "allow_voice_tags": false, "remove_emoji": true}
+{"kind": "checks", "id": "checks-[voice:af_sky(2)+af_bella]mixed", "text": "[voice:af_sky(2)+af_bella]mixed", "allow_voice_tags": false, "remove_emoji": true}
+{"kind": "checks", "id": "checks-[voice:   ]", "text": "[voice:   ]", "allow_voice_tags": false, "remove_emoji": true}
+{"kind": "checks", "id": "checks-[pause:301s]", "text": "[pause:301s]", "allow_voice_tags": false, "remove_emoji": true}
+{"kind": "checks", "id": "checks-[pause:60s][pause:60s][pause:60s][pause:60s][pause:60s][pause:0.1s]", "text": "[pause:60s][pause:60s][pause:60s][pause:60s][pause:60s][pause:0.1s]", "allow_voice_tags": false, "remove_emoji": true}

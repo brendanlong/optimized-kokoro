@@ -1,12 +1,14 @@
-//! Inline tags in request text (`text_processor.py`): `[pause:Xs]`, `[voice:name]`, `[rate:x]`,
-//! `[baserate:x]`, and emoji removal.
+//! Inline tags in request text (`text_processor.py`): `[pause:Xs]`, and emoji removal. The
+//! reference's `[voice:]`, `[rate:]` and `[baserate:]` tags aren't supported (`docs/divergences.md`):
+//! they are read as text, as the reference reads them when voice tags aren't allowed.
 
 use crate::normalize::Options;
 use crate::py::{self, parse_float};
 use crate::pyre::{Pattern, compile_i};
 use crate::tables::{EMOJI_MODIFIER, EMOJI_START};
+use std::borrow::Cow;
 use std::fmt::Write;
-use std::sync::{Arc, LazyLock};
+use std::sync::LazyLock;
 
 /// The server settings these checks read, with the deployed defaults.
 #[derive(Debug, Clone, PartialEq)]
@@ -23,22 +25,7 @@ impl Default for Limits {
     }
 }
 
-/// Pace bounds every speed field and computed rate is held to.
-pub const RATE_MIN: f64 = 0.25;
-pub const RATE_MAX: f64 = 4.0;
-
-/// `min(max(value, RATE_MIN), RATE_MAX)`, which passes NaN through as Python does.
-pub fn clamp_rate(value: f64) -> f64 {
-    let low = if RATE_MIN > value { RATE_MIN } else { value };
-    if RATE_MAX < low { RATE_MAX } else { low }
-}
-
 pub(crate) static PAUSE_TAG: LazyLock<Pattern> = LazyLock::new(|| compile_i(r"\[pause:(\d+(?:\.\d+)?)s\]"));
-static CONTROL_TAG: LazyLock<Pattern> = LazyLock::new(|| {
-    compile_i(
-        r"\[voice:\s*([a-zA-Z0-9_][a-zA-Z0-9_+\-(). ]*?)\s*\]|\[rate:\s*(\d+(?:\.\d+)?)\s*\]|\[baserate:\s*(\d+(?:\.\d+)?)\s*\]",
-    )
-});
 
 fn class(tables: &[&[(char, char)]], extra: &str) -> String {
     let mut out = String::from("[");
@@ -63,55 +50,6 @@ pub fn strip_emoji(text: &str) -> String {
     EMOJI.replace_all(text, " ").into_owned()
 }
 
-/// One run of text in a single voice and pace.
-#[derive(Debug, Clone, PartialEq)]
-pub struct VoiceSegment {
-    /// Shared between segments, so many short segments in one voice cost one copy of its name.
-    pub voice: Arc<str>,
-    pub rate: f64,
-    pub text: String,
-}
-
-/// `split_by_voice`: cuts text at `[voice:]`, `[rate:]` and `[baserate:]` tags. Text before the
-/// first tag uses `default_voice` at rate 1. `[rate:]` scales the voice's `[baserate:]`, a voice
-/// tag resets both, and neighbouring segments with the same voice and rate merge.
-pub fn split_by_voice(text: &str, default_voice: &str) -> Vec<VoiceSegment> {
-    let parts = CONTROL_TAG.split(text);
-    if parts.len() == 1 {
-        return vec![VoiceSegment { voice: default_voice.into(), rate: 1.0, text: text.to_owned() }];
-    }
-    let mut segments: Vec<VoiceSegment> = Vec::new();
-    let mut voice: Arc<str> = default_voice.into();
-    let (mut base_rate, mut tag_rate) = (1.0, 1.0);
-    for (index, part) in parts.into_iter().enumerate() {
-        match (index % 4, part) {
-            (1, Some(name)) => {
-                voice = name.trim_matches(py::is_space).into();
-                base_rate = 1.0;
-                tag_rate = 1.0;
-            }
-            (2, Some(rate)) => tag_rate = parse_float(rate),
-            (3, Some(rate)) => base_rate = parse_float(rate),
-            (0, Some(part)) if !py::strip(part).is_empty() => {
-                let rate = clamp_rate(base_rate * tag_rate);
-                match segments.last_mut() {
-                    Some(last) if last.voice == voice && last.rate == rate => {
-                        if !last.text.ends_with(py::is_space) && !part.starts_with(py::is_space) {
-                            last.text.push(' ');
-                        }
-                        last.text.push_str(part);
-                    }
-                    _ => segments.push(VoiceSegment { voice: voice.clone(), rate, text: part.to_owned() }),
-                }
-            }
-            _ => {}
-        }
-    }
-    for segment in &mut segments {
-        segment.text = py::strip(&segment.text).to_owned();
-    }
-    segments
-}
 
 /// A request the reference server refuses before streaming.
 #[derive(Debug, Clone, PartialEq)]
@@ -133,16 +71,10 @@ impl std::fmt::Display for Rejected {
 
 impl std::error::Error for Rejected {}
 
-/// `check_speakable`: refuses text that is empty once control tags (if allowed) and emoji (if
+/// `check_speakable` with voice tags not allowed: refuses text that is empty once emoji (if
 /// removed) are taken out.
-pub fn check_speakable(text: &str, allow_voice_tags: bool, options: Option<&Options>) -> Result<(), Rejected> {
-    let mut text = text.to_owned();
-    if allow_voice_tags {
-        text = CONTROL_TAG.sub_str(&text, " ");
-    }
-    if options.is_some_and(|o| o.remove_emoji) {
-        text = strip_emoji(&text);
-    }
+pub fn check_speakable(text: &str, options: &Options) -> Result<(), Rejected> {
+    let text = if options.remove_emoji { Cow::Owned(strip_emoji(text)) } else { Cow::Borrowed(text) };
     if py::strip(&text).is_empty() { Err(Rejected::NothingToSay) } else { Ok(()) }
 }
 
@@ -213,12 +145,6 @@ mod tests {
         assert_eq!(fsum([]), 0.0);
     }
 
-    #[test]
-    fn voices_and_rates() {
-        let segments = split_by_voice("Hi [voice:af_sky] there [rate:2] fast [voice:af_bella]slow", "af_heart");
-        let summary: Vec<_> = segments.iter().map(|s| (&*s.voice, s.rate, s.text.as_str())).collect();
-        assert_eq!(summary, [("af_heart", 1.0, "Hi"), ("af_sky", 1.0, "there"), ("af_sky", 2.0, "fast"), ("af_bella", 1.0, "slow")]);
-    }
 
     #[test]
     fn pause_budget() {

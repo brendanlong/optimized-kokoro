@@ -28,13 +28,14 @@ Startup compiles the model (torch.compile, Triton) into a tmpfs; the worker list
 ## Files
 
 - `kokoro_worker/protocol.py`: framing and validation, no torch.
-- `kokoro_worker/scheduler.py`: the queue, by (priority, arrival), with cancellation and limits.
+- `kokoro_worker/scheduler.py`: the queue, by (priority, arrival), with its slots and cancellation.
 - `kokoro_worker/server.py`: the socket, a reader thread per connection, and the GPU loop.
 - `kokoro_worker/model.py`: loads the weights and runs a batch. The modules are the kokoro fork's (`brendanlong/kokoro@66c8ed5`, imported without its G2P); the forward pass is ours.
 - `kokoro_worker/masked.py`: the decoder's forward pass with padding masked out.
 - `kokoro_worker/convert.py`, `kokoro_worker/client.py`: one-time converter and a test client.
-- `bench/`: equivalence checks, load generator, listening pairs, and the gpuc jobs that ran them.
-- `tools/`: `hostile.py`, a hostile front (malformed, extreme and stalled frames, limits, 300 mutations), and `sandbox_probe.py`, both from the PR #11 review.
+- `bench/`: equivalence checks, load generator, listening pairs, and the gpuc jobs that ran them; `e2e.sh` runs the Rust server against the sandboxed worker.
+- `tools/`: `hostile.py`, a hostile front (malformed, extreme and stalled frames, slot misuse, 300 mutations), and `sandbox_probe.py`, both from the PR #11 review; `fuzz_front.py`, coverage-guided fuzzing of the frame decoder and slot table with atheris (`uv run --with atheris python tools/fuzz_front.py CORPUS -max_total_time=600`).
+
 
 ## Batching
 

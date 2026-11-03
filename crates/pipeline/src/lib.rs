@@ -202,8 +202,7 @@ impl Pipeline {
     /// `smart_split(text, lang)`: lazy, so each sentence's G2P runs as its chunks are taken. An
     /// error stands in for the sentence it happened in, and later sentences still follow.
     ///
-    /// Voice and rate tags aren't handled here: split those off first with
-    /// [`kokoro_text::split_by_voice`], as the server does.
+    /// Voice and rate tags aren't supported: they're read as text.
     pub fn chunks<'a>(
         &'a self,
         text: &str,

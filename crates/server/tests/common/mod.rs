@@ -6,7 +6,7 @@ use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming;
 use hyper::{Request, Response};
-use kokoro_server::pipeline::{Chunk, Pipeline, PipelineError};
+use kokoro_server::pipeline::{Chunk, Lang, Pipeline, PipelineError};
 use kokoro_server::protocol::worker_side::{self, FrontFrame, read_front};
 use kokoro_server::protocol::{FailCode, Hello};
 use kokoro_server::{Config, StubPipeline, Worker, http, serve};
@@ -20,13 +20,14 @@ use tokio::net::{TcpStream, UnixListener};
 use tokio::sync::mpsc;
 
 pub const KEY: &str = "test-key";
-pub const VOICES: [&str; 5] = ["af_heart", "af_bella", "af_sky", "am_adam", "bf_emma"];
+pub const VOICES: [&str; 6] = ["af_heart", "af_bella", "af_sky", "am_adam", "bf_emma", "jf_alpha"];
 
 pub fn hello() -> Hello {
     Hello {
         vocab_size: 178,
         max_phonemes: 510,
         max_batch: 1,
+        slots: 1024,
         max_chunk_samples: 2_880_000,
         voices: VOICES.map(String::from).to_vec(),
     }
@@ -46,18 +47,15 @@ pub fn expected_chunk(ids: &[u8]) -> Vec<i16> {
     pcm[24..pcm.len() - 24].to_vec()
 }
 
-pub fn respond(id: u64, ids: &[u8]) -> Vec<u8> {
+pub fn respond(slot: u16, ids: &[u8]) -> Vec<u8> {
     let (durations, pcm) = render(ids);
-    let mut out = worker_side::durations(id, &durations);
-    out.extend(worker_side::audio(id, &pcm));
-    out
+    worker_side::result(slot, &durations, &pcm)
 }
 
 /// The audio the server should produce for `text` in one voice, using the stub pipeline.
 pub fn expected_audio(text: &str) -> Vec<i16> {
-    let options = kokoro_text::Options::default();
     let mut out = Vec::new();
-    for chunk in StubPipeline.chunks("a", text, &options) {
+    for chunk in StubPipeline.chunks(Lang::AmericanEnglish, text) {
         let chunk = chunk.unwrap();
         match chunk.pause {
             Some(p) => out.extend(std::iter::repeat_n(0, (p * 24000.0) as usize)),
@@ -68,7 +66,7 @@ pub fn expected_audio(text: &str) -> Vec<i16> {
 }
 
 pub fn stub_chunks(text: &str) -> Vec<Chunk> {
-    StubPipeline.chunks("a", text, &kokoro_text::Options::default()).map(Result::unwrap).collect()
+    StubPipeline.chunks(Lang::AmericanEnglish, text).map(Result::unwrap).collect()
 }
 
 /// A worker whose every move the test makes: it reports each frame the server sends, and
@@ -119,13 +117,16 @@ impl ScriptedWorker {
                     }
                 };
                 let out_rx = out_rx.clone();
+                let events = event_tx.clone();
                 let write = async move {
                     let mut out_rx = out_rx.lock().await;
                     while let Some(bytes) = out_rx.recv().await {
                         if bytes.is_empty() {
                             return;
                         }
+                        // The server hung up while a large frame was still going out.
                         if writer.write_all(&bytes).await.is_err() {
+                            let _ = events.send(Event::Closed);
                             return;
                         }
                     }
@@ -155,12 +156,13 @@ impl ScriptedWorker {
             .expect("worker task runs")
     }
 
-    pub async fn synthesize(&mut self) -> (u64, u8, f32, Vec<(u16, f32)>, Vec<u8>) {
+    /// The next Synthesize: `(slot, priority, speed in hundredths, voice, ids)`.
+    pub async fn synthesize(&mut self) -> (u16, u8, u16, u16, Vec<u8>) {
         loop {
             match self.next().await {
-                Event::Frame(FrontFrame::Synthesize { id, priority, speed, voices, ids, style_len }) => {
+                Event::Frame(FrontFrame::Synthesize { slot, priority, speed, voice, ids, style_len }) => {
                     self.style_lens.push(style_len);
-                    return (id, priority, speed, voices, ids);
+                    return (slot, priority, speed, voice, ids);
                 }
                 Event::Connected => continue,
                 other => panic!("expected a Synthesize frame, got {other:?}"),
@@ -183,7 +185,7 @@ pub struct AutoWorker {
 
 #[derive(Debug, Clone)]
 pub struct Rendered {
-    pub id: u64,
+    pub slot: u16,
     pub priority: u8,
     pub first_id: u8,
     /// Other requests rendered between this one's arrival and its own rendering.
@@ -200,44 +202,47 @@ impl AutoWorker {
             let Ok((stream, _)) = listener.accept().await else { return };
             let (mut reader, mut writer) = stream.into_split();
             writer.write_all(&worker_side::hello(&hello())).await.unwrap();
-            let queue = Arc::new(Mutex::new(Vec::<(u8, u64, Vec<u8>, usize)>::new()));
+            // (priority, arrival order, slot, ids, requests rendered before it arrived)
+            let queue = Arc::new(Mutex::new(Vec::<(u8, u64, u16, Vec<u8>, usize)>::new()));
             let wake = Arc::new(tokio::sync::Notify::new());
             let (q2, w2) = (queue.clone(), wake.clone());
-            let (cancel_tx, mut cancel_rx) = mpsc::unbounded_channel::<u64>();
+            let (cancel_tx, mut cancel_rx) = mpsc::unbounded_channel::<u16>();
             tokio::spawn(async move {
+                let mut arrivals = 0;
                 while let Ok(frame) = read_front(&mut reader).await {
                     match frame {
-                        FrontFrame::Synthesize { id, priority, ids, .. } => {
-                            let arrived = log3.lock().unwrap().len();
+                        FrontFrame::Synthesize { slot, priority, ids, .. } => {
+                            let rendered = log3.lock().unwrap().len();
                             let mut q = q2.lock().unwrap();
-                            q.push((priority, id, ids, arrived));
+                            q.push((priority, arrivals, slot, ids, rendered));
+                            arrivals += 1;
                             most2.fetch_max(q.len(), Ordering::SeqCst);
                         }
-                        FrontFrame::Cancel { id } => {
-                            let _ = cancel_tx.send(id);
+                        FrontFrame::Cancel { slot } => {
+                            let _ = cancel_tx.send(slot);
                         }
                     }
                     w2.notify_one();
                 }
             });
             loop {
-                while let Ok(id) = cancel_rx.try_recv() {
+                while let Ok(slot) = cancel_rx.try_recv() {
                     let removed = {
                         let mut q = queue.lock().unwrap();
                         let before = q.len();
-                        q.retain(|(_, qid, _, _)| *qid != id);
+                        q.retain(|(_, _, s, _, _)| *s != slot);
                         before != q.len()
                     };
-                    if removed && writer.write_all(&worker_side::failed(id, FailCode::Cancelled)).await.is_err() {
+                    if removed && writer.write_all(&worker_side::failed(slot, FailCode::Cancelled)).await.is_err() {
                         return;
                     }
                 }
                 let next = {
                     let mut q = queue.lock().unwrap();
-                    let best = q.iter().enumerate().min_by_key(|(_, (p, id, _, _))| (*p, *id)).map(|(i, _)| i);
+                    let best = q.iter().enumerate().min_by_key(|(_, (p, order, ..))| (*p, *order)).map(|(i, _)| i);
                     best.map(|i| q.remove(i))
                 };
-                let Some((priority, id, ids, arrived)) = next else {
+                let Some((priority, _, slot, ids, arrived)) = next else {
                     wake.notified().await;
                     continue;
                 };
@@ -245,9 +250,10 @@ impl AutoWorker {
                 {
                     let mut log = log2.lock().unwrap();
                     let waited = log.len() - arrived;
-                    log.push(Rendered { id, priority, first_id: ids[0], waited });
+                    log.push(Rendered { slot, priority, first_id: ids[0], waited });
                 }
-                if writer.write_all(&respond(id, &ids)).await.is_err() {
+                if writer.write_all(&respond(slot, &ids)).await.is_err() {
+
                     return;
                 }
             }
@@ -263,18 +269,10 @@ pub struct CountingPipeline {
 }
 
 impl Pipeline for CountingPipeline {
-    fn supports(&self, lang: &str) -> bool {
-        StubPipeline.supports(lang)
-    }
-
-    fn chunks<'a>(
-        &'a self,
-        lang: &'a str,
-        text: &'a str,
-        options: &'a kokoro_text::Options,
-    ) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
+    fn chunks<'a>(&'a self, lang: Lang, text: &'a str) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        StubPipeline.chunks(lang, text, options)
+        StubPipeline.chunks(lang, text)
+
     }
 }
 
@@ -381,34 +379,18 @@ pub struct BrokenPipeline {
 pub struct UnsupportedAt(pub usize);
 
 impl Pipeline for UnsupportedAt {
-    fn supports(&self, lang: &str) -> bool {
-        StubPipeline.supports(lang)
-    }
-
-    fn chunks<'a>(
-        &'a self,
-        lang: &'a str,
-        text: &'a str,
-        options: &'a kokoro_text::Options,
-    ) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
-        Box::new(StubPipeline.chunks(lang, text, options).enumerate().map(|(i, chunk)| {
+    fn chunks<'a>(&'a self, lang: Lang, text: &'a str) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
+        Box::new(StubPipeline.chunks(lang, text)
+.enumerate().map(|(i, chunk)| {
             if i == self.0 { Err(PipelineError::Unsupported("no G2P for ja text yet".into())) } else { chunk }
         }))
     }
 }
 
 impl Pipeline for BrokenPipeline {
-    fn supports(&self, lang: &str) -> bool {
-        StubPipeline.supports(lang)
-    }
-
-    fn chunks<'a>(
-        &'a self,
-        lang: &'a str,
-        text: &'a str,
-        options: &'a kokoro_text::Options,
-    ) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
-        Box::new(StubPipeline.chunks(lang, text, options).enumerate().map(|(i, chunk)| {
+    fn chunks<'a>(&'a self, lang: Lang, text: &'a str) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
+        Box::new(StubPipeline.chunks(lang, text)
+.enumerate().map(|(i, chunk)| {
             if i < self.fail_at {
                 chunk
             } else if self.panic {

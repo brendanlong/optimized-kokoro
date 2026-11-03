@@ -24,7 +24,9 @@ from .scheduler import Closed, RequestQueue
 
 log = logging.getLogger("kokoro_worker")
 
-MAX_OUTSTANDING = 1024
+# Requests a front may have here at once (queued or running), each in its own slot. A queued one
+# costs a few hundred bytes.
+SLOTS = 1024
 # A frame, once started, must arrive whole within this; a front that stalls mid-frame would
 # otherwise hold the only connection slot. Sends get the same deadline (the socket timeout).
 FRAME_TIMEOUT_S = 10.0
@@ -56,13 +58,15 @@ def _wait_readable(conn: socket.socket) -> None:
 
 
 class Connection:
-    def __init__(self, conn: socket.socket, synth, max_batch: int, frame_timeout: float = FRAME_TIMEOUT_S):
+    def __init__(self, conn: socket.socket, synth, max_batch: int, frame_timeout: float = FRAME_TIMEOUT_S,
+                 slots: int = SLOTS):
         self.conn = conn
         self.frame_timeout = frame_timeout
         conn.settimeout(frame_timeout)  # bounds each sendall; reads use their own deadline
         self.synth = synth
         self.max_batch = max_batch
-        self.queue = RequestQueue(MAX_OUTSTANDING)
+        self.slots = slots
+        self.queue = RequestQueue(slots)
         self.send_lock = threading.Lock()
         self.n_voices = len(synth.voice_names)
         self.stats = {"batches": 0, "requests": 0, "groups": 0}
@@ -84,15 +88,16 @@ class Connection:
                 _wait_readable(self.conn)
                 deadline = time.monotonic() + self.frame_timeout
                 (length,) = struct.unpack("<I", _recv_exact(self.conn, 4, deadline))
-                if not 1 <= length <= P.MAX_FRONT_BODY:
+                if not 1 <= length <= P.max_front_body(self.synth.max_phonemes):
                     raise P.ProtocolError(f"frame length {length}")
                 body = _recv_exact(self.conn, length, deadline)
-                msg = P.parse_request(body, self.n_voices, self.synth.vocab_size, self.synth.max_phonemes)
+                msg = P.parse_request(body, self.slots, self.n_voices, self.synth.vocab_size,
+                                      self.synth.max_phonemes)
                 if isinstance(msg, P.Cancel):
-                    if self.queue.cancel(msg.request_id):
-                        self.send(P.failed(msg.request_id, P.CANCELLED))
+                    if self.queue.cancel(msg.slot):
+                        self.send(P.failed(msg.slot, P.CANCELLED))
                 elif not self.queue.put(msg):
-                    raise P.ProtocolError("duplicate request id or too many outstanding")
+                    raise P.ProtocolError(f"Synthesize for slot {msg.slot}, which is busy")
         except EOFError:
             log.info("front closed the connection")
         except FrameTimeout:
@@ -116,25 +121,25 @@ class Connection:
                 batch = self.queue.take(self.max_batch)
             except Closed:
                 return
-            pending = {m.request_id for m in batch}
+            pending = {m.slot for m in batch}
             self.stats["batches"] += 1
             self.stats["requests"] += len(batch)
             try:
-                requests = [Request(list(m.ids), self.synth.style(list(m.voices), m.style_len), m.speed)
-                            for m in batch]
+                requests = [Request(list(m.ids), self.synth.style(m.voice, m.style_len), m.speed) for m in batch]
                 for results in self.synth.run(requests):
                     self.stats["groups"] += 1
                     for r in results:
-                        rid = batch[r.index].request_id
+                        slot = batch[r.index].slot
                         if r.pcm is None:
                             code = P.TOO_LONG if r.error == "too_long" else P.INTERNAL_ERROR
                             if r.error != "too_long":
                                 log.error("request failed: %s", r.error)
-                            out = P.failed(rid, code)
+                            out = P.failed(slot, code)
                         else:
-                            out = P.durations(rid, r.durations) + P.audio(rid, r.pcm)
-                        pending.discard(rid)
-                        self.queue.done(rid)
+                            out = P.result(slot, r.durations, r.pcm)
+                        pending.discard(slot)
+                        # Freed before the reply goes out, so the front may reuse it on receipt.
+                        self.queue.done(slot)
                         self.send(out)
             except OSError:
                 self.close()
@@ -148,9 +153,9 @@ class Connection:
                     log.critical("CUDA error, exiting")
                     os._exit(3)
                 try:
-                    for rid in pending:
-                        self.queue.done(rid)
-                        self.send(P.failed(rid, P.INTERNAL_ERROR))
+                    for slot in pending:
+                        self.queue.done(slot)
+                        self.send(P.failed(slot, P.INTERNAL_ERROR))
                 except OSError:
                     self.close()
                     return
@@ -158,7 +163,7 @@ class Connection:
     def serve(self) -> None:
         reader = None
         try:
-            self.send(P.hello(self.synth.vocab_size, self.synth.max_phonemes, self.max_batch,
+            self.send(P.hello(self.synth.vocab_size, self.synth.max_phonemes, self.max_batch, self.slots,
                               self.synth.max_chunk_samples, self.synth.voice_names))
             reader = threading.Thread(target=self.read_loop, daemon=True)
             reader.start()
@@ -199,8 +204,9 @@ def warmup(synth, max_batch: int) -> None:
     shapes += [[12], [60], [180], [400]]
     try:
         for lengths in shapes:
-            reqs = [Request([ids[(i * 7 + n) % len(ids)] for i in range(n)], synth.style([(0, 1.0)], n), 1.0)
+            reqs = [Request([ids[(i * 7 + n) % len(ids)] for i in range(n)], synth.style(0, n), 100)
                     for n in lengths]
+
             t = time.monotonic()
             for _ in synth.run(reqs):
                 pass

@@ -13,7 +13,14 @@ kokoro-server = { path = ".." }
 libfuzzer-sys = "0.4"
 tokio = { version = "1", features = ["rt"] }
 
-# Not part of the main workspace: cargo-fuzz needs nightly and its own build settings.
+# Not part of the main workspace: cargo-fuzz needs nightly and its own build settings. Without
+# nightly, libFuzzer's coverage instrumentation alone (no sanitizer) builds on stable:
+#   RUSTFLAGS="-Cpasses=sancov-module -Cllvm-args=-sanitizer-coverage-level=4
+#     -Cllvm-args=-sanitizer-coverage-inline-8bit-counters -Cllvm-args=-sanitizer-coverage-pc-table
+#     -Cllvm-args=-sanitizer-coverage-trace-compares --cfg fuzzing -Cdebug-assertions -Coverflow-checks" \
+#   cargo build --release --target x86_64-unknown-linux-gnu --bin worker_frames
+# (--target keeps the flags off build scripts), then run
+# target/x86_64-unknown-linux-gnu/release/worker_frames CORPUS -max_len=400000.
 [workspace]
 members = ["."]
 

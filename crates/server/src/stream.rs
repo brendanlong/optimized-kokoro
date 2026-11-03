@@ -9,10 +9,10 @@
 //! Both stages mark their end explicitly, so a stage that dies (a panic) fails the response
 //! instead of ending it early as if it were complete.
 
-use crate::audio::{apply_volume, silence, trim_range};
+use crate::audio::{silence, trim_range};
 use crate::pipeline::{Chunk, Pipeline, PipelineError};
 use crate::protocol::Priority;
-use crate::request::{Segment, Speech};
+use crate::request::Speech;
 use crate::stitch::{self, STITCH_ABOVE, Stitcher};
 use crate::worker::{Connection, HeldAudio, SynthError, SynthRequest, Synthesized};
 use bytes::Bytes;
@@ -65,7 +65,7 @@ enum Produced {
     End,
 }
 
-fn units(chunk: Chunk, segment: &Segment) -> Vec<Unit> {
+fn units(chunk: Chunk, speech: &Speech) -> Vec<Unit> {
     if let Some(pause) = chunk.pause {
         return if pause > 0.0 { vec![Unit::Silence(silence(pause))] } else { Vec::new() };
     }
@@ -74,12 +74,12 @@ fn units(chunk: Chunk, segment: &Segment) -> Vec<Unit> {
     }
     let text: Arc<str> = chunk.text.into();
     let request = |ids: Vec<u8>, style_len: usize| SynthRequest {
-        speed: segment.speed as f32,
-        voices: segment.voices.clone(),
+        speed: speech.speed,
+        voice: speech.voice,
         ids,
         style_len: style_len.min(usize::from(u16::MAX)) as u16,
     };
-    let finish = |stitch| Finish { text: text.clone(), speed: segment.speed, stitch };
+    let finish = |stitch| Finish { text: text.clone(), speed: speech.speed.as_f64(), stitch };
     if chunk.phonemes.chars().count() <= STITCH_ABOVE {
         let n = chunk.ids.len();
         return vec![Unit::Speech(request(chunk.ids, n), finish(None))];
@@ -94,23 +94,21 @@ fn units(chunk: Chunk, segment: &Segment) -> Vec<Unit> {
 }
 
 fn produce(pipeline: &dyn Pipeline, speech: &Speech, out: &mpsc::Sender<Produced>) {
-    for segment in &speech.segments {
-        for chunk in pipeline.chunks(&segment.lang, &segment.text, &speech.options) {
-            let units = match chunk {
-                Ok(chunk) => units(chunk, segment),
-                Err(PipelineError::Unsupported(why)) => {
-                    tracing::warn!("skipping a sentence: {why}");
-                    continue;
-                }
-                Err(e) => {
-                    let _ = out.blocking_send(Produced::Failed(e));
-                    return;
-                }
-            };
-            for unit in units {
-                if out.blocking_send(Produced::Unit(unit)).is_err() {
-                    return;
-                }
+    for chunk in pipeline.chunks(speech.lang, &speech.text) {
+        let units = match chunk {
+            Ok(chunk) => units(chunk, speech),
+            Err(PipelineError::Unsupported(why)) => {
+                tracing::warn!("skipping a sentence: {why}");
+                continue;
+            }
+            Err(e) => {
+                let _ = out.blocking_send(Produced::Failed(e));
+                return;
+            }
+        };
+        for unit in units {
+            if out.blocking_send(Produced::Unit(unit)).is_err() {
+                return;
             }
         }
     }
@@ -186,10 +184,9 @@ pub fn start(
 ) -> AudioStream {
     let (out_tx, out_rx) = mpsc::channel(1);
     let (unit_tx, unit_rx) = mpsc::channel(1);
-    let volume = speech.volume;
     tokio::task::spawn_blocking(move || produce(pipeline.as_ref(), &speech, &unit_tx));
     tokio::spawn(async move {
-        let result = drive(connection, unit_rx, &out_tx, volume, lookahead).await;
+        let result = drive(connection, unit_rx, &out_tx, lookahead).await;
         let _ = out_tx.send(result.map_or_else(Output::Failed, |()| Output::End)).await;
     });
     AudioStream { rx: out_rx, over: false, _permits: Box::new(permits) }
@@ -210,7 +207,6 @@ async fn drive(
     connection: Arc<Connection>,
     mut units: mpsc::Receiver<Produced>,
     out: &mpsc::Sender<Output>,
-    volume: f64,
     lookahead: usize,
 ) -> Result<(), StreamError> {
     let mut window: FuturesOrdered<Pending> = FuturesOrdered::new();
@@ -239,7 +235,7 @@ async fn drive(
                         Some((plan, index)) => stitcher.piece(plan, *index, synth.pcm, &synth.durations),
                         None => synth.pcm,
                     };
-                    apply_volume(&mut pcm, volume);
+
                     let range = trim_range(&pcm, &finish.text, finish.speed);
                     pcm.truncate(range.end);
                     pcm.drain(..range.start);

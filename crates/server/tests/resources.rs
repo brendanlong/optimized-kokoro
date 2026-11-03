@@ -4,12 +4,11 @@
 mod common;
 
 use common::*;
-use kokoro_server::pipeline::{Chunk, PipelineError};
+use kokoro_server::StubPipeline;
 use kokoro_server::protocol::worker_side::{self, FrontFrame};
-use kokoro_server::protocol::{self, FailCode};
-use kokoro_server::{Pipeline, StubPipeline};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Condvar, Mutex};
+use kokoro_server::protocol::{self, FailCode, Priority, Speed};
+use kokoro_server::worker::SynthRequest;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpStream, UnixListener};
@@ -87,17 +86,17 @@ async fn audio_held_for_clients_that_dont_read_stays_under_the_bound() {
     // Render every chunk the server asks for at the cap, until it stops asking.
     let mut rendered = 0;
     while let Some(event) = worker.quiet(Duration::from_millis(500)).await {
-        if let Event::Frame(FrontFrame::Synthesize { id, speed, ids, .. }) = event {
-            let samples = protocol::chunk_cap(small.max_chunk_samples, speed);
-            let durations = durations_for(ids.len(), samples, protocol::max_duration(speed));
-            worker.send(worker_side::durations(id, &durations));
-            worker.send(worker_side::audio(id, &vec![12_000; samples as usize]));
+        if let Event::Frame(FrontFrame::Synthesize { slot, speed, ids, .. }) = event {
+            let speed = Speed::from_hundredths(speed).unwrap();
+            let samples = speed.chunk_cap(small.max_chunk_samples);
+            let durations = durations_for(ids.len(), samples, speed.max_duration());
+            worker.send(worker_side::result(slot, &durations, &vec![12_000; samples as usize]));
             rendered += 1;
         }
     }
     tokio::time::sleep(Duration::from_millis(200)).await;
     let held = server.worker.gauge().held();
-    let bound = config.audio_bound(small.max_chunk_samples, 1.0);
+    let bound = config.audio_bound(small.max_chunk_samples, Speed::NORMAL);
     assert!(rendered < 12 * clients.len(), "the server kept asking for chunks nobody reads");
     assert!(held <= bound, "holding {held} bytes, over the bound {bound}");
     // Kernel socket buffers take some of what hyper writes, so the bound isn't reached exactly.
@@ -108,11 +107,11 @@ async fn audio_held_for_clients_that_dont_read_stays_under_the_bound() {
 }
 
 #[tokio::test]
-async fn cancelled_requests_hold_worker_admission_until_acknowledged() {
+async fn cancelled_requests_hold_their_slots_until_acknowledged() {
     let server = start(
         |c| {
             one_stream(c);
-            c.worker_max_outstanding = Some(3);
+            c.worker_slots = Some(3);
         },
         Arc::new(StubPipeline),
     )
@@ -132,20 +131,73 @@ async fn cancelled_requests_hold_worker_admission_until_acknowledged() {
     let mut cancelled = Vec::new();
     for _ in 0..3 {
         match worker.next().await {
-            Event::Frame(FrontFrame::Cancel { id }) => cancelled.push(id),
+            Event::Frame(FrontFrame::Cancel { slot }) => cancelled.push(slot),
             other => panic!("expected a cancellation, got {other:?}"),
         }
     }
-    assert_eq!(connection.outstanding(), 3);
+    assert_eq!(connection.busy_slots(), 3);
 
     // Until the worker acknowledges a cancellation, there's no room for new work.
     let next = tokio::spawn(speak(server.addr, pcm("Hi.")));
     assert_eq!(worker.quiet(Duration::from_millis(300)).await, None);
-    worker.send(worker_side::failed(cancelled[0], FailCode::Cancelled));
-    let (id, _, _, _, ids) = worker.synthesize().await;
-    worker.send(respond(id, &ids));
+    worker.send(worker_side::failed(cancelled[1], FailCode::Cancelled));
+    let (slot, _, _, _, ids) = worker.synthesize().await;
+    assert_eq!(slot, cancelled[1], "the freed slot is the only one");
+    worker.send(respond(slot, &ids));
     assert_eq!(next.await.unwrap().status(), 200);
-    assert!(connection.outstanding() <= 3);
+    assert_eq!(connection.busy_slots(), 2);
+}
+
+/// The front uses no more slots than the worker announces, nor more than it's configured for.
+#[tokio::test]
+async fn slots_are_the_smaller_of_the_hello_and_the_config() {
+    for (announced, configured, used) in [(2, 5, 2), (1024, 5, 5), (1, 1, 1)] {
+        let server = start(|c| c.worker_slots = Some(configured), Arc::new(StubPipeline)).await;
+        let mut h = hello();
+        h.slots = announced;
+        let _worker = ScriptedWorker::listen(&server.socket, worker_side::hello(&h));
+        assert_eq!(server.worker.connected().await.slots(), used);
+    }
+}
+
+/// A slot is reused only once its reply has come, and a ticket dropped after its reply, unread,
+/// doesn't cancel the slot's next request.
+#[tokio::test]
+async fn a_slot_is_reused_only_after_its_reply() {
+    let server = start(|c| c.worker_slots = Some(1), Arc::new(StubPipeline)).await;
+    let mut worker = ScriptedWorker::listen(&server.socket, worker_side::hello(&hello()));
+    let connection = server.worker.connected().await;
+    let request = SynthRequest { speed: Speed::NORMAL, voice: 0, ids: vec![43, 44], style_len: 2 };
+    let first = connection.submit(Priority::Waiting, &request).await.unwrap();
+    let (slot, ..) = worker.synthesize().await;
+    let waiting = tokio::spawn({
+        let connection = connection.clone();
+        let request = request.clone();
+        async move { connection.submit(Priority::Waiting, &request).await }
+    });
+    assert_eq!(worker.quiet(Duration::from_millis(200)).await, None, "a second request while the slot is busy");
+    worker.send(respond(slot, &request.ids));
+    let mut second = waiting.await.unwrap().unwrap();
+    assert_eq!(worker.synthesize().await.0, slot);
+    drop(first);
+    assert_eq!(worker.quiet(Duration::from_millis(200)).await, None, "the late cancel reached the next request");
+    worker.send(respond(slot, &request.ids));
+    assert_eq!(second.result().await.unwrap().pcm, render(&request.ids).1);
+}
+
+/// A slot gets one reply: a second one is for a free slot.
+#[tokio::test]
+async fn a_second_reply_for_a_slot_closes_the_connection() {
+    let server = start(|_| {}, Arc::new(StubPipeline)).await;
+    let mut worker = ScriptedWorker::listen(&server.socket, worker_side::hello(&hello()));
+    server.worker.connected().await;
+    let client = tokio::spawn(speak(server.addr, pcm("Hi.")));
+    let (slot, _, _, _, ids) = worker.synthesize().await;
+    let mut twice = respond(slot, &ids);
+    twice.extend(respond(slot, &ids));
+    worker.send(twice);
+    assert_eq!(worker.next().await, Event::Closed);
+    assert_eq!(client.await.unwrap().status(), 200, "the first reply was fine");
 }
 
 #[tokio::test]
@@ -189,70 +241,6 @@ async fn hello_with_the_most_voices_parses_quickly() {
     assert_eq!(parsed, protocol::WorkerFrame::Hello(h));
 }
 
-/// Blocks planning (in `supports`) until released.
-struct GatedPlan {
-    calls: AtomicUsize,
-    released: Mutex<bool>,
-    wake: Condvar,
-}
-
-impl GatedPlan {
-    fn release(&self) {
-        *self.released.lock().unwrap() = true;
-        self.wake.notify_all();
-    }
-}
-
-impl Pipeline for GatedPlan {
-    fn supports(&self, lang: &str) -> bool {
-        self.calls.fetch_add(1, Ordering::SeqCst);
-        let mut released = self.released.lock().unwrap();
-        while !*released {
-            released = self.wake.wait(released).unwrap();
-        }
-        StubPipeline.supports(lang)
-    }
-
-    fn chunks<'a>(
-        &'a self,
-        lang: &'a str,
-        text: &'a str,
-        options: &'a kokoro_text::Options,
-    ) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
-        StubPipeline.chunks(lang, text, options)
-    }
-}
-
-#[tokio::test]
-async fn planning_keeps_its_permits_after_the_client_leaves() {
-    let pipeline = Arc::new(GatedPlan { calls: AtomicUsize::new(0), released: Mutex::new(false), wake: Condvar::new() });
-    let server = start(one_stream, pipeline.clone()).await;
-    let worker = AutoWorker::listen(&server.socket, Duration::from_millis(1));
-    server.worker.connected().await;
-
-    let first = raw_speech(server.addr, "First.").await;
-    while pipeline.calls.load(Ordering::SeqCst) == 0 {
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
-    drop(first);
-    tokio::time::sleep(Duration::from_millis(100)).await;
-    assert_eq!(speak(server.addr, pcm("Second.")).await.status(), 429);
-    assert_eq!(pipeline.calls.load(Ordering::SeqCst), 1, "two planners ran under a limit of one");
-
-    pipeline.release();
-    let deadline = Instant::now() + Duration::from_secs(5);
-    loop {
-        let response = speak(server.addr, pcm("Third.")).await;
-        if response.status() == 200 {
-            assert_eq!(samples(&body_bytes(response).await.unwrap()), expected_audio("Third."));
-            break;
-        }
-        assert_eq!(response.status(), 429);
-        assert!(Instant::now() < deadline, "the first request's permits were never released");
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-    drop(worker);
-}
 
 #[tokio::test]
 async fn disconnecting_before_the_first_audio_cancels_the_work() {
@@ -260,10 +248,10 @@ async fn disconnecting_before_the_first_audio_cancels_the_work() {
     let mut worker = ScriptedWorker::listen(&server.socket, worker_side::hello(&hello()));
     server.worker.connected().await;
     let first = raw_speech(server.addr, "First.").await;
-    let (id, ..) = worker.synthesize().await;
+    let (slot, ..) = worker.synthesize().await;
     drop(first);
-    assert_eq!(worker.next().await, Event::Frame(FrontFrame::Cancel { id }));
-    worker.send(worker_side::failed(id, FailCode::Cancelled));
+    assert_eq!(worker.next().await, Event::Frame(FrontFrame::Cancel { slot }));
+    worker.send(worker_side::failed(slot, FailCode::Cancelled));
     let client = tokio::spawn(speak(server.addr, pcm("Second.")));
     let (id, _, _, _, ids) = worker.synthesize().await;
     worker.send(respond(id, &ids));
@@ -341,7 +329,7 @@ async fn shutdown_drops_connections_after_the_grace_period() {
 }
 
 /// Durations implying more audio than the worker's chunk cap close the connection, before any
-/// audio is read.
+/// audio is read: the worker sends only the start of the frame.
 #[tokio::test]
 async fn durations_over_the_chunk_cap_close_the_connection() {
     let server = start(|_| {}, Arc::new(StubPipeline)).await;
@@ -350,9 +338,10 @@ async fn durations_over_the_chunk_cap_close_the_connection() {
     let mut worker = ScriptedWorker::listen(&server.socket, worker_side::hello(&small));
     server.worker.connected().await;
     let client = tokio::spawn(speak(server.addr, pcm("Hi.")));
-    let (id, _, _, _, ids) = worker.synthesize().await;
+    let (slot, _, _, _, ids) = worker.synthesize().await;
     assert!(ids.len() + 2 > 3);
-    worker.send(worker_side::durations(id, &vec![1; ids.len() + 2]));
+    let frame = worker_side::result(slot, &vec![1; ids.len() + 2], &vec![0; 600 * (ids.len() + 2)]);
+    worker.send(frame[..4 + 5 + 2 * (ids.len() + 2)].to_vec());
     assert_eq!(worker.next().await, Event::Closed);
     assert_eq!(client.await.unwrap().status(), 503);
 }
@@ -404,15 +393,14 @@ async fn maximal_audio_at_the_chunk_cap_is_accepted() {
     let server = start(|_| {}, Arc::new(StubPipeline)).await;
     let mut worker = ScriptedWorker::listen(&server.socket, worker_side::hello(&hello()));
     let connection = server.worker.connected().await;
-    let request = kokoro_server::worker::SynthRequest { speed: 0.25, voices: Arc::from([(0, 1.0)]), ids: vec![43; 510], style_len: 510 };
-    let mut ticket = connection.submit(protocol::Priority::Waiting, &request).await.unwrap();
-    let (id, ..) = worker.synthesize().await;
-    let cap = protocol::chunk_cap(hello().max_chunk_samples, 0.25);
-    let durations = durations_for(510, cap, protocol::max_duration(0.25));
+    let request = SynthRequest { speed: Speed::MIN, voice: 0, ids: vec![43; 510], style_len: 510 };
+    let mut ticket = connection.submit(Priority::Waiting, &request).await.unwrap();
+    let (slot, ..) = worker.synthesize().await;
+    let cap = Speed::MIN.chunk_cap(hello().max_chunk_samples);
+    let durations = durations_for(510, cap, Speed::MIN.max_duration());
     let samples = durations.iter().map(|&d| u64::from(d)).sum::<u64>() * 600;
     assert_eq!(samples, cap);
-    worker.send(worker_side::durations(id, &durations));
-    worker.send(worker_side::audio(id, &vec![1; samples as usize]));
+    worker.send(worker_side::result(slot, &durations, &vec![1; samples as usize]));
     let rendered = ticket.result().await.unwrap();
     assert_eq!(rendered.pcm.len() as u64, samples);
     assert_eq!(server.worker.gauge().held() as u64, 2 * samples);
@@ -420,20 +408,3 @@ async fn maximal_audio_at_the_chunk_cap_is_accepted() {
     assert_eq!(server.worker.gauge().held(), 0);
 }
 
-/// A Durations frame must be followed by its own Audio, not by another request's frames.
-#[tokio::test]
-async fn interleaved_durations_close_the_connection() {
-    let server = start(|_| {}, Arc::new(StubPipeline)).await;
-    let mut worker = ScriptedWorker::listen(&server.socket, worker_side::hello(&hello()));
-    server.worker.connected().await;
-    let a = tokio::spawn(speak(server.addr, pcm("Hi.")));
-    let (id_a, _, _, _, ids_a) = worker.synthesize().await;
-    let b = tokio::spawn(request(server.addr, speech_request(Some("other-key"), pcm("Yo."))));
-    let (id_b, _, _, _, ids_b) = worker.synthesize().await;
-    let mut frames = worker_side::durations(id_a, &render(&ids_a).0);
-    frames.extend(worker_side::durations(id_b, &render(&ids_b).0));
-    worker.send(frames);
-    assert_eq!(worker.next().await, Event::Closed);
-    assert_eq!(a.await.unwrap().status(), 503);
-    assert_eq!(b.await.unwrap().status(), 503);
-}
