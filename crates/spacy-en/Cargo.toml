@@ -9,7 +9,6 @@ license.workspace = true
 publish = false
 
 [dependencies]
-fancy-regex = "0.20"
 matrixmultiply = "0.3"
 regex = "1"
 safetensors = { version = "0.8", default-features = false, features = ["alloc"] }

@@ -18,4 +18,5 @@ Differences from the deployed image: espeak reads the same espeak-ng 1.52 data (
 ```sh
 mkdir -p out/spacy-en
 .cache/kfa/.venv/bin/python -I ../crates/spacy-en/reference.py out/spacy-en/corpus.jsonl corpus/*.jsonl
+.cache/kfa/.venv/bin/python -I ../crates/spacy-en/reference.py --patterns out/spacy-en/patterns-200k.jsonl 200000
 ```

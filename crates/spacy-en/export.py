@@ -6,7 +6,9 @@ Run with the reference venv's python (see reference/README.md):
 
 Writes `tokenizer.json` (patterns, special cases, norm tables, Python's Unicode predicates) and
 `tagger.safetensors` (float32 weights). Regexes are re-emitted from Python's own parse tree, so
-character classes, `\\w`/`\\d`/`\\s` and escapes reach Rust as explicit code point ranges.
+character classes, `\\w`/`\\d`/`\\s` and escapes reach Rust as explicit code point ranges. The
+lookarounds the `regex` crate lacks are split out (affix patterns) or the pattern is exported in
+pieces for a hand-ported matcher (URLs), so everything runs in linear time.
 """
 
 import json
@@ -23,6 +25,7 @@ import thinc
 from safetensors.numpy import save_file
 from spacy.attrs import NORM
 from spacy.lang.norm_exceptions import BASE_NORMS
+from spacy.lang.tokenizer_exceptions import URL_PATTERN
 from spacy.symbols import IDS
 from spacy.tokenizer import Tokenizer
 
@@ -75,13 +78,10 @@ def char(cp):
     return c if c.isascii() and c.isalnum() else f"\\x{{{cp:X}}}"
 
 
-def emit_class(items):
-    negate = False
+def class_ranges(items):
     rs = []
     for op, av in items:
-        if op is C.NEGATE:
-            negate = True
-        elif op is C.LITERAL:
+        if op is C.LITERAL:
             rs.extend(without_surrogates(av, av))
         elif op is C.RANGE:
             rs.extend(without_surrogates(*av))
@@ -89,11 +89,25 @@ def emit_class(items):
             rs.extend(CATEGORIES[av])
         else:
             raise ValueError(f"unsupported class item {op}")
+    merged = []
+    for a, b in sorted(rs):
+        if merged and a <= merged[-1][1] + 1:
+            merged[-1][1] = max(merged[-1][1], b)
+        else:
+            merged.append([a, b])
+    return merged
+
+
+def emit_class(items):
+    negate = items[:1] == [(C.NEGATE, None)]
+    rs = class_ranges(items[1:] if negate else items)
     body = "".join(char(a) if a == b else f"{char(a)}-{char(b)}" for a, b in rs)
     return f"[{'^' if negate else ''}{body}]"
 
 
 def emit(items, asserts=True):
+    """Rust `regex` syntax for a parse tree without lookarounds. With `asserts=False`,
+    lookarounds are dropped, which gives a superset of the pattern."""
     out = []
     for op, av in items:
         if op is C.LITERAL:
@@ -112,28 +126,148 @@ def emit(items, asserts=True):
             rep = f"{{{lo},}}" if hi is C.MAXREPEAT else f"{{{lo},{hi}}}"
             out.append("(?:" + emit(p, asserts) + ")" + rep + ("?" if op is C.MIN_REPEAT else ""))
         elif op in (C.ASSERT, C.ASSERT_NOT):
-            if not asserts:
-                continue
-            direction, p = av
-            kind = ("=" if op is C.ASSERT else "!") if direction == 1 else ("<=" if op is C.ASSERT else "<!")
-            out.append(f"(?{kind}" + emit(p, asserts) + ")")
+            if asserts:
+                raise ValueError("lookarounds have no `regex` syntax")
         elif op is C.AT and av is C.AT_BEGINNING:
-            out.append("^")
+            out.append(r"\A")
         elif op is C.AT and av is C.AT_END:
-            # Python's `$` also matches before a final "\n"; spans never end in one (checked below).
-            out.append("$")
+            # Python's `$` also matches before a final "\n".
+            out.append(r"\n?\z")
         else:
             raise ValueError(f"unsupported regex node {op} {av}")
     return "".join(out)
 
 
-def translate(compiled):
-    """The pattern, and a version without lookarounds: a superset the plain `regex` engine can
-    run, to skip the backtracking one where nothing can match."""
+def has_lookaround(items):
+    for op, av in items:
+        if op in (C.ASSERT, C.ASSERT_NOT, C.AT):
+            return True
+        if op is C.BRANCH and any(has_lookaround(b) for b in av[1]):
+            return True
+        if op is C.SUBPATTERN and has_lookaround(av[3]):
+            return True
+        if op in (C.MAX_REPEAT, C.MIN_REPEAT) and has_lookaround(av[2]):
+            return True
+    return False
+
+
+def width(state, items):
+    lo, hi = sre.SubPattern(state, list(items)).getwidth()
+    return lo, (None if hi >= C.MAXREPEAT else hi)
+
+
+def affix_rules(compiled, kind):
+    """A prefix/suffix/infix pattern as its top-level alternatives, in order (see `Affix` in
+    tokenizer.rs). Each is an optional fixed-width lookbehind, a body without lookarounds, and an
+    optional lookahead. When a lookahead follows a body of varying width, the body is split into
+    its branches, which Python tries in order. Consecutive alternatives without lookarounds are
+    merged, since leftmost-first matching tries them in the same order. Only lookaround-free
+    alternatives may be unbounded, so other suffix matches start within `max_width` of the end."""
     if compiled.flags & ~re.UNICODE:
         raise ValueError(f"unsupported flags {compiled.flags}")
     tree = sre.parse(compiled.pattern, compiled.flags)
-    return {"pattern": emit(tree), "filter": emit(tree, asserts=False)}
+    state = tree.state
+    items = list(tree.data)
+    if kind == "prefix":
+        assert items[0] == (C.AT, C.AT_BEGINNING), items[0]
+        items = items[1:]
+    assert len(items) == 1 and items[0][0] is C.BRANCH, [op for op, _ in items]
+    rules = []
+    for alt in items[0][1][1]:
+        data = list(alt.data)
+        if kind == "suffix":
+            assert data[-1] == (C.AT, C.AT_END), data
+            data.pop()
+        behind = ahead = None
+        if data[0][0] is C.ASSERT and data[0][1][0] == -1:
+            p = data.pop(0)[1][1]
+            lo, hi = width(state, p)
+            assert lo == hi and not has_lookaround(p), p
+            behind = {"pattern": emit(p), "width": lo}
+        if data[-1][0] in (C.ASSERT, C.ASSERT_NOT) and data[-1][1][0] == 1:
+            op, (_, p) = data.pop()
+            assert not has_lookaround(p) and kind != "suffix", p
+            ahead = {"pattern": emit(p), "negate": op is C.ASSERT_NOT}
+        assert data and not has_lookaround(data), data
+        lo, hi = width(state, data)
+        assert lo > 0, alt
+        variants = [data]
+        if ahead and lo != hi:
+            assert len(data) == 1 and data[0][0] is C.BRANCH, data
+            variants = data[0][1][1]
+            assert all(len(set(width(state, v))) == 1 for v in variants), variants
+        if hi is None:
+            assert behind is None and ahead is None, alt
+        rule = {"behind": behind, "variants": [emit(v) for v in variants], "ahead": ahead, "max_width": hi}
+        last = rules[-1] if rules else None
+        if behind is None and ahead is None and last and last["behind"] is None and last["ahead"] is None:
+            last["variants"] = [last["variants"][0] + "|" + rule["variants"][0]]
+            last["max_width"] = None if None in (hi, last["max_width"]) else max(hi, last["max_width"])
+        else:
+            rules.append(rule)
+    return rules
+
+
+def plain(node):
+    """A parse tree as nested lists and tuples, for comparing."""
+    if isinstance(node, sre.SubPattern):
+        return [plain(x) for x in node.data]
+    if isinstance(node, (list, tuple)):
+        return type(node)(plain(x) for x in node)
+    return node
+
+
+def complement_without_surrogates(rs):
+    return [r for a, b in complement(rs) for r in without_surrogates(a, b)]
+
+
+def url_matcher(compiled):
+    """spaCy's URL_PATTERN in pieces, for the crate's linear-time `UrlMatcher`, which ports the
+    pattern's structure: scheme? credentials? (ip | domain) port? path?, then the end."""
+    assert compiled.pattern == "(?u)" + URL_PATTERN, "URL pattern changed; update UrlMatcher"
+    assert CATEGORIES[C.CATEGORY_NOT_SPACE] == complement_without_surrogates(ranges(str.isspace))
+    tree = sre.parse(compiled.pattern, compiled.flags)
+    state = tree.state
+    _, scheme, credentials, host, port, path, _ = tree.data
+    assert scheme[0] is C.MAX_REPEAT and scheme[1][:2] == (0, 1)
+    # `\S+(?::\S*)?@`: any non-space text, then "@".
+    not_space = [(C.IN, [(C.CATEGORY, C.CATEGORY_NOT_SPACE)])]
+    assert plain(credentials) == (
+        C.MAX_REPEAT,
+        (0, 1, [(C.MAX_REPEAT, (1, C.MAXREPEAT, not_space)),
+                (C.MAX_REPEAT, (0, 1, [(C.LITERAL, ord(":")), (C.MAX_REPEAT, (0, C.MAXREPEAT, not_space))])),
+                (C.LITERAL, ord("@"))]),
+    ), credentials
+    ip_alt, domain_alt = host[1][1]
+    excluded = [av[1] for op, av in ip_alt if op is C.ASSERT_NOT]
+    ip = [x for x in ip_alt if x[0] is not C.ASSERT_NOT]
+    assert len(excluded) == 3 and not has_lookaround(ip)
+    (_, (labels_min, _, label)), (_, (tld_min, tld_max, tld)) = domain_alt
+    head, edge, dot = label
+    assert head[1][:2] == (0, 1) and dot == (C.LITERAL, ord(".")) and labels_min == 1
+    head_edge, (_, (inner_min, inner_max, inner)) = head[1][2]
+    assert plain(head_edge) == plain(edge) and inner_min == 0
+    port_colon, (_, (port_min, port_max, port_digit)) = port[1][2]
+    assert port[1][:2] == (0, 1) and port_colon == (C.LITERAL, ord(":"))
+    path_start, (_, (rest_min, _, rest)) = path[1][2]
+    assert path[1][:2] == (0, 1) and plain(rest) == not_space and rest_min == 0
+    return {
+        "filter": emit(tree, asserts=False),
+        "scheme": emit(scheme[1][2]),
+        "excluded": [emit(p) for p in excluded],
+        "ip": emit(ip),
+        "ip_max_width": width(state, ip)[1],
+        "label_edge": class_ranges(edge[1]),
+        "label_inner": class_ranges(inner[0][1]),
+        "label_inner_max": inner_max,
+        "tld": class_ranges(tld[0][1]),
+        "tld_min": tld_min,
+        "tld_max": tld_max,
+        "port_digit": class_ranges(port_digit[0][1]),
+        "port_min": port_min,
+        "port_max": port_max,
+        "path_start": class_ranges(path_start[1]),
+    }
 
 
 def check_whitespace_never_matches(tok):
@@ -252,10 +386,10 @@ def main(out_dir):
             "model": f"{nlp.meta['lang']}_{nlp.meta['name']} {nlp.meta['version']}",
             "python": sys.version.split()[0],
         },
-        "prefix": translate(tok.prefix_search.__self__),
-        "suffix": translate(tok.suffix_search.__self__),
-        "infix": translate(tok.infix_finditer.__self__),
-        "url_match": translate(tok.url_match.__self__),
+        "prefix": affix_rules(tok.prefix_search.__self__, "prefix"),
+        "suffix": affix_rules(tok.suffix_search.__self__, "suffix"),
+        "infix": affix_rules(tok.infix_finditer.__self__, "infix"),
+        "url_match": url_matcher(tok.url_match.__self__),
         "special_cases": cases,
         "special_phrases": phrases,
         "lexeme_norm": lexeme_norm,

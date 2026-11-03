@@ -189,3 +189,51 @@ fn parity_with_spacy() {
 fn preprocess_replaces_links() {
     assert_eq!(misaki_preprocess("  [Kokoro](/kˈOkəɹO/) is [a] (b) [c](d"), "Kokoro is [a] (b) [c](d");
 }
+
+#[derive(Deserialize)]
+struct PatternCase {
+    text: String,
+    prefix: usize,
+    suffix: usize,
+    infix: Vec<(usize, usize)>,
+    url: bool,
+}
+
+/// The prefix, suffix, infix and URL patterns on their own, against Python's results on random
+/// strings (`reference.py --patterns`).
+#[test]
+fn patterns_match_python() {
+    let nlp = Nlp::new();
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let out = std::env::var_os("KOKORO_REFERENCE_OUT")
+        .map_or_else(|| root.join("../../reference/out"), PathBuf::from)
+        .join("spacy-en");
+    let files: Vec<_> = jsonl_files(&root.join("tests/data"))
+        .into_iter()
+        .chain(jsonl_files(&out))
+        .filter(|p| p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("patterns")))
+        .collect();
+    assert!(!files.is_empty());
+    let mut failures = Vec::new();
+    let mut total = 0;
+    for path in files {
+        for line in std::fs::read_to_string(&path).unwrap().lines().filter(|l| !l.trim().is_empty()) {
+            let case: PatternCase = serde_json::from_str(line).unwrap();
+            total += 1;
+            let chars = |bytes: usize| case.text[..bytes].chars().count();
+            let m = nlp.pattern_matches(&case.text);
+            let suffix = m.suffix.map_or(0, |(a, b)| chars(b) - chars(a));
+            let infix: Vec<_> = m.infixes.into_iter().map(|(a, b)| (chars(a), chars(b))).collect();
+            let ours = (chars(m.prefix), suffix, infix, m.url);
+            let python = (case.prefix, case.suffix, case.infix.clone(), case.url);
+            if ours != python {
+                failures.push(format!("{:?}: ours {ours:?}, Python {python:?}", case.text));
+            }
+        }
+    }
+    for f in failures.iter().take(50) {
+        eprintln!("{f}");
+    }
+    eprintln!("patterns: {}/{total} strings match", total - failures.len());
+    assert!(failures.is_empty(), "{} mismatches", failures.len());
+}

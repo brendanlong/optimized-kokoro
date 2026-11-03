@@ -1,61 +1,31 @@
 //! spaCy's `Tokenizer.__call__` (spacy/tokenizer.pyx), with en_core_web_sm's rules.
 
+use crate::patterns::{Affix, Kind, RuleData, UrlData, UrlMatcher};
 use crate::unicode::CharSet;
 use serde::Deserialize;
 use std::collections::{BTreeSet, HashMap};
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct TokenizerData {
-    prefix: PatternData,
-    suffix: PatternData,
-    infix: PatternData,
-    url_match: PatternData,
+    prefix: Vec<RuleData>,
+    suffix: Vec<RuleData>,
+    infix: Vec<RuleData>,
+    url_match: UrlData,
     special_cases: HashMap<String, Vec<(String, Option<String>)>>,
     special_phrases: Vec<Vec<String>>,
 }
 
-#[derive(Debug, Deserialize)]
-struct PatternData {
-    pattern: String,
-    filter: String,
-}
-
-/// A Python regex, plus the same regex without lookarounds, which matches wherever it does (and
-/// more) and runs on the fast non-backtracking engine.
-struct Pattern {
-    full: fancy_regex::Regex,
-    filter: regex::Regex,
-}
-
-impl Pattern {
-    fn new(data: &PatternData) -> Self {
-        Pattern {
-            // Python's `re` has no backtracking limit; fancy-regex errors out past its default one.
-            full: fancy_regex::RegexBuilder::new(&data.pattern)
-                .backtrack_limit(usize::MAX)
-                .build()
-                .expect("exported pattern"),
-            filter: regex::Regex::new(&data.filter).expect("exported filter pattern"),
-        }
-    }
-
-    /// `re.search` from `pos`: the leftmost match.
-    fn find_from(&self, s: &str, pos: usize) -> Option<(usize, usize)> {
-        let candidate = self.filter.find_at(s, pos)?.start();
-        let m = self.full.find_from_pos(s, candidate).unwrap_or_else(|e| panic!("regex on {s:?}: {e}"));
-        m.map(|m| (m.start(), m.end()))
-    }
-
-    /// `re.finditer`, for a pattern that can't match the empty string.
-    fn find_iter<'s>(&'s self, s: &'s str) -> impl Iterator<Item = (usize, usize)> + 's {
-        let mut pos = 0;
-        std::iter::from_fn(move || {
-            let (start, end) = self.find_from(s, pos)?;
-            assert!(end > start, "empty match in {s:?}");
-            pos = end;
-            Some((start, end))
-        })
-    }
+/// What each pattern finds on a string, in bytes.
+#[derive(Debug, PartialEq, Eq)]
+pub struct PatternMatches {
+    /// `find_prefix`: the prefix's length, or 0.
+    pub prefix: usize,
+    /// `suffix_search`'s match.
+    pub suffix: Option<(usize, usize)>,
+    /// `infix_finditer`'s matches.
+    pub infixes: Vec<(usize, usize)>,
+    /// Whether `url_match` matches.
+    pub url: bool,
 }
 
 struct SpecialToken {
@@ -73,11 +43,13 @@ pub(crate) struct RawToken<'n> {
 }
 
 pub(crate) struct Tokenizer {
-    prefix: Pattern,
-    suffix: Pattern,
-    infix: Pattern,
-    url_match: Pattern,
+    prefix: Affix,
+    suffix: Affix,
+    infix: Affix,
+    url_match: UrlMatcher,
     specials: HashMap<Box<str>, Vec<SpecialToken>>,
+    /// The longest special case, in bytes; longer strings skip the lookup.
+    longest_special: usize,
     /// Special cases re-applied over token sequences, keyed by their first token's text.
     phrases: HashMap<Box<str>, Vec<Vec<Box<str>>>>,
     space: CharSet,
@@ -85,7 +57,7 @@ pub(crate) struct Tokenizer {
 
 impl Tokenizer {
     pub fn new(data: TokenizerData, space: CharSet) -> Self {
-        let specials = data
+        let specials: HashMap<Box<str>, Vec<SpecialToken>> = data
             .special_cases
             .into_iter()
             .map(|(chunk, tokens)| {
@@ -103,10 +75,11 @@ impl Tokenizer {
             phrases.entry(first).or_default().push(words.collect());
         }
         Tokenizer {
-            prefix: Pattern::new(&data.prefix),
-            suffix: Pattern::new(&data.suffix),
-            infix: Pattern::new(&data.infix),
-            url_match: Pattern::new(&data.url_match),
+            prefix: Affix::new(data.prefix, Kind::Prefix),
+            suffix: Affix::new(data.suffix, Kind::Suffix),
+            infix: Affix::new(data.infix, Kind::Infix),
+            url_match: UrlMatcher::new(data.url_match),
+            longest_special: specials.keys().map(|k| k.len()).max().unwrap_or(0),
             specials,
             phrases,
             space,
@@ -126,7 +99,10 @@ impl Tokenizer {
                     self.tokenize_span(text, start, i, &mut tokens);
                 }
                 if c == ' ' {
-                    tokens.last_mut().expect("a span precedes the space").space = true;
+                    // A span always precedes the space, and makes at least one token.
+                    if let Some(last) = tokens.last_mut() {
+                        last.space = true;
+                    }
                     start = i + 1;
                 } else {
                     start = i;
@@ -136,14 +112,23 @@ impl Tokenizer {
         }
         if start < text.len() {
             self.tokenize_span(text, start, text.len(), &mut tokens);
-            tokens.last_mut().unwrap().space = text.ends_with(' ') && !in_ws;
+            if let Some(last) = tokens.last_mut() {
+                last.space = text.ends_with(' ') && !in_ws;
+            }
         }
         self.apply_special_phrases(text, &mut tokens);
         tokens
     }
 
+    fn special(&self, chunk: &str) -> Option<&[SpecialToken]> {
+        if chunk.len() > self.longest_special {
+            return None;
+        }
+        self.specials.get(chunk).map(Vec::as_slice)
+    }
+
     fn push_special<'n>(&'n self, chunk: &str, mut at: usize, tokens: &mut Vec<RawToken<'n>>) -> bool {
-        let Some(special) = self.specials.get(chunk) else {
+        let Some(special) = self.special(chunk) else {
             return false;
         };
         for t in special {
@@ -166,18 +151,18 @@ impl Tokenizer {
         let mut suffixes = Vec::new();
         let mut last_size = 0;
         while a < b && b - a != last_size {
-            if self.specials.contains_key(&text[a..b]) {
+            if self.special(&text[a..b]).is_some() {
                 break;
             }
             last_size = b - a;
             let pre_len = self.find_prefix(&text[a..b]);
-            if pre_len != 0 && a + pre_len < b && self.specials.contains_key(&text[a + pre_len..b]) {
+            if pre_len != 0 && a + pre_len < b && self.special(&text[a + pre_len..b]).is_some() {
                 prefixes.push(lexeme(a, a + pre_len));
                 a += pre_len;
                 break;
             }
             let suf_len = self.find_suffix(&text[a + pre_len..b]);
-            if suf_len != 0 && a < b - suf_len && self.specials.contains_key(&text[a..b - suf_len]) {
+            if suf_len != 0 && a < b - suf_len && self.special(&text[a..b - suf_len]).is_some() {
                 suffixes.push(lexeme(b - suf_len, b));
                 b -= suf_len;
                 break;
@@ -198,11 +183,11 @@ impl Tokenizer {
         tokens.extend(prefixes);
         if a < b && !self.push_special(&text[a..b], a, tokens) {
             let string = &text[a..b];
-            if self.url_match.find_from(string, 0).is_some() {
+            if self.url_match.is_match(string, &self.space) {
                 tokens.push(lexeme(a, b));
             } else {
                 let mut start = 0;
-                for (m_start, m_end) in self.infix.find_iter(string) {
+                for (m_start, m_end) in self.infix.find_all(string) {
                     if m_start == 0 {
                         continue;
                     }
@@ -220,15 +205,21 @@ impl Tokenizer {
         tokens.extend(suffixes.into_iter().rev());
     }
 
+    pub fn pattern_matches(&self, s: &str) -> PatternMatches {
+        PatternMatches {
+            prefix: self.find_prefix(s),
+            suffix: self.suffix.suffix(s),
+            infixes: self.infix.find_all(s),
+            url: self.url_match.is_match(s, &self.space),
+        }
+    }
+
     fn find_prefix(&self, s: &str) -> usize {
-        self.prefix.find_from(s, 0).map_or(0, |(start, end)| end - start)
+        self.prefix.prefix_len(s)
     }
 
     fn find_suffix(&self, s: &str) -> usize {
-        self.suffix.find_from(s, 0).map_or(0, |(start, end)| {
-            debug_assert_eq!(end, s.len());
-            end - start
-        })
+        self.suffix.suffix(s).map_or(0, |(start, end)| end - start)
     }
 
     /// `_apply_special_cases`: the PhraseMatcher pass over special cases that contain affixes.
@@ -269,7 +260,9 @@ impl Tokenizer {
                     kept.next();
                     let (from, to) = (tokens[start].start, tokens[end - 1].end);
                     if self.push_special(&text[from..to], from, &mut out) {
-                        out.last_mut().unwrap().space = tokens[end - 1].space;
+                        if let Some(last) = out.last_mut() {
+                            last.space = tokens[end - 1].space;
+                        }
                     } else {
                         out.extend_from_slice(&tokens[start..end]);
                     }

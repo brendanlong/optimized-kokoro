@@ -5,6 +5,7 @@
 //! The model data in `data/` is exported from the installed package by `export.py`.
 
 mod hash;
+mod patterns;
 mod tagger;
 mod tokenizer;
 mod unicode;
@@ -12,6 +13,8 @@ mod unicode;
 use serde::Deserialize;
 use std::collections::HashMap;
 use tagger::{FEATURES, ModelMeta, Tagger};
+#[doc(hidden)]
+pub use tokenizer::PatternMatches;
 use tokenizer::{RawToken, Tokenizer, TokenizerData};
 use unicode::Unicode;
 
@@ -101,6 +104,13 @@ impl Nlp {
     pub fn tag_scores<'t>(&self, text: &'t str) -> Vec<(Token<'t>, Vec<f32>)> {
         let (raw, scores) = self.scores(text);
         raw.iter().zip(scores.chunks_exact(TAGS.len())).map(|(t, s)| (token(text, t, ""), s.to_vec())).collect()
+    }
+
+    /// What the tokenizer's prefix, suffix, infix and URL patterns find on `s`, for testing them
+    /// against Python's.
+    #[doc(hidden)]
+    pub fn pattern_matches(&self, s: &str) -> PatternMatches {
+        self.tokenizer.pattern_matches(s)
     }
 
     fn scores<'n>(&'n self, text: &str) -> (Vec<RawToken<'n>>, Vec<f32>) {

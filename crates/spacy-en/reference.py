@@ -6,9 +6,16 @@ Each input line is a JSON object with a "text" field (the corpus format, referen
 Each paragraph is recorded whole and line by line. With no inputs, writes the synthetic cases in
 tests/data/synthetic.jsonl: every tokenizer special case in a few contexts, plus edge cases.
 Output lines: {"text": ..., "tokens": [[text, tag, whitespace], ...]}.
+
+    reference/.cache/kfa/.venv/bin/python -I crates/spacy-en/reference.py --patterns OUT.jsonl [COUNT]
+
+writes random strings built from the pieces the tokenizer's patterns look for (tests/data/patterns.jsonl),
+adding what each pattern finds on the whole string: "prefix" and "suffix" lengths and "infix" spans
+in characters, and whether "url" matches.
 """
 
 import json
+import random
 import sys
 
 import spacy
@@ -84,6 +91,55 @@ def corpus(paths):
                     yield from (l for l in lines if l.strip())
 
 
+PIECES = (
+    list("abcxyzABCXYZ0123456789.,;:!?-_/+*^=<>~#@&%$()[]{}'\"`") + list("éßÆΣσςİΩж東京٣४°€£¥…—–’‘“”«»·")
+    + ["km", "kg", "mph", "'s", "’S", "US$", "°F", "°c", "--", "---", "...", "n't", "U.S.", "e.g.", ":)", " ", "\n",
+       "http://", "https://", "ftp://", "mailto:", "www.", ".com", ".org", ".co.uk", ".io", ".中国", "user:pw@", "a@",
+       "10.", "127.0.0.1", "192.168.1.1", "172.16.0.9", "172.32.0.9", "169.254.3.3", "8.8.8.8", "223.255.255.254",
+       "224.1.1.1", "1.2.3.4", ":8080", ":80", ":123456", "/path", "?q=1", "#frag", "x" * 63, "y" * 64, "z-", "-z"]
+)
+
+URL_PARTS = [
+    ["", "", "http://", "https://", "git+ssh://", "a://", "1x://", "xn--://"],
+    ["", "", "", "user@", "user:pass@", ":@", "a:b:c@", "@", "x@y@"],
+    ["example.com", "a.b.c.de", "例え.jp", "x.y", "foo_bar.com", "-a.com", "a-.com", "a.b-c.org", "www.ab.CD",
+     "10.0.0.1", "127.1.1.1", "192.168.0.1", "172.20.1.1", "172.15.1.1", "169.254.1.1", "8.8.8.8", "1.2.3.4",
+     "255.255.255.255", "223.1.1.254", "01.2.3.4", "1.2.3", "1.2.3.4.5", "٣.2.3.4", "a." * 3 + "com",
+     "l" + "a" * 62 + "b.com", "l" + "a" * 63 + "b.com", "x." + "q" * 63, "x." + "q" * 64],
+    ["", "", ":80", ":8080", ":1", ":123456", ":٣٤"],
+    ["", "", "/", "/a/b?c=d#e", "?", "#x", "/\n", "\n", "/ x"],
+]
+
+
+def random_strings(count):
+    rng = random.Random(0)
+    for i in range(count):
+        if i % 3 == 0:
+            yield "".join(rng.choice(part) for part in URL_PARTS)
+        else:
+            yield "".join(rng.choice(PIECES) for _ in range(rng.randint(1, 12)))
+
+
+def patterns(out, count):
+    nlp = spacy.load("en_core_web_sm", enable=["tok2vec", "tagger"])
+    tok = nlp.tokenizer
+    seen = set()
+    with open(out, "w", encoding="utf-8") as f:
+        for text in random_strings(count):
+            if text in seen:
+                continue
+            seen.add(text)
+            record = {
+                "text": text,
+                "tokens": [[t.text, t.tag_, t.whitespace_] for t in nlp(text)],
+                "prefix": tok.find_prefix(text),
+                "suffix": tok.find_suffix(text),
+                "infix": [[m.start(), m.end()] for m in tok.find_infix(text)],
+                "url": tok.url_match(text) is not None,
+            }
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
 def main(out, inputs):
     nlp = spacy.load("en_core_web_sm", enable=["tok2vec", "tagger"])
     texts = corpus(inputs) if inputs else synthetic(nlp)
@@ -98,4 +154,7 @@ def main(out, inputs):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1], sys.argv[2:])
+    if sys.argv[1] == "--patterns":
+        patterns(sys.argv[2], int(sys.argv[3]) if len(sys.argv) > 3 else 20000)
+    else:
+        main(sys.argv[1], sys.argv[2:])
