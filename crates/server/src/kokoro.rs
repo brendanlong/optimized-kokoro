@@ -7,6 +7,7 @@ use kokoro_text::Options;
 pub struct KokoroPipelines {
     american: kokoro_pipeline::Pipeline,
     british: kokoro_pipeline::Pipeline,
+    chinese: kokoro_pipeline::Pipeline,
     options: Options,
 }
 
@@ -15,6 +16,7 @@ impl KokoroPipelines {
         Ok(Self {
             american: kokoro_pipeline::Pipeline::new(Lang::AmericanEnglish)?,
             british: kokoro_pipeline::Pipeline::new(Lang::BritishEnglish)?,
+            chinese: kokoro_pipeline::Pipeline::new(Lang::Chinese)?,
             options: Options::default(),
         })
     }
@@ -25,6 +27,7 @@ impl Pipeline for KokoroPipelines {
         let pipeline = match lang {
             Lang::AmericanEnglish => &self.american,
             Lang::BritishEnglish => &self.british,
+            Lang::Chinese => &self.chinese,
         };
         Box::new(pipeline.chunks(text, &self.options).map(|chunk| {
             chunk
@@ -42,11 +45,20 @@ mod tests {
     fn reads_english_and_names_what_it_cant_read() {
         let pipelines = KokoroPipelines::load().unwrap();
         let chunks: Vec<_> =
-            pipelines.chunks(Lang::AmericanEnglish, "Hello there. [pause:0.5s] 東京 is big.").map(Result::unwrap).collect();
+            pipelines.chunks(Lang::AmericanEnglish, "Hello there. [pause:0.5s] 東京 is big. カナ too.").map(Result::unwrap).collect();
         assert_eq!(chunks[0].text, "Hello there.");
         assert!(!chunks[0].ids.is_empty() && chunks[0].ids.len() == chunks[0].phonemes.chars().count());
         assert_eq!(chunks[1].pause, Some(0.5));
-        assert_eq!((chunks[2].phonemes.as_str(), chunks[2].unread), ("ʧˌInˈiz tˈɛkst ɪz bˈɪɡ.", 1));
+        assert_eq!((chunks[2].phonemes.as_str(), chunks[2].unread), ("dˈʊŋʨˈiŋ ɪz bˈɪɡ.", 0));
+        assert_eq!((chunks[3].phonemes.as_str(), chunks[3].unread), ("ʤˌæpənˈiz tˈɛkst tˈu.", 1));
+    }
+
+    #[test]
+    fn chinese_voices_get_chinese_phonemes() {
+        let pipelines = KokoroPipelines::load().unwrap();
+        let chunks: Vec<_> = pipelines.chunks(Lang::Chinese, "银行行长在长城上。").map(Result::unwrap).collect();
+        assert_eq!(chunks[0].phonemes, "i↗nxa↗ŋxa↗ŋꭧa↓ŋ ʦai↘ ꭧʰa↗ŋꭧʰə↗ŋ ʂa↘ŋ.");
+        assert_eq!(chunks[0].ids.len(), chunks[0].phonemes.chars().count());
     }
 
     #[test]

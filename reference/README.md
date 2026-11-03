@@ -53,6 +53,21 @@ python3 request_cases.py 1 1500 > /tmp/cases.jsonl
 .cache/kfa/.venv/bin/python -I request_dump.py < /tmp/cases.jsonl > out/requests/seed-1.jsonl
 ```
 
+`crates/g2p-zh` (misaki's legacy Chinese G2P: jieba, pypinyin, cn2an) reads its dictionaries from files `gen_zh_data.py` converts from this venv, and is tested against `ZHG2P()` called directly on Wikipedia sentences, numbers, polyphones, rare characters and dictionary words (`zh_dump.py`; the committed `tests/cases.jsonl` is `--fixture`, and its parity test also reads `out/zh-g2p/*.jsonl`). `zh_mixed_cases.py` writes Chinese mixed with English, numbers and other scripts, in English and Chinese records, for `dump.py`; `fixtures/zh_mixed.out.jsonl` is seed 7's dump, which `crates/reference` reads with the hard cases. `zh_bench.py` times `ZHG2P` per sentence, and `KOKORO_BENCH_LANG=z pipeline_bench.py` the Chinese pipeline:
+
+```sh
+.cache/kfa/.venv/bin/python -I gen_zh_data.py ../crates/g2p-zh/data
+.cache/kfa/.venv/bin/python -I zh_dump.py --fixture > ../crates/g2p-zh/tests/cases.jsonl
+mkdir -p out/zh-g2p
+.cache/kfa/.venv/bin/python -I zh_dump.py 1 25000 corpus/wiki-zh.jsonl > out/zh-g2p/seed-1.jsonl
+python3 zh_mixed_cases.py 7 160 corpus/wiki-en.jsonl corpus/wiki-zh.jsonl > fixtures/zh_mixed.jsonl
+.cache/kfa/.venv/bin/python -I dump.py fixtures/zh_mixed.jsonl fixtures/zh_mixed.out.jsonl
+# Kana next to Han, words and joiners in English text: where "Japanese text" placeholders merge
+python3 kana_mixed_cases.py 3 120 corpus/wiki-en.jsonl > fixtures/kana_mixed.jsonl
+.cache/kfa/.venv/bin/python -I dump.py fixtures/kana_mixed.jsonl fixtures/kana_mixed.out.jsonl
+.cache/kfa/.venv/bin/python -I zh_bench.py corpus/wiki-zh.jsonl   # vs cargo run --release -p kokoro-g2p-zh --example bench -- corpus/wiki-zh.jsonl
+```
+
 ## C espeak-ng oracle
 
 `espeak-ng-oracle/` builds C espeak-ng 1.52.0 statically into small drivers, to test `crates/espeak-ng` (the Rust port of its text-to-phoneme engine) on any text, not just the calls the Python pipeline makes. It reads the same data as the venv. Nothing here ships.

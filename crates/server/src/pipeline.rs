@@ -9,7 +9,8 @@ use std::fmt;
 pub use kokoro_pipeline::Lang;
 
 /// The language a voice speaks, by Kokoro's convention that a voice name's first letter is its
-/// language code (`af_heart` is American English). Only English pipelines exist so far.
+/// language code (`af_heart` is American English, `zf_xiaobei` Chinese). Only English and Chinese
+/// pipelines exist so far.
 pub fn voice_lang(voice: &str) -> Option<Lang> {
     voice.get(..1).and_then(Lang::from_code)
 }
@@ -96,6 +97,7 @@ mod tests {
     fn a_voice_speaks_the_language_of_its_first_letter() {
         assert_eq!(voice_lang("af_heart"), Some(Lang::AmericanEnglish));
         assert_eq!(voice_lang("bm_george"), Some(Lang::BritishEnglish));
+        assert_eq!(voice_lang("zf_xiaobei"), Some(Lang::Chinese));
         assert_eq!(voice_lang("jf_alpha"), None);
         assert_eq!(voice_lang(""), None);
     }

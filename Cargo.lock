@@ -249,11 +249,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "kokoro-g2p-zh"
+version = "0.1.0"
+dependencies = [
+ "kokoro-text",
+ "rustc-hash",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "kokoro-pipeline"
 version = "0.1.0"
 dependencies = [
  "kokoro-espeak",
  "kokoro-g2p-en",
+ "kokoro-g2p-zh",
  "kokoro-reference",
  "kokoro-spacy-en",
  "kokoro-text",

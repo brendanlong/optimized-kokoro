@@ -13,12 +13,17 @@ fn pipeline() -> &'static Pipeline {
     PIPELINE.get_or_init(|| Pipeline::new(Lang::AmericanEnglish).unwrap())
 }
 
-fn time(text: &str) -> Duration {
+fn chinese() -> &'static Pipeline {
+    static PIPELINE: OnceLock<Pipeline> = OnceLock::new();
+    PIPELINE.get_or_init(|| Pipeline::new(Lang::Chinese).unwrap())
+}
+
+fn time(pipeline: &Pipeline, text: &str) -> Duration {
     let options = NormalizationOptions::default();
     (0..3)
         .map(|_| {
             let start = Instant::now();
-            pipeline().chunks(text, &options).for_each(drop);
+            pipeline.chunks(text, &options).for_each(drop);
             start.elapsed()
         })
         .min()
@@ -28,14 +33,14 @@ fn time(text: &str) -> Duration {
 /// Times `make(n)` and `make(4n)`, growing `n` until the small input takes long enough to measure
 /// and is long enough that both are past the chunk limit, where a sentence is phonemized a second
 /// time to cut it at clauses.
-fn check(name: &str, make: impl Fn(usize) -> String) -> Option<String> {
+fn check(pipeline: &Pipeline, name: &str, make: impl Fn(usize) -> String) -> Option<String> {
     let mut n = 16;
-    let mut small = time(&make(n));
+    let mut small = time(pipeline, &make(n));
     while (small < Duration::from_millis(3) || make(n).len() < 1500) && n < 1 << 16 {
         n *= 2;
-        small = time(&make(n));
+        small = time(pipeline, &make(n));
     }
-    let big = time(&make(4 * n));
+    let big = time(pipeline, &make(4 * n));
     let ratio = big.as_secs_f64() / small.as_secs_f64();
     let bytes = make(n).len();
     println!("{name:34} {bytes:>7} bytes {small:>9.2?}  ×4 {big:>9.2?}  ratio {ratio:.1}");
@@ -71,9 +76,12 @@ fn grows_linearly() {
         ("Korean", Box::new(|n| "안녕하세요 ".repeat(n))),
         ("links and runs", Box::new(|n| "[a](/b/) Привет ".repeat(n))),
         ("unclosed links", Box::new(|n| "[Привет](".repeat(n))),
-        ("Han run (placeholder)", Box::new(|n| "東京".repeat(n))),
-        ("Han sentences (placeholder)", Box::new(|n| "東. ".repeat(n))),
-        ("Han words (one placeholder)", Box::new(|n| "東 ".repeat(n))),
+        ("Han run", Box::new(|n| "東京".repeat(n))),
+        ("Han sentences", Box::new(|n| "東. ".repeat(n))),
+        ("Han words", Box::new(|n| "東 ".repeat(n))),
+        ("unreadable Han (one placeholder)", Box::new(|n| "兙".repeat(n))),
+        ("Han and unreadable Han", Box::new(|n| "東兙".repeat(n))),
+        ("kana words (one placeholder)", Box::new(|n| "カナ ".repeat(n))),
         ("Thai words (one placeholder)", Box::new(|n| "สวัสดี ".repeat(n))),
         ("Thai with zero-width spaces", Box::new(|n| "สวัสดี\u{200b}".repeat(n))),
         ("Latin and Thai alternating", Box::new(|n| "aส".repeat(n))),
@@ -84,6 +92,30 @@ fn grows_linearly() {
         ("pause tags", Box::new(|n| "[pause:0.1s] a ".repeat(n))),
         ("blank lines", Box::new(|n| "a\n\n".repeat(n))),
     ];
-    let slow: Vec<String> = shapes.iter().filter_map(|(name, make)| check(name, make)).collect();
+    let slow: Vec<String> = shapes.iter().filter_map(|(name, make)| check(pipeline(), name, make)).collect();
+    assert!(slow.is_empty(), "{}", slow.join("\n"));
+}
+
+#[test]
+#[cfg_attr(debug_assertions, ignore = "timing test; run with --release")]
+fn chinese_grows_linearly() {
+    chinese();
+    let shapes: Vec<Shape> = vec![
+        ("sentences", Box::new(|n| "我们今天去北京。".repeat(n))),
+        ("one sentence, no punctuation", Box::new(|n| format!("{}。", "银行行长".repeat(n)))),
+        ("one sentence of clauses", Box::new(|n| format!("{}。", "银行，".repeat(n)))),
+        ("a repeated character", Box::new(|n| "的".repeat(n))),
+        ("numbers", Box::new(|n| "12，".repeat(n))),
+        ("a long number", Box::new(|n| "1".repeat(n))),
+        ("dates", Box::new(|n| "2024年3月5日。".repeat(n))),
+        ("Latin words", Box::new(|n| "hello 你好 ".repeat(n))),
+        ("Latin and Han alternating", Box::new(|n| "a中".repeat(n))),
+        ("kana (placeholder)", Box::new(|n| "カナ中".repeat(n))),
+        ("Russian and Han", Box::new(|n| "Привет中".repeat(n))),
+        ("Thai and Han", Box::new(|n| "สวัสดี中".repeat(n))),
+        ("CJK punctuation", Box::new(|n| "中《》（）".repeat(n))),
+        ("links", Box::new(|n| "[中](/a/)".repeat(n))),
+    ];
+    let slow: Vec<String> = shapes.iter().filter_map(|(name, make)| check(chinese(), name, make)).collect();
     assert!(slow.is_empty(), "{}", slow.join("\n"));
 }

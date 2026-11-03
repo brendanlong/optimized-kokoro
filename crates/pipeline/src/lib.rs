@@ -1,5 +1,5 @@
 //! Text in, Kokoro phoneme chunks out: the deployed Kokoro-FastAPI's `smart_split` for English
-//! (`lang` a and b), end to end.
+//! (`lang` a and b) and Chinese (`lang` z), end to end.
 //!
 //! [`Pipeline::chunks`] runs the text crate's tags, normalization, sentence splitting and chunking,
 //! with Kokoro-FastAPI's `phonemize` as the G2P: kokoro's `KPipeline.en_g2p_tokens` (runs of other
@@ -7,13 +7,15 @@
 //! espeak for unknown words) and `tokens_to_ps`. Each chunk's phonemes are then mapped to
 //! Kokoro-82M's input ids, dropping what the vocabulary lacks as `KModel` does.
 //!
-//! Chinese and Japanese have no G2P yet, so unless one is supplied with
-//! [`Pipeline::with_foreign_g2p`], a Han or kana run is read as "Chinese text" or "Japanese text";
-//! so is a run of any script espeak has no voice for, by the script's name ("Thai text").
-//! [`Chunk::unread`] counts them. `docs/divergences.md` lists every intentional difference from
+//! Han runs are read by misaki's Chinese G2P ([`kokoro_g2p_zh`]), in every pipeline. Japanese has
+//! no G2P yet, so unless one is supplied with [`Pipeline::with_foreign_g2p`], a kana run is read as
+//! "Japanese text"; so is a run of any script espeak has no voice for, by the script's name ("Thai
+//! text"), and a Han character pypinyin has no reading for ("Chinese text"). [`Chunk::unread`]
+//! counts them. The Chinese pipeline is in `chinese.rs`. `docs/divergences.md` lists every intentional difference from
 //! the reference.
 #![forbid(unsafe_code)]
 
+mod chinese;
 pub mod foreign;
 mod tables;
 mod vocab;
@@ -31,6 +33,12 @@ pub use kokoro_g2p_en::Token;
 pub use kokoro_text::{DEFAULT_MAX_TOKENS, Limits, Options as NormalizationOptions};
 pub use vocab::id;
 
+/// Whether this process has loaded misaki's Chinese G2P yet: only Han text or a Chinese request
+/// loads it.
+pub fn chinese_g2p_loaded() -> bool {
+    chinese::loaded()
+}
+
 /// The Kokoro pipelines this crate covers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Lang {
@@ -38,6 +46,8 @@ pub enum Lang {
     AmericanEnglish,
     /// `b`
     BritishEnglish,
+    /// `z`: Mandarin Chinese.
+    Chinese,
 }
 
 impl Lang {
@@ -46,6 +56,7 @@ impl Lang {
         match self {
             Lang::AmericanEnglish => "a",
             Lang::BritishEnglish => "b",
+            Lang::Chinese => "z",
         }
     }
 
@@ -53,6 +64,7 @@ impl Lang {
         match code {
             "a" => Some(Lang::AmericanEnglish),
             "b" => Some(Lang::BritishEnglish),
+            "z" => Some(Lang::Chinese),
             _ => None,
         }
     }
@@ -155,7 +167,8 @@ pub struct Pipeline {
 }
 
 impl Pipeline {
-    /// Loads the pipeline with the bundled espeak-ng data.
+    /// Loads the pipeline with the bundled espeak-ng data. misaki's Chinese G2P is loaded on the
+    /// first Han character or Chinese request (see [`chinese_g2p_loaded`]), once per process.
     pub fn new(lang: Lang) -> Result<Pipeline, Error> {
         Self::with_espeak_data(lang, kokoro_espeak::default_data()?)
     }
@@ -165,19 +178,22 @@ impl Pipeline {
         for voice in foreign::espeak_voices() {
             EspeakG2P::with_data(espeak_voice(voice, lang), espeak.clone())?;
         }
+        let mut foreign: HashMap<Language, Box<dyn ForeignG2p>> = HashMap::new();
+        foreign.insert(Language::Chinese, Box::new(chinese::Chinese));
         Ok(Pipeline {
             lang,
             nlp: Nlp::new(),
             g2p: G2p::new(lang.british()),
             espeak,
-            foreign: HashMap::new(),
+            foreign,
             placeholders: (0..2 + Script::COUNT).map(|_| OnceLock::new()).collect(),
             limits: Limits::default(),
             max_tokens: DEFAULT_MAX_TOKENS,
         })
     }
 
-    /// Reads `language`'s runs with `g2p` instead of as "<name> text" (or instead of espeak).
+    /// Reads `language`'s runs with `g2p` instead of as "<name> text" (or instead of espeak, or the
+    /// bundled Chinese G2P, which the Chinese pipeline also reads its own text with).
     pub fn with_foreign_g2p(mut self, language: Language, g2p: Box<dyn ForeignG2p>) -> Self {
         self.foreign.insert(language, g2p);
         self
@@ -387,6 +403,9 @@ impl<'p> Request<'p> {
     /// on either side. So is a run its G2P reads as nothing, outside `foreign.py`'s scripts (where
     /// the reference reads it as nothing too).
     fn phonemize(&mut self, text: &str) -> Result<Phonemes, Error> {
+        if self.pipeline.lang == Lang::Chinese {
+            return self.chinese(text);
+        }
         let graphemes = foreign::translate_cjk_punctuation(text);
         let mut tokens: Vec<Token> = Vec::new();
         let mut placeholders = Vec::new();
@@ -446,6 +465,7 @@ impl<'p> Request<'p> {
         let index = match language {
             Language::Chinese => 0,
             Language::Japanese => 1,
+            Language::English => unreachable!("English runs always have a G2P"),
             Language::Script(script) | Language::Unread(script) => 2 + script as usize,
         };
         let cell = &self.pipeline.placeholders[index];

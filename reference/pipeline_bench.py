@@ -4,6 +4,8 @@
 Usage (from reference/, after ./setup.sh):
     .cache/kfa/.venv/bin/python -I pipeline_bench.py FILE [REPEAT]      # FILE as one request
     .cache/kfa/.venv/bin/python -I pipeline_bench.py --dump out/wiki-en.jsonl  # each English record
+
+KOKORO_BENCH_LANG=z (or b) times another pipeline, and --dump takes that language's records.
 """
 
 import asyncio
@@ -28,21 +30,23 @@ logger.remove()
 from api.src.services.text_processing import text_processor as tp  # noqa: E402
 from api.src.structures.schemas import NormalizationOptions  # noqa: E402
 
+LANG = os.environ.get("KOKORO_BENCH_LANG", "a")
+
 
 async def run(text):
     chunks = 0
-    async for _text, phonemes, _pause in tp.smart_split(text, lang_code="a", normalization_options=NormalizationOptions()):
+    async for _text, phonemes, _pause in tp.smart_split(text, lang_code=LANG, normalization_options=NormalizationOptions()):
         chunks += phonemes is not None
     return chunks
 
 
 async def main():
-    await run("Warm up the lexicon and espeak data, Mr. Qzxv.")
+    await run("Warm up the lexicon and espeak data, Mr. Qzxv. 银行行长。")
     if sys.argv[1] == "--dump":
         texts = []
         for path in sys.argv[2:]:
             with open(path) as f:
-                texts += [r["text"] for r in map(json.loads, f) if r["lang"] == "a"]
+                texts += [r["text"] for r in map(json.loads, f) if r["lang"] == LANG]
         repeat = 1
     else:
         with open(sys.argv[1]) as f:
