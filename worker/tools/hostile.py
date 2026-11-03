@@ -241,9 +241,11 @@ for i in range(300):
     p = bytearray(rng.choice(base))
     for _ in range(rng.randint(1, 4)):
         op = rng.random()
-        if op < 0.5 and len(p) > 4:
+        if not p:
+            p.append(rng.randrange(256))
+        elif op < 0.5 and len(p) > 4:
             p[rng.randrange(4, len(p))] = rng.randrange(256)
-        elif op < 0.75 and p:
+        elif op < 0.75:
             p[rng.randrange(len(p))] = rng.randrange(256)
         elif op < 0.9:
             del p[rng.randrange(len(p)):]
