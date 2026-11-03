@@ -119,3 +119,55 @@ fn chinese_grows_linearly() {
     let slow: Vec<String> = shapes.iter().filter_map(|(name, make)| check(chinese(), name, make)).collect();
     assert!(slow.is_empty(), "{}", slow.join("\n"));
 }
+
+#[test]
+#[cfg_attr(debug_assertions, ignore = "timing test; run with --release")]
+fn espeak_languages_grow_linearly() {
+    let mut slow = Vec::new();
+    for (lang, word, sentence) in [
+        (Lang::Spanish, "palabra", "El gato está en la casa. "),
+        (Lang::French, "mot", "Le chat est dans la maison. "),
+        (Lang::Hindi, "शब्द", "बिल्ली घर में है। "),
+        (Lang::Italian, "parola", "Il gatto è nella casa. "),
+        (Lang::BrazilianPortuguese, "palavra", "O gato está na casa. "),
+    ] {
+        let pipeline = Pipeline::new(lang).unwrap();
+        let shapes: Vec<Shape> = vec![
+            ("sentences", Box::new(move |n| sentence.repeat(n))),
+            ("one sentence, no punctuation", Box::new(move |n| format!("{}fin.", format!("{word} ").repeat(n)))),
+            ("one sentence of clauses", Box::new(move |n| format!("{}fin.", format!("{word}, ").repeat(n)))),
+            ("one long word", Box::new(|n| "a".repeat(n))),
+            ("one long native word", Box::new(move |n| word.repeat(n))),
+            ("a long number", Box::new(|n| "1".repeat(n))),
+            ("numbers", Box::new(|n| "1.234,5 y 6 ".repeat(n))),
+            ("dotted letters", Box::new(|n| "a.b.".repeat(n))),
+            ("parentheses", Box::new(move |n| format!("({word}) ").repeat(n))),
+            ("angle quotes", Box::new(move |n| format!("«{word}» ").repeat(n))),
+            ("marks", Box::new(|n| format!("a{}", "\u{301}".repeat(n)))),
+            ("hyphens", Box::new(move |n| format!("{word}-").repeat(n))),
+            ("CJK full stops", Box::new(move |n| format!("{word}。").repeat(n))),
+            ("CJK commas", Box::new(move |n| format!("{word}，").repeat(n))),
+            ("English words", Box::new(|n| "hello world ".repeat(n))),
+            ("Latin and Devanagari alternating", Box::new(|n| "aश".repeat(n))),
+            ("Russian run", Box::new(|n| "Привет ".repeat(n))),
+            ("native and Russian alternating", Box::new(move |n| format!("{word}Б").repeat(n))),
+            ("Greek words", Box::new(|n| "λόγος ".repeat(n))),
+            ("short Greek", Box::new(|n| "αβ ".repeat(n))),
+            ("Hebrew with points", Box::new(|n| "שָׁלוֹם ".repeat(n))),
+            ("Han run", Box::new(|n| "東京".repeat(n))),
+            ("Han and native alternating", Box::new(move |n| format!("{word}中").repeat(n))),
+            ("unreadable Han (one placeholder)", Box::new(|n| "兙".repeat(n))),
+            ("kana words", Box::new(|n| "カナ ".repeat(n))),
+            ("Thai words (one placeholder)", Box::new(|n| "สวัสดี ".repeat(n))),
+            ("native and Thai alternating", Box::new(move |n| format!("{word}ส").repeat(n))),
+            ("zero-width spaces", Box::new(move |n| format!("{word}\u{200b}").repeat(n))),
+            ("links", Box::new(|n| "[a](/b/) ".repeat(n))),
+            ("unclosed links", Box::new(|n| "[a](".repeat(n))),
+            ("blank lines", Box::new(move |n| format!("{word}\n\n").repeat(n))),
+        ];
+        for (name, make) in &shapes {
+            slow.extend(check(&pipeline, &format!("{} {name}", lang.code()), make));
+        }
+    }
+    assert!(slow.is_empty(), "{}", slow.join("\n"));
+}

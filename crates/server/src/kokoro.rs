@@ -5,33 +5,21 @@ use kokoro_pipeline::Error;
 use kokoro_text::Options;
 
 pub struct KokoroPipelines {
-    american: kokoro_pipeline::Pipeline,
-    british: kokoro_pipeline::Pipeline,
-    chinese: kokoro_pipeline::Pipeline,
-    japanese: kokoro_pipeline::Pipeline,
+    /// One per [`Lang::ALL`]. They share spaCy, misaki's lexicons and espeak's data.
+    pipelines: Vec<kokoro_pipeline::Pipeline>,
     options: Options,
 }
 
 impl KokoroPipelines {
     pub fn load() -> Result<Self, Error> {
-        Ok(Self {
-            american: kokoro_pipeline::Pipeline::new(Lang::AmericanEnglish)?,
-            british: kokoro_pipeline::Pipeline::new(Lang::BritishEnglish)?,
-            chinese: kokoro_pipeline::Pipeline::new(Lang::Chinese)?,
-            japanese: kokoro_pipeline::Pipeline::new(Lang::Japanese)?,
-            options: Options::default(),
-        })
+        let pipelines = Lang::ALL.into_iter().map(kokoro_pipeline::Pipeline::new).collect::<Result<_, _>>()?;
+        Ok(Self { pipelines, options: Options::default() })
     }
 }
 
 impl Pipeline for KokoroPipelines {
     fn chunks<'a>(&'a self, lang: Lang, text: &'a str) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
-        let pipeline = match lang {
-            Lang::AmericanEnglish => &self.american,
-            Lang::BritishEnglish => &self.british,
-            Lang::Chinese => &self.chinese,
-            Lang::Japanese => &self.japanese,
-        };
+        let pipeline = self.pipelines.iter().find(|p| p.lang() == lang).expect("a pipeline for every language");
         Box::new(pipeline.chunks(text, &self.options).map(|chunk| {
             chunk
                 .map(|c| Chunk { text: c.text, phonemes: c.phonemes, ids: c.ids, pause: c.pause, unread: c.unread })
@@ -75,6 +63,22 @@ mod tests {
         assert_eq!((chunk.phonemes.as_str(), chunk.unread), ("toːkʲoː e ikʲimasɨ", 0));
         let chunk = pipelines.chunks(Lang::AmericanEnglish, "She said こんにちは.").next().unwrap().unwrap();
         assert_eq!((chunk.phonemes.as_str(), chunk.unread), ("ʃˌi sˈɛd koɲɲiʨiβa.", 0));
+    }
+
+    #[test]
+    fn espeak_voices_get_their_languages_phonemes() {
+        let pipelines = KokoroPipelines::load().unwrap();
+        for (lang, text, phonemes) in [
+            (Lang::Spanish, "Hola, mundo.", "ˈola, mˈundo."),
+            (Lang::French, "Bonjour le monde.", "bɔ̃ʒˈuʁ lə mˈɔ̃d."),
+            (Lang::Hindi, "नमस्ते दुनिया, hello.", "nəmˈʌsteː dˈʊnɪjˌaː, həlˈO."),
+            (Lang::Italian, "Ciao mondo.", "ʧˈao mˈondo."),
+            (Lang::BrazilianPortuguese, "Olá, mundo.", "olˈa, mˈu\u{303}ŋdʊ."),
+        ] {
+            let chunk = pipelines.chunks(lang, text).next().unwrap().unwrap();
+            assert_eq!((chunk.phonemes.as_str(), chunk.unread), (phonemes, 0), "{lang:?}");
+            assert_eq!(chunk.ids.len(), chunk.phonemes.chars().count(), "{lang:?}");
+        }
     }
 
     #[test]

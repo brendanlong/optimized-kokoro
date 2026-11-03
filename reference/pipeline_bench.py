@@ -30,6 +30,9 @@ logger.remove()
 from api.src.services.text_processing import text_processor as tp  # noqa: E402
 from api.src.structures.schemas import NormalizationOptions  # noqa: E402
 
+# The server's import configures its own log handler; logging every chunk isn't G2P time.
+logger.remove()
+
 LANG = os.environ.get("KOKORO_BENCH_LANG", "a")
 
 

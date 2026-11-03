@@ -230,25 +230,39 @@ fn links(text: &str) -> Vec<(usize, usize)> {
     LINK.find_iter(text).map(|m| (m.start(), m.end())).collect()
 }
 
+/// The pipeline a text is split in: what `ForeignScripts` takes as its own language.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Native {
+    /// `lang` a and b: Latin runs are the pipeline's own.
+    English,
+    /// `lang` z: Han runs without kana are its own, Latin runs [`Language::English`].
+    Chinese,
+    /// `lang` j: every Han and kana run is its own, Latin runs [`Language::English`].
+    Japanese,
+    /// An espeak language (`lang` e, f, h, i and p) written in this script (`NATIVE_SCRIPTS`):
+    /// runs of the script are its own, Latin runs (in Hindi) [`Language::English`], and Han and
+    /// kana runs Chinese and Japanese as in the English pipelines.
+    Espeak(Script),
+}
+
 /// `ForeignScripts.split` in an English pipeline: `(segment, language)` pairs covering `text`,
 /// where `None` is English. `reads` says whether the Chinese G2P has a reading for a Han
 /// character: the reference leaves those pypinyin can't read (some radicals, Japanese-only
 /// kanji) to the English G2P, which here reads them as [`Language::Unread`]`(Han)`. `ー` outside
 /// kana stays English.
 pub fn split(text: &str, reads: impl Fn(char) -> bool) -> Vec<(&str, Option<Language>)> {
-    split_in(text, None, reads)
+    split_in(text, Native::English, reads)
 }
 
 /// `ForeignScripts.split` in the Chinese pipeline: Han runs without kana are its own (`None`),
 /// whatever pypinyin reads, and Latin runs are [`Language::English`].
 pub fn split_chinese(text: &str) -> Vec<(&str, Option<Language>)> {
-    split_in(text, Some(Language::Chinese), |_| true)
+    split_in(text, Native::Chinese, |_| true)
 }
 
-/// `ForeignScripts.split` in the pipeline of `native` (`None` for English): in the Japanese
-/// pipeline every Han and kana run is its own, in the Chinese one every Han run without kana, and
-/// in both Latin runs are [`Language::English`].
-pub fn split_in(text: &str, native: Option<Language>, reads: impl Fn(char) -> bool) -> Vec<(&str, Option<Language>)> {
+/// `ForeignScripts.split` in the pipeline of `native`, where `None` is the pipeline's own
+/// language; `reads` is as for [`split`], in the pipelines that split Han runs out.
+pub fn split_in(text: &str, native: Native, reads: impl Fn(char) -> bool) -> Vec<(&str, Option<Language>)> {
     let mut segments = Vec::new();
     let mut last = 0;
     let mut push = |start: usize, end: usize, language: Language| {
@@ -269,10 +283,11 @@ pub fn split_in(text: &str, native: Option<Language>, reads: impl Fn(char) -> bo
         }
         let run_text = &text[run.start..run.end];
         let language = match run.script {
-            None if native == Some(Language::Japanese) => continue,
-            Some(Script::Latin) if native.is_some() => Language::English,
+            None if native == Native::Japanese => continue,
+            Some(script) if native == Native::Espeak(script) => continue,
+            Some(Script::Latin) if native != Native::English => Language::English,
             None if run_text.chars().any(is_kana) => Language::Japanese,
-            None if native == Some(Language::Chinese) => continue,
+            None if native == Native::Chinese => continue,
             None => {
                 let language = |c: char| match script(c) {
                     _ if c == '、' => Some(Language::Chinese),
@@ -334,9 +349,16 @@ pub fn prepare(segment: &str, language: Language) -> std::borrow::Cow<'_, str> {
     }
 }
 
-/// The rest of `ForeignScripts.phonemize`: stripped, with sounds Kokoro has no phoneme for
-/// mapped to the nearest one, and Mandarin tones and unaspirated stops made English.
+/// The rest of `ForeignScripts.phonemize` in an English pipeline: stripped, with sounds Kokoro
+/// has no phoneme for mapped to the nearest one, and Mandarin tones and unaspirated stops made
+/// English.
 pub fn finish(phonemes: &str, language: Language) -> String {
+    finish_in(phonemes, language, true)
+}
+
+/// [`finish`] in an English pipeline or another: outside English, Mandarin tones still become
+/// stress marks, but its stops stay as they are (`if self.language == 'en'`).
+pub fn finish_in(phonemes: &str, language: Language, english: bool) -> String {
     let ps: String = py::strip(phonemes)
         .chars()
         .map(|c| match c {
@@ -345,12 +367,13 @@ pub fn finish(phonemes: &str, language: Language) -> String {
             c => c,
         })
         .collect();
-    if language == Language::Chinese { english_mandarin(&ps) } else { ps }
+    if language == Language::Chinese { mandarin(&ps, english) } else { ps }
 }
 
-/// `MANDARIN_TONE.sub(r'ˈ\1', ps)` then `MANDARIN_UNASPIRATED` and `ʰ` removal: each syllable's
-/// tone arrow becomes a stress mark before its vowels, and p/t/k without `ʰ` become b/d/ɡ.
-fn english_mandarin(ps: &str) -> String {
+/// `MANDARIN_TONE.sub(r'ˈ\1', ps)`, then in English `MANDARIN_UNASPIRATED` and `ʰ` removal:
+/// each syllable's tone arrow becomes a stress mark before its vowels, and p/t/k without `ʰ`
+/// become b/d/ɡ.
+fn mandarin(ps: &str, english: bool) -> String {
     const VOWELS: &str = "aeiouyɛəɤɨʊɚɔmnŋ";
     let chars: Vec<char> = ps.chars().collect();
     let mut toned = String::with_capacity(ps.len() + 8);
@@ -371,6 +394,9 @@ fn english_mandarin(ps: &str) -> String {
             toned.push(chars[i]);
             i += 1;
         }
+    }
+    if !english {
+        return toned;
     }
     let chars: Vec<char> = toned.chars().collect();
     let mut out = String::with_capacity(toned.len());
@@ -512,6 +538,19 @@ mod tests {
     }
 
     #[test]
+    fn espeak_languages_keep_their_own_script() {
+        let shape = |text, script| -> Vec<(&str, Option<&str>)> {
+            split_in(text, Native::Espeak(script), |c| c != '兙').into_iter().map(|(s, l)| (s, l.map(Language::code))).collect()
+        };
+        assert_eq!(
+            shape("Dijo नमस्ते y 北京 o 兙.", Script::Latin),
+            [("Dijo ", None), ("नमस्ते", Some("hi")), (" y ", None), ("北京", Some("zh")), (" o ", None), ("兙", Some("Han")), (".", None)]
+        );
+        assert_eq!(shape("वह New York गया", Script::Devanagari), [("वह ", None), ("New York", Some("en")), (" गया", None)]);
+        assert_eq!(shape("Привет मित्र カナ", Script::Devanagari), [("Привет", Some("ru")), (" मित्र ", None), ("カナ", Some("ja"))]);
+    }
+
+    #[test]
     fn links_are_the_english_g2ps() {
         assert_eq!(shape("Go to [东京](/tˈOkjO/) or [Ελλάδα](/ɛlˈɑdə/) now."), [("Go to [东京](/tˈOkjO/) or [Ελλάδα](/ɛlˈɑdə/) now.", None)]);
         assert_eq!(shape("[a](/b/) Привет"), [("[a](/b/) ", None), ("Привет", Some("ru"))]);
@@ -523,6 +562,7 @@ mod tests {
         assert_eq!(finish("pei↓ʨiŋ→", Chinese), "bˈeiʨˈiŋ");
         assert_eq!(finish("tʰa→ n↗", Chinese), "tˈa ˈn");
         assert_eq!(finish("pei↓", Language::Script(Script::Cyrillic)), "pei↓");
+        assert_eq!(finish_in("pei↓ʨʰiŋ→", Chinese, false), "pˈeiʨʰˈiŋ");
     }
 
     #[test]

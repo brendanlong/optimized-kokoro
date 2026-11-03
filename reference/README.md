@@ -62,6 +62,17 @@ Whole requests (pauses, model ids, word spans) on generated and fuzzed text, fro
 mkdir -p out/requests
 python3 request_cases.py 1 1500 > /tmp/cases.jsonl
 .cache/kfa/.venv/bin/python -I request_dump.py < /tmp/cases.jsonl > out/requests/seed-1.jsonl
+# The same kinds of text through the espeak pipelines; tests/requests_espeak.jsonl is its first 80
+python3 request_cases.py 2 1500 efhip > /tmp/cases.jsonl
+.cache/kfa/.venv/bin/python -I request_dump.py < /tmp/cases.jsonl > out/requests/efhip-2.jsonl
+```
+
+The espeak pipelines (`lang` e, f, h, i, p) are tested against the es/fr/hi/it/pt Wikipedia dumps and against generated text mixing each language with English, Devanagari, Han, kana, the other scripts, CJK punctuation, parentheses and links (`crates/pipeline/tests/espeak_languages.rs`; the committed `tests/espeak_mixed.jsonl` is seed 1, 100 lines). `KOKORO_BENCH_LANG=e` (or f, h, i, p) times them in both benchmarks:
+
+```sh
+python3 espeak_mixed_cases.py 2 5000 corpus/wiki-en.jsonl corpus/wiki-{es,fr,hi,it,pt}.jsonl > /tmp/espeak_mixed.jsonl
+.cache/kfa/.venv/bin/python -I dump.py /tmp/espeak_mixed.jsonl out/mixed-espeak-2.jsonl
+KOKORO_BENCH_LANG=f .cache/kfa/.venv/bin/python -I pipeline_bench.py --dump out/wiki-fr.jsonl
 ```
 
 `crates/g2p-zh` (misaki's legacy Chinese G2P: jieba, pypinyin, cn2an) reads its dictionaries from files `gen_zh_data.py` converts from this venv, and is tested against `ZHG2P()` called directly on Wikipedia sentences, numbers, polyphones, rare characters and dictionary words (`zh_dump.py`; the committed `tests/cases.jsonl` is `--fixture`, and its parity test also reads `out/zh-g2p/*.jsonl`). `zh_mixed_cases.py` writes Chinese mixed with English, numbers and other scripts, in English and Chinese records, for `dump.py`; `fixtures/zh_mixed.out.jsonl` is seed 7's dump, which `crates/reference` reads with the hard cases. `zh_bench.py` times `ZHG2P` per sentence, and `KOKORO_BENCH_LANG=z pipeline_bench.py` the Chinese pipeline:

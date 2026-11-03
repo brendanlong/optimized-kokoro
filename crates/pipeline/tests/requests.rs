@@ -3,8 +3,9 @@
 //! `reference/request_cases.py` (corpus words mixed with foreign runs, phoneme links, punctuation,
 //! pause tags, long clause chains, and character fuzz) and `reference/request_dump.py`:
 //! `tests/requests.jsonl` (the first 300 of seed 1, then links with blank phonemes at a chunk's
-//! start and end, before a pause and at a clause cut), plus `reference/out/requests/*.jsonl` (or
-//! under `$KOKORO_REFERENCE_OUT`).
+//! start and end, before a pause and at a clause cut), `tests/requests_espeak.jsonl` (the first 80
+//! of `request_cases.py 2 1500 efhip`: the same kinds of text through the espeak pipelines), plus
+//! `reference/out/requests/*.jsonl` (or under `$KOKORO_REFERENCE_OUT`).
 //!
 //! When the reference fails a request, the port yields `Err` for that sentence and carries on
 //! (docs/divergences.md), so only the chunks before the failure are compared, and the port must
@@ -15,6 +16,11 @@
 //! and compared on text and phonemes, without the flags, unless the shorter phonemes packed the
 //! clauses into different chunks. Requests with letters of scripts `foreign.py` leaves to the
 //! English G2P, which the port reads with espeak or as "<script> text", aren't compared.
+//!
+//! In [`STATE_DEPENDENT`] requests, C espeak-ng read an English word in French text (`read`,
+//! `learned`, `underground`) differently because of an earlier call in the same process, which
+//! the port doesn't let happen (docs/divergences.md, "espeak-ng: state between calls"). They are
+//! counted apart, and must still be chunked the same, with as many words in each chunk.
 
 use kokoro_pipeline::foreign::{Script, script};
 use kokoro_pipeline::{Lang, NormalizationOptions, Pipeline};
@@ -41,7 +47,7 @@ enum Expected {
 fn cases() -> Vec<Case> {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let out = std::env::var_os("KOKORO_REFERENCE_OUT").map_or_else(|| root.join("../../reference/out"), PathBuf::from);
-    let mut paths = vec![root.join("tests/requests.jsonl")];
+    let mut paths = vec![root.join("tests/requests.jsonl"), root.join("tests/requests_espeak.jsonl")];
     if let Ok(entries) = std::fs::read_dir(out.join("requests")) {
         let mut extra: Vec<_> = entries
             .filter_map(|e| e.ok().map(|e| e.path()))
@@ -50,6 +56,7 @@ fn cases() -> Vec<Case> {
         extra.sort();
         paths.extend(extra);
     }
+    let mut seen = std::collections::HashSet::new();
     paths
         .iter()
         .flat_map(|path| {
@@ -59,8 +66,25 @@ fn cases() -> Vec<Case> {
                 .map(|l| serde_json::from_str(l).unwrap_or_else(|e| panic!("{}: {e}", path.display())))
                 .collect::<Vec<Case>>()
         })
+        // The committed fixtures are the start of the dumps in `out/requests`: each request once.
+        .filter(|case| seen.insert(case.id.clone()))
         .collect()
 }
+
+/// Requests of `request_cases.py 2 1500 efhip` whose reference phonemes depend on espeak state an
+/// earlier call left. Checked with `reference/espeak-ng-oracle/oracle.py pairs`: C from fresh state
+/// gives the port's phonemes, and with `--history`, after the phonemizer piece before it (`was
+/// featured`, then `read`), the reference's.
+const STATE_DEPENDENT: [&str; 8] = [
+    "efhip-2-51",
+    "efhip-2-145",
+    "efhip-2-286",
+    "efhip-2-875",
+    "efhip-2-1195",
+    "efhip-2-1206",
+    "efhip-2-1210",
+    "efhip-2-1454",
+];
 
 fn uses_new_script(text: &str) -> bool {
     use Script::*;
@@ -71,18 +95,17 @@ fn uses_new_script(text: &str) -> bool {
 
 #[test]
 fn requests_match_the_reference() {
-    let american = Pipeline::new(Lang::AmericanEnglish).unwrap();
-    let british = Pipeline::new(Lang::BritishEnglish).unwrap();
+    let pipelines: Vec<Pipeline> = Lang::ALL.into_iter().map(|l| Pipeline::new(l).unwrap()).collect();
     let options = NormalizationOptions::default();
     let cases = cases();
     let mut failures = Vec::new();
-    let (mut flagged, mut rechunked, mut new_script) = (0, 0, 0);
+    let (mut flagged, mut rechunked, mut new_script, mut stateful) = (0, 0, 0, 0);
     for case in &cases {
         if uses_new_script(&case.text) {
             new_script += 1;
             continue;
         }
-        let pipeline = if case.lang == "b" { &british } else { &american };
+        let pipeline = pipelines.iter().find(|p| p.lang().code() == case.lang).expect("a pipeline language");
         let mut actual = Vec::new();
         for chunk in pipeline.chunks(&case.text, &options) {
             actual.push(match chunk {
@@ -106,6 +129,36 @@ fn requests_match_the_reference() {
         };
         if error.is_some() {
             expected.pop();
+        }
+        if STATE_DEPENDENT.contains(&case.id.as_str()) {
+            assert!(error.is_none() && expected.len() == actual.len(), "{}", case.id);
+            let mut changed = 0;
+            for (e, a) in expected.iter().zip(&actual) {
+                match (e, a) {
+                    (
+                        Expected::Speech { text, phonemes, dropped, words, .. },
+                        Expected::Speech { text: t, phonemes: p, dropped: d, words: w, .. },
+                    ) => {
+                        // Everything but the phonemes of the words the carried-over state changed
+                        // (and the ids and word positions after them).
+                        assert_eq!((text, dropped), (t, d), "{}", case.id);
+                        let (ew, aw): (Vec<&str>, Vec<&str>) = (phonemes.split(' ').collect(), p.split(' ').collect());
+                        assert_eq!(ew.len(), aw.len(), "{}", case.id);
+                        let differ = ew.iter().zip(&aw).filter(|(x, y)| x != y).count();
+                        assert!(differ <= 1, "{}: {differ} words differ in {text:?}", case.id);
+                        changed += differ;
+                        let names = |ws: &[(String, usize, usize)]| ws.iter().map(|w| w.0.clone()).collect::<Vec<_>>();
+                        assert_eq!(names(words), names(w), "{}", case.id);
+                        if differ == 0 {
+                            assert_eq!(*e, a, "{}", case.id);
+                        }
+                    }
+                    _ => assert_eq!(*e, a, "{}", case.id),
+                }
+            }
+            assert!(changed > 0, "{} now matches: take it off STATE_DEPENDENT", case.id);
+            stateful += 1;
+            continue;
         }
         let flags = expected.iter().any(|e| matches!(e, Expected::Speech { phonemes, .. } if without_language_flags(phonemes).is_some()));
         let texts = |chunks: &mut dyn Iterator<Item = &Expected>| -> Vec<String> {
@@ -141,10 +194,11 @@ fn requests_match_the_reference() {
             ));
         }
     }
-    let compared = cases.len() - new_script - rechunked;
+    let compared = cases.len() - new_script - rechunked - stateful;
     println!(
         "{} of {compared} requests match ({flagged} of them once espeak's language-switch flags are dropped from the reference's); \
-         not compared: {rechunked} chunked differently without the flags, {new_script} with other scripts",
+         not compared: {rechunked} chunked differently without the flags, {new_script} with other scripts, \
+         {stateful} where the reference's espeak read a word by an earlier call's state",
         compared - failures.len(),
     );
     for f in failures.iter().take(10) {

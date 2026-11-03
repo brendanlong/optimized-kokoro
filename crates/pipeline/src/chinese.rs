@@ -77,7 +77,7 @@ impl Request<'_> {
             ps.push_str(p);
             previous = segment;
         }
-        Ok(Phonemes { phonemes: py::strip(&ps).to_owned(), tokens: Vec::new(), unread })
+        Ok(Phonemes { phonemes: py::strip(&ps).to_owned(), tokens: None, unread })
     }
 
     fn native_chinese(&self, segment: &str) -> Result<String, Error> {
