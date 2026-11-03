@@ -301,7 +301,8 @@ pub fn word_to_string2(word: i32) -> Vec<u8> {
     out
 }
 
-/// `atoi` on the bytes at `b[i]`.
+/// glibc's `atoi` on the bytes at `b[i]`: `(int)strtol(s, NULL, 10)`, which saturates at the
+/// 64-bit `long` limits and then keeps the low 32 bits.
 pub fn atoi(b: &[u8], mut i: isize) -> i32 {
     while c_isspace(sat(b, i)) {
         i += 1;
@@ -313,10 +314,14 @@ pub fn atoi(b: &[u8], mut i: isize) -> i32 {
     }
     let mut v: i64 = 0;
     while at(b, i).is_ascii_digit() {
-        v = (v * 10 + (at(b, i) - b'0') as i64).min(i64::from(u32::MAX) * 4);
+        let d = (at(b, i) - b'0') as i64;
+        v = if neg {
+            v.saturating_mul(10).saturating_sub(d)
+        } else {
+            v.saturating_mul(10).saturating_add(d)
+        };
         i += 1;
     }
-    let v = if neg { -v } else { v };
     v as i32
 }
 
@@ -342,5 +347,11 @@ mod tests {
         assert_eq!(&b, b"xab\0");
         assert_eq!(cstr(&b, 0), b"xab");
         assert_eq!(atoi(b"  42x", 0), 42);
+        assert_eq!(atoi(b"-42", 0), -42);
+        // Values past i32 keep their low 32 bits; past i64 they saturate first.
+        assert_eq!(atoi(b"220256541512", 0), 220256541512i64 as i32);
+        assert_eq!(atoi(b"20000000000", 0), 20000000000i64 as i32);
+        assert_eq!(atoi(b"99999999999999999999", 0), i64::MAX as i32);
+        assert_eq!(atoi(b"-99999999999999999999", 0), i64::MIN as i32);
     }
 }
