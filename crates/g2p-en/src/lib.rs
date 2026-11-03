@@ -16,6 +16,8 @@ use lexicon::{LexToken, Lexicon, TokenContext, currency_units, is_consonant, is_
 use std::fmt;
 
 pub use subtokenize::subtokenize;
+/// Python's `str.isalpha` for one character.
+pub use text::is_alpha;
 
 /// A token from spaCy: `(token.text, token.tag_, token.whitespace_)`.
 #[derive(Debug, Clone, PartialEq, Eq)]

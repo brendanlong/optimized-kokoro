@@ -3,7 +3,8 @@
 //! `cargo run --release -p kokoro-pipeline --example bench -- [FILE|-] [REPEAT]`: with a file, times
 //! it as one request (`-` reads stdin). `--dump DUMP...` times each American English record of
 //! those reference dumps as a request; with no arguments, every one `kokoro_reference::all` finds.
-//! `reference/pipeline_bench.py` times the reference the same way.
+//! `reference/pipeline_bench.py` times the reference the same way. `KOKORO_BENCH_LANG=z` (or `b`)
+//! times another pipeline, and takes that language's records.
 
 use kokoro_pipeline::{Lang, NormalizationOptions, Pipeline};
 use std::io::Read;
@@ -12,9 +13,11 @@ use std::time::Instant;
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let start = Instant::now();
-    let pipeline = Pipeline::new(Lang::AmericanEnglish).unwrap();
+    let code = std::env::var("KOKORO_BENCH_LANG").unwrap_or_else(|_| "a".into());
+    let lang = Lang::from_code(&code).expect("a pipeline language");
+    let pipeline = Pipeline::new(lang).unwrap();
     let options = NormalizationOptions::default();
-    pipeline.chunks("Warm up the lexicon and espeak data, Mr. Qzxv.", &options).for_each(drop);
+    pipeline.chunks("Warm up the lexicon and espeak data, Mr. Qzxv. 银行行长。", &options).for_each(drop);
     eprintln!("load {:.2?}", start.elapsed());
     let texts: Vec<String> = match args.first().map(String::as_str) {
         Some("-") => {
@@ -25,11 +28,11 @@ fn main() {
         Some("--dump") => args[1..]
             .iter()
             .flat_map(kokoro_reference::read)
-            .filter(|r| r.lang == "a")
+            .filter(|r| r.lang == code)
             .map(|r| r.text)
             .collect(),
         Some(path) => vec![std::fs::read_to_string(path).unwrap()],
-        None => kokoro_reference::all().into_iter().filter(|r| r.lang == "a").map(|r| r.text).collect(),
+        None => kokoro_reference::all().into_iter().filter(|r| r.lang == code).map(|r| r.text).collect(),
     };
     let repeat: usize = match args.first().map(String::as_str) {
         Some("--dump") => 1,

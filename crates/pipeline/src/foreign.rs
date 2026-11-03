@@ -20,6 +20,8 @@ use std::sync::LazyLock;
 pub enum Language {
     Chinese,
     Japanese,
+    /// Latin runs in a pipeline of another language (Chinese), read by misaki's English G2P.
+    English,
     /// A run of another script, read by espeak with the voice for the script ([`espeak_voice`]).
     Script(Script),
     /// Letters of a script espeak has no voice for, or that its voice for the script doesn't read.
@@ -33,6 +35,7 @@ impl Language {
         match self {
             Language::Chinese => "zh",
             Language::Japanese => "ja",
+            Language::English => "en",
             Language::Script(script) => espeak_voice(script).expect("a voiced script"),
             Language::Unread(script) => script.name(),
         }
@@ -52,6 +55,9 @@ impl Language {
         match self {
             Language::Chinese => "Chinese",
             Language::Japanese => "Japanese",
+            Language::English => "English",
+            // Han characters pypinyin has no reading for.
+            Language::Unread(Script::Han) => "Chinese",
             Language::Script(script) | Language::Unread(script) => script.name(),
         }
     }
@@ -226,8 +232,19 @@ fn links(text: &str) -> Vec<(usize, usize)> {
 /// `ForeignScripts.split` in an English pipeline: `(segment, language)` pairs covering `text`,
 /// where `None` is English. `reads` says whether the Chinese G2P has a reading for a Han
 /// character: the reference leaves those pypinyin can't read (some radicals, Japanese-only
-/// kanji), and `ー` outside kana, to the English G2P.
+/// kanji) to the English G2P, which here reads them as [`Language::Unread`]`(Han)`. `ー` outside
+/// kana stays English.
 pub fn split(text: &str, reads: impl Fn(char) -> bool) -> Vec<(&str, Option<Language>)> {
+    split_in(text, reads, false)
+}
+
+/// `ForeignScripts.split` in the Chinese pipeline: Han runs without kana are its own (`None`),
+/// whatever pypinyin reads, and Latin runs are [`Language::English`].
+pub fn split_chinese(text: &str) -> Vec<(&str, Option<Language>)> {
+    split_in(text, |_| true, true)
+}
+
+fn split_in(text: &str, reads: impl Fn(char) -> bool, chinese: bool) -> Vec<(&str, Option<Language>)> {
     let mut segments = Vec::new();
     let mut last = 0;
     let mut push = |start: usize, end: usize, language: Language| {
@@ -249,22 +266,29 @@ pub fn split(text: &str, reads: impl Fn(char) -> bool) -> Vec<(&str, Option<Lang
         let run_text = &text[run.start..run.end];
         let language = match run.script {
             None if run_text.chars().any(is_kana) => Language::Japanese,
+            None if chinese => continue,
             None => {
-                let readable = |c: char| c == '、' || (script(c) == Some(Script::Han) && reads(c));
+                let language = |c: char| match script(c) {
+                    _ if c == '、' => Some(Language::Chinese),
+                    Some(Script::Han) if reads(c) => Some(Language::Chinese),
+                    Some(Script::Han) => Some(Language::Unread(Script::Han)),
+                    _ => None,
+                };
                 let mut start = run.start;
                 let mut chars = run_text.char_indices().peekable();
                 while let Some((i, c)) = chars.next() {
-                    let r = readable(c);
-                    if chars.peek().is_none_or(|&(_, next)| readable(next) != r) {
+                    let l = language(c);
+                    if chars.peek().is_none_or(|&(_, next)| language(next) != l) {
                         let end = run.start + i + c.len_utf8();
-                        if r {
-                            push(start, end, Language::Chinese);
+                        if let Some(l) = l {
+                            push(start, end, l);
                         }
                         start = end;
                     }
                 }
                 continue;
             }
+            Some(Script::Latin) if chinese => Language::English,
             Some(Script::Latin) => continue,
             Some(script) if in_foreign_py(script) => Language::Script(script),
             Some(_) if !run_text.chars().any(char::is_alphanumeric) => continue,
@@ -476,7 +500,8 @@ mod tests {
         assert_eq!(shape("他说 我们走吧、明天见"), [("他说", Some("zh")), (" ", None), ("我们走吧、明天见", Some("zh"))]);
         assert_eq!(shape("東京へ行く"), [("東京へ行く", Some("ja"))]);
         assert_eq!(shape("ーabc"), [("ーabc", None)]);
-        assert_eq!(shape("我兙你"), [("我", Some("zh")), ("兙", None), ("你", Some("zh"))]);
+        assert_eq!(shape("我兙你"), [("我", Some("zh")), ("兙", Some("Han")), ("你", Some("zh"))]);
+        assert_eq!(Language::Unread(Script::Han).name(), "Chinese");
         assert_eq!(shape("ー東ーー京"), [("ー", None), ("東", Some("zh")), ("ーー", None), ("京", Some("zh"))]);
         assert_eq!(shape("、东"), [("、", None), ("东", Some("zh"))]);
     }

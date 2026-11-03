@@ -101,12 +101,11 @@ fn a_foreign_run_is_one_token_per_word() {
 #[test]
 fn runs_without_a_g2p_are_read_as_their_name() {
     for (text, expected) in [
-        ("The Chinese word 你好 means hello.", "ðə ʧˌInˈiz wˈɜɹd ʧˌInˈiz tˈɛkst mˈinz həlˈO."),
         ("東京へ行く", "ʤˌæpənˈiz tˈɛkst"),
-        ("你好 世界", "ʧˌInˈiz tˈɛkst"),
+        ("カナ カナ", "ʤˌæpənˈiz tˈɛkst"),
         ("He wrote 兙 on the board.", "hˌi ɹˈOt ʧˌInˈiz tˈɛkst ˌɔn ðə bˈɔɹd."),
-        ("The word你好means hello.", "ðə wˈɜɹd ʧˌInˈiz tˈɛkst mˈinz həlˈO."),
-        ("Wake Station (和気駅, Wake-eki).", "wˈAk stˈAʃən (ʧˌInˈiz tˈɛkst, wˈAkˈɛki)."),
+        ("The wordカナmeans hello.", "ðə wˈɜɹd ʤˌæpənˈiz tˈɛkst mˈinz həlˈO."),
+        ("Wake Station (わけ駅, Wake-eki).", "wˈAk stˈAʃən (ʤˌæpənˈiz tˈɛkst, wˈAkˈɛki)."),
         ("Thai สวัสดี ครับ is hello.", "tˈI tˈI tˈɛkst ɪz həlˈO."),
         ("Mongolian ᠮᠣᠩᠭᠣᠯ script.", "mɑŋɡˈOljən mɑŋɡˈOljən tˈɛkst skɹˈɪpt."),
     ] {
@@ -116,9 +115,9 @@ fn runs_without_a_g2p_are_read_as_their_name() {
 
 #[test]
 fn a_placeholder_is_one_word_holding_the_run() {
-    let (_, tokens) = pipeline().phonemize("Say 你好 世界 now").unwrap();
+    let (_, tokens) = pipeline().phonemize("Say カナ カナ now").unwrap();
     let texts: Vec<&str> = tokens.iter().map(|t| t.text.as_str()).collect();
-    assert_eq!(texts, ["Say", "你好 世界", "", "now"]);
+    assert_eq!(texts, ["Say", "カナ カナ", "", "now"]);
 }
 
 #[test]
@@ -148,9 +147,10 @@ fn invisible_characters_neither_split_nor_fuse_placeholders() {
     for (text, expected) in [
         ("Thai \u{e2a}\u{e27}\u{e31}\u{e2a}\u{e14}\u{e35}\u{200b}\u{e04}\u{e23}\u{e31}\u{e1a}\u{200b}\u{e1c}\u{e21} is hello.", "tˈI tˈI tˈɛkst ɪz həlˈO."),
         ("\u{e2a}\u{e27}\u{e31}\u{e2a}\u{ad}\u{e14}\u{e35}", "tˈI tˈɛkst"),
-        ("你好\u{200b}世界", "ʧˌInˈiz tˈɛkst"),
-        ("你好\u{200e}世界", "ʧˌInˈiz tˈɛkst"),
-        ("東京\u{200d}へ", "ʧˌInˈiz tˈɛkst ʤˌæpənˈiz tˈɛkst"),
+        ("カナ\u{200b}カナ", "ʤˌæpənˈiz tˈɛkst"),
+        ("カナ\u{200e}カナ", "ʤˌæpənˈiz tˈɛkst"),
+        ("兙\u{200b}兙", "ʧˌInˈiz tˈɛkst"),
+        ("東京\u{200d}へ", "dˈʊŋʨˈiŋ ʤˌæpənˈiz tˈɛkst"),
         ("Привет\u{200b}สวัสดี", "prʲivʲˈet tˈI tˈɛkst"),
         ("a\u{301}สวัสดี", "ˈæ tˈI tˈɛkst"),
         ("สวัสดี\u{200b}hello", "tˈI tˈɛkst həlˈO"),
@@ -236,6 +236,16 @@ fn with_chinese() -> Pipeline {
 }
 
 #[test]
+fn han_is_read_by_misakis_chinese_g2p() {
+    for (text, expected) in [
+        ("He saw 北京 today.", "hˌi sˈɔ bˈeiʨˈiŋ tədˈA."),
+        ("The bank's 银行行长 said 你好.", "ðə bˈæŋks ˈinxˈaŋxˈaŋꭧˈaŋ sˈɛd ˈnixˈau."),
+    ] {
+        assert_eq!(phonemize(text), expected, "{text}");
+    }
+}
+
+#[test]
 fn han_uses_a_supplied_chinese_g2p() {
     let pipeline = with_chinese();
     let ps = pipeline.phonemize("他说：“我们走吧，明天见。”").unwrap().0;
@@ -250,10 +260,10 @@ fn chinese_tones_become_stress_for_english_voices() {
 }
 
 #[test]
-fn han_without_mandarin_reading_goes_to_english() {
+fn han_without_mandarin_reading_is_chinese_text() {
     let (ps, tokens) = with_chinese().phonemize("我兙你").unwrap();
     assert_eq!(tokens.iter().filter(|t| t.text == "我" || t.text == "你").count(), 2, "{tokens:?}");
-    assert!(ps.starts_with("ˈniʧˈInizl") && ps.ends_with("ˈni"), "{ps}");
+    assert_eq!(ps, "ˈni ʧˌInˈiz tˈɛkst ˈni");
 }
 
 fn speech(chunks: &[Result<Chunk, Error>]) -> Vec<Result<&str, String>> {
@@ -273,7 +283,7 @@ fn placeholders_are_counted_and_a_sentence_of_one_is_spoken() {
     let chunks: Vec<_> = pipeline().chunks("Hello there. 東京。 [pause:0.5s] ありがとう, Goodbye 你好. สวัสดี", &options).collect();
     assert_eq!(speech(&chunks), [Ok("Hello there."), Ok("東京."), Ok("<pause>"), Ok("ありがとう, Goodbye 你好."), Ok("สวัสดี")]);
     let unread: Vec<usize> = chunks.iter().map(|c| c.as_ref().unwrap().unread).collect();
-    assert_eq!(unread, [0, 1, 0, 2, 1]);
+    assert_eq!(unread, [0, 0, 0, 1, 1]);
 }
 
 #[test]

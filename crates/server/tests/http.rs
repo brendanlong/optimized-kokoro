@@ -34,8 +34,9 @@ async fn health_and_voices_follow_the_worker() {
     let voices = request(server.addr, get("/v1/audio/voices", Some(KEY))).await;
     // Only the voices whose language the server speaks: the worker also has `jf_alpha`.
     assert!(VOICES.contains(&"jf_alpha"));
-    let english: Vec<_> = VOICES.iter().filter(|v| v.starts_with(['a', 'b'])).collect();
-    assert_eq!(json_body(voices).await, json!({ "voices": english }));
+    let spoken: Vec<_> = VOICES.iter().filter(|v| v.starts_with(['a', 'b', 'z'])).collect();
+    assert!(spoken.contains(&&"zf_xiaobei"));
+    assert_eq!(json_body(voices).await, json!({ "voices": spoken }));
     assert_eq!(request(server.addr, get("/v1/audio/voices", None)).await.status(), 401);
     assert_eq!(request(server.addr, get("/v1/audio/voices", Some("nope"))).await.status(), 401);
     assert_eq!(request(server.addr, get("/v1/audio/voices", Some("other-key"))).await.status(), 200);
@@ -497,6 +498,30 @@ async fn pipeline_failures_fail_the_response() {
         server.worker.connected().await;
         assert_eq!(speak(server.addr, pcm("First part.")).await.status(), 500, "panic: {panic}");
     }
+}
+
+#[tokio::test]
+async fn speaks_chinese_with_a_chinese_voice() {
+    let pipelines = Arc::new(kokoro_server::kokoro::KokoroPipelines::load().unwrap());
+    let server = start(|_| {}, pipelines.clone()).await;
+    let mut worker = ScriptedWorker::listen(&server.socket, worker_side::hello(&hello()));
+    server.worker.connected().await;
+    let text = "银行行长在长城上。他说：“你好，世界！”";
+    let mut body = pcm(text);
+    body["voice"] = json!("zf_xiaobei");
+    let client = tokio::spawn(speak(server.addr, body));
+    let chunks: Vec<_> = pipelines.chunks(Lang::Chinese, text).map(Result::unwrap).collect();
+    assert_eq!(chunks.len(), 2);
+    let voice = VOICES.iter().position(|&v| v == "zf_xiaobei").unwrap() as u16;
+    let mut expected = Vec::new();
+    for chunk in &chunks {
+        let (id, _, _, v, ids) = worker.synthesize().await;
+        assert_eq!((v, &ids), (voice, &chunk.ids));
+        worker.send(respond(id, &ids));
+        expected.extend(expected_chunk(&ids));
+    }
+    let response = client.await.unwrap();
+    assert_eq!(samples(&body_bytes(response).await.unwrap()), expected);
 }
 
 #[tokio::test]
