@@ -87,20 +87,32 @@ impl<'a> SafeTensors<'a> {
         SafeTensors { tensors, data }
     }
 
-    fn shape(&self, name: &str) -> Option<&[usize]> {
-        self.tensors.get(name).map(|t| t.shape.as_slice())
+    fn has(&self, name: &str) -> bool {
+        self.tensors.contains_key(name)
     }
 
-    /// The `F32` tensor `name`, which must have shape `shape`.
+    /// Dimension `axis` of the `rank`-dimensional tensor `name`, which must be at least 1.
+    fn dim(&self, name: &str, rank: usize, axis: usize) -> usize {
+        let t = self.tensors.get(name).unwrap_or_else(|| panic!("{name}: missing"));
+        assert_eq!(t.shape.len(), rank, "{name}: shape {:?}", t.shape);
+        assert!(t.shape[axis] > 0, "{name}: shape {:?} has an empty dimension", t.shape);
+        t.shape[axis]
+    }
+
+    /// The `F32` tensor `name`, which must have shape `shape` (every dimension at least 1) and
+    /// only finite values.
     fn tensor(&self, name: &str, shape: &[usize]) -> Vec<f32> {
         let t = self.tensors.get(name).unwrap_or_else(|| panic!("{name}: missing"));
         assert_eq!(t.dtype, "F32", "{name}");
         assert_eq!(t.shape, shape, "{name}");
+        assert!(shape.iter().all(|&d| d > 0), "{name}: shape {shape:?} has an empty dimension");
         let (start, end) = t.data_offsets;
         let bytes = self.data.get(start..end).unwrap_or_else(|| panic!("{name}: data {start}..{end} out of bounds"));
         let elements = shape.iter().try_fold(1usize, |n, &d| n.checked_mul(d));
         assert_eq!(elements.and_then(|n| n.checked_mul(4)), Some(bytes.len()), "{name}: data size");
-        bytes.chunks_exact(4).map(|b| f32::from_le_bytes(b.try_into().unwrap())).collect()
+        let values: Vec<f32> = bytes.chunks_exact(4).map(|b| f32::from_le_bytes(b.try_into().unwrap())).collect();
+        assert!(values.iter().all(|v| v.is_finite()), "{name}: a weight isn't finite");
+        values
     }
 }
 
@@ -211,8 +223,10 @@ impl Tagger {
         assert_eq!(meta.embed_columns, (0..FEATURES.len()).collect::<Vec<_>>(), "embedding columns");
         assert_eq!((meta.window, meta.pieces), (1, PIECES), "encoder shape");
         let st = SafeTensors::parse(weights);
-        let width = st.shape("mix.G").expect("mix.G")[0];
-        let n_mix_in = width * meta.embed_seeds.len();
+        assert!(n_tags > 0 && !meta.embed_seeds.is_empty(), "no tags or no embeddings");
+        let width = st.dim("mix.G", 1, 0);
+        let n_mix_in = width.checked_mul(meta.embed_seeds.len()).expect("mix width");
+        width.checked_mul(PIECES * 3).expect("layer width");
         let mix_w = st.tensor("mix.W", &[width * PIECES, n_mix_in]);
         let embeds = meta
             .embed_seeds
@@ -220,15 +234,17 @@ impl Tagger {
             .enumerate()
             .map(|(i, &seed)| {
                 let name = format!("embed.{i}.E");
-                let rows = st.shape(&name).expect("embedding")[0];
+                let rows = st.dim(&name, 2, 0);
+                rows.checked_mul(width * PIECES).expect("embedding size");
+                let rows_u32 = u32::try_from(rows).expect("embedding rows");
                 let table = st.tensor(&name, &[rows, width]);
                 let mut projected = vec![0f32; rows * width * PIECES];
                 matmul_bt(&table, &mix_w[i * width..], n_mix_in, &mut projected, rows, width, width * PIECES);
-                Embed { projected, rows: rows as u32, seed }
+                Embed { projected, rows: rows_u32, seed }
             })
             .collect();
         let encode: Vec<_> = (0..)
-            .map_while(|i| st.shape(&format!("encode.{i}.W")).is_some().then_some(i))
+            .map_while(|i| st.has(&format!("encode.{i}.W")).then_some(i))
             .map(|i| Conv {
                 w: Packed::new(
                     &st.tensor(&format!("encode.{i}.W"), &[width * PIECES, width * 3]),
@@ -321,6 +337,60 @@ pub(crate) fn argmax(xs: &[f32]) -> usize {
 #[cfg(test)]
 mod tests {
     use super::matmul_bt;
+
+    /// The bundled weights with tensor `name`'s header entry changed by `edit`.
+    fn edited_weights(name: &str, edit: impl FnOnce(&mut serde_json::Value)) -> Vec<u8> {
+        let bytes: &[u8] = include_bytes!("../data/tagger.safetensors");
+        let len = u64::from_le_bytes(bytes[..8].try_into().unwrap()) as usize;
+        let mut header: serde_json::Value = serde_json::from_slice(&bytes[8..8 + len]).unwrap();
+        edit(&mut header[name]);
+        let header = serde_json::to_vec(&header).unwrap();
+        let mut out = (header.len() as u64).to_le_bytes().to_vec();
+        out.extend_from_slice(&header);
+        out.extend_from_slice(&bytes[8 + len..]);
+        out
+    }
+
+    fn load(weights: &[u8]) {
+        crate::Nlp::from_data(include_bytes!("../data/tokenizer.json"), weights);
+    }
+
+    #[test]
+    fn the_bundled_weights_load() {
+        load(&edited_weights("mix.G", |_| {}));
+    }
+
+    #[test]
+    #[should_panic(expected = "empty dimension")]
+    fn an_empty_embedding_is_refused_at_load() {
+        load(&edited_weights("embed.0.E", |t| {
+            let start = t["data_offsets"][0].clone();
+            t["shape"] = serde_json::json!([0, 96]);
+            t["data_offsets"] = serde_json::json!([start, start]);
+        }));
+    }
+
+    #[test]
+    #[should_panic(expected = "mix.G: shape [0] has an empty dimension")]
+    fn an_empty_layer_norm_is_refused_at_load() {
+        load(&edited_weights("mix.G", |t| {
+            let start = t["data_offsets"][0].clone();
+            t["shape"] = serde_json::json!([0]);
+            t["data_offsets"] = serde_json::json!([start, start]);
+        }));
+    }
+
+    #[test]
+    #[should_panic(expected = "isn't finite")]
+    fn non_finite_weights_are_refused_at_load() {
+        let bytes: &[u8] = include_bytes!("../data/tagger.safetensors");
+        let len = u64::from_le_bytes(bytes[..8].try_into().unwrap()) as usize;
+        let header: serde_json::Value = serde_json::from_slice(&bytes[8..8 + len]).unwrap();
+        let at = 8 + len + header["tagger.b"]["data_offsets"][0].as_u64().unwrap() as usize;
+        let mut weights = bytes.to_vec();
+        weights[at..at + 4].copy_from_slice(&f32::NAN.to_le_bytes());
+        load(&weights);
+    }
 
     /// A deterministic spread of values in [-1, 1).
     fn values(n: usize, seed: u32) -> Vec<f32> {
