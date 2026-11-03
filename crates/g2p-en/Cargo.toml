@@ -1,0 +1,23 @@
+[package]
+name = "kokoro-g2p-en"
+version = "0.1.0"
+description = "Port of misaki's English G2P (as kokoro uses it) to Rust"
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+regex = "1"
+rustc-hash = "2"
+serde.workspace = true
+serde_json.workspace = true
+unicode-normalization = "0.1"
+
+[dev-dependencies]
+kokoro-reference = { path = "../reference" }
+
+[[bench]]
+name = "g2p"
+harness = false
