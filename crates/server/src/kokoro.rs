@@ -41,7 +41,7 @@ impl Pipeline for KokoroPipelines {
             return Box::new(std::iter::once(Err(PipelineError::Failed(format!("no pipeline for {lang:?}")))));
         };
         Box::new(pipeline.chunks(text, options).map(|chunk| match chunk {
-            Ok(c) => Ok(Chunk { text: c.text, phonemes: c.phonemes, ids: c.ids, pause: c.pause.map(f64::from) }),
+            Ok(c) => Ok(Chunk { text: c.text, phonemes: c.phonemes, ids: c.ids, pause: c.pause }),
             Err(e @ Error::Unsupported { .. }) => Err(PipelineError::Unsupported(e.to_string())),
             Err(e) => Err(PipelineError::Failed(e.to_string())),
         }))
