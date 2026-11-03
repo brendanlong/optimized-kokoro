@@ -3,7 +3,10 @@ runs, phoneme links, punctuation, pause tags and odd spacing, long sentences of 
 character-level fuzz. Written by the PR #9 review (Opus) and kept here.
 
 Usage (from reference/, after fetch_corpus.py):
-    python3 request_cases.py SEED N > cases.jsonl
+    python3 request_cases.py SEED N [LANGS] > cases.jsonl
+
+LANGS (default "ab") are the pipeline codes to pick from; "efhip" sends the same text through the
+espeak pipelines.
 """
 
 import json
@@ -14,6 +17,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 seed, n = int(sys.argv[1]), int(sys.argv[2])
+langs = sys.argv[3] if len(sys.argv) > 3 else "ab"
 rng = random.Random(seed)
 with open(os.path.join(HERE, "corpus", "wiki-en.jsonl")) as f:
     texts = [json.loads(line)["text"] for line in f]
@@ -89,4 +93,4 @@ def fuzz():
 
 gens = [mixed, mixed, long_sentence, short_sentences, alternating, lambda: eng(rng.randint(5, 120)), fuzz, fuzz, fuzz]
 for i in range(n):
-    print(json.dumps({"id": f"{seed}-{i}", "lang": rng.choice("ab"), "text": rng.choice(gens)()}, ensure_ascii=False))
+    print(json.dumps({"id": f"{seed}-{i}" if langs == "ab" else f"{langs}-{seed}-{i}", "lang": rng.choice(langs), "text": rng.choice(gens)()}, ensure_ascii=False))

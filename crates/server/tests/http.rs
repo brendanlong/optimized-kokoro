@@ -32,10 +32,10 @@ async fn health_and_voices_follow_the_worker() {
     assert_eq!(health.status(), 200);
     assert_eq!(json_body(health).await, json!({ "status": "healthy" }));
     let voices = request(server.addr, get("/v1/audio/voices", Some(KEY))).await;
-    // Only the voices whose language the server speaks: the worker also has `ef_dora`.
-    assert!(VOICES.contains(&"ef_dora"));
-    let spoken: Vec<_> = VOICES.iter().filter(|v| v.starts_with(['a', 'b', 'j', 'z'])).collect();
-    assert!(spoken.contains(&&"zf_xiaobei") && spoken.contains(&&"jf_alpha"));
+    // Only the voices whose language the server speaks: the worker also has `xf_nobody`.
+    assert!(VOICES.contains(&"xf_nobody"));
+    let spoken: Vec<_> = VOICES.iter().filter(|v| !v.starts_with('x')).collect();
+    assert!(spoken.contains(&&"zf_xiaobei") && spoken.contains(&&"jf_alpha") && spoken.contains(&&"ef_dora"));
     assert_eq!(json_body(voices).await, json!({ "voices": spoken }));
     assert_eq!(request(server.addr, get("/v1/audio/voices", None)).await.status(), 401);
     assert_eq!(request(server.addr, get("/v1/audio/voices", Some("nope"))).await.status(), 401);
@@ -128,7 +128,7 @@ async fn refuses_bad_requests_before_text_processing() {
         json!({ "input": "Hi.", "response_format": "pcm", "voice": "af_bella(2)+af_sky" }),
         json!({ "input": "Hi.", "response_format": "pcm", "voice": "af_heart-af_sky" }),
         json!({ "input": "Hi.", "response_format": "pcm", "voice": "alloy" }),
-        json!({ "input": "Hi.", "response_format": "pcm", "voice": "ef_dora" }),
+        json!({ "input": "Hi.", "response_format": "pcm", "voice": "xf_nobody" }),
         json!({ "input": "   ", "response_format": "pcm" }),
         json!({ "input": format!("a {}", "[pause:60s] ".repeat(6)), "response_format": "pcm" }),
     ];
@@ -513,6 +513,31 @@ async fn speaks_chinese_with_a_chinese_voice() {
     let chunks: Vec<_> = pipelines.chunks(Lang::Chinese, text).map(Result::unwrap).collect();
     assert_eq!(chunks.len(), 2);
     let voice = VOICES.iter().position(|&v| v == "zf_xiaobei").unwrap() as u16;
+    let mut expected = Vec::new();
+    for chunk in &chunks {
+        let (id, _, _, v, ids) = worker.synthesize().await;
+        assert_eq!((v, &ids), (voice, &chunk.ids));
+        worker.send(respond(id, &ids));
+        expected.extend(expected_chunk(&ids));
+    }
+    let response = client.await.unwrap();
+    assert_eq!(samples(&body_bytes(response).await.unwrap()), expected);
+}
+
+#[tokio::test]
+async fn speaks_spanish_with_a_spanish_voice() {
+    let pipelines = Arc::new(kokoro_server::kokoro::KokoroPipelines::load().unwrap());
+    let server = start(|_| {}, pipelines.clone()).await;
+    let mut worker = ScriptedWorker::listen(&server.socket, worker_side::hello(&hello()));
+    server.worker.connected().await;
+    let text = "¿Dónde está la biblioteca? Está en Москва.";
+    let mut body = pcm(text);
+    body["voice"] = json!("ef_dora");
+    let client = tokio::spawn(speak(server.addr, body));
+    let chunks: Vec<_> = pipelines.chunks(Lang::Spanish, text).map(Result::unwrap).collect();
+    assert_eq!(chunks.len(), 2);
+    assert_ne!(chunks, pipelines.chunks(Lang::AmericanEnglish, text).map(Result::unwrap).collect::<Vec<_>>());
+    let voice = VOICES.iter().position(|&v| v == "ef_dora").unwrap() as u16;
     let mut expected = Vec::new();
     for chunk in &chunks {
         let (id, _, _, v, ids) = worker.synthesize().await;

@@ -70,7 +70,7 @@ pub fn plan(request: SpeechRequest, config: &Config, connection: &Connection) ->
     let Some(voice) = connection.voice_index(name) else { return invalid(format!("Voice '{name}' not found")) };
     let Some(lang) = voice_lang(name) else {
         return invalid(format!(
-            "Voice '{name}' speaks a language this server doesn't support yet: only American (a…) and British (b…) English, Japanese (j…) and Chinese (z…) voices work"
+            "Voice '{name}' speaks a language this server doesn't support: a voice name starts with its language, one of a (American English), b (British English), e (Spanish), f (French), h (Hindi), i (Italian), j (Japanese), p (Brazilian Portuguese) or z (Chinese)"
         ));
     };
     let speed = request.speed.map_or(Some(Speed::NORMAL), Speed::from_f64).expect("checked by check_fields");
