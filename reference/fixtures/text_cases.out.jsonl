@@ -438,6 +438,60 @@
 {"kind": "ssml", "id": "ssml-29-af_heart-True", "text": "<speak>\n  multi\n\n  line\t text  </speak>", "voice": "af_heart", "allow_voice_tags": true, "translated": "multi line text"}
 {"kind": "ssml", "id": "ssml-29-novoice-True", "text": "<speak>\n  multi\n\n  line\t text  </speak>", "voice": "", "allow_voice_tags": true, "translated": "multi line text"}
 {"kind": "ssml", "id": "ssml-29-af_heart-False", "text": "<speak>\n  multi\n\n  line\t text  </speak>", "voice": "af_heart", "allow_voice_tags": false, "translated": "multi line text"}
+{"kind": "ssml", "id": "ssml-30-af_heart-True", "text": "  <?xml version='1.0'?><speak>space before declaration</speak>", "voice": "af_heart", "allow_voice_tags": true, "error": "ParseError"}
+{"kind": "ssml", "id": "ssml-30-novoice-True", "text": "  <?xml version='1.0'?><speak>space before declaration</speak>", "voice": "", "allow_voice_tags": true, "error": "ParseError"}
+{"kind": "ssml", "id": "ssml-30-af_heart-False", "text": "  <?xml version='1.0'?><speak>space before declaration</speak>", "voice": "af_heart", "allow_voice_tags": false, "error": "ParseError"}
+{"kind": "ssml", "id": "ssml-31-af_heart-True", "text": "﻿<speak>bom</speak>", "voice": "af_heart", "allow_voice_tags": true, "translated": "﻿<speak>bom</speak>"}
+{"kind": "ssml", "id": "ssml-31-novoice-True", "text": "﻿<speak>bom</speak>", "voice": "", "allow_voice_tags": true, "translated": "﻿<speak>bom</speak>"}
+{"kind": "ssml", "id": "ssml-31-af_heart-False", "text": "﻿<speak>bom</speak>", "voice": "af_heart", "allow_voice_tags": false, "translated": "﻿<speak>bom</speak>"}
+{"kind": "ssml", "id": "ssml-32-af_heart-True", "text": "<speak a='1' a='2'>duplicate attribute</speak>", "voice": "af_heart", "allow_voice_tags": true, "error": "ParseError"}
+{"kind": "ssml", "id": "ssml-32-novoice-True", "text": "<speak a='1' a='2'>duplicate attribute</speak>", "voice": "", "allow_voice_tags": true, "error": "ParseError"}
+{"kind": "ssml", "id": "ssml-32-af_heart-False", "text": "<speak a='1' a='2'>duplicate attribute</speak>", "voice": "af_heart", "allow_voice_tags": false, "error": "ParseError"}
+{"kind": "ssml", "id": "ssml-33-af_heart-True", "text": "<speak>bad char ref &#0; here</speak>", "voice": "af_heart", "allow_voice_tags": true, "error": "ParseError"}
+{"kind": "ssml", "id": "ssml-33-novoice-True", "text": "<speak>bad char ref &#0; here</speak>", "voice": "", "allow_voice_tags": true, "error": "ParseError"}
+{"kind": "ssml", "id": "ssml-33-af_heart-False", "text": "<speak>bad char ref &#0; here</speak>", "voice": "af_heart", "allow_voice_tags": false, "error": "ParseError"}
+{"kind": "ssml", "id": "ssml-34-af_heart-True", "text": "<speak><sub alias='a &amp; b &#x263A;'>x</sub><phoneme ph='a&#10;b'>tab&#9;bed</phoneme></speak>", "voice": "af_heart", "allow_voice_tags": true, "translated": "a & b ☺[tab bed](/a b/)"}
+{"kind": "ssml", "id": "ssml-34-novoice-True", "text": "<speak><sub alias='a &amp; b &#x263A;'>x</sub><phoneme ph='a&#10;b'>tab&#9;bed</phoneme></speak>", "voice": "", "allow_voice_tags": true, "translated": "a & b ☺[tab bed](/a b/)"}
+{"kind": "ssml", "id": "ssml-34-af_heart-False", "text": "<speak><sub alias='a &amp; b &#x263A;'>x</sub><phoneme ph='a&#10;b'>tab&#9;bed</phoneme></speak>", "voice": "af_heart", "allow_voice_tags": false, "translated": "a & b ☺[tab bed](/a b/)"}
+{"kind": "ssml", "id": "ssml-35-af_heart-True", "text": "<speak><voice name='af&#95;sky'>entity name</voice></speak>", "voice": "af_heart", "allow_voice_tags": true, "translated": "[voice:af_sky] entity name [voice:af_heart]"}
+{"kind": "ssml", "id": "ssml-35-novoice-True", "text": "<speak><voice name='af&#95;sky'>entity name</voice></speak>", "voice": "", "allow_voice_tags": true, "translated": "entity name"}
+{"kind": "ssml", "id": "ssml-35-af_heart-False", "text": "<speak><voice name='af&#95;sky'>entity name</voice></speak>", "voice": "af_heart", "allow_voice_tags": false, "translated": "entity name"}
+{"kind": "ssml", "id": "ssml-36-af_heart-True", "text": "<speak xml:space='preserve'>  keep  </speak>", "voice": "af_heart", "allow_voice_tags": true, "translated": "keep"}
+{"kind": "ssml", "id": "ssml-36-novoice-True", "text": "<speak xml:space='preserve'>  keep  </speak>", "voice": "", "allow_voice_tags": true, "translated": "keep"}
+{"kind": "ssml", "id": "ssml-36-af_heart-False", "text": "<speak xml:space='preserve'>  keep  </speak>", "voice": "af_heart", "allow_voice_tags": false, "translated": "keep"}
+{"kind": "ssml", "id": "ssml-37-af_heart-True", "text": "<speak><break time='1.50s'/><break time='0.0001s'/><break time='250ms'/><break time='1e2s'/></speak>", "voice": "af_heart", "allow_voice_tags": true, "translated": "[pause:1.5s] [pause:0.0001s] [pause:0.25s] [pause:0.5s]"}
+{"kind": "ssml", "id": "ssml-37-novoice-True", "text": "<speak><break time='1.50s'/><break time='0.0001s'/><break time='250ms'/><break time='1e2s'/></speak>", "voice": "", "allow_voice_tags": true, "translated": "[pause:1.5s] [pause:0.0001s] [pause:0.25s] [pause:0.5s]"}
+{"kind": "ssml", "id": "ssml-37-af_heart-False", "text": "<speak><break time='1.50s'/><break time='0.0001s'/><break time='250ms'/><break time='1e2s'/></speak>", "voice": "af_heart", "allow_voice_tags": false, "translated": "[pause:1.5s] [pause:0.0001s] [pause:0.25s] [pause:0.5s]"}
+{"kind": "ssml", "id": "ssml-38-af_heart-True", "text": "<speak>\u0001 control char</speak>", "voice": "af_heart", "allow_voice_tags": true, "error": "ParseError"}
+{"kind": "ssml", "id": "ssml-38-novoice-True", "text": "<speak>\u0001 control char</speak>", "voice": "", "allow_voice_tags": true, "error": "ParseError"}
+{"kind": "ssml", "id": "ssml-38-af_heart-False", "text": "<speak>\u0001 control char</speak>", "voice": "af_heart", "allow_voice_tags": false, "error": "ParseError"}
+{"kind": "ssml", "id": "ssml-39-af_heart-True", "text": "<speak><?pi data?>after pi</speak>", "voice": "af_heart", "allow_voice_tags": true, "translated": "after pi"}
+{"kind": "ssml", "id": "ssml-39-novoice-True", "text": "<speak><?pi data?>after pi</speak>", "voice": "", "allow_voice_tags": true, "translated": "after pi"}
+{"kind": "ssml", "id": "ssml-39-af_heart-False", "text": "<speak><?pi data?>after pi</speak>", "voice": "af_heart", "allow_voice_tags": false, "translated": "after pi"}
+{"kind": "ssml", "id": "ssml-40-af_heart-True", "text": "<Speak>capital root</Speak>", "voice": "af_heart", "allow_voice_tags": true, "translated": "<Speak>capital root</Speak>"}
+{"kind": "ssml", "id": "ssml-40-novoice-True", "text": "<Speak>capital root</Speak>", "voice": "", "allow_voice_tags": true, "translated": "<Speak>capital root</Speak>"}
+{"kind": "ssml", "id": "ssml-40-af_heart-False", "text": "<Speak>capital root</Speak>", "voice": "af_heart", "allow_voice_tags": false, "translated": "<Speak>capital root</Speak>"}
+{"kind": "ssml", "id": "ssml-41-af_heart-True", "text": "<speak><unknown attr='1'>unknown tag</unknown></speak>", "voice": "af_heart", "allow_voice_tags": true, "translated": "unknown tag"}
+{"kind": "ssml", "id": "ssml-41-novoice-True", "text": "<speak><unknown attr='1'>unknown tag</unknown></speak>", "voice": "", "allow_voice_tags": true, "translated": "unknown tag"}
+{"kind": "ssml", "id": "ssml-41-af_heart-False", "text": "<speak><unknown attr='1'>unknown tag</unknown></speak>", "voice": "af_heart", "allow_voice_tags": false, "translated": "unknown tag"}
+{"kind": "ssml", "id": "ssml-42-af_heart-True", "text": "<speak/ >", "voice": "af_heart", "allow_voice_tags": true, "error": "ParseError"}
+{"kind": "ssml", "id": "ssml-42-novoice-True", "text": "<speak/ >", "voice": "", "allow_voice_tags": true, "error": "ParseError"}
+{"kind": "ssml", "id": "ssml-42-af_heart-False", "text": "<speak/ >", "voice": "af_heart", "allow_voice_tags": false, "error": "ParseError"}
+{"kind": "ssml", "id": "ssml-43-af_heart-True", "text": "<speak\n>newline in tag</speak>", "voice": "af_heart", "allow_voice_tags": true, "translated": "newline in tag"}
+{"kind": "ssml", "id": "ssml-43-novoice-True", "text": "<speak\n>newline in tag</speak>", "voice": "", "allow_voice_tags": true, "translated": "newline in tag"}
+{"kind": "ssml", "id": "ssml-43-af_heart-False", "text": "<speak\n>newline in tag</speak>", "voice": "af_heart", "allow_voice_tags": false, "translated": "newline in tag"}
+{"kind": "ssml", "id": "ssml-44-af_heart-True", "text": "<speak>]]> in text</speak>", "voice": "af_heart", "allow_voice_tags": true, "error": "ParseError"}
+{"kind": "ssml", "id": "ssml-44-novoice-True", "text": "<speak>]]> in text</speak>", "voice": "", "allow_voice_tags": true, "error": "ParseError"}
+{"kind": "ssml", "id": "ssml-44-af_heart-False", "text": "<speak>]]> in text</speak>", "voice": "af_heart", "allow_voice_tags": false, "error": "ParseError"}
+{"kind": "ssml", "id": "ssml-45-af_heart-True", "text": "<speak>a < b</speak>", "voice": "af_heart", "allow_voice_tags": true, "error": "ParseError"}
+{"kind": "ssml", "id": "ssml-45-novoice-True", "text": "<speak>a < b</speak>", "voice": "", "allow_voice_tags": true, "error": "ParseError"}
+{"kind": "ssml", "id": "ssml-45-af_heart-False", "text": "<speak>a < b</speak>", "voice": "af_heart", "allow_voice_tags": false, "error": "ParseError"}
+{"kind": "ssml", "id": "ssml-46-af_heart-True", "text": "<speak><prosody rate='+20%'>plus</prosody><prosody rate='٢'>arabic digit</prosody><prosody rate='Infinity'>inf</prosody></speak>", "voice": "af_heart", "allow_voice_tags": true, "translated": "[rate:0.25] plus [rate:1.0] [rate:2.0] arabic digit [rate:1.0] [rate:4.0] inf [rate:1.0]"}
+{"kind": "ssml", "id": "ssml-46-novoice-True", "text": "<speak><prosody rate='+20%'>plus</prosody><prosody rate='٢'>arabic digit</prosody><prosody rate='Infinity'>inf</prosody></speak>", "voice": "", "allow_voice_tags": true, "translated": "plusarabic digitinf"}
+{"kind": "ssml", "id": "ssml-46-af_heart-False", "text": "<speak><prosody rate='+20%'>plus</prosody><prosody rate='٢'>arabic digit</prosody><prosody rate='Infinity'>inf</prosody></speak>", "voice": "af_heart", "allow_voice_tags": false, "translated": "plusarabic digitinf"}
+{"kind": "ssml", "id": "ssml-47-af_heart-True", "text": "<speak><voice name='af_sky'><prosody rate='slow'>a</prosody></voice><prosody rate='fast'><voice name='bm_george'>b</voice></prosody></speak>", "voice": "af_heart", "allow_voice_tags": true, "translated": "[voice:af_sky] [rate:0.75] a [rate:1.0] [voice:af_heart] [rate:1.25] [voice:bm_george] [rate:1.25] b [voice:af_heart] [rate:1.25] [rate:1.0]"}
+{"kind": "ssml", "id": "ssml-47-novoice-True", "text": "<speak><voice name='af_sky'><prosody rate='slow'>a</prosody></voice><prosody rate='fast'><voice name='bm_george'>b</voice></prosody></speak>", "voice": "", "allow_voice_tags": true, "translated": "ab"}
+{"kind": "ssml", "id": "ssml-47-af_heart-False", "text": "<speak><voice name='af_sky'><prosody rate='slow'>a</prosody></voice><prosody rate='fast'><voice name='bm_george'>b</voice></prosody></speak>", "voice": "af_heart", "allow_voice_tags": false, "translated": "ab"}
 {"kind": "voices", "id": "voices-[voice:af_sky]Hi[voice:af_sky] there", "text": "[voice:af_sky]Hi[voice:af_sky] there", "voice": "af_heart", "segments": [["af_sky", 1.0, "Hi there"]]}
 {"kind": "checks", "id": "checks-[voice:af_sky]Hi[voice:af_sky] there", "text": "[voice:af_sky]Hi[voice:af_sky] there", "allow_voice_tags": true, "remove_emoji": true, "speakable": true, "pause_budget": null}
 {"kind": "voices", "id": "voices-[rate:2]fast[rate:2]still", "text": "[rate:2]fast[rate:2]still", "voice": "af_heart", "segments": [["af_heart", 2.0, "fast still"]]}
