@@ -9,12 +9,12 @@
 //! Both stages mark their end explicitly, so a stage that dies (a panic) fails the response
 //! instead of ending it early as if it were complete.
 
-use crate::audio::{apply_volume, silence, to_le_bytes, trim_range};
+use crate::audio::{apply_volume, silence, trim_range};
 use crate::pipeline::{Chunk, Pipeline, PipelineError};
 use crate::protocol::Priority;
 use crate::request::{Segment, Speech};
 use crate::stitch::{self, STITCH_ABOVE, Stitcher};
-use crate::worker::{Connection, SynthError, SynthRequest, Synthesized};
+use crate::worker::{Connection, Reservation, SynthError, SynthRequest, Synthesized};
 use bytes::Bytes;
 use futures_util::StreamExt;
 use futures_util::stream::FuturesOrdered;
@@ -123,10 +123,33 @@ enum Output {
     End,
 }
 
-/// A request's PCM, in order. Dropping it stops the request and cancels its queued chunks.
+/// PCM that keeps its share of the audio budget until the bytes are dropped, which for a response
+/// body is once hyper has written them.
+struct Pcm {
+    samples: Vec<i16>,
+    _reservation: Reservation,
+}
+
+impl AsRef<[u8]> for Pcm {
+    fn as_ref(&self) -> &[u8] {
+        bytemuck::cast_slice(&self.samples)
+    }
+}
+
+fn pcm_bytes(mut samples: Vec<i16>, reservation: Reservation) -> Bytes {
+    for s in &mut samples {
+        *s = s.to_le();
+    }
+    Bytes::from_owner(Pcm { samples, _reservation: reservation })
+}
+
+/// A request's PCM, in order. It holds the request's admission permits, so they're released only
+/// when the response body is finished or dropped. Dropping it stops the request and cancels its
+/// queued chunks.
 pub struct AudioStream {
     rx: mpsc::Receiver<Output>,
     over: bool,
+    _permits: Box<dyn Send + Sync>,
 }
 
 impl AudioStream {
@@ -147,19 +170,19 @@ impl AudioStream {
 }
 
 enum Done {
-    Silence(usize),
+    Silence(usize, Reservation),
     Speech(Result<Synthesized, SynthError>, Finish),
 }
 
 type Pending = Pin<Box<dyn Future<Output = Done> + Send>>;
 
-/// Starts producing a request's audio. `permits` are held until the request ends.
+/// Starts producing a request's audio. `permits` are held by the returned stream.
 pub fn start(
     speech: Speech,
     connection: Arc<Connection>,
     pipeline: Arc<dyn Pipeline>,
     lookahead: usize,
-    permits: impl Send + 'static,
+    permits: impl Send + Sync + 'static,
 ) -> AudioStream {
     let (out_tx, out_rx) = mpsc::channel(1);
     let (unit_tx, unit_rx) = mpsc::channel(1);
@@ -168,12 +191,20 @@ pub fn start(
     tokio::spawn(async move {
         let result = drive(connection, unit_rx, &out_tx, volume, lookahead).await;
         let _ = out_tx.send(result.map_or_else(Output::Failed, |()| Output::End)).await;
-        drop(permits);
     });
-    AudioStream { rx: out_rx, over: false }
+    AudioStream { rx: out_rx, over: false, _permits: Box::new(permits) }
 }
 
+/// The client went away; stop quietly.
 struct ClientGone;
+
+/// Waits for `work` unless the client leaves first.
+async fn unless_gone<T>(out: &mpsc::Sender<Output>, work: impl Future<Output = T>) -> Result<T, ClientGone> {
+    tokio::select! {
+        _ = out.closed() => Err(ClientGone),
+        value = work => Ok(value),
+    }
+}
 
 async fn drive(
     connection: Arc<Connection>,
@@ -186,51 +217,68 @@ async fn drive(
     let mut speech_in_window = 0;
     let mut exhausted = false;
     let mut stitcher = Stitcher::default();
-    let send = |pcm: Vec<i16>| async move {
-        if pcm.is_empty() {
+    let send = |bytes: Bytes| async move {
+        if bytes.is_empty() {
             return Ok(());
         }
-        out.send(Output::Audio(Bytes::from(to_le_bytes(&pcm)))).await.map_err(|_| ClientGone)
+        out.send(Output::Audio(bytes)).await.map_err(|_| ClientGone)
     };
     loop {
         if exhausted && window.is_empty() {
             return Ok(());
         }
-        let sent = tokio::select! {
+        let step: Result<(), ClientGone> = tokio::select! {
             biased;
             _ = out.closed() => Err(ClientGone),
             done = window.next(), if !window.is_empty() => match done.expect("window isn't empty") {
-                Done::Silence(n) => send(vec![0; n]).await,
+                Done::Silence(n, reservation) => send(pcm_bytes(vec![0; n], reservation)).await,
                 Done::Speech(result, finish) => {
                     speech_in_window -= 1;
                     let synth = result.map_err(StreamError::Synth)?;
                     let mut pcm = match &finish.stitch {
-                        Some((plan, index)) => stitcher.piece(plan, *index, &synth.pcm, &synth.durations),
+                        Some((plan, index)) => stitcher.piece(plan, *index, synth.pcm, &synth.durations),
                         None => synth.pcm,
                     };
                     apply_volume(&mut pcm, volume);
                     let range = trim_range(&pcm, &finish.text, finish.speed);
                     pcm.truncate(range.end);
                     pcm.drain(..range.start);
-                    send(pcm).await
+                    send(pcm_bytes(pcm, synth.reservation)).await
                 }
             },
             produced = units.recv(), if !exhausted && window.len() < lookahead => {
                 match produced.ok_or(StreamError::Aborted)? {
-                    Produced::End => exhausted = true,
+                    Produced::End => {
+                        exhausted = true;
+                        Ok(())
+                    }
                     Produced::Failed(e) => return Err(StreamError::Pipeline(e)),
-                    Produced::Unit(Unit::Silence(n)) => window.push_back(Box::pin(async move { Done::Silence(n) })),
+                    Produced::Unit(Unit::Silence(n)) => {
+                        match unless_gone(out, connection.budget().reserve(2 * n)).await {
+                            Ok(reservation) => {
+                                let reservation = reservation.ok_or(StreamError::Synth(SynthError::Unrenderable))?;
+                                window.push_back(Box::pin(async move { Done::Silence(n, reservation) }));
+                                Ok(())
+                            }
+                            Err(gone) => Err(gone),
+                        }
+                    }
                     Produced::Unit(Unit::Speech(request, finish)) => {
                         let priority = if speech_in_window == 0 { Priority::Waiting } else { Priority::Prefetch };
-                        let mut ticket = connection.submit(priority, &request).map_err(StreamError::Synth)?;
-                        speech_in_window += 1;
-                        window.push_back(Box::pin(async move { Done::Speech(ticket.result().await, finish) }));
+                        match unless_gone(out, connection.submit(priority, &request)).await {
+                            Ok(ticket) => {
+                                let mut ticket = ticket.map_err(StreamError::Synth)?;
+                                speech_in_window += 1;
+                                window.push_back(Box::pin(async move { Done::Speech(ticket.result().await, finish) }));
+                                Ok(())
+                            }
+                            Err(gone) => Err(gone),
+                        }
                     }
                 }
-                Ok(())
             }
         };
-        if sent.is_err() {
+        if step.is_err() {
             return Ok(());
         }
     }

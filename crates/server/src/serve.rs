@@ -1,6 +1,6 @@
 //! The HTTP/1 connection loop, with limits on what each client connection may hold: how many
 //! connections are open, how long headers may take (which also ends idle keep-alive
-//! connections), and how many requests one connection serves.
+//! connections), how many requests one connection serves, and how much hyper buffers.
 
 use crate::config::Config;
 use axum::Router;
@@ -16,13 +16,19 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::sync::{Semaphore, watch};
+use tokio::task::JoinSet;
 use tower::ServiceExt;
+
+/// hyper's read buffer per connection, which bounds a request's headers and how much of a body it
+/// reads ahead of the app.
+pub const MAX_BUF: usize = 64 * 1024;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Limits {
     pub max_connections: usize,
     pub max_requests_per_connection: usize,
     pub header_read_timeout: Duration,
+    pub shutdown_grace: Duration,
 }
 
 impl From<&Config> for Limits {
@@ -31,19 +37,23 @@ impl From<&Config> for Limits {
             max_connections: config.max_connections,
             max_requests_per_connection: config.max_requests_per_connection,
             header_read_timeout: config.header_read_timeout(),
+            shutdown_grace: config.shutdown_grace(),
         }
     }
 }
 
-/// Serves `app` until `shutdown` resolves, then lets open connections finish their requests.
+/// Serves `app` until `shutdown` resolves, then gives open connections `shutdown_grace` to finish
+/// their requests before dropping them.
 pub async fn serve(listener: TcpListener, app: Router, limits: Limits, shutdown: impl Future<Output = ()>) {
     let slots = Arc::new(Semaphore::new(limits.max_connections));
     let (closing_tx, closing_rx) = watch::channel(false);
+    let mut connections = JoinSet::new();
     tokio::pin!(shutdown);
     loop {
         // Waiting for a slot before accepting leaves extra connections in the listen backlog.
         let permit = tokio::select! {
             _ = &mut shutdown => break,
+            Some(_) = connections.join_next(), if !connections.is_empty() => continue,
             permit = slots.clone().acquire_owned() => permit.expect("never closed"),
         };
         let stream = tokio::select! {
@@ -60,7 +70,7 @@ pub async fn serve(listener: TcpListener, app: Router, limits: Limits, shutdown:
         };
         let app = app.clone();
         let mut closing = closing_rx.clone();
-        tokio::spawn(async move {
+        connections.spawn(async move {
             let served = Arc::new(AtomicUsize::new(0));
             let service = hyper::service::service_fn(move |request: Request<Incoming>| {
                 let app = app.clone();
@@ -74,7 +84,7 @@ pub async fn serve(listener: TcpListener, app: Router, limits: Limits, shutdown:
                 }
             });
             let mut builder = http1::Builder::new();
-            builder.timer(TokioTimer::new()).header_read_timeout(limits.header_read_timeout);
+            builder.timer(TokioTimer::new()).header_read_timeout(limits.header_read_timeout).max_buf_size(MAX_BUF);
             let connection = builder.serve_connection(TokioIo::new(stream), service);
             tokio::pin!(connection);
             let result = tokio::select! {
@@ -91,5 +101,12 @@ pub async fn serve(listener: TcpListener, app: Router, limits: Limits, shutdown:
         });
     }
     closing_tx.send_replace(true);
-    let _ = slots.acquire_many(limits.max_connections as u32).await;
+    let drained = tokio::time::timeout(limits.shutdown_grace, async {
+        while connections.join_next().await.is_some() {}
+    })
+    .await;
+    if drained.is_err() {
+        tracing::warn!("dropping {} connections still open after the shutdown grace period", connections.len());
+        connections.shutdown().await;
+    }
 }

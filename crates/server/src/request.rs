@@ -126,6 +126,9 @@ pub fn check_fields(request: &SpeechRequest, config: &Config) -> Result<(), Refu
     if request.volume_multiplier.is_some_and(|v| !(0.0..=VOLUME_MAX).contains(&v)) {
         return invalid(format!("volume_multiplier must be between 0 and {VOLUME_MAX}"));
     }
+    if request.voice.as_ref().is_some_and(|v| v.len() > voices::MAX_EXPRESSION) {
+        return invalid(format!("voice is longer than {} bytes", voices::MAX_EXPRESSION));
+    }
     if request.allow_voice_tags == Some(true) && !config.enable_voice_tags {
         return Err(Refusal::Forbidden("Voice tags are disabled on this server".into()));
     }
@@ -150,25 +153,29 @@ pub fn plan(
     }
 
     let voice = request.voice.as_deref().unwrap_or(&config.default_voice);
-    let mut mixes: HashMap<String, Mix> = HashMap::new();
-    let mut resolve = |expression: &str| -> Result<Mix, Refusal> {
+    // Each distinct expression is resolved once; segments share the resolved ids.
+    let mut mixes: HashMap<Arc<str>, Mix> = HashMap::new();
+    let mut resolve = |expression: &Arc<str>| -> Result<Mix, Refusal> {
+        if expression.len() > voices::MAX_EXPRESSION {
+            return invalid(format!("a voice is longer than {} bytes", voices::MAX_EXPRESSION));
+        }
         if let Some(mix) = mixes.get(expression) {
             return Ok(mix.clone());
         }
         let mix = voices::resolve(expression, connection).map_err(Refusal::Invalid)?;
-        mixes.insert(expression.to_owned(), mix.clone());
+        mixes.insert(expression.clone(), mix.clone());
         Ok(mix)
     };
-    let default = resolve(voice)?;
 
     let runs = if allow_voice_tags {
         split_by_voice(&request.input, voice).into_iter().map(|s| (s.voice, s.rate, s.text)).collect()
     } else {
-        vec![(voice.to_owned(), 1.0, request.input.clone())]
+        vec![(Arc::from(voice), 1.0, request.input.clone())]
     };
+    resolve(&Arc::from(voice))?;
     let mut segments = Vec::with_capacity(runs.len());
     for (expression, rate, text) in runs {
-        let mix = if expression == voice { default.clone() } else { resolve(&expression)? };
+        let mix = resolve(&expression)?;
         let lang = request.lang_code.clone().unwrap_or(mix.lang);
         if !pipeline.supports(&lang) {
             return invalid(format!("voice {expression:?} implies language {lang:?}, which has no pipeline"));

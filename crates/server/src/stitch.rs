@@ -95,9 +95,9 @@ pub struct Stitcher {
 }
 
 impl Stitcher {
-    /// The part of piece `index`'s rendering that belongs to it, crossfaded with the previous
-    /// piece's tail.
-    pub fn piece(&mut self, plan: &Plan, index: usize, audio: &[i16], durations: &[u16]) -> Vec<i16> {
+    /// Cuts piece `index`'s rendering, in place, to the part that belongs to it, crossfaded with
+    /// the previous piece's tail.
+    pub fn piece(&mut self, plan: &Plan, index: usize, mut audio: Vec<i16>, durations: &[u16]) -> Vec<i16> {
         let (start, _) = plan.ranges[index];
         let (first, _) = plan.contexts[index];
         let mut frames = Vec::with_capacity(durations.len() + 1);
@@ -120,7 +120,10 @@ impl Stitcher {
         let begin = if index == 0 { 0 } else { cut(start).saturating_sub(CROSSFADE / 2) }.min(audio.len());
         let finish = if last { audio.len() } else { cut(plan.ranges[index + 1].0).saturating_sub(CROSSFADE / 2) }
             .clamp(begin, audio.len());
-        let mut out = audio[begin..finish].to_vec();
+        let next_held = (!last).then(|| audio[finish..(finish + CROSSFADE).min(audio.len())].to_vec());
+        audio.truncate(finish);
+        audio.drain(..begin);
+        let mut out = audio;
         if let Some(held) = self.held.take() {
             let n = held.len().min(out.len());
             for (i, (o, h)) in out.iter_mut().zip(&held).take(n).enumerate() {
@@ -128,9 +131,7 @@ impl Stitcher {
                 *o = (f32::from(*h) * (1.0 - ramp) + f32::from(*o) * ramp) as i16;
             }
         }
-        if !last {
-            self.held = Some(audio[finish..(finish + CROSSFADE).min(audio.len())].to_vec());
-        }
+        self.held = next_held;
         out
     }
 }
@@ -193,7 +194,7 @@ mod tests {
             let mut stitcher = Stitcher::default();
             for (index, expected) in case.pieces.iter().enumerate() {
                 let (audio, durations) = render(plan.context_ids(index), plan.style_len().into());
-                let out = stitcher.piece(&plan, index, &audio, &durations);
+                let out = stitcher.piece(&plan, index, audio, &durations);
                 assert_eq!(out.len(), expected.len);
                 for (a, b) in out.iter().zip(&expected.head) {
                     assert!((a - b).abs() <= 1, "piece {index}: {a} vs {b}");
@@ -213,8 +214,8 @@ mod tests {
         let mut stitcher = Stitcher::default();
         for index in 0..plan.pieces() {
             let n = plan.context_ids(index).len() + 2;
-            stitcher.piece(&plan, index, &[5; 10], &vec![0; n]);
-            stitcher.piece(&plan, index, &[], &[]);
+            stitcher.piece(&plan, index, vec![5; 10], &vec![0; n]);
+            stitcher.piece(&plan, index, Vec::new(), &[]);
         }
     }
 }

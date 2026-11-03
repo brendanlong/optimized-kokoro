@@ -1,6 +1,7 @@
 //! Settings, from an optional TOML file plus `KOKORO_API_KEYS` (comma-separated) from the
 //! environment.
 
+use crate::worker;
 use serde::Deserialize;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -41,6 +42,19 @@ pub struct Config {
     pub lookahead: usize,
     /// Wait between attempts to (re)connect to the worker.
     pub reconnect_interval_ms: u64,
+    /// Time the worker has to send its hello after connecting.
+    pub worker_hello_timeout_ms: u64,
+    /// Longest the worker may go without sending a whole frame while it has work; then it's
+    /// disconnected and its requests fail.
+    pub worker_progress_timeout_ms: u64,
+    /// Requests on the worker at once, counting cancelled ones until the worker acknowledges
+    /// them. Defaults to `max_concurrent_requests × lookahead`.
+    pub worker_max_outstanding: Option<usize>,
+    /// Audio held in memory across all requests (rendered, reordered or being written), in
+    /// bytes. Each chunk reserves the most it could produce before it's sent to the worker.
+    pub audio_buffer_bytes: usize,
+    /// On shutdown, how long open connections get to finish before they're dropped.
+    pub shutdown_grace_ms: u64,
     /// Whether requests may set `allow_voice_tags`.
     pub enable_voice_tags: bool,
 }
@@ -60,6 +74,11 @@ impl Default for Config {
             max_requests_per_connection: 1000,
             header_read_timeout_ms: 10_000,
             request_body_timeout_ms: 10_000,
+            worker_hello_timeout_ms: 30_000,
+            worker_progress_timeout_ms: 30_000,
+            worker_max_outstanding: None,
+            audio_buffer_bytes: 512 << 20,
+            shutdown_grace_ms: 10_000,
             lookahead: 3,
             reconnect_interval_ms: 500,
             enable_voice_tags: true,
@@ -96,14 +115,22 @@ impl Config {
             ("max_streams_per_key", self.max_streams_per_key),
             ("max_connections", self.max_connections),
             ("max_requests_per_connection", self.max_requests_per_connection),
+            ("worker_max_outstanding", self.worker_max_outstanding()),
+            ("audio_buffer_bytes", self.audio_buffer_bytes),
         ];
         if let Some((name, _)) = counts.iter().find(|(_, n)| *n == 0) {
             return Err(format!("{name} must be at least 1"));
         }
-        if self.max_connections > Semaphore::MAX_PERMITS || self.max_concurrent_requests > Semaphore::MAX_PERMITS {
-            return Err("max_connections and max_concurrent_requests are too large".into());
+        if let Some((name, _)) = counts.iter().find(|(_, n)| *n > Semaphore::MAX_PERMITS) {
+            return Err(format!("{name} is too large"));
         }
-        if self.header_read_timeout_ms == 0 || self.request_body_timeout_ms == 0 {
+        let timeouts = [
+            self.header_read_timeout_ms,
+            self.request_body_timeout_ms,
+            self.worker_hello_timeout_ms,
+            self.worker_progress_timeout_ms,
+        ];
+        if timeouts.contains(&0) {
             return Err("timeouts must be positive".into());
         }
         Ok(())
@@ -123,6 +150,25 @@ impl Config {
 
     pub fn reconnect_interval(&self) -> Duration {
         Duration::from_millis(self.reconnect_interval_ms)
+    }
+
+    pub fn worker_max_outstanding(&self) -> usize {
+        self.worker_max_outstanding.unwrap_or(self.max_concurrent_requests.saturating_mul(self.lookahead))
+    }
+
+    pub fn shutdown_grace(&self) -> Duration {
+        Duration::from_millis(self.shutdown_grace_ms)
+    }
+
+    pub fn worker_settings(&self) -> worker::Settings {
+        worker::Settings {
+            socket: self.worker_socket.clone(),
+            retry_interval: self.reconnect_interval(),
+            hello_timeout: Duration::from_millis(self.worker_hello_timeout_ms),
+            progress_timeout: Duration::from_millis(self.worker_progress_timeout_ms),
+            max_outstanding: self.worker_max_outstanding(),
+            audio_budget_bytes: self.audio_buffer_bytes,
+        }
     }
 }
 

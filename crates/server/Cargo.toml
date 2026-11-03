@@ -10,7 +10,8 @@ publish = false
 
 [dependencies]
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "json"] }
-bytes = "1"
+bytemuck = "1"
+bytes = "1.10"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 http-body-util = "0.1"
 hyper = { version = "1", features = ["server", "http1"] }

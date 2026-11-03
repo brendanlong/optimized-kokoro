@@ -296,7 +296,7 @@ pub async fn start(adjust: impl FnOnce(&mut Config), pipeline: Arc<dyn Pipeline>
     adjust(&mut config);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-    let worker = Worker::spawn(socket.clone(), config.reconnect_interval());
+    let worker = Worker::spawn(config.worker_settings());
     let limits = serve::Limits::from(&config);
     let app = http::router(config, worker.clone(), pipeline);
     tokio::spawn(serve::serve(listener, app, limits, std::future::pending()));

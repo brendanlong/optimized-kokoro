@@ -50,7 +50,7 @@ async fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let worker = Worker::spawn(config.worker_socket.clone(), config.reconnect_interval());
+    let worker = Worker::spawn(config.worker_settings());
     tracing::info!("listening on {}, worker socket {}", config.listen, config.worker_socket.display());
     let limits = serve::Limits::from(&config);
     let app = http::router(config, worker, Arc::new(pipelines));

@@ -23,6 +23,9 @@ const OPENAI_VOICES: &[(&str, &str)] = &[
     ("ballad", "bm_fable"),
 ];
 
+/// Longest voice expression accepted, in bytes: room for 8 voices with long weights.
+pub const MAX_EXPRESSION: usize = 512;
+
 /// A resolved voice blend.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Mix {
@@ -100,7 +103,7 @@ mod tests {
             max_batch: 8,
             voices: ["af_heart", "af_bella", "af_sky", "am_adam", "bf_emma"].map(String::from).to_vec(),
         };
-        Connection::new(hello, mpsc::unbounded_channel().0)
+        Connection::new(hello, mpsc::channel(1).0, 1, crate::worker::AudioBudget::new(1))
     }
 
     fn ok(expr: &str) -> (Vec<(u16, f32)>, String) {

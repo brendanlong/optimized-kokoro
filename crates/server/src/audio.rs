@@ -52,10 +52,6 @@ pub fn trim_range(pcm: &[i16], text: &str, speed: f64) -> std::ops::Range<usize>
     offset + start..offset + end
 }
 
-pub fn to_le_bytes(pcm: &[i16]) -> Vec<u8> {
-    pcm.iter().flat_map(|s| s.to_le_bytes()).collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

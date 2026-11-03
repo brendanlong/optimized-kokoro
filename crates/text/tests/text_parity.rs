@@ -53,7 +53,7 @@ fn run(case: &Value) -> (Value, Value) {
         }
         "voices" => {
             let segments: Vec<Value> =
-                split_by_voice(text, str_of(case, "voice")).into_iter().map(|s| json!([s.voice, s.rate, s.text])).collect();
+                split_by_voice(text, str_of(case, "voice")).into_iter().map(|s| json!([&*s.voice, s.rate, s.text])).collect();
             (case["segments"].clone(), json!(segments))
         }
         "checks" => {

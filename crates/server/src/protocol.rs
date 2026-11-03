@@ -173,6 +173,7 @@ fn parse_hello(body: &[u8]) -> Result<Hello, ReadError> {
         return violation("no voices");
     }
     let mut voices = Vec::with_capacity(n_voices.into());
+    let mut seen = std::collections::HashSet::with_capacity(n_voices.into());
     for _ in 0..n_voices {
         let len = c.u8()?;
         let name = c.bytes(len.into())?;
@@ -183,7 +184,7 @@ fn parse_hello(body: &[u8]) -> Result<Hello, ReadError> {
             return violation("bad voice name");
         }
         let name = String::from_utf8(name.to_vec()).expect("checked ASCII");
-        if voices.contains(&name) {
+        if !seen.insert(name.clone()) {
             return violation(format!("voice {name} listed twice"));
         }
         voices.push(name);
@@ -238,9 +239,16 @@ async fn read_audio<R: AsyncRead + Unpin>(
     if len != AUDIO_HEADER + 2 * n as usize {
         return violation("audio frame length doesn't match its sample count");
     }
-    let mut raw = vec![0; 2 * n as usize];
-    reader.read_exact(&mut raw).await?;
-    let pcm = raw.chunks_exact(2).map(|b| i16::from_le_bytes([b[0], b[1]])).collect();
+    // Decoded through a small buffer, so only the samples themselves are ever held.
+    let mut pcm = Vec::with_capacity(n as usize);
+    let mut buf = [0; 16 * 1024];
+    let mut left = 2 * n as usize;
+    while left > 0 {
+        let take = left.min(buf.len());
+        reader.read_exact(&mut buf[..take]).await?;
+        pcm.extend(buf[..take].chunks_exact(2).map(|b| i16::from_le_bytes([b[0], b[1]])));
+        left -= take;
+    }
     Ok(WorkerFrame::Audio { id, pcm })
 }
 

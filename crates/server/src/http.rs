@@ -69,7 +69,9 @@ fn find_key(keys: &[String], token: &str) -> Option<usize> {
     bool::from(found).then_some(index as usize)
 }
 
-/// Runs before the handler's extractors, so an unauthenticated request's body is never read.
+/// Runs before the handler reads the body, so the app never reads an unauthenticated request's
+/// body. hyper may already have buffered some of it while parsing the headers (at most its read
+/// buffer, `serve::MAX_BUF`), and it doesn't send `100 Continue` until the body is read.
 async fn require_key(State(state): State<Arc<AppState>>, mut request: Request, next: Next) -> Response {
     let token = request
         .headers()
@@ -161,20 +163,23 @@ async fn speech(State(state): State<Arc<AppState>>, Extension(key): Extension<Ke
         return unavailable("Too many requests in progress");
     };
 
+    // The permits go with the planning work, so they stay taken until it ends even if the client
+    // leaves meanwhile, and then on to the response body.
+    let permits = (permit, key_permit);
     let planned = {
         let state = state.clone();
         let connection = connection.clone();
         tokio::task::spawn_blocking(move || {
-            request::plan(request, &state.config, &connection, state.pipeline.as_ref())
+            let planned = request::plan(request, &state.config, &connection, state.pipeline.as_ref());
+            (planned, permits)
         })
         .await
         .expect("planning doesn't panic")
     };
-    let speech = match planned {
-        Ok(speech) => speech,
-        Err(refusal) => return refused(refusal),
+    let (speech, permits) = match planned {
+        (Ok(speech), permits) => (speech, permits),
+        (Err(refusal), _) => return refused(refusal),
     };
-    let permits = (permit, key_permit);
     let mut audio = stream::start(speech, connection, state.pipeline.clone(), state.config.lookahead, permits);
 
     // Headers wait for the first audio, so a request that fails before any is made gets a status.

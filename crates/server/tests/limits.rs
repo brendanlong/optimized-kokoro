@@ -113,3 +113,76 @@ async fn each_key_has_its_own_stream_limit() {
     worker.send(respond(id, &ids));
     assert_eq!(client.await.unwrap().status(), 200);
 }
+
+/// HTTP edge cases from review: each request's raw bytes and what the response must (not) hold.
+#[tokio::test]
+async fn hostile_http_is_refused() {
+    let server = start(
+        |c| {
+            c.header_read_timeout_ms = 150;
+            c.request_body_timeout_ms = 150;
+        },
+        Arc::new(StubPipeline),
+    )
+    .await;
+    let _worker = ScriptedWorker::listen(&server.socket, worker_side::hello(&hello()));
+    server.worker.connected().await;
+    let auth = format!("Authorization: Bearer {KEY}\r\n");
+    type Check = dyn Fn(&str) -> bool;
+    let cases: Vec<(&str, String, &Check)> = vec![
+        (
+            "100-continue without a key",
+            "POST /v1/audio/speech HTTP/1.1\r\nHost: t\r\nExpect: 100-continue\r\nContent-Length: 100\r\n\r\n".into(),
+            &|out| out.starts_with("HTTP/1.1 401") && !out.contains("100 Continue"),
+        ),
+        (
+            "100-continue, then no body",
+            format!("POST /v1/audio/speech HTTP/1.1\r\nHost: t\r\n{auth}Expect: 100-continue\r\nContent-Length: 100\r\n\r\n"),
+            &|out| out.contains("100 Continue") && out.contains("408"),
+        ),
+        (
+            "stalled chunked body",
+            format!("POST /v1/audio/speech HTTP/1.1\r\nHost: t\r\n{auth}Transfer-Encoding: chunked\r\n\r\n1\r\n{{\r\n"),
+            &|out| out.contains("408"),
+        ),
+        (
+            "stalled trailers",
+            format!("POST /v1/audio/speech HTTP/1.1\r\nHost: t\r\n{auth}Transfer-Encoding: chunked\r\n\r\n2\r\n{{}}\r\n0\r\nX-Foo: "),
+            &|out| out.contains("408"),
+        ),
+        (
+            "conflicting lengths",
+            "POST /v1/audio/speech HTTP/1.1\r\nHost: t\r\nContent-Length: 1\r\nContent-Length: 2\r\n\r\nx".into(),
+            &|out| out.contains("400"),
+        ),
+        (
+            "too many headers",
+            format!("GET /health HTTP/1.1\r\nHost: t\r\n{}\r\n", "X-Foo: x\r\n".repeat(101)),
+            &|out| out.contains("431"),
+        ),
+        (
+            "huge header",
+            format!("GET /health HTTP/1.1\r\nHost: t\r\nX-Foo: {}\r\n\r\n", "x".repeat(500_000)),
+            &|out| out.contains("431"),
+        ),
+        ("h2 preface", "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n".into(), &|out| !out.contains("200")),
+        (
+            "h2c upgrade",
+            "GET /health HTTP/1.1\r\nHost: t\r\nConnection: upgrade\r\nUpgrade: h2c\r\n\r\n".into(),
+            &|out| !out.contains("101"),
+        ),
+        (
+            "pipelining",
+            "GET /health HTTP/1.1\r\nHost: t\r\n\r\nGET /health HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n".into(),
+            &|out| out.matches("HTTP/1.1 200").count() == 2,
+        ),
+    ];
+    for (name, request, check) in cases {
+        let mut stream = TcpStream::connect(server.addr).await.unwrap();
+        let _ = stream.write_all(request.as_bytes()).await;
+        let mut out = Vec::new();
+        let _ = tokio::time::timeout(Duration::from_secs(2), stream.read_to_end(&mut out)).await;
+        let out = String::from_utf8_lossy(&out);
+        assert!(check(&out), "{name}: {out}");
+    }
+}
