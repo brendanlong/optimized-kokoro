@@ -7,7 +7,7 @@ deploy/deploy.sh                    # build both, export a compile cache, instal
 journalctl --user -u kokoro-worker -u kokoro-server -f
 ```
 
-State lives in `~/.local/share/optimized-kokoro` (binary, `run.sh`, models, compile-cache seed, `server.toml`, `server.env` with `KOKORO_API_KEYS`, mode 0600). `deploy.sh` writes `server.env` with a new random key only if it doesn't exist. On brendan-desktop it holds the key clawed-abode already used for Kokoro-FastAPI, so clawed-abode switched over without a config change.
+State lives in `~/.local/share/optimized-kokoro` (binary, `run.sh`, models, `unidic.dic` for Japanese (fetched once by `crates/g2p-ja/tools/fetch_unidic.sh`, memory-mapped by the server and only ever replaced by rename), compile-cache seed, `server.toml`, `server.env` with `KOKORO_API_KEYS`, mode 0600). `deploy.sh` writes `server.env` with a new random key only if it doesn't exist. On brendan-desktop it holds the key clawed-abode already used for Kokoro-FastAPI, so clawed-abode switched over without a config change.
 
 Startup: about 2.5 minutes to export the compile cache during a deploy; restarts then take about 90 s. The server answers `/health` with 503 until the worker is connected.
 

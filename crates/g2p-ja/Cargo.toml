@@ -1,0 +1,19 @@
+[package]
+name = "kokoro-g2p-ja"
+version = "0.1.0"
+description = "Port of misaki's Japanese G2P (cutlet on MeCab with UniDic, as kokoro uses it) to Rust"
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+kokoro-text = { path = "../text" }
+memmap2 = "0.9"
+unicode-normalization = "0.1"
+
+[dev-dependencies]
+kokoro-reference = { path = "../reference" }
+serde.workspace = true
+serde_json.workspace = true

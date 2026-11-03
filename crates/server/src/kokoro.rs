@@ -8,6 +8,7 @@ pub struct KokoroPipelines {
     american: kokoro_pipeline::Pipeline,
     british: kokoro_pipeline::Pipeline,
     chinese: kokoro_pipeline::Pipeline,
+    japanese: kokoro_pipeline::Pipeline,
     options: Options,
 }
 
@@ -17,6 +18,7 @@ impl KokoroPipelines {
             american: kokoro_pipeline::Pipeline::new(Lang::AmericanEnglish)?,
             british: kokoro_pipeline::Pipeline::new(Lang::BritishEnglish)?,
             chinese: kokoro_pipeline::Pipeline::new(Lang::Chinese)?,
+            japanese: kokoro_pipeline::Pipeline::new(Lang::Japanese)?,
             options: Options::default(),
         })
     }
@@ -28,6 +30,7 @@ impl Pipeline for KokoroPipelines {
             Lang::AmericanEnglish => &self.american,
             Lang::BritishEnglish => &self.british,
             Lang::Chinese => &self.chinese,
+            Lang::Japanese => &self.japanese,
         };
         Box::new(pipeline.chunks(text, &self.options).map(|chunk| {
             chunk
@@ -50,7 +53,8 @@ mod tests {
         assert!(!chunks[0].ids.is_empty() && chunks[0].ids.len() == chunks[0].phonemes.chars().count());
         assert_eq!(chunks[1].pause, Some(0.5));
         assert_eq!((chunks[2].phonemes.as_str(), chunks[2].unread), ("dˈʊŋʨˈiŋ ɪz bˈɪɡ.", 0));
-        assert_eq!((chunks[3].phonemes.as_str(), chunks[3].unread), ("ʤˌæpənˈiz tˈɛkst tˈu.", 1));
+        let kana = if kokoro_pipeline::japanese_available() { ("kana tˈu.", 0) } else { ("ʤˌæpənˈiz tˈɛkst tˈu.", 1) };
+        assert_eq!((chunks[3].phonemes.as_str(), chunks[3].unread), kana);
     }
 
     #[test]
@@ -59,6 +63,18 @@ mod tests {
         let chunks: Vec<_> = pipelines.chunks(Lang::Chinese, "银行行长在长城上。").map(Result::unwrap).collect();
         assert_eq!(chunks[0].phonemes, "i↗nxa↗ŋxa↗ŋꭧa↓ŋ ʦai↘ ꭧʰa↗ŋꭧʰə↗ŋ ʂa↘ŋ.");
         assert_eq!(chunks[0].ids.len(), chunks[0].phonemes.chars().count());
+    }
+
+    #[test]
+    fn reads_japanese() {
+        if !kokoro_pipeline::japanese_available() {
+            return eprintln!("skipping: no UniDic at $KOKORO_UNIDIC");
+        }
+        let pipelines = KokoroPipelines::load().unwrap();
+        let chunk = pipelines.chunks(Lang::Japanese, "東京へ行きます。").next().unwrap().unwrap();
+        assert_eq!((chunk.phonemes.as_str(), chunk.unread), ("toːkʲoː e ikʲimasɨ", 0));
+        let chunk = pipelines.chunks(Lang::AmericanEnglish, "She said こんにちは.").next().unwrap().unwrap();
+        assert_eq!((chunk.phonemes.as_str(), chunk.unread), ("ʃˌi sˈɛd koɲɲiʨiβa.", 0));
     }
 
     #[test]

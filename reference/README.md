@@ -37,6 +37,17 @@ mkdir -p out/spacy-en
 .cache/kfa/.venv/bin/python -I ../crates/spacy-en/reference.py --patterns out/spacy-en/patterns-200k.jsonl 200000
 ```
 
+`crates/g2p-ja` (misaki's Japanese G2P, on a port of MeCab) has its own recorders too, for MeCab's words (fugashi) and `JAG2P` alone, plus generators of synthetic and mixed English/Japanese text; its parity test reads `$KOKORO_JA_REFERENCE/*.{mecab,jag2p,fixed}.jsonl`. It needs UniDic, which `crates/g2p-ja/tools/fetch_unidic.sh` downloads and converts:
+
+```sh
+mkdir -p out/ja
+python3 ../crates/g2p-ja/tools/gen_cases.py 1 20000 > out/ja/gen-texts.jsonl
+.cache/kfa/.venv/bin/python -I ../crates/g2p-ja/tools/reference.py texts corpus/wiki-ja.jsonl > out/ja/wiki-texts.jsonl
+for m in mecab jag2p fixed; do .cache/kfa/.venv/bin/python -I ../crates/g2p-ja/tools/reference.py $m out/ja/gen-texts.jsonl > out/ja/gen.$m.jsonl; done
+python3 ../crates/g2p-ja/tools/gen_mixed.py 2 8000 corpus/gutenberg.jsonl corpus/wiki-ja.jsonl > /tmp/mixed.jsonl
+.cache/kfa/.venv/bin/python -I dump.py /tmp/mixed.jsonl out/mixed-2.jsonl   # lang a, b and j records for crates/pipeline
+```
+
 `crates/pipeline` (the whole English path, text to phoneme chunks) is tested end to end against the dumps above. Its script segmentation (kokoro's `foreign.py`) also has a random-text fixture, its Unicode tables come from the `regex` package here, and `pipeline_bench.py` times the reference's `smart_split` for comparison with `cargo run --release -p kokoro-pipeline --example bench`:
 
 ```sh

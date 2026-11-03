@@ -4,7 +4,7 @@
 #   deploy/deploy.sh [--listen ADDR]     # default 127.0.0.1:8880
 #
 # State lives in ~/.local/share/optimized-kokoro: the server binary, a copy of worker/run.sh,
-# the converted models, the compile-cache seed, server.toml and server.env (KOKORO_API_KEYS, mode
+# the converted models, UniDic for Japanese (unidic.dic), the compile-cache seed, server.toml and server.env (KOKORO_API_KEYS, mode
 # 0600; written once with a new random key, then left alone). Server and worker are always
 # updated together, since the protocol between them changes with the code.
 #
@@ -31,6 +31,11 @@ if [ ! -f "$state/models/voices.safetensors" ]; then
     echo "== convert models"
     (cd worker && uv sync --frozen && uv run --no-sync python -m kokoro_worker.convert "$state/models")
 fi
+
+# The server maps this file; fetch_unidic.sh skips it if its checksum already matches, and
+# otherwise installs the new one by rename, never in place.
+echo "== Japanese dictionary (UniDic)"
+crates/g2p-ja/tools/fetch_unidic.sh "$state/unidic.dic"
 
 echo "== compile cache (warms up in gVisor next to the running worker, then exits without listening)"
 KOKORO_WORKER_IMAGE=localhost/kokoro-worker:deploy-new KOKORO_WORKER_NAME=kokoro-worker-export \

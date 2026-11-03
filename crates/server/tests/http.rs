@@ -32,10 +32,10 @@ async fn health_and_voices_follow_the_worker() {
     assert_eq!(health.status(), 200);
     assert_eq!(json_body(health).await, json!({ "status": "healthy" }));
     let voices = request(server.addr, get("/v1/audio/voices", Some(KEY))).await;
-    // Only the voices whose language the server speaks: the worker also has `jf_alpha`.
-    assert!(VOICES.contains(&"jf_alpha"));
-    let spoken: Vec<_> = VOICES.iter().filter(|v| v.starts_with(['a', 'b', 'z'])).collect();
-    assert!(spoken.contains(&&"zf_xiaobei"));
+    // Only the voices whose language the server speaks: the worker also has `ef_dora`.
+    assert!(VOICES.contains(&"ef_dora"));
+    let spoken: Vec<_> = VOICES.iter().filter(|v| v.starts_with(['a', 'b', 'j', 'z'])).collect();
+    assert!(spoken.contains(&&"zf_xiaobei") && spoken.contains(&&"jf_alpha"));
     assert_eq!(json_body(voices).await, json!({ "voices": spoken }));
     assert_eq!(request(server.addr, get("/v1/audio/voices", None)).await.status(), 401);
     assert_eq!(request(server.addr, get("/v1/audio/voices", Some("nope"))).await.status(), 401);
@@ -128,7 +128,7 @@ async fn refuses_bad_requests_before_text_processing() {
         json!({ "input": "Hi.", "response_format": "pcm", "voice": "af_bella(2)+af_sky" }),
         json!({ "input": "Hi.", "response_format": "pcm", "voice": "af_heart-af_sky" }),
         json!({ "input": "Hi.", "response_format": "pcm", "voice": "alloy" }),
-        json!({ "input": "Hi.", "response_format": "pcm", "voice": "jf_alpha" }),
+        json!({ "input": "Hi.", "response_format": "pcm", "voice": "ef_dora" }),
         json!({ "input": "   ", "response_format": "pcm" }),
         json!({ "input": format!("a {}", "[pause:60s] ".repeat(6)), "response_format": "pcm" }),
     ];
@@ -535,7 +535,9 @@ async fn speaks_english_with_the_real_pipeline() {
     let chunks: Vec<_> = pipelines.chunks(Lang::AmericanEnglish, text).map(Result::unwrap).collect();
 
     assert_eq!(chunks.len(), 3);
-    assert_eq!((chunks[2].phonemes.as_str(), chunks[2].unread), ("ʤˌæpənˈiz tˈɛkst", 1));
+    // Read by the Japanese G2P when UniDic is installed, else as "Japanese text".
+    let japanese = if kokoro_pipeline::japanese_available() { ("toːkʲoː e ikɯ", 0) } else { ("ʤˌæpənˈiz tˈɛkst", 1) };
+    assert_eq!((chunks[2].phonemes.as_str(), chunks[2].unread), japanese);
     let mut expected = Vec::new();
     for chunk in &chunks {
         let (id, _, _, _, ids) = worker.synthesize().await;
