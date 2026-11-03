@@ -107,8 +107,23 @@ pub fn all() -> Vec<Record> {
     paths.iter().flat_map(read).collect()
 }
 
+/// `phonemes` without the language-switch flags misaki's English fallback leaves in, as they look
+/// after its English mapping (`(hi)`, `(An-us)`, `(kɔ)`). The port drops them
+/// (docs/divergences.md); `None` if there were none.
+pub fn without_language_flags(phonemes: &str) -> Option<String> {
+    static FLAG: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r"\([a-zAɔɹ]{2,3}(-[a-zAɔɹ]{2,3})?\)").unwrap());
+    FLAG.is_match(phonemes).then(|| FLAG.replace_all(phonemes, "").into_owned())
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn language_flags() {
+        assert_eq!(super::without_language_flags("hˈɪndi(hi)həlˈʌnt(An-us) (ˈɛɹ"), Some("hˈɪndihəlˈʌnt (ˈɛɹ".into()));
+        assert_eq!(super::without_language_flags("(ʧˌInˈiz) (a)"), None);
+    }
+
     #[test]
     fn fixtures_parse() {
         let records = super::all();

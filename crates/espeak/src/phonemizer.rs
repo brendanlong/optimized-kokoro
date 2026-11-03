@@ -8,16 +8,8 @@ use std::sync::{Arc, Mutex};
 const MARKS: &str = ";:,.!?¡¿—…\"«»“”(){}[]";
 const ESPEAK_TIE: char = '\u{361}';
 
-/// What happens to espeak's `(en)…(fr)` language-switch flags.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LanguageSwitch {
-    KeepFlags,
-    RemoveFlags,
-}
-
 pub struct Backend {
     espeak: Mutex<Espeak>,
-    language_switch: LanguageSwitch,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,7 +28,7 @@ struct Mark<'a> {
 impl Backend {
     /// `EspeakBackend(language)`: selects the first voice (in `espeak_ListVoices` order) whose
     /// first language is `language`, as phonemizer's `EspeakWrapper.set_voice` does.
-    pub fn new(language: &str, language_switch: LanguageSwitch, data: Arc<EspeakData>) -> Result<Self> {
+    pub fn new(language: &str, data: Arc<EspeakData>) -> Result<Self> {
         let identifier = data
             .list_voices()
             .into_iter()
@@ -45,7 +37,7 @@ impl Backend {
             .ok_or_else(|| Error::VoiceNotFound(language.to_string()))?;
         let mut espeak = Espeak::new(data);
         espeak.set_voice_by_name(&identifier)?;
-        Ok(Self { espeak: Mutex::new(espeak), language_switch })
+        Ok(Self { espeak: Mutex::new(espeak) })
     }
 
     /// `EspeakWrapper.text_to_phonemes`: the non-empty clauses espeak reads in `text`, joined by
@@ -75,14 +67,12 @@ impl Backend {
         Ok(restore(phonemized, &marks))
     }
 
-    /// `EspeakBackend._postprocess_line`.
+    /// `EspeakBackend._postprocess_line`, with `language_switch='remove-flags'`: espeak's
+    /// `(en)…(fr)` language-switch flags are dropped. The text's own parentheses are marks, kept
+    /// out of what espeak reads and put back afterwards, so they're never mistaken for flags.
     fn postprocess_line(&self, line: &str) -> String {
         let line = py_strip(line).replace('\n', " ").replace("  ", " ");
-        let line = squeeze_underscores(&line).replace("_ ", " ");
-        let line = match self.language_switch {
-            LanguageSwitch::KeepFlags => line,
-            LanguageSwitch::RemoveFlags => remove_flags(&line),
-        };
+        let line = remove_flags(&squeeze_underscores(&line).replace("_ ", " "));
         if line.is_empty() {
             return line;
         }

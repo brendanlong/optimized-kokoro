@@ -23,21 +23,17 @@ pub struct Chunk {
     pub ids: Vec<u8>,
     /// Seconds of silence, for a pause chunk.
     pub pause: Option<f64>,
+    /// Runs of text with no G2P for their language or script yet, read as "<name> text".
+    pub unread: usize,
 }
 
+/// Text processing failed, which fails the request.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PipelineError {
-    /// A sentence in a language with no G2P yet (Chinese or Japanese). The server skips it.
-    Unsupported(String),
-    /// Anything else, which fails the request.
-    Failed(String),
-}
+pub struct PipelineError(pub String);
 
 impl fmt::Display for PipelineError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Unsupported(why) | Self::Failed(why) => f.write_str(why),
-        }
+        f.write_str(&self.0)
     }
 }
 
@@ -82,10 +78,10 @@ impl Pipeline for StubPipeline {
             Ok(match chunk {
                 kokoro_text::Chunk::Speech(Piece { text, phonemes }) => {
                     let ids = phonemes.chars().map(stub_id).collect();
-                    Chunk { text, phonemes, ids, pause: None }
+                    Chunk { text, phonemes, ids, pause: None, unread: 0 }
                 }
                 kokoro_text::Chunk::Pause(seconds) => {
-                    Chunk { text: String::new(), phonemes: String::new(), ids: Vec::new(), pause: Some(seconds) }
+                    Chunk { text: String::new(), phonemes: String::new(), ids: Vec::new(), pause: Some(seconds), unread: 0 }
                 }
             })
         }))

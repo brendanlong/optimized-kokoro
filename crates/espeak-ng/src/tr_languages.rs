@@ -92,6 +92,19 @@ pub fn alphabet_from_char(c: i32) -> Option<&'static Alphabet> {
     None
 }
 
+/// The alphabets that name a language espeak switches to for their letters (`ALPHABETS` entries
+/// with a `language`): each one's character range and that language's code.
+pub fn alphabet_languages() -> Vec<(char, char, String)> {
+    ALPHABETS
+        .iter()
+        .filter(|a| a.language != 0)
+        .filter_map(|a| {
+            let language = String::from_utf8_lossy(&word_to_string2(a.language)).into_owned();
+            Some((char::from_u32(a.range_min)?, char::from_u32(a.range_max)?, language))
+        })
+        .collect()
+}
+
 fn set_letter_vowel(tr: &mut Translator, c: usize) {
     tr.letter_bits[c] = (tr.letter_bits[c] & 0x40) | 0x81; // keep value for group 6 (front vowels e,i,y)
 }
@@ -1537,5 +1550,9 @@ mod tests {
         assert!(alphabet_from_char(0x800).is_none());
         assert!(alphabet_from_char(b'a' as i32).is_none());
         assert!(alphabet_from_char(-1).is_none());
+        let languages = alphabet_languages();
+        assert!(languages.contains(&('\u{10a0}', '\u{10ff}', "ka".into())));
+        assert!(languages.contains(&('\u{a00}', '\u{a7f}', "pa".into())));
+        assert!(!languages.iter().any(|(lo, hi, _)| (*lo..=*hi).contains(&'ส')));
     }
 }

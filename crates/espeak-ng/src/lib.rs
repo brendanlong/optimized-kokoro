@@ -44,6 +44,7 @@ mod voices;
 
 pub use data::{EspeakData, Error, Result, VoiceInfo};
 pub use engine::Espeak;
+pub use tr_languages::alphabet_languages;
 
 /// The espeak-ng 1.52 data the reference pipeline reads (bundled with espeakng-loader 0.2.4), cut
 /// down to the phoneme tables, the voice files and the dictionaries misaki and kokoro use.

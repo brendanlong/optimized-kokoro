@@ -1,62 +1,115 @@
 //! kokoro's `foreign.py` (brendanlong/kokoro at the commit Kokoro-FastAPI pins) for the English
 //! pipelines: finds runs of other scripts so each is read by its own language's G2P, in the
 //! English voice, and post-processes their phonemes.
+//!
+//! `foreign.py` looks for six scripts besides Han and kana; here every non-Latin script makes
+//! runs. The six keep `foreign.py`'s espeak voices and rules; any other script is read by the
+//! language espeak-ng itself switches to for an alphabet of that script
+//! ([`kokoro_espeak::alphabet_languages`]), if there is one. Runs of the new scripts also hold the
+//! invisible format characters (`\p{Cf}`: zero-width space and joiners, soft hyphens) between
+//! their letters.
 
-use crate::tables::{NONSPACING_MARKS, SCRIPTS};
+pub use crate::tables::Script;
+use crate::tables::{FORMAT_CHARS, NONSPACING_MARKS, SCRIPTS};
 use kokoro_text::py;
 use std::cmp::Ordering;
-
-/// The scripts `foreign.py` looks for.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Script {
-    Han,
-    Hiragana,
-    Katakana,
-    Latin,
-    Arabic,
-    Cyrillic,
-    Devanagari,
-    Greek,
-    Hangul,
-    Hebrew,
-}
+use std::sync::LazyLock;
 
 /// A language other than the pipeline's, which reads a run of its script.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Language {
-    Arabic,
     Chinese,
-    Greek,
-    Hebrew,
-    Hindi,
     Japanese,
-    Korean,
-    Russian,
+    /// A run of another script, read by espeak with the voice for the script ([`espeak_voice`]).
+    Script(Script),
+    /// Letters of a script espeak has no voice for, or that its voice for the script doesn't read.
+    Unread(Script),
 }
 
 impl Language {
-    /// The reference's language code (`foreign.py`'s `SCRIPT_LANGUAGES`, and `zh`/`ja`).
+    /// The reference's language code (`zh`, `ja`, or the espeak voice's), or the script's name if
+    /// espeak has no voice for it.
     pub fn code(self) -> &'static str {
         match self {
-            Language::Arabic => "ar",
             Language::Chinese => "zh",
-            Language::Greek => "el",
-            Language::Hebrew => "he",
-            Language::Hindi => "hi",
             Language::Japanese => "ja",
-            Language::Korean => "ko",
-            Language::Russian => "ru",
+            Language::Script(script) => espeak_voice(script).expect("a voiced script"),
+            Language::Unread(script) => script.name(),
         }
     }
 
-    /// The espeak voice that reads this language, or `None` for Chinese and Japanese, which have
-    /// G2Ps of their own.
+    /// The espeak voice that reads this language: none for Chinese and Japanese, which have G2Ps
+    /// of their own, or for letters espeak doesn't read.
     pub fn espeak(self) -> Option<&'static str> {
         match self {
-            Language::Chinese | Language::Japanese => None,
-            other => Some(other.code()),
+            Language::Script(script) => espeak_voice(script),
+            _ => None,
         }
     }
+
+    /// The English name a run is read as when there's no G2P for it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Language::Chinese => "Chinese",
+            Language::Japanese => "Japanese",
+            Language::Script(script) | Language::Unread(script) => script.name(),
+        }
+    }
+}
+
+/// `foreign.py`'s scripts, whose runs keep its rules exactly.
+pub fn in_foreign_py(script: Script) -> bool {
+    use Script::*;
+    matches!(script, Han | Hiragana | Katakana | Latin | Arabic | Cyrillic | Devanagari | Greek | Hangul | Hebrew)
+}
+
+/// espeak-ng's alphabets that name a language, each with the script most of its letters are in.
+static ALPHABETS: LazyLock<Vec<(char, char, String, Script)>> = LazyLock::new(|| {
+    kokoro_espeak::alphabet_languages()
+        .into_iter()
+        .filter_map(|(lo, hi, language)| {
+            let mut counts: Vec<(Script, usize)> = Vec::new();
+            for s in (lo..=hi).filter_map(script) {
+                match counts.iter_mut().find(|(x, _)| *x == s) {
+                    Some((_, n)) => *n += 1,
+                    None => counts.push((s, 1)),
+                }
+            }
+            let (dominant, _) = counts.into_iter().max_by_key(|&(_, n)| n)?;
+            Some((lo, hi, language, dominant))
+        })
+        .collect()
+});
+
+/// The espeak voice that reads a run of `script`: `foreign.py`'s for its six scripts, otherwise
+/// the language of the espeak-ng alphabet whose letters are mostly of that script. Coptic in the
+/// Greek block, or Javanese in the range espeak gives Korean, aren't what those voices read.
+pub fn espeak_voice(script: Script) -> Option<&'static str> {
+    match script {
+        Script::Arabic => Some("ar"),
+        Script::Cyrillic => Some("ru"),
+        Script::Devanagari => Some("hi"),
+        Script::Greek => Some("el"),
+        Script::Hangul => Some("ko"),
+        Script::Hebrew => Some("he"),
+        Script::Latin | Script::Han | Script::Hiragana | Script::Katakana => None,
+        _ => ALPHABETS.iter().find(|a| a.3 == script).map(|a| a.2.as_str()),
+    }
+}
+
+/// Whether espeak's voice for `script` reads `c`: espeak lowercases a word, then reads the letters
+/// in the alphabet it switched to. Georgian capitals (Mtavruli) lowercase into it; Nuskhuri and
+/// Armenian ligatures don't, and espeak would spell them out.
+fn espeak_reads(script: Script, c: char) -> bool {
+    c.to_lowercase().all(|c| ALPHABETS.iter().any(|&(lo, hi, _, s)| s == script && (lo..=hi).contains(&c)))
+}
+
+/// Every espeak voice a run may go to.
+pub fn espeak_voices() -> Vec<&'static str> {
+    let mut voices: Vec<&'static str> = SCRIPTS.iter().filter_map(|&(_, _, script)| espeak_voice(script)).collect();
+    voices.sort_unstable();
+    voices.dedup();
+    voices
 }
 
 fn in_ranges(table: &[(char, char)], c: char) -> bool {
@@ -73,13 +126,23 @@ fn order(lo: char, hi: char, c: char) -> Ordering {
     }
 }
 
-/// `\p{Script}`, for the scripts `foreign.py` names.
+/// `\p{Script}`, for every script but Common, Inherited and Unknown.
 pub fn script(c: char) -> Option<Script> {
     SCRIPTS.binary_search_by(|&(lo, hi, _)| order(lo, hi, c)).ok().map(|i| SCRIPTS[i].2)
 }
 
 fn is_mark(c: char) -> bool {
     in_ranges(NONSPACING_MARKS, c)
+}
+
+fn is_format(c: char) -> bool {
+    in_ranges(FORMAT_CHARS, c)
+}
+
+/// What may come between two runs of one language for them to be read as one: the joiners,
+/// marks and format characters.
+pub fn is_gap(c: char) -> bool {
+    is_joiner(c) || is_mark(c) || is_format(c)
 }
 
 fn is_kana(c: char) -> bool {
@@ -91,18 +154,20 @@ fn is_cjk(c: char) -> bool {
 }
 
 /// `[ '’\-]`: what may join two words of one run.
-fn is_joiner(c: char) -> bool {
+pub fn is_joiner(c: char) -> bool {
     matches!(c, ' ' | '\'' | '’' | '-')
 }
 
 /// `(?:\p{S}\p{Mn}*)+` (three or more letters for Greek) at `start`: the end of the word, if any.
+/// Outside `foreign.py`'s scripts, `\p{Cf}` counts as a mark.
 fn word_end(text: &str, start: usize, s: Script) -> Option<usize> {
+    let joins = |c: char| is_mark(c) || (!in_foreign_py(s) && is_format(c));
     let mut letters = 0;
     let mut end = start;
     for c in text[start..].chars() {
         if script(c) == Some(s) {
             letters += 1;
-        } else if letters == 0 || !is_mark(c) {
+        } else if letters == 0 || !joins(c) {
             break;
         }
         end += c.len_utf8();
@@ -201,13 +266,26 @@ pub fn split(text: &str, reads: impl Fn(char) -> bool) -> Vec<(&str, Option<Lang
                 continue;
             }
             Some(Script::Latin) => continue,
-            Some(Script::Arabic) => Language::Arabic,
-            Some(Script::Cyrillic) => Language::Russian,
-            Some(Script::Devanagari) => Language::Hindi,
-            Some(Script::Greek) => Language::Greek,
-            Some(Script::Hangul) => Language::Korean,
-            Some(Script::Hebrew) => Language::Hebrew,
-            Some(Script::Han | Script::Hiragana | Script::Katakana) => unreachable!("CJK runs have no script"),
+            Some(script) if in_foreign_py(script) => Language::Script(script),
+            Some(_) if !run_text.chars().any(char::is_alphanumeric) => continue,
+            Some(script) if espeak_voice(script).is_none() => Language::Unread(script),
+            Some(script) => {
+                let language = |reads: bool| if reads { Language::Script(script) } else { Language::Unread(script) };
+                let mut start = run.start;
+                let mut current = None;
+                for (i, c) in run_text.char_indices().filter(|&(_, c)| self::script(c) == Some(script)) {
+                    let reads = espeak_reads(script, c);
+                    if let Some(previous) = current
+                        && previous != reads
+                    {
+                        push(start, run.start + i, language(previous));
+                        start = run.start + i;
+                    }
+                    current = Some(reads);
+                }
+                push(start, run.end, language(current.unwrap_or(false)));
+                continue;
+            }
         };
         push(run.start, run.end, language);
     }
@@ -220,7 +298,7 @@ pub fn split(text: &str, reads: impl Fn(char) -> bool) -> Vec<(&str, Option<Lang
 /// What goes to the language's G2P: Hebrew loses its vowel points, which espeak reads as
 /// letter names.
 pub fn prepare(segment: &str, language: Language) -> std::borrow::Cow<'_, str> {
-    if language == Language::Hebrew && segment.chars().any(is_mark) {
+    if language == Language::Script(Script::Hebrew) && segment.chars().any(is_mark) {
         segment.chars().filter(|&c| !is_mark(c)).collect::<String>().into()
     } else {
         segment.into()
@@ -315,7 +393,7 @@ pub fn translate_cjk_punctuation(text: &str) -> std::borrow::Cow<'_, str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use Language::*;
+    use Language::Chinese;
 
     fn shape(text: &str) -> Vec<(&str, Option<&'static str>)> {
         split(text, |c| c != '兙').into_iter().map(|(s, l)| (s, l.map(Language::code))).collect()
@@ -348,11 +426,49 @@ mod tests {
     #[test]
     fn marks_belong_to_the_letter_before() {
         assert_eq!(shape("שָׁלוֹם"), [("שָׁלוֹם", Some("he"))]);
-        assert_eq!(prepare("שָׁלוֹם", Hebrew), "שלום");
+        assert_eq!(prepare("שָׁלוֹם", Language::Script(Script::Hebrew)), "שלום");
         assert_eq!(shape("\u{301}Привет"), [("\u{301}", None), ("Привет", Some("ru"))]);
         assert_eq!(shape("ट्रांसपोर्टरों"), [("ट्रांसपोर्टरों", Some("hi"))]);
         assert_eq!(shape("a\u{483}b"), [("a\u{483}b", None)]);
         assert_eq!(shape("Ελλ\u{301}ηνικά"), [("Ελλ\u{301}ηνικά", Some("el"))]);
+    }
+
+    #[test]
+    fn other_scripts_go_to_the_voice_espeak_switches_to() {
+        assert_eq!(shape("Georgian გამარჯობა is"), [("Georgian ", None), ("გამარჯობა", Some("ka")), (" is", None)]);
+        assert_eq!(shape("Armenian Բարեւ"), [("Armenian ", None), ("Բարեւ", Some("hy"))]);
+        assert_eq!(shape("வணக்கம்"), [("வணக்கம்", Some("ta"))]);
+        assert_eq!(shape("ਸਤਿ ਸ੍ਰੀ"), [("ਸਤਿ ਸ੍ਰੀ", Some("pa"))]);
+    }
+
+    #[test]
+    fn the_runs_script_decides_its_voice() {
+        assert_eq!(shape("ᲒᲐᲛᲐᲠᲯᲝᲑᲐ"), [("ᲒᲐᲛᲐᲠᲯᲝᲑᲐ", Some("ka"))]);
+        assert_eq!(shape("Ა გამარჯობა"), [("Ა გამარჯობა", Some("ka"))]);
+        assert_eq!(shape("ⴂⴀⴋⴀ"), [("ⴂⴀⴋⴀ", Some("Georgian"))]);
+        assert_eq!(shape("ﬓԲարեւ ﬔ"), [("ﬓ", Some("Armenian")), ("Բարեւ ", Some("hy")), ("ﬔ", Some("Armenian"))]);
+        for (text, script) in [("ꦗꦮ", "Javanese"), ("ꨌꩌ", "Cham"), ("ꮳꮃꭹ", "Cherokee"), ("ꯃꯤꯇꯩ", "Meetei Mayek"), ("ϢϤϦ", "Coptic")] {
+            assert_eq!(shape(text), [(text, Some(script))]);
+        }
+    }
+
+    #[test]
+    fn format_characters_stay_inside_runs_of_new_scripts() {
+        assert_eq!(shape("สวัสดี\u{200b}ครับ\u{200b}ผม"), [("สวัสดี\u{200b}ครับ\u{200b}ผม", Some("Thai"))]);
+        assert_eq!(shape("สวัส\u{ad}ดี"), [("สวัส\u{ad}ดี", Some("Thai"))]);
+        assert_eq!(shape("ශ්\u{200d}රී"), [("ශ්\u{200d}රී", Some("si"))]);
+        assert_eq!(shape("می\u{200c}خواهم"), [("می", Some("ar")), ("\u{200c}", None), ("خواهم", Some("ar"))]);
+    }
+
+    #[test]
+    fn scripts_espeak_has_no_voice_for_are_unvoiced() {
+        assert_eq!(shape("Thai สวัสดี ครับ."), [("Thai ", None), ("สวัสดี ครับ", Some("Thai")), (".", None)]);
+        assert_eq!(shape("ሰላም"), [("ሰላም", Some("Ethiopic"))]);
+        assert_eq!(shape("፩፪፫"), [("፩፪፫", Some("Ethiopic"))]);
+        assert_eq!(shape("a ꫰ ๏"), [("a ꫰ ๏", None)]);
+        assert_eq!(shape("ᠮᠣᠩᠭᠣᠯ"), [("ᠮᠣᠩᠭᠣᠯ", Some("Mongolian"))]);
+        assert_eq!(split("ᐊᑎᒍ", |_| true), [("ᐊᑎᒍ", Some(Language::Unread(Script::CanadianAboriginal)))]);
+        assert_eq!(Language::Unread(Script::CanadianAboriginal).name(), "Canadian Aboriginal");
     }
 
     #[test]
@@ -373,10 +489,10 @@ mod tests {
 
     #[test]
     fn nearest_phonemes_and_mandarin() {
-        assert_eq!(finish(" maɾħaba ʕali ", Arabic), "maɾhaba ʔali");
+        assert_eq!(finish(" maɾħaba ʕali ", Language::Script(Script::Arabic)), "maɾhaba ʔali");
         assert_eq!(finish("pei↓ʨiŋ→", Chinese), "bˈeiʨˈiŋ");
         assert_eq!(finish("tʰa→ n↗", Chinese), "tˈa ˈn");
-        assert_eq!(finish("pei↓", Russian), "pei↓");
+        assert_eq!(finish("pei↓", Language::Script(Script::Cyrillic)), "pei↓");
     }
 
     #[test]

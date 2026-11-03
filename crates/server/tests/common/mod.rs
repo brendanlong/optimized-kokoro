@@ -375,18 +375,6 @@ pub struct BrokenPipeline {
     pub panic: bool,
 }
 
-/// The stub pipeline, reporting chunk `index` as an unsupported language.
-pub struct UnsupportedAt(pub usize);
-
-impl Pipeline for UnsupportedAt {
-    fn chunks<'a>(&'a self, lang: Lang, text: &'a str) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
-        Box::new(StubPipeline.chunks(lang, text)
-.enumerate().map(|(i, chunk)| {
-            if i == self.0 { Err(PipelineError::Unsupported("no G2P for ja text yet".into())) } else { chunk }
-        }))
-    }
-}
-
 impl Pipeline for BrokenPipeline {
     fn chunks<'a>(&'a self, lang: Lang, text: &'a str) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
         Box::new(StubPipeline.chunks(lang, text)
@@ -396,7 +384,7 @@ impl Pipeline for BrokenPipeline {
             } else if self.panic {
                 panic!("pipeline bug")
             } else {
-                Err(PipelineError::Failed("cannot phonemize".into()))
+                Err(PipelineError("cannot phonemize".into()))
             }
         }))
     }
