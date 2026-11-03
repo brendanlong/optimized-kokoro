@@ -1,6 +1,7 @@
 #!/bin/bash
 # Installs the server, worker and demo page on the host's system Docker (deploy/compose.yaml), in
-# place of the old systemd user units. Run once, with sudo, from a checkout the build user owns:
+# place of the old systemd user units. Run once, with sudo, from a checkout only the build user (you)
+# and root can change; it refuses one the old user (claude) can write:
 #
 #   sudo deploy/install.sh               # set up /srv/optimized-kokoro, build, start, wait for /health
 #   sudo deploy/install.sh --remove-old  # afterwards: remove the old user units and state
@@ -29,8 +30,22 @@ old_active() {
     old_systemctl is-active --quiet "${old_units[@]}" 2> /dev/null
 }
 
+# Stops the old units (if they ran) and starts the new release. Every step returns on failure rather
+# than exiting, so the caller can recover.
+go_live() {
+    if [ -n "$was_active" ]; then
+        echo "== stopping the old user units (${old_units[*]}) to free port 8880"
+        old_systemctl stop "${old_units[@]}" || return 1
+    fi
+    echo "== start $rel"
+    point_current "$rel" || return 1
+    start_current
+}
+
 install_new() {
     require_root
+    take_lock
+    check_checkout
     [ ! -e "$root/current" ] || die "already installed ($root/current); use deploy/update.sh"
     ensure_runtime
     ensure_dirs
@@ -40,25 +55,26 @@ install_new() {
     ensure_secrets
     stage_release
 
-    local was_active=
+    was_active=
     if id "$old_user" > /dev/null 2>&1 && old_active; then
         was_active=1
-        echo "== stopping the old user units (${old_units[*]}) to free port 8880"
-        old_systemctl stop "${old_units[@]}"
     fi
-    echo "== start $rel"
-    point_current "$rel"
-    if ! start_current; then
-        show_logs
-        compose down || true
-        rm -f "$root/current"
-        prune_releases
+    if ! go_live; then
+        # Free port 8880 and bring the old units back before anything else.
+        if [ -e "$root/current" ]; then
+            show_logs
+            compose down || true
+        fi
         if [ -n "$was_active" ]; then
             echo "starting the old user units again" >&2
-            old_systemctl start "${old_units[@]}"
+            old_systemctl start "${old_units[@]}" || echo "starting the old units failed too" >&2
         fi
+        rm -f "$root/current"
+        pending_release=
+        prune_releases
         die "install failed; nothing of the old setup was removed"
     fi
+    pending_release=
 
     local old port
     old=$(old_state)
@@ -86,6 +102,7 @@ EOF
 
 remove_old() {
     require_root
+    take_lock
     [ -e "$root/current" ] || die "the new deployment isn't installed"
     if id "$old_user" > /dev/null 2>&1 && old_active; then
         die "the old units are running, so port 8880 may be theirs; stop them and start the new deployment first"
@@ -94,12 +111,13 @@ remove_old() {
     [ -n "$(compose ps -q server)" ] || die "the server container isn't running"
 
     local home old
-    home=$(getent passwd "$old_user" | cut -d: -f6)
+    home=$(getent passwd "$old_user" | cut -d: -f6) || die "no user $old_user"
+    [ -n "$home" ] || die "$old_user has no home directory"
     old=$(old_state)
     echo "== as $old_user: disable and remove ${old_units[*]}"
     old_systemctl disable --now "${old_units[@]}" || true
     sudo -u "$old_user" -- rm -f -- "${old_units[@]/#/$home/.config/systemd/user/}"
-    old_systemctl daemon-reload
+    old_systemctl daemon-reload || echo "daemon-reload failed ($old_user's user manager isn't running?); harmless" >&2
     if [ -n "$old" ]; then
         echo "== as $old_user: delete $old"
         sudo -u "$old_user" -- rm -rf -- "$old"
@@ -114,7 +132,7 @@ case ${1:-} in
 "") install_new ;;
 --remove-old) remove_old ;;
 *)
-    sed -n '2,15p' "$0"
+    sed -n '2,16p' "$0"
     exit 2
     ;;
 esac

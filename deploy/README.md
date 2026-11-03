@@ -31,7 +31,7 @@ The socket lives in a named volume that is a tmpfs created as `uid=65534,gid=655
 
 ## Install (once)
 
-Run it from a checkout `claude` can't write: the script runs as root and builds what's in the checkout.
+Run it as yourself (`sudo` from your own account, not `claude`) from your own checkout: the script runs as root and builds what's in the checkout. `install.sh` and `update.sh` refuse a checkout that `claude` can write (any file in it, or any parent directory), or that has files owned by anyone but you or root, or world-writable ones. The converters run as you (`SUDO_USER`, or `KOKORO_BUILD_USER`), never as `claude`. Root never opens files inside a directory you or `claude` own: it reads them out with `sudo -u OWNER cat` into its own temporary directory. Only one `install.sh` or `update.sh` runs at a time (`/srv/optimized-kokoro/.lock`).
 
 ```sh
 git clone https://github.com/brendanlong/optimized-kokoro ~/optimized-kokoro && cd ~/optimized-kokoro
@@ -40,11 +40,11 @@ sudo deploy/install.sh
 
 What it does, in this order, while the old user units keep serving:
 1. Adds the `runsc-kokoro` runtime (above), and creates `/srv/optimized-kokoro` with `settings.env`.
-2. UniDic: copies the old `unidic.dic` (read as `claude`) if it matches the checksum in `crates/g2p-ja/tools/fetch_unidic.sh`; otherwise fetches and converts it as you (`SUDO_USER`, or `KOKORO_BUILD_USER`; this needs cargo). Checked again once root owns the copy.
-3. Models: converts them as you with `uv run python -m kokoro_worker.convert` (a pinned Hugging Face revision; this needs uv). Only `config.json`, `model.safetensors` and `voices.safetensors` are taken. `KOKORO_MODELS_FROM=DIR` copies a converted directory instead (the conversion is deterministic: a fresh one matched the deployed files byte for byte).
+2. UniDic, as `unidic/SHA256.dic` (the checksum in `crates/g2p-ja/tools/fetch_unidic.sh`): copies the old `unidic.dic` (read as `claude`) if it matches, or fetches and converts it as you (this needs cargo). Checked again once root has the copy.
+3. Models: converts them as you with `uv run python -m kokoro_worker.convert` (a pinned Hugging Face revision; this needs uv). Only `config.json`, `model.safetensors` and `voices.safetensors` are taken. `KOKORO_MODELS_FROM=DIR` copies a converted directory instead, read as the directory's owner, for example `KOKORO_MODELS_FROM=~claude/.local/share/optimized-kokoro/models` (the conversion is deterministic: a fresh one matched the deployed files byte for byte).
 4. API keys: reuses the keys in `~claude/.local/share/optimized-kokoro/server.env` (read as `claude`), so clawed-abode needs no change, or makes a new one, and makes a separate key for the demo (limited to 4 streams, so it can't take all of clawed-abode's capacity). They go in `secrets/server.toml` and `secrets/demo.key`.
 5. Builds the three images and exports a compile cache: a one-off `docker compose run` of the new worker as nobody, which warms up, writes the caches into a directory only nobody can write, and exits without listening. Root then takes ownership (dropping any setuid bits), and the serving worker mounts it read-only.
-6. Stops the old units as `claude` (only now, to free port 8880), starts the containers and waits for `/health`. If they don't come up healthy, it shows their logs, removes them, and starts the old units again.
+6. Stops the old units as `claude` (only now, to free port 8880), starts the containers and waits for `/health`. If they don't come up healthy, it shows their logs, removes them, starts the old units again, and removes the release.
 
 It removes nothing of the old setup. Once you've checked the new deployment (below), run
 
@@ -82,7 +82,7 @@ What couldn't be tested before the first install (no Docker access from `claude`
 git pull && sudo deploy/update.sh
 ```
 
-It builds new images and exports a new compile cache into a new release directory while the running release keeps serving, then points `current` at it (by rename) and recreates the containers. If they don't come up healthy, it points `current` back at the previous release and starts that again. It keeps the previous release (images, compose file, cache) for going back by hand:
+It builds new images and exports a new compile cache into a new release directory while the running release keeps serving, then points `current` at it (by rename) and recreates the containers. If they don't come up healthy, it points `current` back at the previous release, starts that again, and removes the failed release and its images (as it does for a release whose build or cache export fails). It keeps the previous release (images, compose file, cache) for going back by hand:
 
 ```sh
 sudo ln -sfn releases/PREVIOUS /srv/optimized-kokoro/current
@@ -101,10 +101,10 @@ sudo docker compose -f /srv/optimized-kokoro/current/compose.yaml logs -f
 ## Layout
 
 `/srv/optimized-kokoro`, all root-owned (see the top of `lib.sh`):
-- `settings.env`: `KOKORO_GPU`, `KOKORO_DEMO_PORT`, `KOKORO_MAX_BATCH`.
-- `models/`, `unidic/unidic.dic` (memory-mapped by the server, so only ever replaced by rename): world-readable data.
+- `settings.env`: `KOKORO_GPU` (an index, a UUID or a MIG device), `KOKORO_DEMO_PORT`, `KOKORO_MAX_BATCH`. Any other line, apart from comments, is an error.
+- `models/`, and `unidic/SHA256.dic`: world-readable data. The server memory-maps the dictionary, so a new one (a new checksum in `fetch_unidic.sh`) is a new file next to the old one. Each release's `.env` names its own (`KOKORO_UNIDIC_FILE`), so neither the running server nor a rollback ever sees the dictionary change. Dictionaries no kept release names are deleted.
 - `secrets/` (0700): `server.toml` (listen address, socket path and API keys) and `demo.key`, each `root:65534` mode 0640. Docker bind-mounts them as Compose secrets at `/run/secrets/` (outside swarm, Compose can't change their owner or mode, so the files carry them). The keys never go through the environment.
-- `releases/REL/`: `compose.yaml` (a copy of `deploy/compose.yaml`), `.env` (`KOKORO_ROOT`, `KOKORO_RELEASE` and the settings) and `cache-seed/`. Images are `optimized-kokoro-{worker,server,demo}:REL`.
+- `releases/REL/`: `compose.yaml` (a copy of `deploy/compose.yaml`), `.env` (`KOKORO_ROOT`, `KOKORO_RELEASE`, `KOKORO_UNIDIC_FILE` and the settings) and `cache-seed/`. Images are `optimized-kokoro-{worker,server,demo}:REL`.
 - `current`: a symlink to the running release.
 
 ## Notes

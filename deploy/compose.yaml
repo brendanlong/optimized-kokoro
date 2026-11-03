@@ -1,7 +1,7 @@
 # The production deployment on the host's system Docker: the GPU worker, the Rust server and the demo
 # page, each in gVisor as nobody (65534), with no capabilities and a read-only root. deploy/install.sh
 # and deploy/update.sh copy this file to /srv/optimized-kokoro/releases/RELEASE/compose.yaml next to a
-# .env that sets KOKORO_ROOT, KOKORO_RELEASE and the settings from /srv/optimized-kokoro/settings.env;
+# .env that sets KOKORO_ROOT, KOKORO_RELEASE, KOKORO_UNIDIC_FILE and the settings from /srv/optimized-kokoro/settings.env;
 # /srv/optimized-kokoro/current points at the release that runs. See deploy/README.md.
 #
 #   sudo docker compose -f /srv/optimized-kokoro/current/compose.yaml ps|logs -f|restart
@@ -66,8 +66,8 @@ services:
     command: ["--config", "/run/secrets/server.toml"]
     environment:
       RUST_LOG: info
-      # Mapped the first time a request needs Japanese.
-      KOKORO_UNIDIC: /unidic/unidic.dic
+      # Mapped the first time a request needs Japanese. Named by checksum, set per release (lib.sh).
+      KOKORO_UNIDIC: /unidic/${KOKORO_UNIDIC_FILE:?}
     secrets:
       - {source: server_config, target: server.toml}
     volumes:
