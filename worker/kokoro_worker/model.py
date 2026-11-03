@@ -5,15 +5,17 @@ that a batch can hold sentences of different lengths:
 
 - Text side (ALBERT, text encoder, duration predictor) is exact under padding: ALBERT gets an
   attention mask, padded positions are zeroed before every convolution (as the convolution's own
-  zero padding would be), and the LSTMs run on packed sequences. Durations therefore match batch 1.
-- Frame side (F0/N predictor and decoder) is padded to the longest item in its group. The shared
-  LSTM is packed, but the instance norms and convolutions see the padding, which changes the audio
-  slightly (see docs/worker-protocol.md and the PR). Items are grouped by frame count so little
-  padding is needed, and `max_batch=1` turns batching off entirely.
+  zero padding would be), and the LSTMs run on packed sequences. Durations therefore match batch 1
+  (exactly in fp32; fp16 numerics depend a little on batch size).
+- Frame side (F0/N predictor and decoder) runs in groups of similar frame count, padded to the
+  longest in the group. The shared LSTM is packed, and masked.py takes the instance norms'
+  statistics over real frames and zeroes padding before every convolution, so padding doesn't
+  change the audio (`exact=False` drops the masks). `max_batch=1` in the server turns batching off.
 """
 
 import importlib.util
 import json
+import re
 import os
 import sys
 import types
@@ -28,6 +30,7 @@ from . import masked
 from .protocol import chunk_cap
 
 SAMPLES_PER_FRAME = 600  # 2x upsample in the decoder, then 10 * 6 in the generator, then hop 5
+VOICE_NAME = re.compile(r"[a-z0-9_]{1,64}")
 
 
 def _import_kokoro():
@@ -162,6 +165,9 @@ class Synth:
 
         voices = load_file(os.path.join(model_dir, "voices.safetensors"))
         self.voice_names = sorted(voices)
+        bad = [n for n in self.voice_names if not VOICE_NAME.fullmatch(n)]
+        if bad or not self.voice_names:
+            raise ValueError(f"voice names must match [a-z0-9_]{{1,64}}: {bad[:5]}")
         packs = torch.stack([voices[name] for name in self.voice_names])
         if packs.shape[1:] != (510, 256) or not bool(torch.isfinite(packs).all()):
             raise ValueError(f"bad voice packs: {tuple(packs.shape)}")
@@ -291,7 +297,12 @@ class Synth:
         cum = pred_dur.cumsum(1)
         for group in self._groups([frames[i] for i in ok], list(range(len(ok)))):
             idx = [ok[g] for g in group]
-            yield self._decode(idx, [frames[i] for i in idx], durations, cum, d_t, t_en, ref)
+            try:
+                yield self._decode(idx, [frames[i] for i in idx], durations, cum, d_t, t_en, ref)
+            except torch.OutOfMemoryError:
+                # Only this group fails; smaller groups after it may still fit.
+                torch.cuda.empty_cache()
+                yield [Result(i, None, None, "out_of_memory") for i in idx]
 
     def _decode(self, idx, frames, durations, cum, d_t, t_en, ref) -> list[Result]:
         dev = self.device

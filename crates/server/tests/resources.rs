@@ -373,3 +373,67 @@ async fn a_chunk_the_worker_finds_too_long_fails_the_request() {
     worker.send(respond(id, &ids));
     assert_eq!(client.await.unwrap().status(), 200);
 }
+
+/// A worker can't announce a chunk cap above the server's ceiling, since the cap bounds memory.
+#[tokio::test]
+async fn a_hello_over_the_chunk_cap_ceiling_is_refused() {
+    let server = start(|_| {}, Arc::new(StubPipeline)).await;
+    let mut greedy = hello();
+    greedy.max_chunk_samples = kokoro_server::Config::default().worker_max_chunk_samples + 1;
+    let mut worker = ScriptedWorker::listen(&server.socket, worker_side::hello(&greedy));
+    assert_eq!(worker.next().await, Event::Connected);
+    assert_eq!(worker.next().await, Event::Closed);
+    assert!(server.worker.current().is_none());
+}
+
+#[tokio::test]
+async fn a_hello_with_the_largest_chunk_cap_is_refused() {
+    let server = start(|_| {}, Arc::new(StubPipeline)).await;
+    let mut max = hello();
+    max.max_chunk_samples = u32::MAX;
+    let mut worker = ScriptedWorker::listen(&server.socket, worker_side::hello(&max));
+    assert_eq!(worker.next().await, Event::Connected);
+    assert_eq!(worker.next().await, Event::Closed);
+    assert!(server.worker.current().is_none());
+}
+
+/// The largest Audio the protocol allows (the chunk cap at the slowest speed, from Durations within
+/// the per-id maximum) is accepted, counted while held, and released when dropped.
+#[tokio::test]
+async fn maximal_audio_at_the_chunk_cap_is_accepted() {
+    let server = start(|_| {}, Arc::new(StubPipeline)).await;
+    let mut worker = ScriptedWorker::listen(&server.socket, worker_side::hello(&hello()));
+    let connection = server.worker.connected().await;
+    let request = kokoro_server::worker::SynthRequest { speed: 0.25, voices: Arc::from([(0, 1.0)]), ids: vec![43; 510], style_len: 510 };
+    let mut ticket = connection.submit(protocol::Priority::Waiting, &request).await.unwrap();
+    let (id, ..) = worker.synthesize().await;
+    let cap = protocol::chunk_cap(hello().max_chunk_samples, 0.25);
+    let durations = durations_for(510, cap, protocol::max_duration(0.25));
+    let samples = durations.iter().map(|&d| u64::from(d)).sum::<u64>() * 600;
+    assert_eq!(samples, cap);
+    worker.send(worker_side::durations(id, &durations));
+    worker.send(worker_side::audio(id, &vec![1; samples as usize]));
+    let rendered = ticket.result().await.unwrap();
+    assert_eq!(rendered.pcm.len() as u64, samples);
+    assert_eq!(server.worker.gauge().held() as u64, 2 * samples);
+    drop(rendered);
+    assert_eq!(server.worker.gauge().held(), 0);
+}
+
+/// A Durations frame must be followed by its own Audio, not by another request's frames.
+#[tokio::test]
+async fn interleaved_durations_close_the_connection() {
+    let server = start(|_| {}, Arc::new(StubPipeline)).await;
+    let mut worker = ScriptedWorker::listen(&server.socket, worker_side::hello(&hello()));
+    server.worker.connected().await;
+    let a = tokio::spawn(speak(server.addr, pcm("Hi.")));
+    let (id_a, _, _, _, ids_a) = worker.synthesize().await;
+    let b = tokio::spawn(request(server.addr, speech_request(Some("other-key"), pcm("Yo."))));
+    let (id_b, _, _, _, ids_b) = worker.synthesize().await;
+    let mut frames = worker_side::durations(id_a, &render(&ids_a).0);
+    frames.extend(worker_side::durations(id_b, &render(&ids_b).0));
+    worker.send(frames);
+    assert_eq!(worker.next().await, Event::Closed);
+    assert_eq!(a.await.unwrap().status(), 503);
+    assert_eq!(b.await.unwrap().status(), 503);
+}

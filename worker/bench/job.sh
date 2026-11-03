@@ -44,7 +44,7 @@ bench_one() {
     echo "== $label ($where): $*"
     local pid
     if [ "$where" = sandbox ]; then
-        KOKORO_WORKER_NAME=kw-bench-$label ./run.sh "$sock" "$MODELS" "$@" > "results/$label.worker.log" 2>&1 &
+        KOKORO_WORKER_NAME=kw-bench-$label ./run.sh serve "$sock" "$MODELS" "$@" > "results/$label.worker.log" 2>&1 &
         pid=$!
     else
         local cache

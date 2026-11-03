@@ -10,8 +10,10 @@
 //!   `max_phonemes == 510`, `max_batch >= 1`, `sample_rate == 24000`, `max_chunk_samples >= 1`,
 //!   and 1 or more distinct voice names of 1 to 64 bytes of `[a-z0-9_]`.
 //! - Every other frame names a request the front sent and that hasn't ended.
-//! - Durations: at most one per request, before its Audio, with exactly `n_ids + 2` values, each
-//!   at most `ceil(50 / speed) + 1` (Kokoro's `max_dur` is 50 sigmoid bins, divided by speed).
+//! - Durations: at most one per request, immediately followed by its Audio (no other frame in
+//!   between), with exactly `n_ids + 2` values, each from 1 to `ceil(50 / speed) + 1` (Kokoro's
+//!   `max_dur` is 50 sigmoid bins, divided by speed).
+//! - Hello's `max_chunk_samples` is at most the configured ceiling (`worker_max_chunk_samples`).
 //! - Audio: after the request's Durations, with exactly `600 × Σ durations` samples (Kokoro v1.0
 //!   renders 600 samples per duration unit; measured exact on the real model), and no more than
 //!   the request's chunk cap, `ceil(max_chunk_samples / speed)` (see [`chunk_cap`]).

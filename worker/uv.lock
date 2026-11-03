@@ -1,9 +1,9 @@
 version = 1
 revision = 3
-requires-python = "==3.12.*"
+requires-python = "==3.12.13"
 
 [options]
-exclude-newer = "2026-10-27T04:47:58.110166305Z"
+exclude-newer = "2026-10-27T08:46:42.611016888Z"
 exclude-newer-span = "P7D"
 
 [manifest]

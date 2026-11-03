@@ -1,14 +1,17 @@
 """The worker process: load the model, listen on a Unix socket, serve one connection at a time.
 
     python -m kokoro_worker.server --socket /run/kokoro/worker.sock --models /models
+    python -m kokoro_worker.server --models /models --export-cache DIR   # warm up, write caches, exit
 
 Per connection, a reader thread decodes and validates frames into the queue, and the main thread
 runs the GPU loop. Any protocol violation closes the connection; queued work is dropped with it.
+Nothing a front does can stop the accept loop: each connection's errors end that connection only.
 """
 
 import argparse
 import logging
 import os
+import select
 import shutil
 import socket
 import struct
@@ -22,13 +25,23 @@ from .scheduler import Closed, RequestQueue
 log = logging.getLogger("kokoro_worker")
 
 MAX_OUTSTANDING = 1024
+# A frame, once started, must arrive whole within this; a front that stalls mid-frame would
+# otherwise hold the only connection slot. Sends get the same deadline (the socket timeout).
+FRAME_TIMEOUT_S = 10.0
 
 
-def _recv_exact(conn: socket.socket, n: int) -> bytes:
+class FrameTimeout(Exception):
+    pass
+
+
+def _recv_exact(conn: socket.socket, n: int, deadline: float) -> bytes:
     buf = bytearray(n)
     view = memoryview(buf)
     got = 0
     while got < n:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0 or not select.select([conn], [], [], remaining)[0]:
+            raise FrameTimeout
         k = conn.recv_into(view[got:])
         if k == 0:
             raise EOFError
@@ -36,9 +49,17 @@ def _recv_exact(conn: socket.socket, n: int) -> bytes:
     return bytes(buf)
 
 
+def _wait_readable(conn: socket.socket) -> None:
+    """Block until the front sends something (an idle front may wait as long as it likes)."""
+    while not select.select([conn], [], [], 3600)[0]:
+        pass
+
+
 class Connection:
-    def __init__(self, conn: socket.socket, synth, max_batch: int):
+    def __init__(self, conn: socket.socket, synth, max_batch: int, frame_timeout: float = FRAME_TIMEOUT_S):
         self.conn = conn
+        self.frame_timeout = frame_timeout
+        conn.settimeout(frame_timeout)  # bounds each sendall; reads use their own deadline
         self.synth = synth
         self.max_batch = max_batch
         self.queue = RequestQueue(MAX_OUTSTANDING)
@@ -60,10 +81,12 @@ class Connection:
     def read_loop(self) -> None:
         try:
             while True:
-                (length,) = struct.unpack("<I", _recv_exact(self.conn, 4))
+                _wait_readable(self.conn)
+                deadline = time.monotonic() + self.frame_timeout
+                (length,) = struct.unpack("<I", _recv_exact(self.conn, 4, deadline))
                 if not 1 <= length <= P.MAX_FRONT_BODY:
                     raise P.ProtocolError(f"frame length {length}")
-                body = _recv_exact(self.conn, length)
+                body = _recv_exact(self.conn, length, deadline)
                 msg = P.parse_request(body, self.n_voices, self.synth.vocab_size, self.synth.max_phonemes)
                 if isinstance(msg, P.Cancel):
                     if self.queue.cancel(msg.request_id):
@@ -72,6 +95,8 @@ class Connection:
                     raise P.ProtocolError("duplicate request id or too many outstanding")
         except EOFError:
             log.info("front closed the connection")
+        except FrameTimeout:
+            log.warning("front stalled mid-frame for %.0f s, closing", self.frame_timeout)
         except P.ProtocolError as e:
             log.warning("protocol violation, closing: %s", e)
         except OSError as e:
@@ -131,17 +156,33 @@ class Connection:
                     return
 
     def serve(self) -> None:
-        self.send(P.hello(self.synth.vocab_size, self.synth.max_phonemes, self.max_batch,
-                          self.synth.max_chunk_samples, self.synth.voice_names))
-        reader = threading.Thread(target=self.read_loop, daemon=True)
-        reader.start()
+        reader = None
         try:
+            self.send(P.hello(self.synth.vocab_size, self.synth.max_phonemes, self.max_batch,
+                              self.synth.max_chunk_samples, self.synth.voice_names))
+            reader = threading.Thread(target=self.read_loop, daemon=True)
+            reader.start()
             self.gpu_loop()
+        except OSError as e:
+            log.info("connection error: %s", e)
         finally:
             log.info("connection done: %s", self.stats)
             self.close()
-            reader.join()
+            if reader is not None:
+                reader.join()
             self.conn.close()
+
+
+def accept_loop(listener: socket.socket, synth, max_batch: int, frame_timeout: float = FRAME_TIMEOUT_S) -> None:
+    """Serve connections one at a time, forever."""
+    while True:
+        conn, _ = listener.accept()
+        log.info("front connected")
+        try:
+            Connection(conn, synth, max_batch, frame_timeout).serve()
+        except Exception:
+            log.exception("connection failed")
+            conn.close()
 
 
 def warmup(synth, max_batch: int) -> None:
@@ -150,17 +191,22 @@ def warmup(synth, max_batch: int) -> None:
     from .model import Request
 
     ids = sorted(synth.vocab_ids)
+    # Warm every shape even if --max-chunk-seconds would refuse some of these requests.
+    cap, synth.max_chunk_samples = synth.max_chunk_samples, 2**32 - 1
     shapes = []
     if max_batch >= 2:
         shapes += [[50, 50], [40, 44], [100, 104, 110][:max_batch]]
     shapes += [[12], [60], [180], [400]]
-    for lengths in shapes:
-        reqs = [Request([ids[(i * 7 + n) % len(ids)] for i in range(n)], synth.style([(0, 1.0)], n), 1.0)
-                for n in lengths]
-        t = time.monotonic()
-        for _ in synth.run(reqs):
-            pass
-        log.info("warmup %s: %.1f s", lengths, time.monotonic() - t)
+    try:
+        for lengths in shapes:
+            reqs = [Request([ids[(i * 7 + n) % len(ids)] for i in range(n)], synth.style([(0, 1.0)], n), 1.0)
+                    for n in lengths]
+            t = time.monotonic()
+            for _ in synth.run(reqs):
+                pass
+            log.info("warmup %s: %.1f s", lengths, time.monotonic() - t)
+    finally:
+        synth.max_chunk_samples = cap
 
 
 CACHE_DIRS = ("TORCHINDUCTOR_CACHE_DIR", "TRITON_CACHE_DIR")
@@ -170,8 +216,8 @@ def copy_caches(src_root: str | None, dst_root: str | None) -> None:
     """Copy the compile caches between their env-var locations and a seed directory.
 
     KOKORO_CACHE_SEED (read-only mount): copied into the tmpfs caches before compiling.
-    KOKORO_CACHE_EXPORT: the caches are copied there after warmup, before any connection,
-    so a seed is only ever written by a worker that hasn't seen a request."""
+    --export-cache: a separate run that warms up, copies the caches there and exits without ever
+    listening, so a seed is only written by a worker that never saw a request."""
     for var in CACHE_DIRS:
         live = os.environ.get(var)
         if not live:
@@ -185,7 +231,9 @@ def copy_caches(src_root: str | None, dst_root: str | None) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--socket", required=True)
+    parser.add_argument("--socket")
+    parser.add_argument("--export-cache", metavar="DIR",
+                        help="warm up, write the compile caches to DIR and exit without listening")
     parser.add_argument("--models", required=True, help="directory written by kokoro_worker.convert")
     # 1 by default: on the 3060 Ti, batching 8 gives +39% throughput at 16 concurrent requests but
     # nothing at 4 and slower single requests (60 vs 34 ms median), cause not found yet. See the PR.
@@ -201,6 +249,8 @@ def main() -> None:
     parser.add_argument("--fp32", action="store_true")
     parser.add_argument("--no-compile", action="store_true")
     args = parser.parse_args()
+    if not args.socket and not args.export_cache:
+        parser.error("--socket is required (or --export-cache)")
     if not 1 <= args.max_batch <= 64:
         parser.error("--max-batch must be 1..64")
     max_chunk_samples = round(args.max_chunk_seconds * P.SAMPLE_RATE)
@@ -208,7 +258,9 @@ def main() -> None:
         parser.error("--max-chunk-seconds out of range")
     logging.basicConfig(level=logging.INFO, stream=sys.stderr, format="%(asctime)s %(levelname)s %(message)s")
 
-    seed, export = os.environ.get("KOKORO_CACHE_SEED"), os.environ.get("KOKORO_CACHE_EXPORT")
+    seed = os.environ.get("KOKORO_CACHE_SEED")
+    if seed and args.export_cache:
+        parser.error("--export-cache starts from an empty cache; unset KOKORO_CACHE_SEED")
     if seed and os.path.isdir(seed):
         t = time.monotonic()
         copy_caches(seed, None)
@@ -221,9 +273,10 @@ def main() -> None:
                   max_chunk_samples=max_chunk_samples, pad_slack=args.pad_slack, exact=not args.no_exact)
     log.info("loaded in %.1f s: %d voices", time.monotonic() - t, len(synth.voice_names))
     warmup(synth, args.max_batch)
-    if export:
-        copy_caches(None, export)
-        log.info("compile caches exported to %s", export)
+    if args.export_cache:
+        copy_caches(None, args.export_cache)
+        log.info("compile caches exported to %s in %.1f s; exiting", args.export_cache, time.monotonic() - t)
+        return
     log.info("ready in %.1f s", time.monotonic() - t)
 
     try:
@@ -235,10 +288,7 @@ def main() -> None:
     os.chmod(args.socket, 0o660)
     listener.listen(1)
     log.info("listening on %s", args.socket)
-    while True:
-        conn, _ = listener.accept()
-        log.info("front connected")
-        Connection(conn, synth, args.max_batch).serve()
+    accept_loop(listener, synth, args.max_batch)
 
 
 if __name__ == "__main__":

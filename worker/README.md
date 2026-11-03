@@ -6,13 +6,22 @@ Loads Kokoro-82M, listens on a Unix socket, speaks [the worker protocol](../docs
 uv sync
 uv run python -m kokoro_worker.convert models/          # once: .pth/.pt -> safetensors (outside the sandbox)
 podman build -t localhost/kokoro-worker -f Containerfile .
-./run.sh /run/user/$UID/kokoro models/                 # socket at /run/user/$UID/kokoro/worker.sock
+./run.sh serve /run/user/$UID/kokoro models/           # socket at /run/user/$UID/kokoro/worker.sock
 uv run python -m kokoro_worker.client /run/user/$UID/kokoro/worker.sock \
     --config models/config.json --phonemes "həlˈO wˈɜɹld." --out hello.wav
 uv run pytest                                             # protocol and connection tests, no GPU
+./run.sh probe /tmp/probe models/                         # what the sandbox can reach (tools/sandbox_probe.py)
 ```
 
-Startup compiles the model (torch.compile, Triton) into a tmpfs; the worker listens only once it's warm, so the front gets its Hello at once. In gVisor that takes about 2 minutes at `--max-batch 1` and 8 at `--max-batch 8`. To restart faster, seed the caches: run once with `KOKORO_CACHE_EXPORT=DIR ./run.sh ...` (it writes the caches after warmup, before accepting a connection), then start with `KOKORO_CACHE_SEED=DIR`, which mounts them read-only and copies them in (8 minutes down to 1.5 with batching). A seed is only valid for the same image, GPU and driver.
+Startup compiles the model (torch.compile, Triton) into a tmpfs; the worker listens only once it's warm, so the front gets its Hello at once. In gVisor that takes about 2 minutes at `--max-batch 1` and 8 at `--max-batch 8`. To restart faster, seed the caches: `./run.sh export-cache DIR models/ [same flags]` warms up, writes the caches to DIR and exits without ever listening; then `KOKORO_CACHE_SEED=DIR ./run.sh serve ...` mounts them read-only and copies them in (8 minutes down to 1.5 with batching). The cache holds pickles and shared objects the worker loads, which is why only a run that never accepts a connection may write it. A seed is only valid for the same image, GPU and driver.
+
+## Sandbox
+
+`run.sh` runs rootless podman with `/usr/bin/runsc`, and needs no root and no podman or docker config:
+- one GPU (`KOKORO_GPU`, an index or UUID from `nvidia-smi -L`, default 0), through podman's CDI spec;
+- no network, a read-only root, no capabilities, `no-new-privileges`; writable only the socket directory and a 2 GB tmpfs at `/tmp` (mounted `exec`, for Triton);
+- runs as the calling user's uid (`--userns=keep-id --user $(id -u):$(id -g)`), so the socket belongs to that user whatever the uid. Checked with uid 2000 inside: the venv, models and socket all work;
+- bounded RAM, CPU and host threads through a `systemd-run --user --scope` around podman (`KOKORO_MEMORY_MAX` default 8G, `KOKORO_CPU_QUOTA` 400%, `KOKORO_TASKS_MAX` 1024). runsc runs with `ignore-cgroups` (it can't manage cgroups rootless) and podman refuses runsc with `--cgroups=disabled`, so `--cgroups=split` keeps podman, conmon and the sandbox inside the scope. Checked: a 1 GB allocation under `MemoryMax=300M` kills the sandbox, and 4 busy processes do 4x less work at `CPUQuota=100%` than at 400%. `TasksMax` bounds host threads; gVisor runs guest threads on a few of those, so it doesn't cap guest thread count. GPU memory isn't covered by any of these. `KOKORO_NO_LIMITS=1` skips the scope.
 
 `--max-chunk-seconds` (default 120) is the most audio one request may produce at speed 1, scaled by 1/speed and announced in Hello; longer requests get `Failed` code 3 before the decoder runs. Real 510-phoneme chunks reach about 44 s (`bench/max_duration.py`).
 
@@ -24,7 +33,8 @@ Startup compiles the model (torch.compile, Triton) into a tmpfs; the worker list
 - `kokoro_worker/model.py`: loads the weights and runs a batch. The modules are the kokoro fork's (`brendanlong/kokoro@66c8ed5`, imported without its G2P); the forward pass is ours.
 - `kokoro_worker/masked.py`: the decoder's forward pass with padding masked out.
 - `kokoro_worker/convert.py`, `kokoro_worker/client.py`: one-time converter and a test client.
-- `bench/`: equivalence checks, load generator, listening pairs, and the gpuc job that runs them.
+- `bench/`: equivalence checks, load generator, listening pairs, and the gpuc jobs that ran them.
+- `tools/`: `hostile.py`, a hostile front (malformed, extreme and stalled frames, limits, 300 mutations), and `sandbox_probe.py`, both from the PR #11 review.
 
 ## Batching
 

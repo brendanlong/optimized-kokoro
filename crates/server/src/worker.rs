@@ -120,6 +120,8 @@ struct State {
     pending: HashMap<u64, Pending>,
     /// When the worker last finished a frame, or was last given work while idle.
     last_progress: Instant,
+    /// The request whose Durations just arrived: its Audio must be the very next frame.
+    awaiting_audio: Option<u64>,
 }
 
 /// Limits on the worker and how long it may take.
@@ -132,6 +134,9 @@ pub struct Settings {
     pub progress_timeout: Duration,
     /// Requests submitted and not yet finished by the worker, cancelled ones included.
     pub max_outstanding: usize,
+    /// The largest `max_chunk_samples` a worker may announce; a hello above it is refused, since
+    /// the cap is what bounds the audio the server holds.
+    pub max_chunk_samples: u32,
 }
 
 pub struct Connection {
@@ -159,7 +164,7 @@ impl Connection {
             outgoing,
             slots: Arc::new(Semaphore::new(max_outstanding)),
             gauge,
-            state: Mutex::new(State { open: true, pending: HashMap::new(), last_progress: Instant::now() }),
+            state: Mutex::new(State { open: true, pending: HashMap::new(), last_progress: Instant::now(), awaiting_audio: None }),
             reset: Notify::new(),
             next_id: AtomicU64::new(0),
         }
@@ -265,6 +270,11 @@ impl Connection {
     fn dispatch(&self, frame: WorkerFrame) -> Result<(), String> {
         let mut state = self.state.lock().unwrap();
         state.last_progress = Instant::now();
+        if let Some(expected) = state.awaiting_audio.take()
+            && !matches!(frame, WorkerFrame::Audio { id, .. } if id == expected)
+        {
+            return Err(format!("request {expected}: its durations weren't followed by its audio"));
+        }
         match frame {
             WorkerFrame::Hello(_) => Err("second hello".into()),
             WorkerFrame::Durations { id, durations } => {
@@ -275,14 +285,15 @@ impl Connection {
                 if durations.len() != pending.n_ids + 2 {
                     return Err(format!("request {id}: {} durations for {} ids", durations.len(), pending.n_ids));
                 }
-                if durations.iter().any(|&d| d > pending.max_duration) {
-                    return Err(format!("request {id}: a duration over {}", pending.max_duration));
+                if durations.iter().any(|&d| d == 0 || d > pending.max_duration) {
+                    return Err(format!("request {id}: a duration of 0 or over {}", pending.max_duration));
                 }
                 let samples = durations.iter().map(|&d| u64::from(d)).sum::<u64>() * SAMPLES_PER_FRAME;
                 if samples > pending.max_samples {
                     return Err(format!("request {id}: {samples} samples, over the chunk cap {}", pending.max_samples));
                 }
                 pending.durations = Some(durations);
+                state.awaiting_audio = Some(id);
                 Ok(())
             }
             WorkerFrame::Audio { id, pcm } => {
@@ -421,6 +432,12 @@ async fn serve(
             _ => return Err(ReadError::Violation("first frame isn't a hello".into())),
         },
     };
+    if hello.max_chunk_samples > settings.max_chunk_samples {
+        return Err(ReadError::Violation(format!(
+            "the worker's chunk cap {} is over the configured ceiling {}",
+            hello.max_chunk_samples, settings.max_chunk_samples
+        )));
+    }
     tracing::info!("worker connected: {} voices, max batch {}", hello.voices.len(), hello.max_batch);
     let (out_tx, mut out_rx) = mpsc::channel::<Vec<u8>>(2 * settings.max_outstanding);
     let connection = Arc::new(Connection::new(hello, out_tx, settings.max_outstanding, gauge.clone()));

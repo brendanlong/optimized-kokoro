@@ -1,6 +1,7 @@
 """The connection logic against a fake model: violations close the connection, nothing hangs."""
 
 import socket
+import time
 import struct
 import threading
 
@@ -156,3 +157,65 @@ def test_truncated_frame_then_eof(worker):
     client.sock.shutdown(socket.SHUT_WR)
     thread.join(10)
     assert not thread.is_alive()
+
+
+def test_stall_mid_frame_closes():
+    synth = FakeSynth()
+    a, b = socket.socketpair()
+    conn = Connection(a, synth, max_batch=4, frame_timeout=0.5)
+    thread = threading.Thread(target=conn.serve, daemon=True)
+    thread.start()
+    b.settimeout(10)
+    b.recv(65536)  # Hello
+    b.sendall(P.synthesize(1, [1, 2], [(0, 1.0)])[:7])  # part of a frame, then nothing
+    t = time.monotonic()
+    assert closed(_Raw(b))
+    assert time.monotonic() - t < 5
+    thread.join(5)
+    assert not thread.is_alive()
+
+
+def test_idle_front_is_not_a_stall():
+    synth = FakeSynth()
+    a, b = socket.socketpair()
+    conn = Connection(a, synth, max_batch=4, frame_timeout=0.3)
+    threading.Thread(target=conn.serve, daemon=True).start()
+    b.settimeout(10)
+    b.recv(65536)
+    time.sleep(1.0)  # longer than the frame timeout, between frames
+    b.sendall(P.synthesize(5, [1], [(0, 1.0)]))
+    data = b.recv(65536)
+    assert data[4] == P.DURATIONS
+    b.close()
+
+
+def test_clients_that_close_early_cannot_kill_the_accept_loop(tmp_path):
+    from kokoro_worker.server import accept_loop
+
+    path = str(tmp_path / "w.sock")
+    listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    listener.bind(path)
+    listener.listen(1)
+    thread = threading.Thread(target=accept_loop, args=(listener, FakeSynth(), 4, 1.0), daemon=True)
+    thread.start()
+    for _ in range(30):
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.connect(path)
+        s.close()  # before reading Hello
+    for _ in range(5):  # and some that leave mid-frame
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.connect(path)
+        s.sendall(b"\x05\x00")
+        s.close()
+    client = Client(path)
+    client.sock.settimeout(10)
+    client.send(P.synthesize(1, [1, 2], [(0, 1.0)]))
+    assert client.receive()[0] == "durations"
+    assert client.receive()[0] == "audio"
+    client.close()
+    assert thread.is_alive()
+
+
+class _Raw:
+    def __init__(self, sock):
+        self.sock = sock

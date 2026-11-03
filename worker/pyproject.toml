@@ -3,7 +3,7 @@ name = "kokoro-worker"
 version = "0.1.0"
 description = "Sandboxed Kokoro-82M GPU worker: validated integer frames in, PCM out"
 license = "Apache-2.0"
-requires-python = "==3.12.*"
+requires-python = "==3.12.13"
 # Same torch/triton/transformers as the deployed Kokoro-FastAPI image, so speed and numerics match it.
 dependencies = [
     "torch==2.8.0",

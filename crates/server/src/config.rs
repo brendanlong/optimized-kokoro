@@ -57,6 +57,10 @@ pub struct Config {
     /// them. Defaults to `max_concurrent_requests × lookahead`; never more than the protocol's
     /// 1024.
     pub worker_max_outstanding: Option<usize>,
+    /// The largest per-chunk audio cap (samples at speed 1) a worker may announce in its hello.
+    /// It bounds the audio the server holds (see [`Config::audio_bound`]); a worker announcing
+    /// more is refused. Default 120 s.
+    pub worker_max_chunk_samples: u32,
     /// On shutdown, how long open connections get to finish before they're dropped.
     pub shutdown_grace_ms: u64,
     /// Whether requests may set `allow_voice_tags`.
@@ -81,6 +85,7 @@ impl Default for Config {
             worker_hello_timeout_ms: 30_000,
             worker_progress_timeout_ms: 30_000,
             worker_max_outstanding: None,
+            worker_max_chunk_samples: 2_880_000,
             shutdown_grace_ms: 10_000,
             lookahead: 3,
             reconnect_interval_ms: 500,
@@ -119,6 +124,7 @@ impl Config {
             ("max_connections", self.max_connections),
             ("max_requests_per_connection", self.max_requests_per_connection),
             ("worker_max_outstanding", self.worker_max_outstanding()),
+            ("worker_max_chunk_samples", self.worker_max_chunk_samples as usize),
         ];
         if let Some((name, _)) = counts.iter().find(|(_, n)| *n == 0) {
             return Err(format!("{name} must be at least 1"));
@@ -161,8 +167,9 @@ impl Config {
     }
 
     /// The most audio, in bytes, the server can hold at once when the worker's chunk cap is
-    /// `max_chunk_samples` and every request runs at `speed` (use `protocol::SPEED_MIN` for the
-    /// worst case). There is no byte budget; this bound comes from counts.
+    /// `max_chunk_samples` (at most `worker_max_chunk_samples`) and every request runs at `speed`
+    /// (use `protocol::SPEED_MIN` for the worst case). There is no byte budget; this bound comes
+    /// from counts.
     ///
     /// Each speech request holds at most `lookahead + 2` chunks: `lookahead - 1` finished ones
     /// waiting in its window for an earlier one, one waiting to enter the response channel, one in
@@ -192,6 +199,7 @@ impl Config {
             hello_timeout: Duration::from_millis(self.worker_hello_timeout_ms),
             progress_timeout: Duration::from_millis(self.worker_progress_timeout_ms),
             max_outstanding: self.worker_max_outstanding(),
+            max_chunk_samples: self.worker_max_chunk_samples,
         }
     }
 }
