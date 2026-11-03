@@ -1,26 +1,29 @@
 //! Routes: `POST /v1/audio/speech` and `GET /v1/audio/voices` behind a bearer key, and
 //! `GET /health`. Nothing else.
 
-use crate::config::Config;
-use crate::pipeline::Pipeline;
+use crate::config::{ApiKey, Config};
+use crate::pipeline::{Pipeline, voice_lang};
 use crate::request::{self, SpeechRequest};
 use crate::stream::{self, StreamError};
 use crate::worker::{SynthError, Worker};
-use axum::Router;
-use axum::Extension;
-use axum::body::{Body, Bytes};
-use axum::extract::{Request, State};
-use axum::http::{HeaderValue, StatusCode, header};
-use axum::middleware::{self, Next};
-use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
-use futures_util::{StreamExt, stream as futures_stream};
+use bytes::Bytes;
+use futures_util::{StreamExt, TryStreamExt, stream as futures_stream};
+use http_body_util::combinators::UnsyncBoxBody;
+use http_body_util::{BodyExt, Full, Limited, StreamBody};
+use hyper::body::Frame;
+use hyper::header::{self, HeaderValue};
+use hyper::{Method, Request, Response, StatusCode};
 use serde_json::json;
 use std::sync::Arc;
 use subtle::{ConditionallySelectable, ConstantTimeEq};
 use tokio::sync::Semaphore;
 
-pub struct AppState {
+pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
+
+/// Every response's body: a whole JSON document, or streamed PCM.
+pub type Body = UnsyncBoxBody<Bytes, BoxError>;
+
+struct AppState {
     config: Config,
     worker: Worker,
     pipeline: Arc<dyn Pipeline>,
@@ -29,50 +32,98 @@ pub struct AppState {
     key_slots: Vec<Arc<Semaphore>>,
 }
 
+/// The HTTP application: cheap to clone, one per connection.
+#[derive(Clone)]
+pub struct App(Arc<AppState>);
+
 /// Which configured key a request authenticated with.
 #[derive(Debug, Clone, Copy)]
 struct KeyIndex(usize);
 
-pub fn router(config: Config, worker: Worker, pipeline: Arc<dyn Pipeline>) -> Router {
+pub fn router(config: Config, worker: Worker, pipeline: Arc<dyn Pipeline>) -> App {
     let slots = Arc::new(Semaphore::new(config.max_concurrent_requests));
-    let key_slots = config.api_keys.iter().map(|_| Arc::new(Semaphore::new(config.max_streams_per_key))).collect();
-    let state = Arc::new(AppState { config, worker, pipeline, slots, key_slots });
-    let api = Router::new()
-        .route("/v1/audio/speech", post(speech))
-        .route("/v1/audio/voices", get(voices))
-        .route_layer(middleware::from_fn_with_state(state.clone(), require_key));
-    Router::new().route("/health", get(health)).merge(api).with_state(state)
+    let key_slots = (0..config.api_keys.len()).map(|i| Arc::new(Semaphore::new(config.max_streams(i)))).collect();
+    App(Arc::new(AppState { config, worker, pipeline, slots, key_slots }))
 }
 
-fn error(status: StatusCode, code: &str, kind: &str, message: impl Into<String>) -> Response {
-    let body = json!({ "detail": { "error": code, "message": message.into(), "type": kind } });
-    (status, axum::Json(body)).into_response()
+impl App {
+    /// Routes one request. Unknown paths get 404 and known paths with another method 405, both
+    /// before the key is checked; the key is checked before anything reads the body.
+    pub async fn handle<B>(&self, request: Request<B>) -> Response<Body>
+    where
+        B: hyper::body::Body<Data = Bytes>,
+        B::Error: Into<BoxError>,
+    {
+        let state = &self.0;
+        // HEAD is answered as GET; hyper leaves out the body.
+        let get = matches!(*request.method(), Method::GET | Method::HEAD);
+        match request.uri().path() {
+            "/health" if get => health(state),
+            "/health" => not_allowed("GET,HEAD"),
+            "/v1/audio/voices" if get => match authenticate(state, &request) {
+                Some(_) => voices(state),
+                None => unauthorized(),
+            },
+            "/v1/audio/voices" => not_allowed("GET,HEAD"),
+            "/v1/audio/speech" if request.method() == Method::POST => match authenticate(state, &request) {
+                Some(key) => speech(state, key, request.into_body()).await,
+                None => unauthorized(),
+            },
+            "/v1/audio/speech" => not_allowed("POST"),
+            _ => empty(StatusCode::NOT_FOUND),
+        }
+    }
 }
 
-fn invalid(message: impl Into<String>) -> Response {
+fn empty(status: StatusCode) -> Response<Body> {
+    let mut response = Response::new(Full::new(Bytes::new()).map_err(|e| match e {}).boxed_unsync());
+    *response.status_mut() = status;
+    response
+}
+
+fn not_allowed(allow: &'static str) -> Response<Body> {
+    let mut response = empty(StatusCode::METHOD_NOT_ALLOWED);
+    response.headers_mut().insert(header::ALLOW, HeaderValue::from_static(allow));
+    response
+}
+
+fn json_response(status: StatusCode, body: serde_json::Value) -> Response<Body> {
+    let bytes = serde_json::to_vec(&body).expect("a JSON value serializes");
+    let mut response = Response::new(Full::new(Bytes::from(bytes)).map_err(|e| match e {}).boxed_unsync());
+    *response.status_mut() = status;
+    response.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    response
+}
+
+fn error(status: StatusCode, code: &str, kind: &str, message: impl Into<String>) -> Response<Body> {
+    json_response(status, json!({ "detail": { "error": code, "message": message.into(), "type": kind } }))
+}
+
+fn invalid(message: impl Into<String>) -> Response<Body> {
     error(StatusCode::BAD_REQUEST, "validation_error", "invalid_request_error", message)
 }
 
-fn unavailable(message: &str) -> Response {
+fn unavailable(message: &str) -> Response<Body> {
     error(StatusCode::SERVICE_UNAVAILABLE, "unavailable", "server_error", message)
 }
 
 /// The index of the key equal to `token`, comparing against every key in constant time.
-fn find_key(keys: &[String], token: &str) -> Option<usize> {
+fn find_key(keys: &[ApiKey], token: &str) -> Option<usize> {
     let mut found = subtle::Choice::from(0);
     let mut index = 0u64;
     for (i, key) in keys.iter().enumerate() {
-        let equal = key.as_bytes().ct_eq(token.as_bytes());
+        let equal = key.key.as_bytes().ct_eq(token.as_bytes());
         index.conditional_assign(&(i as u64), equal);
         found |= equal;
     }
     bool::from(found).then_some(index as usize)
 }
 
-/// Runs before the handler reads the body, so the app never reads an unauthenticated request's
-/// body. hyper may already have buffered some of it while parsing the headers (at most its read
-/// buffer, `serve::MAX_BUF`), and it doesn't send `100 Continue` until the body is read.
-async fn require_key(State(state): State<Arc<AppState>>, mut request: Request, next: Next) -> Response {
+/// The key a request's bearer token matches. Checked before the handler reads the body, so the app
+/// never reads an unauthenticated request's body. hyper may already have buffered some of it while
+/// parsing the headers (bounded by its read buffer, see `serve::MAX_BUF`), and it doesn't send
+/// `100 Continue` until the body is read.
+fn authenticate<B>(state: &AppState, request: &Request<B>) -> Option<KeyIndex> {
     let token = request
         .headers()
         .get(header::AUTHORIZATION)
@@ -80,33 +131,39 @@ async fn require_key(State(state): State<Arc<AppState>>, mut request: Request, n
         .and_then(|v| v.split_once(' '))
         .filter(|(scheme, _)| scheme.eq_ignore_ascii_case("bearer"))
         .map(|(_, token)| token);
-    let Some(index) = token.filter(|t| !t.is_empty()).and_then(|t| find_key(&state.config.api_keys, t)) else {
-        let mut response =
-            error(StatusCode::UNAUTHORIZED, "unauthorized", "authentication_error", "A valid API key is required");
-        response.headers_mut().insert(header::WWW_AUTHENTICATE, HeaderValue::from_static("Bearer"));
-        return response;
-    };
-    request.extensions_mut().insert(KeyIndex(index));
-    next.run(request).await
+    token.filter(|t| !t.is_empty()).and_then(|t| find_key(&state.config.api_keys, t)).map(KeyIndex)
 }
 
-async fn health(State(state): State<Arc<AppState>>) -> Response {
+fn unauthorized() -> Response<Body> {
+    let mut response =
+        error(StatusCode::UNAUTHORIZED, "unauthorized", "authentication_error", "A valid API key is required");
+    response.headers_mut().insert(header::WWW_AUTHENTICATE, HeaderValue::from_static("Bearer"));
+    response
+}
+
+fn health(state: &AppState) -> Response<Body> {
     match state.worker.current() {
-        Some(_) => axum::Json(json!({ "status": "healthy" })).into_response(),
-        None => (StatusCode::SERVICE_UNAVAILABLE, axum::Json(json!({ "status": "worker unavailable" }))).into_response(),
+        Some(_) => json_response(StatusCode::OK, json!({ "status": "healthy" })),
+        None => json_response(StatusCode::SERVICE_UNAVAILABLE, json!({ "status": "worker unavailable" })),
     }
 }
 
-async fn voices(State(state): State<Arc<AppState>>) -> Response {
+/// The worker's voices whose language this server speaks (the others would only get a 400).
+fn voices(state: &AppState) -> Response<Body> {
     match state.worker.current() {
-        Some(connection) => axum::Json(json!({ "voices": connection.voices() })).into_response(),
+        Some(connection) => {
+            let voices: Vec<&str> =
+                connection.voices().iter().map(String::as_str).filter(|v| voice_lang(v).is_some()).collect();
+            json_response(StatusCode::OK, json!({ "voices": voices }))
+        }
         None => unavailable("The model worker is not connected"),
     }
 }
 
-fn stream_failure(e: &StreamError) -> Response {
+fn stream_failure(e: &StreamError) -> Response<Body> {
     match e {
         StreamError::Synth(SynthError::ConnectionLost) => unavailable("Lost the connection to the model worker"),
+        StreamError::TooMuchSpeech { .. } => invalid(e.to_string()),
         _ => error(StatusCode::INTERNAL_SERVER_ERROR, "processing_error", "server_error", e.to_string()),
     }
 }
@@ -116,16 +173,21 @@ fn is_length_limit(e: &(dyn std::error::Error + 'static)) -> bool {
 }
 
 /// Reads the body, refusing one over the size limit or slower than the body timeout.
-async fn read_body(config: &Config, body: Body) -> Result<Bytes, Response> {
+async fn read_body<B>(config: &Config, body: B) -> Result<Bytes, Response<Body>>
+where
+    B: hyper::body::Body<Data = Bytes>,
+    B::Error: Into<BoxError>,
+{
     let limit = config.body_limit();
-    match tokio::time::timeout(config.request_body_timeout(), axum::body::to_bytes(body, limit)).await {
+    let read = async { Limited::new(body, limit).collect().await.map(|collected| collected.to_bytes()) };
+    match tokio::time::timeout(config.request_body_timeout(), read).await {
         Err(_) => Err(error(
             StatusCode::REQUEST_TIMEOUT,
             "timeout",
             "invalid_request_error",
             "The request body took too long to arrive",
         )),
-        Ok(Err(e)) if is_length_limit(&e) => Err(error(
+        Ok(Err(e)) if is_length_limit(&*e) => Err(error(
             StatusCode::PAYLOAD_TOO_LARGE,
             "too_large",
             "invalid_request_error",
@@ -136,7 +198,11 @@ async fn read_body(config: &Config, body: Body) -> Result<Bytes, Response> {
     }
 }
 
-async fn speech(State(state): State<Arc<AppState>>, Extension(key): Extension<KeyIndex>, body: Body) -> Response {
+async fn speech<B>(state: &Arc<AppState>, key: KeyIndex, body: B) -> Response<Body>
+where
+    B: hyper::body::Body<Data = Bytes>,
+    B::Error: Into<BoxError>,
+{
     let body = match read_body(&state.config, body).await {
         Ok(body) => body,
         Err(response) => return response,
@@ -156,7 +222,7 @@ async fn speech(State(state): State<Arc<AppState>>, Extension(key): Extension<Ke
             StatusCode::TOO_MANY_REQUESTS,
             "rate_limited",
             "rate_limit_error",
-            format!("This API key already has {} speech requests in progress", state.config.max_streams_per_key),
+            format!("This API key already has {} speech requests in progress", state.config.max_streams(key.0)),
         );
     };
     let Ok(permit) = state.slots.clone().try_acquire_owned() else {
@@ -178,7 +244,7 @@ async fn speech(State(state): State<Arc<AppState>>, Extension(key): Extension<Ke
         (Ok(speech), permits) => (speech, permits),
         (Err(message), _) => return invalid(message),
     };
-    let mut audio = stream::start(speech, connection, state.pipeline.clone(), state.config.lookahead, permits);
+    let mut audio = stream::start(speech, connection, state.pipeline.clone(), stream::Limits { lookahead: state.config.lookahead, max_ids: state.config.max_request_ids }, permits);
 
     // Headers wait for the first audio, so a request that fails before any is made gets a status.
     let first = match audio.next().await {
@@ -187,14 +253,11 @@ async fn speech(State(state): State<Arc<AppState>>, Extension(key): Extension<Ke
         Some(Ok(first)) => first,
     };
     let rest = futures_stream::unfold(audio, |mut audio| async move { audio.next().await.map(|item| (item, audio)) });
-    let body = Body::from_stream(futures_stream::once(async { Ok(first) }).chain(rest));
-    (
-        [
-            (header::CONTENT_TYPE, "audio/pcm"),
-            (header::CACHE_CONTROL, "no-cache"),
-            (header::HeaderName::from_static("x-accel-buffering"), "no"),
-        ],
-        body,
-    )
-        .into_response()
+    let frames = futures_stream::once(async { Ok(first) }).chain(rest).map_ok(Frame::data).map_err(BoxError::from);
+    let mut response = Response::new(StreamBody::new(frames).boxed_unsync());
+    let headers = response.headers_mut();
+    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("audio/pcm"));
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+    headers.insert(header::HeaderName::from_static("x-accel-buffering"), HeaderValue::from_static("no"));
+    response
 }

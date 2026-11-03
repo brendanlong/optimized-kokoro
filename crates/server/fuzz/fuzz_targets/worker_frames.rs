@@ -1,4 +1,5 @@
 #![no_main]
+#![forbid(unsafe_code)]
 
 use kokoro_server::protocol::{Expected, Speed, read_frame};
 use libfuzzer_sys::fuzz_target;

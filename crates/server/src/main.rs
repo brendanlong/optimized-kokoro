@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 use kokoro_server::kokoro::KokoroPipelines;
 use kokoro_server::{Config, Worker, http, serve};
 use std::path::PathBuf;
@@ -25,9 +27,7 @@ async fn shutdown_signal() {
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
-        .init();
+    kokoro_server::log::init_from_env();
     let keys = std::env::var("KOKORO_API_KEYS").ok();
     let config = match config_path().and_then(|path| Config::load(path.as_deref(), keys.as_deref())) {
         Ok(config) => config,
@@ -36,6 +36,15 @@ async fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    match std::fs::read_to_string("/proc/self/limits").ok().as_deref().and_then(kokoro_server::config::soft_open_file_limit) {
+        Some(soft) => {
+            if let Err(e) = config.check_fd_limit(soft) {
+                eprintln!("{e}");
+                return ExitCode::FAILURE;
+            }
+        }
+        None => kokoro_server::warn!("couldn't read the open-file limit; make sure it covers max_connections"),
+    }
     let listener = match tokio::net::TcpListener::bind(config.listen).await {
         Ok(listener) => listener,
         Err(e) => {
@@ -51,7 +60,7 @@ async fn main() -> ExitCode {
         }
     };
     let worker = Worker::spawn(config.worker_settings());
-    tracing::info!("listening on {}, worker socket {}", config.listen, config.worker_socket.display());
+    kokoro_server::info!("listening on {}, worker socket {}", config.listen, config.worker_socket.display());
     let limits = serve::Limits::from(&config);
     let app = http::router(config, worker, Arc::new(pipelines));
     serve::serve(listener, app, limits, shutdown_signal()).await;

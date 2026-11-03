@@ -5,6 +5,7 @@
 //!   runs kokoro's `foreign.py` hands to espeak.
 //!
 //! Both match the deployed pipeline, which passes no `version` to either.
+#![forbid(unsafe_code)]
 
 pub mod phonemizer;
 

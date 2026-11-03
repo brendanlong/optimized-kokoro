@@ -1,0 +1,70 @@
+# cargo-deny: licences, duplicate and banned crates, sources and advisories for the workspace.
+#
+#     cargo deny check -D warnings
+#
+# `-D warnings` matters: a crate outside a ban's `wrappers` using it (below) is only a warning
+# otherwise.
+#
+# Install with `cargo install --locked cargo-deny` (or `--root .tools` to keep it in the checkout).
+
+[graph]
+# Our own crates' dev-dependencies (tempfile, the reference reader) never ship, but they are
+# checked too: there is no reason to allow anything there we wouldn't allow in the binary.
+all-features = true
+
+[advisories]
+# Every advisory in the RustSec database fails the check, including "unmaintained" and "unsound"
+# notices for any crate in the graph.
+version = 2
+yanked = "deny"
+unmaintained = "all"
+unsound = "all"
+ignore = []
+
+[licenses]
+version = 2
+# Only permissive licences for third-party crates: the combined program is GPL-3.0-or-later
+# (plan.md, "Licensing"), and that GPL comes only from our own espeak crates, listed below.
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-3-Clause",
+    "MIT",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+confidence-threshold = 0.9
+# The crates that port espeak-ng (GPL-3.0-or-later) and the ones that link them. Any other crate
+# under the GPL or LGPL fails the check.
+exceptions = [
+    { name = "kokoro-espeak-ng", allow = ["GPL-3.0-or-later"] },
+    { name = "kokoro-espeak", allow = ["GPL-3.0-or-later"] },
+    { name = "kokoro-pipeline", allow = ["GPL-3.0-or-later"] },
+    { name = "kokoro-server", allow = ["GPL-3.0-or-later"] },
+]
+
+[licenses.private]
+# Our crates aren't published, but their licences are still checked (above).
+ignore = false
+
+[bans]
+multiple-versions = "deny"
+wildcards = "deny"
+allow-wildcard-paths = true
+highlight = "all"
+# A permissive crate must not pull in a GPL one: each GPL crate may be used only by the GPL crates
+# named as its wrappers, so for example kokoro-text, kokoro-g2p-en or kokoro-spacy-en (Apache-2.0)
+# depending on the espeak port fails the check.
+deny = [
+    { crate = "kokoro-espeak-ng", wrappers = ["kokoro-espeak"] },
+    { crate = "kokoro-espeak", wrappers = ["kokoro-pipeline"] },
+    { crate = "kokoro-pipeline", wrappers = ["kokoro-server"] },
+]
+skip = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

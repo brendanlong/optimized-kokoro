@@ -1,4 +1,5 @@
 //! Records written by `reference/dump.py`: the deployed Python pipeline's output at each stage.
+#![forbid(unsafe_code)]
 
 use serde::Deserialize;
 use std::fs::File;

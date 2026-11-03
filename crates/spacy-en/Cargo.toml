@@ -9,9 +9,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
-matrixmultiply = "0.3"
 regex = "1"
-safetensors = { version = "0.8", default-features = false, features = ["alloc"] }
 serde.workspace = true
 serde_json.workspace = true
 

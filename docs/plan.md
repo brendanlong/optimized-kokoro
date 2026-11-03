@@ -35,7 +35,7 @@ client ──► [Fly relay, Rust]  ◄── outbound connection ── [deskto
 Most of the risk was never in the HTTP format. It was in the C and Python parsers behind it, and G2P (espeak-ng is C, spaCy is Cython, MeCab is C++). With Rust on both ends:
 
 - **Between the relay and the desktop:** a fixed binary frame over one outbound TLS stream. Use length-prefixed `postcard`/hand-rolled structs. Check each length prefix against a hard cap *before* allocating. MessagePack adds nothing over that. The agent's hello frame carries the voice list.
-- **Relay API:** two routes, `POST /v1/audio/speech` and `GET /v1/audio/voices`, which Lion Reader's `selfhosted.ts` also calls. They go through `hyper`/`axum` with a body-size cap. `/v1/audio/speech` returns `audio/pcm` (24 kHz s16le), with no encoding. The API stays on Fly's private network, so only the agent's connection endpoint is public, and auth is checked before reading a body or accepting an upgrade. That's a small, well-fuzzed surface, and Lion Reader and clawed-abode keep working. **Decided (Brendan, 2026-11-03):** support only our own clients. The API takes exactly the fields Lion Reader and clawed-abode send (`model`, ignored; `input`, `voice`, `speed`, `response_format: "pcm"`, `stream`) and refuses any other with 400 (`divergences.md`).
+- **Relay API:** two routes, `POST /v1/audio/speech` and `GET /v1/audio/voices`, which Lion Reader's `selfhosted.ts` also calls. They go through `hyper` (routing is one `match`, no framework) with a body-size cap. `/v1/audio/speech` returns `audio/pcm` (24 kHz s16le), with no encoding. The API stays on Fly's private network, so only the agent's connection endpoint is public, and auth is checked before reading a body or accepting an upgrade. That's a small, well-fuzzed surface, and Lion Reader and clawed-abode keep working. **Decided (Brendan, 2026-11-03):** support only our own clients. The API takes exactly the fields Lion Reader and clawed-abode send (`model`, ignored; `input`, `voice`, `speed`, `response_format: "pcm"`, `stream`) and refuses any other with 400 (`divergences.md`).
 
 ### Audio
 
@@ -98,6 +98,27 @@ First candidates (my proposals, not decided):
 - **Crashes in the reference**: misaki Japanese asserts on digits in 49 of 1,581 Japanese Wikipedia paragraphs (reference dump `out/wiki-ja.jsonl`, see PR #2). Do whatever reads well instead. The misaki English crashes are already handled; see `divergences.md`.
 - **espeak wrapper simplifications** listed in PR #6: phonemizer's punctuation split and restore, misaki's `()`↔`«»` swap, keeping only the first output element, and the `(en)` flags.
 - **spaCy's full tagger** is only needed for the tag-dependent rules. If a smaller rule set gives the same audio, it could go, but the port is already exact and fast (0.35 ms per sentence), so this is low priority.
+
+### Unsafe code, dependencies and the CPU target
+
+**Decided (Brendan, 2026-11-03, PR #13):**
+- **No `unsafe` in our code.** Every crate has `#![forbid(unsafe_code)]`. The spaCy tagger's matmul, the one `unsafe` call (to matrixmultiply's sgemm), is now a safe blocked loop. It gives identical tags.
+- **Build for `x86-64-v3`** (AVX2, FMA), set in `.cargo/config.toml` for every build and test. The server therefore needs an **Intel Haswell or AMD Zen 1 or newer** CPU. On baseline x86-64 (SSE2), the safe matmul made the pipeline 29% slower than sgemm, which picks AVX2 at run time. Built for v3, it is 7% faster than sgemm.
+
+An adversarial review of PR #13 found resource-exhaustion gaps, all fixed with regression tests in `crates/server/tests/exhaustion.rs`. The fixes:
+- **Text processing:** permits cover phonemizing too.
+- **Response writes:** a write that stalls for 30 s closes the connection.
+- **Stream limits:** each API key can have its own.
+- **Request ids:** each request may send at most 60,000 phoneme ids to the worker.
+- **Worker:** each worker slot has a deadline.
+- **Logging:** one log line per request, and reconnect warnings are rate-limited.
+- **Request heads:** a 16 KiB limit.
+- **Weights:** they are validated at load.
+- **Connections:** the cap is now 4096, with a 5 s header timeout.
+
+The connection cap and header timeout make a flood of unauthenticated connections expensive, but don't stop one. So whenever the server is reachable from the internet, an edge must filter unauthenticated traffic first: Cloudflare Access, or the relay above. The reviewer's tools are in `tools/security/`.
+
+The server's request path also uses fewer dependencies: no axum, tower, tracing or safetensors. `deny.toml` checks licences, sources and advisories. The audit's numbers are in PR #13.
 
 ### Licensing
 

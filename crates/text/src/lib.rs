@@ -6,6 +6,7 @@
 //!
 //! A request's text goes through [`split::smart_split`], which handles pause tags, emoji,
 //! [`split::join_lines`], [`normalize`], [`split::sentences`] and chunking with the caller's G2P.
+#![forbid(unsafe_code)]
 
 mod english_data;
 mod scan;

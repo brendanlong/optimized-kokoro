@@ -12,7 +12,6 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpStream, UnixListener};
-use tower::ServiceExt;
 
 fn one_stream(c: &mut kokoro_server::Config) {
     c.max_concurrent_requests = 1;
@@ -292,14 +291,14 @@ async fn an_unread_response_body_keeps_its_permits() {
     let mut config = config(&server.socket);
     one_stream(&mut config);
     let app = kokoro_server::http::router(config, server.worker.clone(), Arc::new(StubPipeline));
-    let first = app.clone().oneshot(speech_request(Some(KEY), pcm("First.")).map(axum::body::Body::new)).await.unwrap();
+    let first = app.handle(speech_request(Some(KEY), pcm("First."))).await;
     assert_eq!(first.status(), 200);
     tokio::time::sleep(Duration::from_millis(100)).await;
-    let second = app.clone().oneshot(speech_request(Some(KEY), pcm("Second.")).map(axum::body::Body::new)).await.unwrap();
+    let second = app.handle(speech_request(Some(KEY), pcm("Second."))).await;
     assert_eq!(second.status(), 429);
-    let bytes = axum::body::to_bytes(first.into_body(), usize::MAX).await.unwrap();
+    let bytes = http_body_util::BodyExt::collect(first.into_body()).await.unwrap().to_bytes();
     assert_eq!(samples(&bytes), expected_audio("First."));
-    let third = app.oneshot(speech_request(Some(KEY), pcm("Third.")).map(axum::body::Body::new)).await.unwrap();
+    let third = app.handle(speech_request(Some(KEY), pcm("Third."))).await;
     assert_eq!(third.status(), 200);
 }
 

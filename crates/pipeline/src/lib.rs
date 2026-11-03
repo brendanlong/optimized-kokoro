@@ -11,6 +11,7 @@
 //! [`Error::Unsupported`] for the sentence holding them, unless one is supplied with
 //! [`Pipeline::with_foreign_g2p`]. `docs/divergences.md` lists every intentional difference from
 //! the reference.
+#![forbid(unsafe_code)]
 
 pub mod foreign;
 mod tables;

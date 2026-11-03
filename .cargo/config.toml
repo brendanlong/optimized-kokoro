@@ -1,0 +1,6 @@
+# Every build and test targets x86-64-v3 (AVX2, FMA, BMI2: Intel Haswell / AMD Zen 1 or newer).
+# Brendan's decision (2026-11-03, PR #13): the spaCy tagger's safe matmul needs AVX2 to match
+# matrixmultiply's sgemm, which we dropped to have no `unsafe` in our code. A binary built here
+# dies with SIGILL (illegal instruction) on older x86-64 CPUs.
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "target-cpu=x86-64-v3"]
