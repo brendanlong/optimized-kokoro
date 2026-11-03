@@ -21,6 +21,16 @@ const MediaSourceClass =
 let encoder: Promise<SpeechEncoder | null> | null = null;
 let current: AbortController | null = null;
 
+/** Loaded at startup, so the first click's play() still runs within its user activation. */
+function getEncoder(): Promise<SpeechEncoder | null> {
+  if (!MediaSourceClass) return Promise.resolve(null);
+  encoder ??= loadSpeechEncoder(MediaSourceClass, PCM_SAMPLE_RATE).catch((err: unknown) => {
+    encoder = null; // Let the next click try again.
+    throw err;
+  });
+  return encoder;
+}
+
 speed.addEventListener('input', () => (speedLabel.textContent = `${Number(speed.value).toFixed(2)}×`));
 
 async function loadVoices() {
@@ -43,7 +53,8 @@ async function* body(response: Response): AsyncGenerator<Uint8Array> {
       yield value;
     }
   } finally {
-    reader.releaseLock();
+    // Also stops the server's synthesis when we stop reading early.
+    await reader.cancel().catch(() => {});
   }
 }
 
@@ -63,26 +74,38 @@ function stopPlayback() {
   audio.load();
 }
 
+function untilOpen(source: MediaSource, signal: AbortSignal): Promise<void> {
+  if (source.readyState === 'open') return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    source.addEventListener('sourceopen', () => resolve(), { once: true, signal });
+    signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+  });
+}
+
 async function play() {
   stopPlayback();
-  if (!MediaSourceClass) return setStatus("This browser has no Media Source Extensions.");
+  if (!MediaSourceClass) return setStatus('This browser has no Media Source Extensions.');
   const request = new AbortController();
   current = request;
+  const isCurrent = () => current === request;
   const started = performance.now();
   setStatus('Requesting…');
-
-  encoder ??= loadSpeechEncoder(MediaSourceClass, PCM_SAMPLE_RATE);
-  const speechEncoder = await encoder;
-  if (!speechEncoder) return setStatus("This browser can't encode audio MSE will play.");
 
   const source = new MediaSourceClass();
   audio.disableRemotePlayback = true;
   const url = URL.createObjectURL(source);
   audio.src = url;
-  // Must be called during the click, before any await that waits on the network.
+  // Called before any await, so it's within the click's user activation.
   const playing = audio.play().catch(() => {});
+  audio.addEventListener('error', () => isCurrent() && setStatus('Error: the audio element failed to decode.'), {
+    once: true,
+    signal: request.signal,
+  });
 
   try {
+    const speechEncoder = await getEncoder();
+    if (request.signal.aborted) return;
+    if (!speechEncoder) return setStatus("This browser can't encode audio MSE will play.");
     const response = await fetch('/v1/audio/speech', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -97,9 +120,7 @@ async function play() {
       signal: request.signal,
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}: ${(await response.text()).slice(0, 300)}`);
-    if (source.readyState !== 'open') {
-      await new Promise((resolve) => source.addEventListener('sourceopen', resolve, { once: true }));
-    }
+    await untilOpen(source, request.signal);
     const buffer = source.addSourceBuffer(speechEncoder.mimeType);
     buffer.mode = 'sequence';
     let firstPcm: number | null = null;
@@ -113,7 +134,10 @@ async function play() {
     }
     audio.addEventListener(
       'playing',
-      () => setStatus(`Playing. First PCM after ${firstPcm?.toFixed(0)} ms, sound after ${(performance.now() - started).toFixed(0)} ms (${speechEncoder.mimeType}).`),
+      () =>
+        setStatus(
+          `Playing. First PCM after ${firstPcm?.toFixed(0)} ms, sound after ${(performance.now() - started).toFixed(0)} ms (${speechEncoder.mimeType}).`
+        ),
       { once: true, signal: request.signal }
     );
     for await (const fragment of speechEncoder.encode(timed(pcm16ToFloat32(body(response))), PCM_SAMPLE_RATE)) {
@@ -122,13 +146,16 @@ async function play() {
     }
     if (source.readyState === 'open') source.endOfStream();
     await playing;
+    if (!isCurrent()) return;
     if (samples === 0) setStatus('Nothing to say (the server skipped all of it).');
-    else if (current === request) {
-      setStatus(`${status.textContent} Received ${(samples / PCM_SAMPLE_RATE).toFixed(1)} s of audio in ${((performance.now() - started) / 1000).toFixed(2)} s.`);
-    }
+    else setStatus(`${status.textContent} Received ${(samples / PCM_SAMPLE_RATE).toFixed(1)} s of audio in ${((performance.now() - started) / 1000).toFixed(2)} s.`);
   } catch (err) {
-    if (!request.signal.aborted) setStatus(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    if (request.signal.aborted) return;
+    setStatus(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    if (source.readyState === 'open') source.endOfStream('network');
   } finally {
+    // Whatever ended this request, stop its fetch so the server stops synthesizing.
+    request.abort();
     URL.revokeObjectURL(url);
   }
 }
@@ -139,3 +166,4 @@ stop.addEventListener('click', () => {
   setStatus('Stopped.');
 });
 loadVoices().catch((err) => setStatus(`Couldn't load voices: ${err}`));
+getEncoder().catch((err) => setStatus(`Couldn't load the encoder: ${err}`));

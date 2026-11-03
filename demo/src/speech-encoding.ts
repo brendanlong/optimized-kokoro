@@ -224,8 +224,9 @@ function createEncoder(
           wake = null;
         }
       } finally {
-        if (!finished && !failed) {
-          // The reader stopped early: stop pulling speech now, not when its next piece comes.
+        if (!finished) {
+          // Stopped early or failed: stop pulling speech now, and cancel the output, which is what ends a
+          // WASM encoder's worker (as found in clawed-abode#703's review).
           stopped = true;
           void input.return?.(undefined).catch(() => {});
           void output.cancel().catch(() => {});

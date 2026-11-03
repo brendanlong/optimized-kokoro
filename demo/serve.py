@@ -18,6 +18,8 @@ MAX_BODY = 64 * 1024
 
 class Handler(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
+    # Applies to every read and write on the client socket.
+    timeout = 30
 
     def do_GET(self):
         static = self.static_file()
@@ -39,7 +41,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return os.path.join(HERE, "index.html"), "text/html; charset=utf-8"
         name = self.path.removeprefix("/dist/")
         # esbuild's output names only: no directories, so nothing outside dist/ can be named.
-        if name != self.path and name.endswith(".js") and name in os.listdir(DIST):
+        if name != self.path and name.endswith(".js") and os.path.isdir(DIST) and name in os.listdir(DIST):
             return os.path.join(DIST, name), "text/javascript"
         return None
 
@@ -50,17 +52,26 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if (method, self.path) not in PROXIED:
             self.send_error(404)
             return
-        length = int(self.headers.get("Content-Length", "0"))
-        if length > MAX_BODY:
-            self.send_error(413)
+        length = self.headers.get("Content-Length", "0")
+        if not length.isascii() or not length.isdigit() or int(length) > MAX_BODY:
+            self.send_error(413 if length.isdigit() else 400)
             return
-        body = self.rfile.read(length) if length else None
+        if method == "POST" and self.headers.get("Content-Type", "").split(";")[0].strip() != "application/json":
+            # A cross-site form or no-cors fetch can't send this without a CORS preflight, which we never answer.
+            self.send_error(415)
+            return
+        body = self.rfile.read(int(length)) if method == "POST" else None
         upstream = http.client.HTTPConnection(self.server.upstream.hostname, self.server.upstream.port, timeout=60)
         headers = {"Authorization": f"Bearer {self.server.key}"}
         if body is not None:
             headers["Content-Type"] = "application/json"
-        upstream.request(method, self.path, body=body, headers=headers)
-        response = upstream.getresponse()
+        try:
+            upstream.request(method, self.path, body=body, headers=headers)
+            response = upstream.getresponse()
+        except OSError:
+            upstream.close()
+            self.send_error(502)
+            return
         self.send_response(response.status)
         self.send_header("Content-Type", response.getheader("Content-Type", "application/octet-stream"))
         self.send_header("Transfer-Encoding", "chunked")
@@ -71,8 +82,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self.wfile.write(f"{len(chunk):x}\r\n".encode() + chunk + b"\r\n")
                 self.wfile.flush()
             self.wfile.write(b"0\r\n\r\n")
-        except (BrokenPipeError, ConnectionResetError):
-            pass
+        except OSError:
+            # Client gone, or the upstream failed mid-stream: drop the connection without the final chunk,
+            # so the browser sees a truncated body rather than a complete one.
+            self.close_connection = True
         finally:
             upstream.close()
 
@@ -88,6 +101,8 @@ def main():
     server.upstream = urllib.parse.urlsplit(args.upstream)
     with open(args.key_file) as f:
         server.key = f.read().strip()
+    if not server.key or "," in server.key or any(c.isspace() for c in server.key):
+        parser.error("the key file must hold exactly one key")
     server.serve_forever()
 
 
