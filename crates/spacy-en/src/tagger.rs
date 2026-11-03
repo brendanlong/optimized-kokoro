@@ -108,7 +108,7 @@ impl<'a> SafeTensors<'a> {
 ///
 /// The crate's only `unsafe`: matrixmultiply's `sgemm` takes raw pointers and strides. A safe
 /// blocked loop gives the same tags, but on the default x86-64 target (SSE2, no FMA) it made the
-/// pipeline 34% slower than sgemm, which picks AVX2+FMA at run time (PR #13).
+/// pipeline 29% slower than sgemm, which picks AVX2+FMA at run time (PR #13).
 #[allow(unsafe_code)]
 fn matmul_bt(a: &[f32], b: &[f32], b_stride: usize, c: &mut [f32], m: usize, k: usize, n: usize) {
     if m == 0 || n == 0 {
