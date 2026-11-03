@@ -157,7 +157,7 @@ impl Espeak {
             }
 
             if phonemes[0] == PHON_SWITCH {
-                self.word_phonemes = phonemes;
+                self.set_word_phonemes(&phonemes);
                 return 0;
             }
 
@@ -166,7 +166,7 @@ impl Espeak {
             }
 
             if !found && ucd::isdigit(first_char) {
-                let mut wp = [0u8; N_WORD_PHONEMES];
+                let mut wp = self.word_phonemes;
                 self.lookup(tr, b"_0lang\0", &mut wp);
                 self.word_phonemes = wp;
                 if self.word_phonemes[0] == PHON_SWITCH {
@@ -233,7 +233,7 @@ impl Espeak {
                 wordx += self.translate_letter(tr, w, wordx, &mut unpron_phonemes, non_initial as i32);
                 posn += 1;
                 if unpron_phonemes[0] == PHON_SWITCH {
-                    self.word_phonemes = unpron_phonemes;
+                    self.set_word_phonemes(&unpron_phonemes);
                     if cstr(&unpron_phonemes, 1) == ESPEAKNG_DEFAULT_VOICE {
                         return FLAG_SPELLWORD;
                     }
@@ -254,7 +254,7 @@ impl Espeak {
                 end_type = self.translate_rules(tr, w, wordx, &mut phonemes, N_WORD_PHONEMES, Some(&mut end_phonemes), wflags, Some(&mut dictionary_flags));
 
                 if phonemes[0] == PHON_SWITCH {
-                    self.word_phonemes = phonemes;
+                    self.set_word_phonemes(&phonemes);
                     return 0;
                 }
 
@@ -355,7 +355,7 @@ impl Espeak {
                         end_type = self.translate_rules(tr, w, wordx, &mut phonemes, N_WORD_PHONEMES, Some(&mut end_phonemes), wflags & (FLAG_HYPHEN_AFTER | FLAG_PREFIX_REMOVED), Some(&mut dictionary_flags));
                         if phonemes[0] == PHON_SWITCH {
                             put(w, wordx - 1, c_temp);
-                            self.word_phonemes = phonemes;
+                            self.set_word_phonemes(&phonemes);
                             return 0;
                         }
                     }
@@ -378,7 +378,7 @@ impl Espeak {
                             if phonemes[0] == PHON_SWITCH {
                                 let n = cstrlen(&word_copy, 0);
                                 memcpy(w, wordx, &word_copy, 0, n);
-                                self.word_phonemes = phonemes;
+                                self.set_word_phonemes(&phonemes);
                                 return 0;
                             }
                             if dictionary_flags[0] == 0 {
@@ -396,7 +396,7 @@ impl Espeak {
                             if phonemes[0] == PHON_SWITCH {
                                 let n = cstrlen(&word_copy, 0);
                                 memcpy(w, wordx, &word_copy, 0, n);
-                                self.word_phonemes = phonemes;
+                                self.set_word_phonemes(&phonemes);
                                 return 0;
                             }
                             if dictionary_flags[0] == 0 {
@@ -426,7 +426,7 @@ impl Espeak {
                                     end_type = 0;
                                 }
                                 if phonemes[0] == PHON_SWITCH {
-                                    self.word_phonemes = phonemes;
+                                    self.set_word_phonemes(&phonemes);
                                     let n = cstrlen(&word_copy, 0);
                                     memcpy(w, wordx, &word_copy, 0, n);
                                     put(w, wordx - 1, c_temp);
@@ -473,13 +473,13 @@ impl Espeak {
                         }
                     }
                 }
-                let mut wp = [0u8; N_WORD_PHONEMES];
+                let mut wp = self.word_phonemes;
                 concat3(&mut wp, &unpron_phonemes, &prefix_phonemes, &phonemes);
                 wp[N_WORD_PHONEMES - 1] = 0;
                 self.set_word_stress(tr, &mut wp, 0, Some(dictionary_flags), -1, 0);
                 self.word_phonemes = wp;
             } else {
-                let mut wp = [0u8; N_WORD_PHONEMES];
+                let mut wp = self.word_phonemes;
                 concat3(&mut wp, &unpron_phonemes, &prefix_phonemes, &phonemes);
                 wp[N_WORD_PHONEMES - 1] = 0;
                 self.set_word_stress(tr, &mut wp, 0, Some(dictionary_flags), -1, 0);
@@ -487,7 +487,7 @@ impl Espeak {
             }
         } else {
             self.set_word_stress(tr, &mut phonemes, 0, Some(dictionary_flags), -1, add_suffix_phonemes);
-            let mut wp = [0u8; N_WORD_PHONEMES];
+            let mut wp = self.word_phonemes;
             concat3(&mut wp, &unpron_phonemes, &prefix_phonemes, &phonemes);
             wp[N_WORD_PHONEMES - 1] = 0;
             self.word_phonemes = wp;
@@ -683,10 +683,10 @@ impl Espeak {
     /// `TranslateLetter`: appends the name of the letter at `w[word]` to `phonemes`.
     /// Returns the number of bytes in the letter.
     pub(crate) fn translate_letter(&mut self, tr: Tr, w: &[u8], word: isize, phonemes: &mut [u8], control: i32) -> isize {
-        let mut capital = [0u8; 30];
-        let mut ph_buf = [0u8; 80];
-        let mut ph_buf2 = [0u8; 80];
-        let mut ph_alphabet = [0u8; 80];
+        let mut capital = [0u8; PH_BUF];
+        let mut ph_buf = [0u8; PH_BUF];
+        let mut ph_buf2 = [0u8; PH_BUF];
+        let mut ph_alphabet = [0u8; PH_BUF];
         let mut phontab_1 = self.t(Tr::Main).phoneme_tab_ix;
         const PAUSE_STRING: [u8; 2] = [PHON_PAUSE, 0];
 
@@ -710,7 +710,7 @@ impl Espeak {
                         self.lookup(tr, modifier, &mut capital);
                         if capital[0] == 0 {
                             capital[2] = self.set_translator3(ESPEAKNG_DEFAULT_VOICE) as u8;
-                            let mut tmp = [0u8; 27];
+                            let mut tmp = [0u8; PH_BUF];
                             self.lookup(Tr::Third, modifier, &mut tmp);
                             cstrcpy(&mut capital, 3, cstr(&tmp, 0));
                             if capital[3] != 0 {

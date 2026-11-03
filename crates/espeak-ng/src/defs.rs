@@ -12,6 +12,10 @@ pub const N_WORD_BYTES: usize = 160;
 pub const N_PHONEME_BYTES: usize = 160;
 pub const N_CLAUSE_WORDS: usize = 300;
 pub const N_TR_SOURCE: usize = 800;
+/// The size of phoneme-string buffers that C fills with unbounded `strcpy`/`sprintf`. C's own
+/// buffers are smaller and overflow; making ours large keeps the whole string, as C usually ends
+/// up reading it. Where C bounds a copy, the port keeps C's bound.
+pub const PH_BUF: usize = 256;
 
 pub const N_RULE_GROUP2: usize = 120;
 pub const N_HASH_DICT: usize = 1024;

@@ -42,8 +42,8 @@ impl TextDecoder {
         let c = self.next();
         let mut ret: u32;
         match c & 0xf0 {
-            0x00..=0x70 => return c as i32,
-            0x80..=0xb0 => return 0xfffd,
+            0x00..=0x70 => c as i32,
+            0x80..=0xb0 => 0xfffd,
             0xc0 | 0xd0 => {
                 if self.current + 1 >= self.end() {
                     self.current = self.end();

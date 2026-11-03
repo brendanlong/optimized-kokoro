@@ -273,7 +273,7 @@ impl Espeak {
             if at(w, word) == b'_' && at(w, word + 1) == b'^' && at(w, word + 2) == b'_' {
                 self.switch_language(w, word);
             } else {
-                let mut wp = [0u8; N_WORD_PHONEMES];
+                let mut wp = self.word_phonemes;
                 self.encode_phonemes(w, word, &mut wp, 0);
                 self.word_phonemes = wp;
             }
@@ -807,7 +807,7 @@ impl Espeak {
                 ok = false;
             }
             if !ok {
-                self.word_phonemes = ph_buf;
+                self.set_word_phonemes(&ph_buf);
             }
         }
         if ok {

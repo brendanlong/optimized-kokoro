@@ -240,6 +240,13 @@ impl Espeak {
         }
     }
 
+    /// `strcpy(word_phonemes, src)`: bytes after the terminator keep their old values, which C
+    /// sometimes reads.
+    pub(crate) fn set_word_phonemes(&mut self, src: &[u8]) {
+        let s = crate::common::cstr(src, 0);
+        crate::common::cstrcpy(&mut self.word_phonemes, 0, s);
+    }
+
     pub(crate) fn exists(&self, t: Tr) -> bool {
         match t {
             Tr::Main => self.translator.is_some(),

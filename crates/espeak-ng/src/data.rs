@@ -70,9 +70,24 @@ pub struct Dict {
     pub groups2_start: [u8; 256],
     pub letter_groups: [Option<usize>; N_LETTER_GROUPS],
     pub replace_chars: Option<usize>,
+    /// For each byte of the rules, the distance to the next 0 byte (255 if that far or more),
+    /// so `MatchRule` can skip the rest of a failed rule without scanning it.
+    pub rule_skip: Vec<u8>,
 }
 
 impl Dict {
+    /// The offset just past the 0 that ends the rule containing `i` (C: `while (*rule++ != 0);`).
+    #[inline]
+    pub fn skip_rule(&self, i: usize) -> usize {
+        match i.checked_sub(self.rules).and_then(|k| self.rule_skip.get(k)) {
+            Some(&s) if s < 255 => i + s as usize + 1,
+            _ => match self.data.get(i..).and_then(|r| r.iter().position(|&b| b == 0)) {
+                Some(n) => i + n + 1,
+                None => self.data.len() + 1,
+            },
+        }
+    }
+
     /// `LoadDictionary` + `InitGroups`.
     pub fn parse(data: Vec<u8>) -> std::result::Result<Self, String> {
         let size = data.len();
@@ -96,7 +111,20 @@ impl Dict {
             groups2_start: [255; 256],
             letter_groups: [None; N_LETTER_GROUPS],
             replace_chars: None,
+            rule_skip: Vec::new(),
         };
+        let rules = &d.data[d.rules..];
+        let mut skip = vec![255u8; rules.len()];
+        let mut next_zero: Option<usize> = None;
+        for i in (0..rules.len()).rev() {
+            if rules[i] == 0 {
+                next_zero = Some(i);
+            }
+            if let Some(z) = next_zero {
+                skip[i] = (z - i).min(255) as u8;
+            }
+        }
+        d.rule_skip = skip;
         d.init_groups();
         let mut p = 8usize;
         for hash in 0..N_HASH_DICT {
@@ -299,11 +327,11 @@ impl EspeakData {
     pub fn voices_list(&self) -> &[VoiceInfo] {
         self.voices.get_or_init(|| {
             let mut out = Vec::new();
-            for (sub, is_language_file) in [("voices", false), ("lang", true)] {
+            for sub in ["voices", "lang"] {
                 let base = self.dir.join(sub);
-                collect_voices(&base, &base, is_language_file, &mut out);
+                collect_voices(&base, &base, &mut out);
             }
-            out.sort_by(|a, b| voice_name_sorter(a, b));
+            out.sort_by(voice_name_sorter);
             out
         })
     }
@@ -317,7 +345,7 @@ impl EspeakData {
     }
 }
 
-fn collect_voices(base: &Path, dir: &Path, is_language_file: bool, out: &mut Vec<VoiceInfo>) {
+fn collect_voices(base: &Path, dir: &Path, out: &mut Vec<VoiceInfo>) {
     let Ok(entries) = std::fs::read_dir(dir) else { return };
     for entry in entries.flatten() {
         let name = entry.file_name();
@@ -326,7 +354,7 @@ fn collect_voices(base: &Path, dir: &Path, is_language_file: bool, out: &mut Vec
         }
         let path = entry.path();
         if path.is_dir() {
-            collect_voices(base, &path, is_language_file, out);
+            collect_voices(base, &path, out);
         } else if let Ok(bytes) = std::fs::read(&path) {
             let rel = path.strip_prefix(base).unwrap_or(&path).to_string_lossy().replace('\\', "/");
             if let Some(v) = read_voice_file(&String::from_utf8_lossy(&bytes), &rel) {
@@ -370,9 +398,9 @@ fn read_voice_file(text: &str, fname: &str) -> Option<VoiceInfo> {
             "language" => {
                 let mut it = rest.split_ascii_whitespace();
                 let lang = it.next().unwrap_or("").to_string();
-                let priority = it.next().and_then(|s| parse_c_int(s)).unwrap_or(5);
+                let priority = it.next().and_then(parse_c_int).unwrap_or(5);
                 let len = lang.len() + 2;
-                if len < 300 - langix - 1 {
+                if langix + len + 1 < 300 {
                     languages.push((priority as u8, lang));
                     langix += len;
                 }
@@ -380,7 +408,7 @@ fn read_voice_file(text: &str, fname: &str) -> Option<VoiceInfo> {
             "gender" => {
                 let mut it = rest.split_ascii_whitespace();
                 gender = it.next().unwrap_or("").to_string();
-                age = it.next().and_then(|s| parse_c_int(s)).unwrap_or(0);
+                age = it.next().and_then(parse_c_int).unwrap_or(0);
             }
             "variants" => variants = rest.split_ascii_whitespace().next().and_then(parse_c_int).unwrap_or(4),
             _ => {}

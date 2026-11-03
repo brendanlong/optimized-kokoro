@@ -217,10 +217,10 @@ impl Espeak {
         let mut accent1 = 0usize;
         let accent2;
         let mut letter2 = 0i32;
-        let mut ph_letter1 = [0u8; 30];
-        let mut ph_letter2 = [0u8; 30];
-        let mut ph_accent1 = [0u8; 30];
-        let mut ph_accent2 = [0u8; 30];
+        let mut ph_letter1 = [0u8; PH_BUF];
+        let mut ph_letter2 = [0u8; PH_BUF];
+        let mut ph_accent1 = [0u8; PH_BUF];
+        let mut ph_accent2 = [0u8; PH_BUF];
 
         if (0xe0..0x17f).contains(&letter) {
             accent_data = LETTER_ACCENTS_0E0[(letter - 0xe0) as usize];
@@ -281,13 +281,13 @@ impl Espeak {
     /// reading normal text rather than spelling.
     pub(crate) fn lookup_letter(&mut self, tr: Tr, letter: i32, next_byte: i32, ph_buf1: &mut [u8], pos: usize, control: i32) {
         let mut single_letter = [0u8; 10];
-        let mut ph_buf3 = [0u8; 40];
+        let mut ph_buf3 = [0u8; PH_BUF];
         put(ph_buf1, pos as isize, 0);
         let len = utf8_out(letter, &mut single_letter, 2) as usize;
         single_letter[len + 2] = b' ';
 
         if next_byte == -1 {
-            let mut tmp = [0u8; 80];
+            let mut tmp = [0u8; PH_BUF];
             let r = self.lookup(tr, &single_letter[2..], &mut tmp);
             cstrcpy(ph_buf1, pos as isize, cstr(&tmp, 0));
             if r != 0 {
@@ -313,7 +313,7 @@ impl Espeak {
             let s = format!("_#{letter} ");
             let mut sb = s.into_bytes();
             sb.push(0);
-            let mut tmp = [0u8; 80];
+            let mut tmp = [0u8; PH_BUF];
             self.lookup(tr, &sb, &mut tmp);
             cstrcpy(ph_buf1, pos as isize, cstr(&tmp, 0));
             return;
@@ -449,7 +449,7 @@ impl Espeak {
         let mut repeat = 0;
         let mut num_control = 0;
         let mut flags = [0u32; 2];
-        let mut ph_roman = [0u8; 30];
+        let mut ph_roman = [0u8; PH_BUF];
         put(ph_out, 0, 0);
         let w0flags = wtab.first().map_or(0, |w| w.flags);
         let numbers = self.t(tr).langopts.numbers;
@@ -599,9 +599,9 @@ impl Espeak {
 
     fn lookup_thousands(&mut self, tr: Tr, value: i32, thousandplex: i32, thousands_exact: i32, ph_out: &mut [u8]) -> bool {
         let mut found_value = 0u32;
-        let mut ph_of = [0u8; 12];
-        let mut ph_thousands = [0u8; 40];
-        let mut ph_buf = [0u8; 40];
+        let mut ph_of = [0u8; PH_BUF];
+        let mut ph_thousands = [0u8; PH_BUF];
+        let mut ph_buf = [0u8; PH_BUF];
 
         if value > 0 {
             if thousands_exact & 1 != 0 {
@@ -665,10 +665,10 @@ impl Espeak {
         let mut used_and = false;
         let mut found_ordinal = 0u32;
         let mut ord_type = b'o';
-        let mut ph_ordinal = [0u8; 20];
-        let mut ph_tens = [0u8; 50];
-        let mut ph_digits = [0u8; 50];
-        let mut ph_and = [0u8; 12];
+        let mut ph_ordinal = [0u8; PH_BUF];
+        let mut ph_tens = [0u8; PH_BUF];
+        let mut ph_digits = [0u8; PH_BUF];
+        let mut ph_and = [0u8; PH_BUF];
         let numbers = self.t(tr).langopts.numbers;
         let numbers2 = self.t(tr).langopts.numbers2;
 
@@ -852,14 +852,14 @@ impl Espeak {
         let ordinal = control & 0x22;
         let mut hundreds = value / 100;
         let tensunits = value % 100;
-        let mut buf1 = [0u8; 100];
-        let mut buf2 = [0u8; 100];
-        let mut ph_100 = [0u8; 20];
-        let mut ph_10t = [0u8; 20];
-        let mut ph_digits = [0u8; 50];
-        let mut ph_thousands = [0u8; 50];
-        let mut ph_hundred_and = [0u8; 12];
-        let mut ph_thousand_and = [0u8; 12];
+        let mut buf1 = [0u8; PH_BUF];
+        let mut buf2 = [0u8; PH_BUF];
+        let mut ph_100 = [0u8; PH_BUF];
+        let mut ph_10t = [0u8; PH_BUF];
+        let mut ph_digits = [0u8; PH_BUF];
+        let mut ph_thousands = [0u8; PH_BUF];
+        let mut ph_hundred_and = [0u8; PH_BUF];
+        let mut ph_thousand_and = [0u8; PH_BUF];
         let numbers = self.t(tr).langopts.numbers;
         let numbers2 = self.t(tr).langopts.numbers2;
         let name = self.t(tr).translator_name;
@@ -1026,19 +1026,19 @@ impl Espeak {
         let mut prev_thousands = 0;
         let mut ordinal = 0;
         let mut skipwords = 0;
-        let mut buf1 = [0u8; 100];
-        let mut ph_append = [0u8; 50];
-        let mut ph_buf = [0u8; 200];
-        let ph_buf2 = [0u8; 50];
-        let mut ph_zeros = [0u8; 50];
+        let mut buf1 = [0u8; PH_BUF];
+        let mut ph_append = [0u8; PH_BUF];
+        let mut ph_buf = [0u8; PH_BUF];
+        let ph_buf2 = [0u8; PH_BUF];
+        let mut ph_zeros = [0u8; PH_BUF];
         let mut suffix = [0u8; 30];
-        let mut buf_digit_lookup = [0u8; 50];
+        let mut buf_digit_lookup = [0u8; PH_BUF];
         const STR_PAUSE: [u8; 2] = [PHON_PAUSE_NOLINK, 0];
         let wt = |wtab: &[WordTab], k: usize| wtab.get(k).copied().unwrap_or_default();
 
         flags[0] = 0;
         self.n_digit_lookup = 0;
-        self.digit_lookup = vec![0u8; 50];
+        self.digit_lookup = vec![0u8; PH_BUF];
         self.number_control = control;
 
         let mut ix: isize = 0;
@@ -1169,7 +1169,7 @@ impl Espeak {
                 }
                 let mut k = 0;
                 while at(w, word + k) == b'0' && k < n_digits - 1 {
-                    let mut tmp = [0u8; 50];
+                    let mut tmp = [0u8; PH_BUF];
                     self.lookup(tr, b"_0\0", &mut tmp);
                     cstrcat(&mut ph_zeros, cstr(&tmp, 0));
                     k += 1;

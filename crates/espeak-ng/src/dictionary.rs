@@ -117,7 +117,7 @@ impl Espeak {
                 if ph.typ == PH_INVALID {
                     continue;
                 }
-                let mut count = 0;
+                let mut count: i32 = 0;
                 let mnemonic_word = ph.mnemonic;
                 loop {
                     let c = at(src, p + count as isize);
@@ -126,8 +126,8 @@ impl Espeak {
                     }
                     count += 1;
                 }
-                if (count as i32) > max && (count == 4 || ((mnemonic_word >> (count * 8)) & 0xff) == 0) {
-                    max = count as i32;
+                if count > max && (count == 4 || ((mnemonic_word >> (count * 8)) & 0xff) == 0) {
+                    max = count;
                     max_ph = ph.code;
                 }
             }
@@ -170,10 +170,11 @@ impl Espeak {
         (p, bad_phoneme)
     }
 
-    /// `DecodePhonemes`: phoneme codes back to mnemonics.
+    /// `DecodePhonemes`: phoneme codes back to mnemonics. (C first writes `"* "`, but without
+    /// advancing its pointer, so it is always overwritten.)
     pub(crate) fn decode_phonemes(&self, input: &[u8]) -> Vec<u8> {
         const STRESS_CHARS: &[u8] = b"==,,'*  ";
-        let mut out = b"* ".to_vec();
+        let mut out = Vec::new();
         let mut i = 0isize;
         loop {
             let phcode = at(input, i);
@@ -268,7 +269,7 @@ impl Espeak {
                 if (0x20..128).contains(&c) {
                     c = IPA1[(c - 0x20) as usize] as i32;
                 }
-                out.extend_from_slice(&utf8_vec(c));
+                push_utf8(out, c);
             } else {
                 out.push(c as u8);
             }
@@ -299,7 +300,7 @@ impl Espeak {
             if (plist.newword == 0 || separate_phonemes == b' ' as i32) && separate_phonemes != 0 && ix > 1 {
                 let c = utf8_in(&phon_buf2, 0).0;
                 if !(0x2b0..=0x36f).contains(&c) {
-                    buf.extend_from_slice(&utf8_vec(separate_phonemes));
+                    push_utf8(&mut buf, separate_phonemes);
                 }
             }
             if plist.synthflags & SFLAG_SYLLABLE != 0 {
@@ -314,7 +315,7 @@ impl Espeak {
                         STRESS_CHARS[stress as usize] as i32
                     };
                     if c != 0 {
-                        buf.extend_from_slice(&utf8_vec(c));
+                        push_utf8(&mut buf, c);
                     }
                 }
             }
@@ -325,9 +326,9 @@ impl Espeak {
                 let (c, n) = utf8_in(&phon_buf2, p);
                 p += n;
                 if use_tie != 0 && count > 0 && (flags & (1 << (count - 1))) == 0 && !(0x2b0..=0x36f).contains(&c) && ucd::isalpha(c) {
-                    buf.extend_from_slice(&utf8_vec(use_tie));
+                    push_utf8(&mut buf, use_tie);
                 }
-                buf.extend_from_slice(&utf8_vec(c));
+                push_utf8(&mut buf, c);
                 count += 1;
             }
             if ph.code != PHON_SWITCH {
@@ -410,18 +411,18 @@ impl Espeak {
         if let Some(Some(list)) = t.letter_groups.get(group as usize) {
             return wcschr(list, letter);
         }
-        if group > 7 || group < 0 {
+        if !(0..=7).contains(&group) {
             return false;
         }
         let mut letter = letter;
         if t.letter_bits_offset > 0 {
             let letter2 = letter.wrapping_sub(t.letter_bits_offset);
-            if letter2 > 0 && letter2 < 0x100 {
+            if (1..0x100).contains(&letter2) {
                 letter = letter2;
             } else {
                 return false;
             }
-        } else if letter >= 0xc0 && letter < N_REMOVE_ACCENT {
+        } else if (0xc0..N_REMOVE_ACCENT).contains(&letter) {
             return t.letter_bits[REMOVE_ACCENT[(letter - 0xc0) as usize] as usize] & (1u8 << group) != 0;
         }
         if (0..0x100).contains(&letter) {
@@ -1553,13 +1554,7 @@ impl Espeak {
                 }
             }
 
-            loop {
-                let b = at(d, rule);
-                rule += 1;
-                if b == 0 || rule as usize > d.len() {
-                    break;
-                }
-            }
+            rule = dict.skip_rule(rule as usize) as isize;
         }
 
         total_consumed += group_length;
@@ -1625,7 +1620,7 @@ impl Espeak {
                     string.push(at(w, p + k));
                 }
                 string.push(0);
-                let mut buf = [0u8; 40];
+                let mut buf = [0u8; PH_BUF];
                 self.lookup(tr, &string, &mut buf);
                 digit_count += 1;
                 if digit_count >= 2 {
@@ -1693,7 +1688,7 @@ impl Espeak {
                                 self.pre_pause = v;
                             }
                         }
-                        if letter >= 0xc0 && letter < N_REMOVE_ACCENT {
+                        if (0xc0..N_REMOVE_ACCENT).contains(&letter) {
                             let ixa = REMOVE_ACCENT[(letter - 0xc0) as usize];
                             if ixa != 0 && (at(w, p - 2) != b' ' || at(w, p + n as isize) != b' ') {
                                 let p2 = p - 1;
@@ -1812,7 +1807,7 @@ impl Espeak {
 
     /// `TransposeAlphabet`: packs the word's letters into 6-bit codes, as `*_list` stores them.
     /// Returns the new length, with bit 6 set if compressed.
-    fn transpose_alphabet(&self, tr: Tr, text: &mut Vec<u8>) -> usize {
+    fn transpose_alphabet(&self, tr: Tr, text: &mut [u8; N_WORD_BYTES + 1]) -> usize {
         let t = self.t(tr);
         let min = t.transpose_min;
         let max = t.transpose_max;
@@ -1820,70 +1815,73 @@ impl Espeak {
         let map = t.transpose_map;
         let pairs_start = max - min + 2;
         let mut all_alpha = true;
-        let mut buf = Vec::with_capacity(N_WORD_BYTES + 1);
+        let mut buf = [0u8; N_WORD_BYTES + 1];
+        let mut bufix = 0usize;
         let mut p = 0isize;
         loop {
             let (c, n) = utf8_in(text, p);
             p += n;
             if c != 0 {
                 if c >= min && c <= max {
-                    match map {
-                        None => buf.push((c - offset) as u8),
-                        Some(map) => {
-                            let v = map.get((c - min) as usize).copied().unwrap_or(0);
-                            if v > 0 {
-                                buf.push(v as u8);
-                            } else {
-                                all_alpha = false;
-                                break;
-                            }
-                        }
+                    let v = match map {
+                        None => c - offset,
+                        Some(map) => map.get((c - min) as usize).copied().unwrap_or(0) as i32,
+                    };
+                    if v > 0 {
+                        buf[bufix] = v as u8;
+                        bufix += 1;
+                    } else {
+                        all_alpha = false;
+                        break;
                     }
                 } else {
                     all_alpha = false;
                     break;
                 }
             }
-            if c == 0 || buf.len() >= N_WORD_BYTES {
+            if c == 0 || bufix >= N_WORD_BYTES {
                 break;
             }
         }
+        buf[bufix] = 0;
         if all_alpha {
+            // compress to 6 bits per character, in place
             let mut acc: i32 = 0;
             let mut bits = 0;
-            let mut out = Vec::new();
-            let mut i = 0usize;
-            while i < buf.len() {
-                let mut c = buf[i] as i32;
-                i += 1;
+            let mut p = 0usize;
+            let mut p2 = 0usize;
+            loop {
+                let mut c = buf[p] as i32;
+                p += 1;
+                if c == 0 {
+                    break;
+                }
                 if let Some(pairs) = t.frequent_pairs {
-                    let c2 = c + ((buf.get(i).copied().unwrap_or(0) as i32) << 8);
+                    let c2 = c + ((buf[p] as i32) << 8);
                     let mut ix = 0;
                     while ix < pairs.len() && c2 >= pairs[ix] as i32 {
                         if c2 == pairs[ix] as i32 {
                             c = ix as i32 + pairs_start;
-                            i += 1;
+                            p += 1;
                             break;
                         }
                         ix += 1;
                     }
                 }
-                acc = (acc << 6) + (c & 0x3f);
+                acc = (acc << 6).wrapping_add(c & 0x3f);
                 bits += 6;
                 if bits >= 8 {
                     bits -= 8;
-                    out.push((acc >> bits) as u8);
+                    buf[p2] = (acc >> bits) as u8;
+                    p2 += 1;
                 }
             }
             if bits > 0 {
-                out.push((acc << (8 - bits)) as u8);
+                buf[p2] = (acc << (8 - bits)) as u8;
+                p2 += 1;
             }
-            let ix = out.len();
-            let tail = text.get(ix..).map(|s| s.to_vec()).unwrap_or_default();
-            text.clear();
-            text.extend_from_slice(&out);
-            text.extend_from_slice(&tail);
-            return ix | 0x40;
+            text[..p2].copy_from_slice(&buf[..p2]);
+            return p2 | 0x40;
         }
         cstrlen(text, 0)
     }
@@ -1893,16 +1891,14 @@ impl Espeak {
     /// text ends in `src`.
     #[allow(clippy::too_many_arguments)]
     fn lookup_dict2(&mut self, tr: Tr, word: &[u8], src: &[u8], word2: isize, in_clause: bool, phonetic: &mut [u8], flags: &mut [u32; 2], end_flags: u32, wtab: Option<&[WordTab]>) -> Found {
-        let Some(dict) = self.t(tr).dict.clone() else { return None };
+        let dict = self.t(tr).dict.clone()?;
         let d = &dict.data;
         let wflags = wtab.and_then(|w| w.first()).map_or(0, |w| w.flags);
         let lookup_symbol = flags[1] & FLAG_LOOKUP_SYMBOL;
-        let mut word_buf: Vec<u8>;
+        let mut word_buf = [0u8; N_WORD_BYTES + 1];
         let wlen;
         let word: &[u8] = if self.t(tr).transpose_min > 0 {
-            word_buf = vec![0; N_WORD_BYTES];
             strncpy0(&mut word_buf, word, N_WORD_BYTES);
-            word_buf.truncate(N_WORD_BYTES);
             wlen = self.transpose_alphabet(tr, &mut word_buf);
             &word_buf
         } else {
@@ -2242,7 +2238,8 @@ impl Espeak {
             let mut text = [0u8; 80];
             text[1] = b' ';
             text[2] = b' ';
-            let rep = cstr(&replacement, 2);
+            // the replacement text, or the word itself when its entry has `$text` but no text
+            let rep = if replacement.is_empty() { cstr(word, 0) } else { cstr(&replacement, 2) };
             strncpy0(&mut text[3..], rep, 77);
             flags0 = self.translate_word(tr, &mut text, 3, None, false, None);
             let wp = self.word_phonemes;
@@ -2253,7 +2250,7 @@ impl Espeak {
     }
 
     fn lookup_flags(&mut self, tr: Tr, word: &[u8]) -> [u32; 2] {
-        let mut buf = [0u8; 100];
+        let mut buf = [0u8; PH_BUF];
         let mut flags = [0u32; 2];
         self.lookup_dict_list(tr, word, 0, false, &mut buf, &mut flags, 0, None, None);
         flags

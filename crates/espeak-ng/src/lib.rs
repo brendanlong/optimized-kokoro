@@ -14,6 +14,16 @@
 //! ```
 
 #![forbid(unsafe_code)]
+// The port keeps C's control flow (nested and empty branches, index loops, long parameter lists)
+// so that each function can be read side by side with its C original.
+#![allow(
+    clippy::collapsible_if,
+    clippy::collapsible_else_if,
+    clippy::collapsible_match,
+    clippy::if_same_then_else,
+    clippy::needless_range_loop,
+    clippy::too_many_arguments
+)]
 
 mod common;
 mod data;
@@ -82,5 +92,28 @@ impl Espeak {
             }
         }
         out
+    }
+
+    /// The last clause's `phoneme_list`, one entry per line, for comparing with C while debugging.
+    #[doc(hidden)]
+    pub fn debug_phoneme_list(&self) -> String {
+        let mut s = String::new();
+        for (ix, p) in self.phoneme_list.iter().take(self.n_phoneme_list.max(0) as usize).enumerate() {
+            let m = p.ph.map_or(0, |ph| ph.mnemonic).to_le_bytes();
+            let name: String = m.iter().take_while(|&&c| c != 0).map(|&c| c as char).collect();
+            s.push_str(&format!(
+                "  [{ix}] code={} ph={name} phcode={} type={} stress={} wstress={} flags={:x} src={} new={} tone={}\n",
+                p.ph.map_or(-1, |ph| ph.code as i32),
+                p.phcode,
+                p.typ,
+                p.stresslevel,
+                p.wordstress,
+                p.synthflags,
+                p.sourceix,
+                p.newword,
+                p.tone_ph
+            ));
+        }
+        s
     }
 }

@@ -6,9 +6,10 @@
 
 use crate::ucd;
 
+// A negative position cast to usize is far past the end, so one bounds check covers both ends.
 #[inline]
 pub fn at(b: &[u8], i: isize) -> u8 {
-    if i < 0 { 0 } else { b.get(i as usize).copied().unwrap_or(0) }
+    b.get(i as usize).copied().unwrap_or(0)
 }
 
 /// A `char` read as C's signed char on x86.
@@ -19,10 +20,8 @@ pub fn sat(b: &[u8], i: isize) -> i32 {
 
 #[inline]
 pub fn put(b: &mut [u8], i: isize, v: u8) {
-    if i >= 0 {
-        if let Some(x) = b.get_mut(i as usize) {
-            *x = v;
-        }
+    if let Some(x) = b.get_mut(i as usize) {
+        *x = v;
     }
 }
 
@@ -135,12 +134,13 @@ pub fn utf8_out(c: i32, b: &mut [u8], i: isize) -> isize {
     n_bytes as isize + 1
 }
 
-/// `utf8_out` into a new vector.
-pub fn utf8_vec(c: i32) -> Vec<u8> {
+/// `utf8_out` onto the end of a vector.
+pub fn push_utf8(out: &mut Vec<u8>, c: i32) {
     let mut b = [0u8; 4];
     let n = utf8_out(c, &mut b, 0) as usize;
-    b[..n].to_vec()
+    out.extend_from_slice(&b[..n]);
 }
+
 
 pub fn lookupwchar(list: &[u16], c: i32) -> i32 {
     for (ix, &x) in list.iter().enumerate() {

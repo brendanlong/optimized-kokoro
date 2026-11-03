@@ -4,7 +4,8 @@
 //!
 //! CALLS.jsonl lines are `{"voice": "gmw/en-US", "text": "...", "clauses": ["...", ...]}`, the
 //! clauses `espeak_TextToPhonemes` returned in phonemizer's mode (see `scratch/tools/oracle.py`).
-//! Prints the exact-match rate per voice, per call and per word, then mismatches.
+//! Prints the exact-match rate per voice, per call and per word, then mismatches. With `FRESH=1`
+//! each call gets a new engine, as with `oracle.py fresh`.
 
 use kokoro_espeak_ng::{Espeak, EspeakData, PHONEMES_IPA_TIE};
 use serde::Deserialize;
@@ -14,7 +15,11 @@ use std::collections::{BTreeMap, HashMap};
 struct Call {
     voice: String,
     text: String,
+    #[serde(default)]
     clauses: Vec<String>,
+    /// C crashed on this call; it restarts with fresh state.
+    #[serde(default)]
+    reset: bool,
 }
 
 #[derive(Default)]
@@ -37,10 +42,17 @@ fn main() {
     let mut tallies: BTreeMap<String, Tally> = BTreeMap::new();
     let mut shown: HashMap<String, usize> = HashMap::new();
     let text = std::fs::read_to_string(path).unwrap();
+    let fresh = std::env::var_os("FRESH").is_some();
     let start = std::time::Instant::now();
     for line in text.lines() {
         let call: Call = serde_json::from_str(line).unwrap();
         if only.as_ref().is_some_and(|v| *v != call.voice) {
+            continue;
+        }
+        if fresh || call.reset {
+            engines.remove(&call.voice);
+        }
+        if call.reset {
             continue;
         }
         let e = engines.entry(call.voice.clone()).or_insert_with(|| {
@@ -65,7 +77,13 @@ fn main() {
             let n = shown.entry(call.voice.clone()).or_default();
             if *n < show {
                 *n += 1;
-                println!("{} {:?}\n  C:  {:?}\n  rs: {:?}", call.voice, call.text, call.clauses, got);
+                let (a, b) = (call.clauses.join("\n"), got.join("\n"));
+                let a: Vec<char> = a.chars().collect();
+                let b: Vec<char> = b.chars().collect();
+                let common = a.iter().zip(&b).take_while(|(x, y)| x == y).count();
+                let from = common.saturating_sub(40);
+                let tail = |v: &[char]| v[from..v.len().min(common + 60)].iter().collect::<String>();
+                println!("{} {:?}\n  C:  …{:?}\n  rs: …{:?}", call.voice, call.text, tail(&a), tail(&b));
             }
         }
     }
