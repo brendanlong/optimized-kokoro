@@ -1,0 +1,19 @@
+[package]
+name = "kokoro-text"
+version = "0.1.0"
+description = "Kokoro-FastAPI's text preprocessing: normalization, control tags and sentence chunking"
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+license = "Apache-2.0"
+
+[dependencies]
+fancy-regex = "0.17"
+regex = "1.12"
+roxmltree = "0.21.2"
+unicode-segmentation = "=1.13.3"
+
+[dev-dependencies]
+kokoro-reference = { path = "../reference" }
+serde.workspace = true
+serde_json.workspace = true

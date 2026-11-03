@@ -11,4 +11,11 @@ python3 fetch_corpus.py         # optional: books and Wikipedia paragraphs into 
 
 `dump.py` documents the output format; `crates/reference` reads it. `fixtures/hard_cases.out.jsonl` is committed so tests run without the Python setup. Dumps of the downloaded corpus go in `out/`, and the parity tests pick them up when present.
 
+The text functions before G2P (normalizer options, tags, SSML, chunking) have their own fixture, since books and Wikipedia rarely reach most of them. `crates/text` also needs Python's character classes, generated from this interpreter:
+
+```sh
+.cache/kfa/.venv/bin/python -I dump_text.py fixtures/text_cases.jsonl fixtures/text_cases.out.jsonl
+.cache/kfa/.venv/bin/python -I gen_text_tables.py ../crates/text/src/tables.rs
+```
+
 Differences from the deployed image: espeak reads the same espeak-ng 1.52 data (bundled with espeakng-loader), from a copy at a shorter path (see `setup.sh`).
