@@ -54,6 +54,9 @@ pub struct SynthRequest {
     pub speed: f32,
     pub voices: Arc<[(u16, f32)]>,
     pub ids: Vec<u8>,
+    /// The style row to use, plus one: `ids.len()`, or the whole clause's length for a piece of a
+    /// stitched chunk.
+    pub style_len: u16,
 }
 
 type Reply = oneshot::Sender<Result<Synthesized, SynthError>>;
@@ -106,6 +109,7 @@ impl Connection {
     fn valid(&self, r: &SynthRequest) -> bool {
         let ids_ok = !r.ids.is_empty()
             && r.ids.len() <= usize::from(self.hello.max_phonemes)
+            && (1..=self.hello.max_phonemes).contains(&r.style_len)
             && r.ids.iter().all(|&id| id >= 1 && u16::from(id) < self.hello.vocab_size);
         let voices_ok = (1..=protocol::MAX_VOICES_PER_MIX).contains(&r.voices.len())
             && r.voices
@@ -140,6 +144,7 @@ impl Connection {
                 speed: request.speed,
                 voices: &request.voices,
                 ids: &request.ids,
+                style_len: request.style_len,
             });
             if self.outgoing.send(frame).is_err() {
                 state.pending.remove(&id);

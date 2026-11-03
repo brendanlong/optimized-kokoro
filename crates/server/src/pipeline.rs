@@ -18,11 +18,18 @@ pub struct Chunk {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PipelineError(pub String);
+pub enum PipelineError {
+    /// A sentence in a language with no G2P yet (Chinese or Japanese). The server skips it.
+    Unsupported(String),
+    /// Anything else, which fails the request.
+    Failed(String),
+}
 
 impl fmt::Display for PipelineError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
+        match self {
+            Self::Unsupported(why) | Self::Failed(why) => f.write_str(why),
+        }
     }
 }
 
@@ -32,7 +39,8 @@ pub trait Pipeline: Send + Sync + 'static {
     /// Whether `lang` (a Kokoro language code such as `a` or `en-us`) has a pipeline.
     fn supports(&self, lang: &str) -> bool;
 
-    /// The chunks of `text`, phonemized lazily as they're taken. Runs on a blocking thread.
+    /// The chunks of `text`, phonemized lazily as they're taken. Runs on a blocking thread. An
+    /// error stands in for the sentence it happened in; later sentences still follow.
     fn chunks<'a>(
         &'a self,
         lang: &'a str,

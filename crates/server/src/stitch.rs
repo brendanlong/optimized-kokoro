@@ -82,10 +82,9 @@ impl Plan {
         &self.ids[first..stop]
     }
 
-    /// The style row the reference renders every piece with: the whole chunk's length. The
-    /// worker protocol can't express this yet; the worker uses the context's length.
-    pub fn style_len(&self) -> usize {
-        self.ids.len().min(MODEL_LIMIT)
+    /// The style length the reference renders every piece with: the whole chunk's.
+    pub fn style_len(&self) -> u16 {
+        self.ids.len().min(MODEL_LIMIT) as u16
     }
 }
 
@@ -193,7 +192,7 @@ mod tests {
             assert_eq!(contexts, case.contexts);
             let mut stitcher = Stitcher::default();
             for (index, expected) in case.pieces.iter().enumerate() {
-                let (audio, durations) = render(plan.context_ids(index), plan.style_len());
+                let (audio, durations) = render(plan.context_ids(index), plan.style_len().into());
                 let out = stitcher.piece(&plan, index, &audio, &durations);
                 assert_eq!(out.len(), expected.len);
                 for (a, b) in out.iter().zip(&expected.head) {

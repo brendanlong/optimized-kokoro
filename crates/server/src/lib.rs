@@ -8,6 +8,7 @@ pub mod http;
 pub mod pipeline;
 pub mod protocol;
 pub mod request;
+pub mod serve;
 pub mod stitch;
 pub mod stream;
 pub mod voices;

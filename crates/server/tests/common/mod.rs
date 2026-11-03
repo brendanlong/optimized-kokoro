@@ -9,7 +9,7 @@ use hyper::{Request, Response};
 use kokoro_server::pipeline::{Chunk, Pipeline, PipelineError};
 use kokoro_server::protocol::worker_side::{self, FrontFrame, read_front};
 use kokoro_server::protocol::{FailCode, Hello};
-use kokoro_server::{Config, StubPipeline, Worker, http};
+use kokoro_server::{Config, StubPipeline, Worker, http, serve};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -69,6 +69,8 @@ pub fn stub_chunks(text: &str) -> Vec<Chunk> {
 /// writes whatever bytes the test gives it.
 pub struct ScriptedWorker {
     pub frames: mpsc::UnboundedReceiver<Event>,
+    /// `style_len` of each Synthesize taken by [`Self::synthesize`].
+    pub style_lens: Vec<u16>,
     out: mpsc::UnboundedSender<Vec<u8>>,
 }
 
@@ -128,7 +130,7 @@ impl ScriptedWorker {
                 }
             }
         });
-        Self { frames: event_rx, out: out_tx }
+        Self { frames: event_rx, style_lens: Vec::new(), out: out_tx }
     }
 
     pub fn send(&self, bytes: Vec<u8>) {
@@ -150,7 +152,8 @@ impl ScriptedWorker {
     pub async fn synthesize(&mut self) -> (u64, u8, f32, Vec<(u16, f32)>, Vec<u8>) {
         loop {
             match self.next().await {
-                Event::Frame(FrontFrame::Synthesize { id, priority, speed, voices, ids }) => {
+                Event::Frame(FrontFrame::Synthesize { id, priority, speed, voices, ids, style_len }) => {
+                    self.style_lens.push(style_len);
                     return (id, priority, speed, voices, ids);
                 }
                 Event::Connected => continue,
@@ -294,8 +297,9 @@ pub async fn start(adjust: impl FnOnce(&mut Config), pipeline: Arc<dyn Pipeline>
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let worker = Worker::spawn(socket.clone(), config.reconnect_interval());
+    let limits = serve::Limits::from(&config);
     let app = http::router(config, worker.clone(), pipeline);
-    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    tokio::spawn(serve::serve(listener, app, limits, std::future::pending()));
     Server { addr, worker, socket, dir }
 }
 
@@ -367,6 +371,26 @@ pub struct BrokenPipeline {
     pub panic: bool,
 }
 
+/// The stub pipeline, reporting chunk `index` as an unsupported language.
+pub struct UnsupportedAt(pub usize);
+
+impl Pipeline for UnsupportedAt {
+    fn supports(&self, lang: &str) -> bool {
+        StubPipeline.supports(lang)
+    }
+
+    fn chunks<'a>(
+        &'a self,
+        lang: &'a str,
+        text: &'a str,
+        options: &'a kokoro_text::Options,
+    ) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
+        Box::new(StubPipeline.chunks(lang, text, options).enumerate().map(|(i, chunk)| {
+            if i == self.0 { Err(PipelineError::Unsupported("no G2P for ja text yet".into())) } else { chunk }
+        }))
+    }
+}
+
 impl Pipeline for BrokenPipeline {
     fn supports(&self, lang: &str) -> bool {
         StubPipeline.supports(lang)
@@ -384,7 +408,7 @@ impl Pipeline for BrokenPipeline {
             } else if self.panic {
                 panic!("pipeline bug")
             } else {
-                Err(PipelineError("cannot phonemize".into()))
+                Err(PipelineError::Failed("cannot phonemize".into()))
             }
         }))
     }

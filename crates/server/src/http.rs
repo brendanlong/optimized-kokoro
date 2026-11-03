@@ -7,9 +7,9 @@ use crate::request::{self, Refusal, SpeechRequest};
 use crate::stream::{self, StreamError};
 use crate::worker::{SynthError, Worker};
 use axum::Router;
+use axum::Extension;
 use axum::body::{Body, Bytes};
-use axum::extract::rejection::BytesRejection;
-use axum::extract::{DefaultBodyLimit, Request, State};
+use axum::extract::{Request, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
@@ -17,7 +17,7 @@ use axum::routing::{get, post};
 use futures_util::{StreamExt, stream as futures_stream};
 use serde_json::json;
 use std::sync::Arc;
-use subtle::ConstantTimeEq;
+use subtle::{ConditionallySelectable, ConstantTimeEq};
 use tokio::sync::Semaphore;
 
 pub struct AppState {
@@ -25,21 +25,23 @@ pub struct AppState {
     worker: Worker,
     pipeline: Arc<dyn Pipeline>,
     slots: Arc<Semaphore>,
+    /// Streams per API key, by the key's position in the config.
+    key_slots: Vec<Arc<Semaphore>>,
 }
 
+/// Which configured key a request authenticated with.
+#[derive(Debug, Clone, Copy)]
+struct KeyIndex(usize);
+
 pub fn router(config: Config, worker: Worker, pipeline: Arc<dyn Pipeline>) -> Router {
-    let body_limit = config.body_limit();
     let slots = Arc::new(Semaphore::new(config.max_concurrent_requests));
-    let state = Arc::new(AppState { config, worker, pipeline, slots });
+    let key_slots = config.api_keys.iter().map(|_| Arc::new(Semaphore::new(config.max_streams_per_key))).collect();
+    let state = Arc::new(AppState { config, worker, pipeline, slots, key_slots });
     let api = Router::new()
         .route("/v1/audio/speech", post(speech))
         .route("/v1/audio/voices", get(voices))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_key));
-    Router::new()
-        .route("/health", get(health))
-        .merge(api)
-        .layer(DefaultBodyLimit::max(body_limit))
-        .with_state(state)
+    Router::new().route("/health", get(health)).merge(api).with_state(state)
 }
 
 fn error(status: StatusCode, code: &str, kind: &str, message: impl Into<String>) -> Response {
@@ -55,16 +57,20 @@ fn unavailable(message: &str) -> Response {
     error(StatusCode::SERVICE_UNAVAILABLE, "unavailable", "server_error", message)
 }
 
-fn key_matches(keys: &[String], token: &str) -> bool {
-    let mut matched = subtle::Choice::from(0);
-    for key in keys {
-        matched |= key.as_bytes().ct_eq(token.as_bytes());
+/// The index of the key equal to `token`, comparing against every key in constant time.
+fn find_key(keys: &[String], token: &str) -> Option<usize> {
+    let mut found = subtle::Choice::from(0);
+    let mut index = 0u64;
+    for (i, key) in keys.iter().enumerate() {
+        let equal = key.as_bytes().ct_eq(token.as_bytes());
+        index.conditional_assign(&(i as u64), equal);
+        found |= equal;
     }
-    matched.into()
+    bool::from(found).then_some(index as usize)
 }
 
 /// Runs before the handler's extractors, so an unauthenticated request's body is never read.
-async fn require_key(State(state): State<Arc<AppState>>, request: Request, next: Next) -> Response {
+async fn require_key(State(state): State<Arc<AppState>>, mut request: Request, next: Next) -> Response {
     let token = request
         .headers()
         .get(header::AUTHORIZATION)
@@ -72,12 +78,13 @@ async fn require_key(State(state): State<Arc<AppState>>, request: Request, next:
         .and_then(|v| v.split_once(' '))
         .filter(|(scheme, _)| scheme.eq_ignore_ascii_case("bearer"))
         .map(|(_, token)| token);
-    if !token.is_some_and(|t| !t.is_empty() && key_matches(&state.config.api_keys, t)) {
+    let Some(index) = token.filter(|t| !t.is_empty()).and_then(|t| find_key(&state.config.api_keys, t)) else {
         let mut response =
             error(StatusCode::UNAUTHORIZED, "unauthorized", "authentication_error", "A valid API key is required");
         response.headers_mut().insert(header::WWW_AUTHENTICATE, HeaderValue::from_static("Bearer"));
         return response;
-    }
+    };
+    request.extensions_mut().insert(KeyIndex(index));
     next.run(request).await
 }
 
@@ -102,18 +109,35 @@ fn stream_failure(e: &StreamError) -> Response {
     }
 }
 
-async fn speech(State(state): State<Arc<AppState>>, body: Result<Bytes, BytesRejection>) -> Response {
-    let body = match body {
+fn is_length_limit(e: &(dyn std::error::Error + 'static)) -> bool {
+    e.is::<http_body_util::LengthLimitError>() || e.source().is_some_and(is_length_limit)
+}
+
+/// Reads the body, refusing one over the size limit or slower than the body timeout.
+async fn read_body(config: &Config, body: Body) -> Result<Bytes, Response> {
+    let limit = config.body_limit();
+    match tokio::time::timeout(config.request_body_timeout(), axum::body::to_bytes(body, limit)).await {
+        Err(_) => Err(error(
+            StatusCode::REQUEST_TIMEOUT,
+            "timeout",
+            "invalid_request_error",
+            "The request body took too long to arrive",
+        )),
+        Ok(Err(e)) if is_length_limit(&e) => Err(error(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "too_large",
+            "invalid_request_error",
+            format!("request body exceeds {limit} bytes"),
+        )),
+        Ok(Err(e)) => Err(invalid(format!("reading the request body: {e}"))),
+        Ok(Ok(bytes)) => Ok(bytes),
+    }
+}
+
+async fn speech(State(state): State<Arc<AppState>>, Extension(key): Extension<KeyIndex>, body: Body) -> Response {
+    let body = match read_body(&state.config, body).await {
         Ok(body) => body,
-        Err(rejection) if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE => {
-            return error(
-                StatusCode::PAYLOAD_TOO_LARGE,
-                "too_large",
-                "invalid_request_error",
-                format!("request body exceeds {} bytes", state.config.body_limit()),
-            );
-        }
-        Err(rejection) => return invalid(rejection.body_text()),
+        Err(response) => return response,
     };
     let request: SpeechRequest = match serde_json::from_slice(&body) {
         Ok(request) => request,
@@ -124,6 +148,14 @@ async fn speech(State(state): State<Arc<AppState>>, body: Result<Bytes, BytesRej
     }
     let Some(connection) = state.worker.current() else {
         return unavailable("The model worker is not connected");
+    };
+    let Ok(key_permit) = state.key_slots[key.0].clone().try_acquire_owned() else {
+        return error(
+            StatusCode::TOO_MANY_REQUESTS,
+            "rate_limited",
+            "rate_limit_error",
+            format!("This API key already has {} speech requests in progress", state.config.max_streams_per_key),
+        );
     };
     let Ok(permit) = state.slots.clone().try_acquire_owned() else {
         return unavailable("Too many requests in progress");
@@ -142,7 +174,8 @@ async fn speech(State(state): State<Arc<AppState>>, body: Result<Bytes, BytesRej
         Ok(speech) => speech,
         Err(refusal) => return refused(refusal),
     };
-    let mut audio = stream::start(speech, connection, state.pipeline.clone(), state.config.lookahead, permit);
+    let permits = (permit, key_permit);
+    let mut audio = stream::start(speech, connection, state.pipeline.clone(), state.config.lookahead, permits);
 
     // Headers wait for the first audio, so a request that fails before any is made gets a status.
     let first = match audio.next().await {

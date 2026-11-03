@@ -1,8 +1,25 @@
 //! Worker protocol v1 frames (`docs/worker-protocol.md`): length-prefixed, little-endian.
 //!
-//! Every length the worker sends is checked against a bound before anything is allocated for it.
-//! An Audio frame's size is only known once its request's Durations frame has arrived, so the
-//! reader asks the caller how many samples it expects.
+//! Synthesize is `u8 type, u64 request_id, u8 priority, f32 speed, u8 n_voices,
+//! n_voices × (u16 voice_index, f32 weight), u16 n_ids, u16 style_len, n_ids × u8 id`. The style
+//! vector is row `style_len - 1` of the mixed voice pack (`1..=max_phonemes`): `n_ids` for a
+//! normal chunk, and the whole clause's length (capped at 510) for each piece of a stitched one.
+//!
+//! What the front accepts from the worker, beyond the frame layouts:
+//! - Hello comes first and only once, with version 1, `2 <= vocab_size <= 256`,
+//!   `max_phonemes == 510`, `max_batch >= 1`, `sample_rate == 24000`, and 1 or more distinct voice
+//!   names of 1 to 64 bytes of `[a-z0-9_]`.
+//! - Every other frame names a request the front sent and that hasn't ended.
+//! - Durations: at most one per request, before its Audio, with exactly `n_ids + 2` values, each
+//!   at most `ceil(50 / speed) + 1` (Kokoro's `max_dur` is 50 sigmoid bins, divided by speed).
+//! - Audio: after the request's Durations, with exactly `600 × Σ durations` samples (Kokoro v1.0
+//!   renders 600 samples per duration unit; measured exact on the real model).
+//! - Failed: code 1 (cancelled) only after the front sent Cancel for that request, or 2.
+//! - Each length prefix is checked against its frame type's bound before anything is allocated:
+//!   Hello at most 19 + 65,535 × 65 bytes, Durations at most 1,035, Failed exactly 10, and Audio
+//!   exactly the size its Durations imply, so the reader asks the caller how many samples to expect.
+//!
+//! Anything else closes the connection, failing every request in flight on it.
 
 use std::fmt;
 use std::io;
@@ -269,6 +286,7 @@ pub struct Synthesize<'a> {
     pub speed: f32,
     pub voices: &'a [(u16, f32)],
     pub ids: &'a [u8],
+    pub style_len: u16,
 }
 
 fn frame(body: Vec<u8>) -> Vec<u8> {
@@ -280,7 +298,7 @@ fn frame(body: Vec<u8>) -> Vec<u8> {
 
 /// Encodes a Synthesize frame. The caller has checked every field against the worker's Hello.
 pub fn encode_synthesize(s: &Synthesize) -> Vec<u8> {
-    let mut body = Vec::with_capacity(1 + 8 + 1 + 4 + 1 + 6 * s.voices.len() + 2 + s.ids.len());
+    let mut body = Vec::with_capacity(1 + 8 + 1 + 4 + 1 + 6 * s.voices.len() + 4 + s.ids.len());
     body.push(TYPE_SYNTHESIZE);
     body.extend_from_slice(&s.id.to_le_bytes());
     body.push(s.priority as u8);
@@ -291,6 +309,7 @@ pub fn encode_synthesize(s: &Synthesize) -> Vec<u8> {
         body.extend_from_slice(&weight.to_le_bytes());
     }
     body.extend_from_slice(&(s.ids.len() as u16).to_le_bytes());
+    body.extend_from_slice(&s.style_len.to_le_bytes());
     body.extend_from_slice(s.ids);
     debug_assert!(body.len() <= MAX_FRONT_BODY);
     frame(body)
@@ -355,7 +374,7 @@ pub mod worker_side {
 
     #[derive(Debug, Clone, PartialEq)]
     pub enum FrontFrame {
-        Synthesize { id: u64, priority: u8, speed: f32, voices: Vec<(u16, f32)>, ids: Vec<u8> },
+        Synthesize { id: u64, priority: u8, speed: f32, voices: Vec<(u16, f32)>, ids: Vec<u8>, style_len: u16 },
         Cancel { id: u64 },
     }
 
@@ -378,8 +397,9 @@ pub mod worker_side {
                     .map(|_| Ok((c.u16()?, f32::from_le_bytes(c.take()?))))
                     .collect::<Result<_, ReadError>>()?;
                 let n_ids = c.u16()?;
+                let style_len = c.u16()?;
                 let ids = c.bytes(n_ids.into())?.to_vec();
-                FrontFrame::Synthesize { id, priority, speed, voices, ids }
+                FrontFrame::Synthesize { id, priority, speed, voices, ids, style_len }
             }
             TYPE_CANCEL => FrontFrame::Cancel { id: c.u64()? },
             other => return violation(format!("unknown front frame type {other:#04x}")),
@@ -428,10 +448,18 @@ mod tests {
             speed: 1.5,
             voices: &voices,
             ids: &[43, 16, 44],
+            style_len: 7,
         });
         assert_eq!(
             read_front(&mut &bytes[..]).await.unwrap(),
-            FrontFrame::Synthesize { id: 3, priority: 1, speed: 1.5, voices: voices.to_vec(), ids: vec![43, 16, 44] }
+            FrontFrame::Synthesize {
+                id: 3,
+                priority: 1,
+                speed: 1.5,
+                voices: voices.to_vec(),
+                ids: vec![43, 16, 44],
+                style_len: 7
+            }
         );
         assert_eq!(read_front(&mut &encode_cancel(4)[..]).await.unwrap(), FrontFrame::Cancel { id: 4 });
     }

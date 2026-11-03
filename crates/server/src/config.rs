@@ -5,6 +5,7 @@ use serde::Deserialize;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
+use tokio::sync::Semaphore;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields, default)]
@@ -24,6 +25,17 @@ pub struct Config {
     pub max_body_bytes: Option<usize>,
     /// Speech requests served at once; more get 503.
     pub max_concurrent_requests: usize,
+    /// Speech requests one API key may have in progress; more get 429.
+    pub max_streams_per_key: usize,
+    /// Open client connections. Further connections wait in the listen backlog.
+    pub max_connections: usize,
+    /// Requests served on one connection before it's closed.
+    pub max_requests_per_connection: usize,
+    /// Time a client has to send a request's headers, which also closes idle keep-alive
+    /// connections.
+    pub header_read_timeout_ms: u64,
+    /// Time a client has to send a request's body.
+    pub request_body_timeout_ms: u64,
     /// Chunks per request queued on or rendered by the worker, ahead of what the client has
     /// received. The first is the one the client is waiting for.
     pub lookahead: usize,
@@ -43,6 +55,11 @@ impl Default for Config {
             max_input_chars: 20_000,
             max_body_bytes: None,
             max_concurrent_requests: 64,
+            max_streams_per_key: 32,
+            max_connections: 256,
+            max_requests_per_connection: 1000,
+            header_read_timeout_ms: 10_000,
+            request_body_timeout_ms: 10_000,
             lookahead: 3,
             reconnect_interval_ms: 500,
             enable_voice_tags: true,
@@ -73,14 +90,35 @@ impl Config {
         if self.api_keys.iter().any(String::is_empty) {
             return Err("an API key is empty".into());
         }
-        if self.lookahead == 0 || self.max_concurrent_requests == 0 {
-            return Err("lookahead and max_concurrent_requests must be at least 1".into());
+        let counts = [
+            ("lookahead", self.lookahead),
+            ("max_concurrent_requests", self.max_concurrent_requests),
+            ("max_streams_per_key", self.max_streams_per_key),
+            ("max_connections", self.max_connections),
+            ("max_requests_per_connection", self.max_requests_per_connection),
+        ];
+        if let Some((name, _)) = counts.iter().find(|(_, n)| *n == 0) {
+            return Err(format!("{name} must be at least 1"));
+        }
+        if self.max_connections > Semaphore::MAX_PERMITS || self.max_concurrent_requests > Semaphore::MAX_PERMITS {
+            return Err("max_connections and max_concurrent_requests are too large".into());
+        }
+        if self.header_read_timeout_ms == 0 || self.request_body_timeout_ms == 0 {
+            return Err("timeouts must be positive".into());
         }
         Ok(())
     }
 
     pub fn body_limit(&self) -> usize {
         self.max_body_bytes.unwrap_or(self.max_input_chars * 12 + 16 * 1024)
+    }
+
+    pub fn header_read_timeout(&self) -> Duration {
+        Duration::from_millis(self.header_read_timeout_ms)
+    }
+
+    pub fn request_body_timeout(&self) -> Duration {
+        Duration::from_millis(self.request_body_timeout_ms)
     }
 
     pub fn reconnect_interval(&self) -> Duration {

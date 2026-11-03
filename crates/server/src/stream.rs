@@ -22,7 +22,7 @@ use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use tokio::sync::{OwnedSemaphorePermit, mpsc};
+use tokio::sync::mpsc;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StreamError {
@@ -73,14 +73,23 @@ fn units(chunk: Chunk, segment: &Segment) -> Vec<Unit> {
         return Vec::new();
     }
     let text: Arc<str> = chunk.text.into();
-    let request = |ids: Vec<u8>| SynthRequest { speed: segment.speed as f32, voices: segment.voices.clone(), ids };
+    let request = |ids: Vec<u8>, style_len: usize| SynthRequest {
+        speed: segment.speed as f32,
+        voices: segment.voices.clone(),
+        ids,
+        style_len: style_len.min(usize::from(u16::MAX)) as u16,
+    };
     let finish = |stitch| Finish { text: text.clone(), speed: segment.speed, stitch };
     if chunk.phonemes.chars().count() <= STITCH_ABOVE {
-        return vec![Unit::Speech(request(chunk.ids), finish(None))];
+        let n = chunk.ids.len();
+        return vec![Unit::Speech(request(chunk.ids, n), finish(None))];
     }
     let plan = Arc::new(stitch::Plan::new(chunk.ids));
     (0..plan.pieces())
-        .map(|i| Unit::Speech(request(plan.context_ids(i).to_vec()), finish(Some((plan.clone(), i)))))
+        .map(|i| {
+            let ids = plan.context_ids(i).to_vec();
+            Unit::Speech(request(ids, plan.style_len().into()), finish(Some((plan.clone(), i))))
+        })
         .collect()
 }
 
@@ -89,6 +98,10 @@ fn produce(pipeline: &dyn Pipeline, speech: &Speech, out: &mpsc::Sender<Produced
         for chunk in pipeline.chunks(&segment.lang, &segment.text, &speech.options) {
             let units = match chunk {
                 Ok(chunk) => units(chunk, segment),
+                Err(PipelineError::Unsupported(why)) => {
+                    tracing::warn!("skipping a sentence: {why}");
+                    continue;
+                }
                 Err(e) => {
                     let _ = out.blocking_send(Produced::Failed(e));
                     return;
@@ -140,13 +153,13 @@ enum Done {
 
 type Pending = Pin<Box<dyn Future<Output = Done> + Send>>;
 
-/// Starts producing a request's audio. `permit` is held until the request ends.
+/// Starts producing a request's audio. `permits` are held until the request ends.
 pub fn start(
     speech: Speech,
     connection: Arc<Connection>,
     pipeline: Arc<dyn Pipeline>,
     lookahead: usize,
-    permit: OwnedSemaphorePermit,
+    permits: impl Send + 'static,
 ) -> AudioStream {
     let (out_tx, out_rx) = mpsc::channel(1);
     let (unit_tx, unit_rx) = mpsc::channel(1);
@@ -155,7 +168,7 @@ pub fn start(
     tokio::spawn(async move {
         let result = drive(connection, unit_rx, &out_tx, volume, lookahead).await;
         let _ = out_tx.send(result.map_or_else(Output::Failed, |()| Output::End)).await;
-        drop(permit);
+        drop(permits);
     });
     AudioStream { rx: out_rx, over: false }
 }

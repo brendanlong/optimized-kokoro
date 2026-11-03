@@ -209,6 +209,8 @@ async fn voice_and_rate_tags_switch_voice_and_speed() {
         worker.send(respond(id, &ids));
     }
     assert_eq!(seen, [(1.0, vec![(0, 1.0)]), (1.0, vec![(4, 1.0)]), (2.0, vec![(4, 1.0)])]);
+    let chunks = stub_chunks("Hello there. Cheerio. Quickly.");
+    assert_eq!(worker.style_lens, chunks.iter().map(|c| c.ids.len() as u16).collect::<Vec<_>>());
     assert_eq!(client.await.unwrap().status(), 200);
 }
 
@@ -375,6 +377,7 @@ async fn long_clauses_are_stitched_from_overlapping_pieces() {
     let audio = body_bytes(response).await.unwrap();
     assert!(!audio.is_empty());
     assert!(pieces[0].len() < chunk.ids.len() && pieces[1].ends_with(&chunk.ids[chunk.ids.len() - 20..]));
+    assert_eq!(worker.style_lens, [chunk.ids.len().min(510) as u16; 2]);
 }
 
 #[tokio::test]
@@ -399,4 +402,24 @@ async fn pipeline_failures_fail_the_response() {
         server.worker.connected().await;
         assert_eq!(speak(server.addr, pcm("First part.")).await.status(), 500, "panic: {panic}");
     }
+}
+
+#[tokio::test]
+async fn unsupported_sentences_are_skipped() {
+    let server = start(|_| {}, Arc::new(UnsupportedAt(1))).await;
+    let mut worker = ScriptedWorker::listen(&server.socket, worker_side::hello(&hello()));
+    server.worker.connected().await;
+    let text = "One part. Two part. Three part.";
+    let client = tokio::spawn(speak(server.addr, pcm(text)));
+    let chunks = stub_chunks(text);
+    let mut expected = Vec::new();
+    for chunk in [&chunks[0], &chunks[2]] {
+        let (id, _, _, _, ids) = worker.synthesize().await;
+        assert_eq!(ids, chunk.ids);
+        worker.send(respond(id, &ids));
+        expected.extend(expected_chunk(&ids));
+    }
+    let response = client.await.unwrap();
+    assert_eq!(response.status(), 200);
+    assert_eq!(samples(&body_bytes(response).await.unwrap()), expected);
 }
