@@ -75,6 +75,14 @@ Rejected alternatives (measured in session decf45d1):
 
 espeak-ng-rs check: 19 of 25 sentences across en/ru/el/ko/ar/he/hi/cmn matched C espeak exactly. The misses were small: a dropped vowel in "Tchaikovsky", one Korean liquid, one Arabic and one Hindi stress or schwa, and Mandarin tones, which we don't use. Usable, with fixes sent upstream as the harness finds them.
 
+### espeak: port the engine, keep its rules
+
+**Decided (Brendan, 2026-11-02):** port espeak-ng 1.52's text-to-phoneme engine to Rust ourselves, function by function, and use espeak's per-language rule and dictionary files unchanged. English is the goal; other languages should work too, without anyone rewriting rules per language.
+
+Why: espeak-ng-rs matched C espeak on only 44–68% of sentences for es/fr/it/pt/hi/ko/ar, and on 84% of the unknown English words misaki sends it (PR #6). Parts of it, like the clause splitter, reinvent the C code instead of porting it, so fixing it would have a long tail. espeak's per-language data is small (Spanish is 12 KB of rules plus exceptions; English 265 KB). The complexity is in one shared engine of roughly 12k lines of C (dictionary/rule matching, word translation, numbers, per-language options, clause reading, phoneme lists). The synthesis half isn't needed. A faithful engine port gets every espeak language from its unchanged data, and every function can be checked against C.
+
+How it's checked: exact output against C espeak 1.52 (the 191k-case harness from PR #6, plus direct calls). For languages nobody here speaks, quality questions such as simplifications are judged by synthesizing, transcribing with a multilingual ASR model, and comparing the error rate with C espeak's.
+
 ### Matching the reference vs simplifying it
 
 **Decided (Brendan, 2026-11-02):** part of the goal is simplification. Where misaki or Kokoro-FastAPI does something overly complex, or wrong, we can do it a better way, as long as the final model still pronounces the result reasonably.
