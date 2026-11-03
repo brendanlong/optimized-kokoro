@@ -11,7 +11,6 @@ from dataclasses import dataclass
 VERSION = 1
 MAGIC = b"KOKW"
 MAX_FRONT_BODY = 64 * 1024
-MAX_WORKER_BODY = 8 * 1024 * 1024
 MAX_PHONEMES = 510
 MAX_MIX = 8
 MIN_SPEED, MAX_SPEED = 0.25, 4.0
@@ -93,9 +92,15 @@ def frame(body: bytes) -> bytes:
     return struct.pack("<I", len(body)) + body
 
 
-def hello(vocab_size: int, max_phonemes: int, max_batch: int, voice_names: list[str]) -> bytes:
-    body = bytearray(struct.pack("<B4sHHHHIH", HELLO, MAGIC, VERSION, vocab_size, max_phonemes,
-                                 max_batch, SAMPLE_RATE, len(voice_names)))
+def chunk_cap(max_chunk_samples: int, speed: float) -> int:
+    """Most samples one request at `speed` may produce: ceil(max_chunk_samples / speed), in f64."""
+    return math.ceil(max_chunk_samples / speed)
+
+
+def hello(vocab_size: int, max_phonemes: int, max_batch: int, max_chunk_samples: int,
+          voice_names: list[str]) -> bytes:
+    body = bytearray(struct.pack("<B4sHHHHIIH", HELLO, MAGIC, VERSION, vocab_size, max_phonemes,
+                                 max_batch, SAMPLE_RATE, max_chunk_samples, len(voice_names)))
     for name in voice_names:
         raw = name.encode("ascii")
         if not 1 <= len(raw) <= 64:

@@ -7,17 +7,18 @@
 //!
 //! What the front accepts from the worker, beyond the frame layouts:
 //! - Hello comes first and only once, with version 1, `2 <= vocab_size <= 256`,
-//!   `max_phonemes == 510`, `max_batch >= 1`, `sample_rate == 24000`, and 1 or more distinct voice
-//!   names of 1 to 64 bytes of `[a-z0-9_]`.
+//!   `max_phonemes == 510`, `max_batch >= 1`, `sample_rate == 24000`, `max_chunk_samples >= 1`,
+//!   and 1 or more distinct voice names of 1 to 64 bytes of `[a-z0-9_]`.
 //! - Every other frame names a request the front sent and that hasn't ended.
 //! - Durations: at most one per request, before its Audio, with exactly `n_ids + 2` values, each
 //!   at most `ceil(50 / speed) + 1` (Kokoro's `max_dur` is 50 sigmoid bins, divided by speed).
 //! - Audio: after the request's Durations, with exactly `600 × Σ durations` samples (Kokoro v1.0
-//!   renders 600 samples per duration unit; measured exact on the real model).
+//!   renders 600 samples per duration unit; measured exact on the real model), and no more than
+//!   the request's chunk cap, `ceil(max_chunk_samples / speed)` (see [`chunk_cap`]).
 //! - Failed: code 1 (cancelled) only after the front sent Cancel for that request, 2 (internal
 //!   error), or 3 (too long: the predicted audio exceeds the worker's frame cap).
 //! - Each length prefix is checked against its frame type's bound before anything is allocated:
-//!   Hello at most 19 + 65,535 × 65 bytes, Durations at most 1,035, Failed exactly 10, and Audio
+//!   Hello at most 23 + 65,535 × 65 bytes, Durations at most 1,035, Failed exactly 10, and Audio
 //!   exactly the size its Durations imply, so the reader asks the caller how many samples to expect.
 //!
 //! Anything else closes the connection, failing every request in flight on it.
@@ -51,8 +52,9 @@ const TYPE_FAILED: u8 = 0x04;
 const TYPE_SYNTHESIZE: u8 = 0x10;
 const TYPE_CANCEL: u8 = 0x11;
 
-/// Fixed part of Hello: type, magic, version, vocab_size, max_phonemes, max_batch, sample_rate, n_voices.
-const HELLO_FIXED: usize = 1 + 4 + 2 + 2 + 2 + 2 + 4 + 2;
+/// Fixed part of Hello: type, magic, version, vocab_size, max_phonemes, max_batch, sample_rate,
+/// max_chunk_samples, n_voices.
+const HELLO_FIXED: usize = 1 + 4 + 2 + 2 + 2 + 2 + 4 + 4 + 2;
 const HELLO_MAX: usize = HELLO_FIXED + u16::MAX as usize * (1 + MAX_VOICE_NAME);
 const DURATIONS_MAX: usize = 1 + 8 + 2 + 2 * (MAX_PHONEMES as usize + 2);
 const FAILED_LEN: usize = 1 + 8 + 1;
@@ -64,11 +66,19 @@ pub fn max_duration(speed: f32) -> u16 {
     ((DURATION_BINS / f64::from(speed)).ceil() + 1.0) as u16
 }
 
+/// The most samples the worker produces for one chunk at `speed`: `ceil(max_chunk_samples / speed)`,
+/// computed in f64 from the f32 speed, as the worker does.
+pub fn chunk_cap(max_chunk_samples: u32, speed: f32) -> u64 {
+    (f64::from(max_chunk_samples) / f64::from(speed)).ceil() as u64
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Hello {
     pub vocab_size: u16,
     pub max_phonemes: u16,
     pub max_batch: u16,
+    /// The worker's output cap for one chunk at speed 1, in samples.
+    pub max_chunk_samples: u32,
     pub voices: Vec<String>,
 }
 
@@ -174,6 +184,10 @@ fn parse_hello(body: &[u8]) -> Result<Hello, ReadError> {
     if sample_rate != SAMPLE_RATE {
         return violation(format!("sample_rate {sample_rate}, expected {SAMPLE_RATE}"));
     }
+    let max_chunk_samples = c.u32()?;
+    if max_chunk_samples == 0 {
+        return violation("max_chunk_samples is 0");
+    }
     let n_voices = c.u16()?;
     if n_voices == 0 {
         return violation("no voices");
@@ -196,7 +210,7 @@ fn parse_hello(body: &[u8]) -> Result<Hello, ReadError> {
         voices.push(name);
     }
     c.finish()?;
-    Ok(Hello { vocab_size, max_phonemes, max_batch, voices })
+    Ok(Hello { vocab_size, max_phonemes, max_batch, max_chunk_samples, voices })
 }
 
 /// Reads one frame. `expected_samples(id)` gives the sample count an Audio frame for `id` must
@@ -349,6 +363,7 @@ pub mod worker_side {
         body.extend_from_slice(&h.max_phonemes.to_le_bytes());
         body.extend_from_slice(&h.max_batch.to_le_bytes());
         body.extend_from_slice(&SAMPLE_RATE.to_le_bytes());
+        body.extend_from_slice(&h.max_chunk_samples.to_le_bytes());
         body.extend_from_slice(&(h.voices.len() as u16).to_le_bytes());
         for v in &h.voices {
             body.push(v.len() as u8);
@@ -431,7 +446,13 @@ mod tests {
     use super::*;
 
     fn hello() -> Hello {
-        Hello { vocab_size: 178, max_phonemes: 510, max_batch: 8, voices: vec!["af_heart".into(), "am_adam".into()] }
+        Hello {
+            vocab_size: 178,
+            max_phonemes: 510,
+            max_batch: 8,
+            max_chunk_samples: 2_880_000,
+            voices: vec!["af_heart".into(), "am_adam".into()],
+        }
     }
 
     async fn read(bytes: &[u8], expect: Option<u64>) -> Result<WorkerFrame, ReadError> {

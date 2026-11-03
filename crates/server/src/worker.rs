@@ -8,9 +8,10 @@
 //! - each request holds an admission slot from submission until its final Audio or Failed frame,
 //!   so cancelled requests the worker hasn't acknowledged still count, and the outgoing frame
 //!   queue (at most a Synthesize and a Cancel per slot) is bounded;
-//! - each request reserves the most audio it could produce from a server-wide byte budget, cut
-//!   to the exact size when its durations arrive, and the reservation travels with the audio
-//!   until the HTTP layer has written it.
+//! - each request reserves the most audio it could produce from a server-wide byte budget (the
+//!   worker's chunk cap at its speed, or less for few ids), cut to the exact size when its
+//!   durations arrive, and the reservation travels with the audio until the HTTP layer has
+//!   written it. Durations implying more than the cap are a violation.
 //!
 //! A worker that doesn't say hello in time, or makes no progress while it has work, is
 //! disconnected.
@@ -96,9 +97,12 @@ impl AudioBudget {
     }
 }
 
-/// The most audio, in bytes, a request for `n_ids` ids at `speed` can produce.
-pub fn max_audio_bytes(n_ids: usize, speed: f32) -> usize {
-    (n_ids + 2) * usize::from(protocol::max_duration(speed)) * SAMPLES_PER_FRAME as usize * 2
+/// The most audio, in bytes, a request for `n_ids` ids at `speed` can produce: the worker's chunk
+/// cap (`max_chunk_samples` from its hello, at speed 1), or the model's own maximum if smaller.
+pub fn max_audio_bytes(n_ids: usize, speed: f32, max_chunk_samples: u32) -> usize {
+    let model_max = (n_ids as u64 + 2) * u64::from(protocol::max_duration(speed)) * SAMPLES_PER_FRAME;
+    let samples = model_max.min(protocol::chunk_cap(max_chunk_samples, speed));
+    usize::try_from(samples * 2).unwrap_or(usize::MAX)
 }
 
 #[derive(Debug)]
@@ -126,6 +130,7 @@ type Reply = oneshot::Sender<Result<Synthesized, SynthError>>;
 struct Pending {
     n_ids: usize,
     max_duration: u16,
+    max_samples: u64,
     durations: Option<Vec<u16>>,
     /// `None` once cancelled: the worker still owes a final Audio or Failed frame.
     reply: Option<Reply>,
@@ -227,7 +232,7 @@ impl Connection {
         let slot = self.slots.clone().acquire_owned().await.map_err(|_| SynthError::ConnectionLost)?;
         let audio = self
             .budget
-            .reserve(max_audio_bytes(request.ids.len(), request.speed))
+            .reserve(max_audio_bytes(request.ids.len(), request.speed, self.hello.max_chunk_samples))
             .await
             .ok_or(SynthError::Unrenderable)?;
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
@@ -256,6 +261,7 @@ impl Connection {
             let pending = Pending {
                 n_ids: request.ids.len(),
                 max_duration: protocol::max_duration(request.speed),
+                max_samples: protocol::chunk_cap(self.hello.max_chunk_samples, request.speed),
                 durations: None,
                 reply: Some(tx),
                 audio,
@@ -302,8 +308,11 @@ impl Connection {
                 if durations.iter().any(|&d| d > pending.max_duration) {
                     return Err(format!("request {id}: a duration over {}", pending.max_duration));
                 }
-                let samples: usize = durations.iter().map(|&d| usize::from(d)).sum::<usize>() * SAMPLES_PER_FRAME as usize;
-                pending.audio.shrink_to(2 * samples);
+                let samples = durations.iter().map(|&d| u64::from(d)).sum::<u64>() * SAMPLES_PER_FRAME;
+                if samples > pending.max_samples {
+                    return Err(format!("request {id}: {samples} samples, over the chunk cap {}", pending.max_samples));
+                }
+                pending.audio.shrink_to(2 * samples as usize);
                 pending.durations = Some(durations);
                 Ok(())
             }

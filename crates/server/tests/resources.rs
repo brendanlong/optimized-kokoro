@@ -45,7 +45,7 @@ async fn speak_ok(addr: std::net::SocketAddr, text: &str) {
 #[tokio::test]
 async fn audio_is_reserved_from_the_budget_before_it_is_rendered() {
     let n = stub_chunks("Hi.")[0].ids.len();
-    let worst = max_audio_bytes(n, 1.0);
+    let worst = max_audio_bytes(n, 1.0, hello().max_chunk_samples);
     let server = start(|c| c.audio_buffer_bytes = worst, Arc::new(StubPipeline)).await;
     let mut worker = ScriptedWorker::listen(&server.socket, worker_side::hello(&hello()));
     server.worker.connected().await;
@@ -83,18 +83,26 @@ async fn a_chunk_larger_than_the_whole_budget_fails() {
 }
 
 /// The worker can't make the front hold more than the most audio it granted: a protocol-valid
-/// maximal Audio frame needs a reservation for all of it first.
+/// maximal Audio frame (the chunk cap at the slowest speed) needs a reservation for all of it first.
 #[tokio::test]
 async fn maximal_audio_is_only_accepted_within_the_budget() {
     let ids = vec![43; 510];
-    let worst = max_audio_bytes(ids.len(), 0.25);
+    let cap = protocol::chunk_cap(hello().max_chunk_samples, 0.25);
+    let worst = max_audio_bytes(ids.len(), 0.25, hello().max_chunk_samples);
+    assert_eq!(worst as u64, 2 * cap, "the cap, not the model's theoretical maximum");
     let server = start(|c| c.audio_buffer_bytes = worst, Arc::new(StubPipeline)).await;
     let mut worker = ScriptedWorker::listen(&server.socket, worker_side::hello(&hello()));
     let connection = server.worker.connected().await;
     let request = kokoro_server::worker::SynthRequest { speed: 0.25, voices: Arc::from([(0, 1.0)]), ids, style_len: 510 };
     let mut ticket = connection.submit(protocol::Priority::Waiting, &request).await.unwrap();
     let (id, ..) = worker.synthesize().await;
-    let durations = vec![protocol::max_duration(0.25); 512];
+    // Durations within the per-id maximum that add up to exactly the cap.
+    let units = (cap / 600) as u16;
+    let mut durations = vec![units / 512; 512];
+    for d in durations.iter_mut().take(usize::from(units % 512)) {
+        *d += 1;
+    }
+    assert!(durations.iter().all(|&d| d <= protocol::max_duration(0.25)));
     let samples = durations.iter().map(|&d| usize::from(d)).sum::<usize>() * 600;
     assert_eq!(samples * 2, worst);
     worker.send(worker_side::durations(id, &durations));
@@ -337,4 +345,38 @@ async fn shutdown_drops_connections_after_the_grace_period() {
     stop.send(()).unwrap();
     tokio::time::timeout(Duration::from_secs(3), server).await.expect("shutdown waited on a stuck client").unwrap();
     assert!(started.elapsed() >= Duration::from_millis(250));
+}
+
+/// Durations implying more audio than the worker's chunk cap close the connection, before any
+/// audio is read.
+#[tokio::test]
+async fn durations_over_the_chunk_cap_close_the_connection() {
+    let server = start(|_| {}, Arc::new(StubPipeline)).await;
+    let mut small = hello();
+    small.max_chunk_samples = 600 * 3;
+    let mut worker = ScriptedWorker::listen(&server.socket, worker_side::hello(&small));
+    server.worker.connected().await;
+    let client = tokio::spawn(speak(server.addr, pcm("Hi.")));
+    let (id, _, _, _, ids) = worker.synthesize().await;
+    assert!(ids.len() + 2 > 3);
+    worker.send(worker_side::durations(id, &vec![1; ids.len() + 2]));
+    assert_eq!(worker.next().await, Event::Closed);
+    assert_eq!(client.await.unwrap().status(), 503);
+}
+
+/// The worker refusing a chunk as too long fails the request without closing the connection.
+#[tokio::test]
+async fn a_chunk_the_worker_finds_too_long_fails_the_request() {
+    let server = start(|_| {}, Arc::new(StubPipeline)).await;
+    let mut worker = ScriptedWorker::listen(&server.socket, worker_side::hello(&hello()));
+    server.worker.connected().await;
+    let client = tokio::spawn(speak(server.addr, pcm("Hi.")));
+    let (id, ..) = worker.synthesize().await;
+    worker.send(worker_side::failed(id, FailCode::TooLong));
+    assert_eq!(client.await.unwrap().status(), 500);
+    assert_eq!(worker.quiet(Duration::from_millis(100)).await, None, "the connection stays up");
+    let client = tokio::spawn(speak(server.addr, pcm("Hi.")));
+    let (id, _, _, _, ids) = worker.synthesize().await;
+    worker.send(respond(id, &ids));
+    assert_eq!(client.await.unwrap().status(), 200);
 }

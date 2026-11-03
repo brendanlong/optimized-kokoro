@@ -25,6 +25,7 @@ import torch.nn.functional as F
 from safetensors.torch import load_file
 
 from . import masked
+from .protocol import chunk_cap
 
 SAMPLES_PER_FRAME = 600  # 2x upsample in the decoder, then 10 * 6 in the generator, then hop 5
 
@@ -88,6 +89,18 @@ def build_kmodel(config: dict) -> torch.nn.Module:
     return m
 
 
+def _fresh(fn, tag: str):
+    """A wrapper around fn with its own code object. torch.compile keeps its graphs per code object,
+    so wrappers made here get separate caches."""
+
+    def call(*args, **kwargs):
+        return fn(*args, **kwargs)
+
+    name = getattr(fn, "__name__", type(fn).__name__)
+    call.__code__ = call.__code__.replace(co_name=f"{tag}_{name}")
+    return call
+
+
 def _packed_lstm(lstm: torch.nn.LSTM, x: torch.Tensor, lengths: torch.Tensor) -> torch.Tensor:
     """Run a batch_first LSTM as if each row were alone; padded outputs are zero."""
     if bool((lengths == x.shape[1]).all()):
@@ -119,7 +132,7 @@ class Synth:
         device: str = "cuda",
         half: bool = True,
         compile: bool = True,
-        max_frames: int = 4096,
+        max_chunk_samples: int = 2_880_000,
         frame_budget: int = 16384,
         pad_slack: float = 0.25,
         exact: bool = True,
@@ -131,7 +144,7 @@ class Synth:
         self.max_phonemes = int(config["plbert"]["max_position_embeddings"]) - 2
         self.device = torch.device(device)
         self.half = half and self.device.type == "cuda"
-        self.max_frames = max_frames
+        self.max_chunk_samples = max_chunk_samples
         self.frame_budget = frame_budget
         self.pad_slack = pad_slack
         self.exact = exact
@@ -154,19 +167,21 @@ class Synth:
             raise ValueError(f"bad voice packs: {tuple(packs.shape)}")
         self.voices = packs.to(self.device)  # [n_voices, 510, 256] fp32
 
-        self._bert = model.bert
-        self._text_cnn = self._text_cnn_eager
-        self._f0n_blocks = self._f0n_blocks_eager
-        self._decoder = model.decoder
-        self._f0n_masked = lambda x, s, m: masked.f0n_blocks(model.predictor, x, s, m)
-        self._decoder_masked = lambda asr, f0, n, s, m: masked.decoder(model.decoder, asr, f0, n, s, m)
+        eager = {
+            "bert": model.bert,
+            "text_cnn": self._text_cnn_eager,
+            "f0n": self._f0n_blocks_eager,
+            "decoder": model.decoder,
+            "f0n_masked": lambda x, s, m: masked.f0n_blocks(model.predictor, x, s, m),
+            "decoder_masked": lambda asr, f0, n, s, m: masked.decoder(model.decoder, asr, f0, n, s, m),
+        }
+        self._single = self._batched = eager
         if compile:
-            self._f0n_masked = torch.compile(self._f0n_masked, dynamic=True)
-            self._decoder_masked = torch.compile(self._decoder_masked, dynamic=True)
-            self._bert = torch.compile(model.bert, dynamic=True)
-            self._text_cnn = torch.compile(self._text_cnn_eager, dynamic=True)
-            self._f0n_blocks = torch.compile(self._f0n_blocks_eager, dynamic=True)
-            self._decoder = torch.compile(model.decoder, dynamic=True)
+            # Separate graphs for batch 1 and batches > 1. One torch.compile'd function holds both,
+            # but the batched graph's guards also accept batch 1, and then every batch of one ran on
+            # the generic graph: 61 ms instead of 40 per typical sentence.
+            self._single = {k: torch.compile(_fresh(f, "single"), dynamic=True) for k, f in eager.items()}
+            self._batched = {k: torch.compile(_fresh(f, "batched"), dynamic=True) for k, f in eager.items()}
 
     def style(self, voices: list[tuple[int, float]], style_len: int) -> torch.Tensor:
         """Weighted mix of voice packs at row style_len - 1 (KPipeline's pack[len(ps) - 1]). Weights sum to 1."""
@@ -197,9 +212,10 @@ class Synth:
         """Text side for the whole batch: (pred_dur [B, T] with 0 at padding, d [B, T, 640], t_en [B, 512, T])."""
         m = self.model
         keep = (~mask)[..., None]
-        bert = self._bert(ids, attention_mask=keep[..., 0].long())
+        fn = self._single if ids.shape[0] == 1 else self._batched
+        bert = fn["bert"](ids, attention_mask=keep[..., 0].long())
         d_en = m.bert_encoder(bert)  # [B, T, 512]
-        t_en = _packed_lstm(m.text_encoder.lstm, self._text_cnn(ids, mask), lengths).transpose(1, 2)
+        t_en = _packed_lstm(m.text_encoder.lstm, fn["text_cnn"](ids, mask), lengths).transpose(1, 2)
 
         enc = m.predictor.text_encoder
         s_t = s[:, None, :].expand(-1, ids.shape[1], -1)
@@ -260,8 +276,11 @@ class Synth:
         frames = pred_cpu.sum(1).tolist()
         durations = [pred_cpu[i, : lengths[i]].tolist() for i in range(n)]
 
-        ok = [i for i in range(n) if frames[i] <= self.max_frames]
-        too_long = [i for i in range(n) if frames[i] > self.max_frames]
+        # The cap is checked before the decoder runs, so an over-long request costs only its text side.
+        fits = [frames[i] * SAMPLES_PER_FRAME <= chunk_cap(self.max_chunk_samples, r.speed)
+                for i, r in enumerate(requests)]
+        ok = [i for i in range(n) if fits[i]]
+        too_long = [i for i in range(n) if not fits[i]]
         if too_long:
             yield [Result(i, None, None, "too_long") for i in too_long]
         if not ok:
@@ -286,13 +305,14 @@ class Synth:
         s = ref[sel]
         with torch.autocast(dev.type, dtype=torch.float16, enabled=self.half):
             x = _packed_lstm(self.model.predictor.shared, en.transpose(1, 2), torch.tensor(frames))
+            fn = self._single if len(idx) == 1 else self._batched
             if self.exact and min(frames) != width:
                 m = masked.masks_for(frames, width, dev, torch.float16 if self.half else torch.float32)
-                f0, n = self._f0n_masked(x.transpose(1, 2), s[:, 128:], m)
-                audio = self._decoder_masked(asr, f0, n, s[:, :128], m)
+                f0, n = fn["f0n_masked"](x.transpose(1, 2), s[:, 128:], m)
+                audio = fn["decoder_masked"](asr, f0, n, s[:, :128], m)
             else:
-                f0, n = self._f0n_blocks(x.transpose(1, 2), s[:, 128:])
-                audio = self._decoder(asr, f0, n, s[:, :128])
+                f0, n = fn["f0n"](x.transpose(1, 2), s[:, 128:])
+                audio = fn["decoder"](asr, f0, n, s[:, :128])
         audio = audio.reshape(len(idx), -1).float()
         finite = torch.isfinite(audio).all(1)
         pcm = (audio * 32767).clamp(-32768, 32767).to(torch.int16).cpu()

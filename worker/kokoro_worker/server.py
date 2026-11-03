@@ -131,7 +131,8 @@ class Connection:
                     return
 
     def serve(self) -> None:
-        self.send(P.hello(self.synth.vocab_size, self.synth.max_phonemes, self.max_batch, self.synth.voice_names))
+        self.send(P.hello(self.synth.vocab_size, self.synth.max_phonemes, self.max_batch,
+                          self.synth.max_chunk_samples, self.synth.voice_names))
         reader = threading.Thread(target=self.read_loop, daemon=True)
         reader.start()
         try:
@@ -144,9 +145,8 @@ class Connection:
 
 
 def warmup(synth, max_batch: int) -> None:
-    """Compile before accepting connections. Batch 1 and >1 compile separately, and a decoder group
-    with padding takes the masked path, so warm each of those. Batches go first: dynamo tries the
-    newest graph first, and batch-of-one calls are faster on the graph specialized for them."""
+    """Compile before accepting connections: batch 1, batches > 1, and the masked path that a
+    decoder group with padding takes all have graphs of their own."""
     from .model import Request
 
     ids = sorted(synth.vocab_ids)
@@ -188,7 +188,9 @@ def main() -> None:
     parser.add_argument("--socket", required=True)
     parser.add_argument("--models", required=True, help="directory written by kokoro_worker.convert")
     parser.add_argument("--max-batch", type=int, default=8)
-    parser.add_argument("--max-frames", type=int, default=4096, help="longest output per request (40 per second)")
+    parser.add_argument("--max-chunk-seconds", type=float, default=120.0,
+                        help="longest audio one request may produce at speed 1 (scaled by 1/speed); "
+                             "real 510-phoneme chunks reach about 44 s")
     parser.add_argument("--pad-slack", type=float, default=0.25,
                         help="decoder groups may hold this fraction of padding frames")
     parser.add_argument("--no-exact", action="store_true",
@@ -199,8 +201,9 @@ def main() -> None:
     args = parser.parse_args()
     if not 1 <= args.max_batch <= 64:
         parser.error("--max-batch must be 1..64")
-    if not 1 <= args.max_frames * 600 * 2 + 13 <= P.MAX_WORKER_BODY:
-        parser.error("--max-frames: Audio frames must fit the protocol's 8 MiB cap")
+    max_chunk_samples = round(args.max_chunk_seconds * P.SAMPLE_RATE)
+    if not 1 <= max_chunk_samples <= 2**32 - 1:
+        parser.error("--max-chunk-seconds out of range")
     logging.basicConfig(level=logging.INFO, stream=sys.stderr, format="%(asctime)s %(levelname)s %(message)s")
 
     seed, export = os.environ.get("KOKORO_CACHE_SEED"), os.environ.get("KOKORO_CACHE_EXPORT")
@@ -213,7 +216,7 @@ def main() -> None:
 
     t = time.monotonic()
     synth = Synth(args.models, device=args.device, half=not args.fp32, compile=not args.no_compile,
-                  max_frames=args.max_frames, pad_slack=args.pad_slack, exact=not args.no_exact)
+                  max_chunk_samples=max_chunk_samples, pad_slack=args.pad_slack, exact=not args.no_exact)
     log.info("loaded in %.1f s: %d voices", time.monotonic() - t, len(synth.voice_names))
     warmup(synth, args.max_batch)
     if export:

@@ -17,6 +17,7 @@ class FakeSynth:
     vocab_ids = frozenset([1, 2, 3, 16])
     max_phonemes = 510
     voice_names = ["af_heart", "am_adam"]
+    max_chunk_samples = 2_880_000
 
     def __init__(self):
         self.gate = threading.Event()
@@ -70,6 +71,7 @@ def test_hello(worker):
     client, _, _ = worker
     assert client.hello.voices == ["af_heart", "am_adam"]
     assert client.hello.max_batch == 4
+    assert client.hello.max_chunk_samples == 2_880_000
 
 
 def test_synthesize(worker):

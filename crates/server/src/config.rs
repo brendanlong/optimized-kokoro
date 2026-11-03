@@ -52,7 +52,8 @@ pub struct Config {
     /// 1024.
     pub worker_max_outstanding: Option<usize>,
     /// Audio held in memory across all requests (rendered, reordered or being written), in
-    /// bytes. Each chunk reserves the most it could produce before it's sent to the worker.
+    /// bytes. Each chunk reserves the most it could produce (the worker's chunk cap at its speed)
+    /// before it's sent to the worker.
     pub audio_buffer_bytes: usize,
     /// On shutdown, how long open connections get to finish before they're dropped.
     pub shutdown_grace_ms: u64,

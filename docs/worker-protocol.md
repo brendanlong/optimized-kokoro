@@ -6,21 +6,24 @@ One Unix stream socket. The **worker listens** on a path inside a directory bind
 
 Every frame: `u32 body_len` then `body_len` bytes of body; body starts with `u8 type`. A reader that sees a length outside its bound (below), an unknown type, a short or overlong body, or any invalid field closes the connection (no error frames for protocol violations; the peer is buggy or hostile). Each length prefix is checked against its bound before anything is allocated:
 - front→worker: 1..=64 KiB;
-- worker→front, by type: Hello at most 19 + 65,535 × 65 bytes, Durations at most 1,035, Failed exactly 10, and Audio exactly the size its request's Durations imply (see the size rules).
+- worker→front, by type: Hello at most 23 + 65,535 × 65 bytes, Durations at most 1,035, Failed exactly 10, and Audio exactly the size its request's Durations imply, which is at most the request's chunk cap (see the size rules).
 
 ## Worker → front
-- `0x01 Hello`, the first frame after connect, sent at once: the worker compiles and warms up before it listens. `[4]u8 magic = "KOKW"`, `u16 version = 1`, `u16 vocab_size` (178 for Kokoro-82M; 0 is the boundary/pad id the worker adds itself), `u16 max_phonemes = 510`, `u16 max_batch` (≥ 1), `u32 sample_rate = 24000`, `u16 n_voices` (≥ 1), then per voice `u8 name_len` + ASCII name (`[a-z0-9_]`, 1..=64 bytes, names distinct). Voice index = position in this list. The fixed part is 19 bytes including the type byte.
+- `0x01 Hello`, the first frame after connect, sent at once: the worker compiles and warms up before it listens. `[4]u8 magic = "KOKW"`, `u16 version = 1`, `u16 vocab_size` (178 for Kokoro-82M; 0 is the boundary/pad id the worker adds itself), `u16 max_phonemes = 510`, `u16 max_batch` (≥ 1), `u32 sample_rate = 24000`, `u32 max_chunk_samples` (≥ 1; the most audio one request may produce at speed 1, default 2,880,000 = 120 s), `u16 n_voices` (≥ 1), then per voice `u8 name_len` + ASCII name (`[a-z0-9_]`, 1..=64 bytes, names distinct). Voice index = position in this list. The fixed part is 23 bytes including the type byte.
 - `0x03 Durations`: `u64 request_id`, `u16 n`, `n × u16` predicted durations, one per input id plus the two boundary ids (for word timestamps). One duration unit is 600 samples (25 ms). Sent immediately before the request's Audio, with nothing in between.
-- `0x02 Audio`: `u64 request_id`, `u32 n_samples`, `n_samples × i16` PCM (mono, sample_rate). Exactly one per completed Synthesize (a chunk is synthesized whole, in one frame).
+- `0x02 Audio`: `u64 request_id`, `u32 n_samples`, `n_samples × i16` PCM (mono, sample_rate). Exactly one per completed Synthesize (a chunk is synthesized whole, in one frame; at the default cap and the slowest speed that's at most 23 MB).
 - `0x04 Failed`: `u64 request_id`, `u8 code`. Ends the request. Codes:
   - 1 = cancelled, only in reply to a Cancel for that request;
   - 2 = internal error;
-  - 3 = too long: the predicted audio exceeds the worker's frame cap (4096 duration units, about 102 s, by default). Retrying the same chunk won't help; split it or raise the speed.
+  - 3 = too long: the predicted audio exceeds the request's chunk cap. The worker predicts durations first and doesn't run the decoder for such a request. Retrying the same chunk won't help; split it or raise the speed.
 
 Size rules for a request's frames, which the front checks:
 - Durations has `n = n_ids + 2`.
 - Each duration is 1..=`ceil(50 / speed)`: the model sums 50 sigmoids per id, divides by the request's f32 `speed` and rounds. The front allows one more for float rounding.
-- Audio has exactly `n_samples = 600 × sum(durations)`. The worker fails a request with code 3 rather than send more than its frame cap, so an Audio body is at most 13 + 2 × 600 × 4096 bytes (4.9 MB) by default. The front sizes its memory reservation from the worst case for `n_ids` and `speed`.
+- Audio has exactly `n_samples = 600 × sum(durations)`, and that is at most the request's **chunk cap**, `ceil(max_chunk_samples / speed)`, computed in f64 from the f32 speed. The worker replies `Failed` code 3 instead of exceeding it; Durations implying more are a violation.
+- The front reserves memory for the chunk cap (or the model's own maximum for `n_ids`, if smaller) before sending a Synthesize, and shrinks the reservation to the exact size when Durations arrives.
+
+Choosing the cap: across 63 chunks of 450–510 phonemes (consecutive sentences of *The Time Machine*) in 8 voices at speed 1, the longest predicted audio was 43.9 s (af_nicole, 508 phonemes) and the median 27.4 s (`worker/bench/max_duration.py`). The 120 s default leaves 2.7× headroom for real text while bounding what a pathological chunk can cost: the model's theoretical maximum is 512 × 51 × 600 samples (31 MB) at speed 1.
 
 ## Front → worker
 - `0x10 Synthesize`: `u64 request_id`, `u8 priority` (0 = a listener is waiting on this chunk now; 1 = prefetch), `f32 speed` (finite, 0.25..=4.0), `u8 n_voices` (1..=8), then `n_voices × (u16 voice_index, f32 weight)` (weights finite, > 0; the worker normalizes them to sum 1 and mixes the voice packs), `u16 n_ids` (1..=max_phonemes), `u16 style_len` (1..=max_phonemes), `n_ids × u8 id` (each 1..vocab_size-1).
@@ -38,7 +41,7 @@ Size rules for a request's frames, which the front checks:
 
 ## Changes from the first draft
 
-1. `Failed` code 3 (too long) and a cap on output length in the worker: 510 ids at speed 0.25 can ask for minutes of audio and several GB of GPU memory.
+1. `Failed` code 3 (too long), and `u32 max_chunk_samples` in Hello: a practical cap on one chunk's audio that both sides enforce, so the front reserves the cap instead of the theoretical worst case (31 MB per chunk at speed 1, 123 MB at 0.25). Brendan's decision (2026-11-02).
 2. `u16 style_len` after `n_ids` (from the server side): the style row for stitched pieces.
 3. Per-type bounds on worker→front lengths, and the size rules (`n = n_ids + 2`, durations ≤ `ceil(50 / speed)`, `n_samples = 600 × sum(durations)`), as the server checks them.
 4. Duplicate outstanding ids are a violation, and at most 1024 may be outstanding (the server caps its own limit there). Defined Cancel of running or unknown ids, the Hello's fixed size, Hello before any warmup, the Durations-then-Audio adjacency, and what a closed connection does to queued work.

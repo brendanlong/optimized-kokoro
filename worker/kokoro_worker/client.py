@@ -17,7 +17,7 @@ from dataclasses import dataclass
 
 from . import protocol as P
 
-MAX_WORKER_BODY = P.MAX_WORKER_BODY
+HELLO_MAX = 23 + 65535 * 65
 
 
 class WorkerError(Exception):
@@ -31,6 +31,7 @@ class Hello:
     max_phonemes: int
     max_batch: int
     sample_rate: int
+    max_chunk_samples: int
     voices: list[str]
 
 
@@ -58,19 +59,22 @@ class Client:
 
     def read(self) -> tuple[int, bytes]:
         (length,) = struct.unpack("<I", _recv_exact(self.sock, 4))
-        if not 1 <= length <= MAX_WORKER_BODY:
+        # Before Hello, the bound is Hello's; after it, Audio at the slowest speed is the largest.
+        hello = getattr(self, "hello", None)
+        bound = HELLO_MAX if hello is None else 13 + 2 * P.chunk_cap(hello.max_chunk_samples, P.MIN_SPEED)
+        if not 1 <= length <= bound:
             raise WorkerError(f"frame length {length}")
         body = _recv_exact(self.sock, length)
         return body[0], body[1:]
 
     @staticmethod
     def _parse_hello(b: bytes) -> Hello:
-        if len(b) < 18:
+        if len(b) < 22:
             raise WorkerError("short Hello")
-        magic, version, vocab, max_ph, max_batch, rate, n = struct.unpack_from("<4sHHHHIH", b)
+        magic, version, vocab, max_ph, max_batch, rate, cap, n = struct.unpack_from("<4sHHHHIIH", b)
         if magic != P.MAGIC or version != P.VERSION:
             raise WorkerError("bad magic or version")
-        pos, voices = 18, []
+        pos, voices = 22, []
         for _ in range(n):
             if pos >= len(b):
                 raise WorkerError("short Hello")
@@ -82,7 +86,7 @@ class Client:
             pos += 1 + k
         if pos != len(b):
             raise WorkerError("long Hello")
-        return Hello(version, vocab, max_ph, max_batch, rate, voices)
+        return Hello(version, vocab, max_ph, max_batch, rate, cap, voices)
 
     def send(self, data: bytes) -> None:
         self.sock.sendall(data)
@@ -146,6 +150,8 @@ def main() -> None:
         elif kind == "audio":
             if durations is None or len(payload) != 2 * 600 * sum(durations):
                 raise WorkerError("Audio length doesn't match Durations")
+            if len(payload) // 2 > P.chunk_cap(client.hello.max_chunk_samples, args.speed):
+                raise WorkerError("Audio over the chunk cap")
             write_wav(args.out, payload, client.hello.sample_rate)
             print(f"wrote {args.out}: {len(payload) // 2 / client.hello.sample_rate:.2f} s")
             break

@@ -23,7 +23,13 @@ pub const KEY: &str = "test-key";
 pub const VOICES: [&str; 5] = ["af_heart", "af_bella", "af_sky", "am_adam", "bf_emma"];
 
 pub fn hello() -> Hello {
-    Hello { vocab_size: 178, max_phonemes: 510, max_batch: 1, voices: VOICES.map(String::from).to_vec() }
+    Hello {
+        vocab_size: 178,
+        max_phonemes: 510,
+        max_batch: 1,
+        max_chunk_samples: 2_880_000,
+        voices: VOICES.map(String::from).to_vec(),
+    }
 }
 
 /// The fake model: one duration unit per id, so `600 * (n + 2)` samples, all one loud value
