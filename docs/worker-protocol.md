@@ -21,7 +21,7 @@ Size rules for a request's frames, which the front checks:
 - Durations has `n = n_ids + 2`.
 - Each duration is 1..=`ceil(50 / speed)`: the model sums 50 sigmoids per id, divides by the request's f32 `speed` and rounds. The front allows one more for float rounding.
 - Audio has exactly `n_samples = 600 × sum(durations)`, and that is at most the request's **chunk cap**, `ceil(max_chunk_samples / speed)`, computed in f64 from the f32 speed. The worker replies `Failed` code 3 instead of exceeding it; Durations implying more are a violation.
-- The front reserves memory for the chunk cap (or the model's own maximum for `n_ids`, if smaller) before sending a Synthesize, and shrinks the reservation to the exact size when Durations arrives.
+- The front keeps no audio byte budget (Brendan's decision, 2026-11-02). Its memory is bounded by counts times the cap: each admitted speech request holds at most `lookahead + 2` chunks, so the worst case is about `max_concurrent_requests × (lookahead + 2) × 2 × chunk cap` bytes (`Config::audio_bound` in `crates/server/src/config.rs`, checked by a test with clients that never read). With the defaults (16 requests, lookahead 3, 120 s cap) that is about 467 MB at speed 1 and 1.85 GB if every request runs at speed 0.25 with chunks at the cap; real sentences are around 5 s (240 KB).
 
 Choosing the cap: across 63 chunks of 450–510 phonemes (consecutive sentences of *The Time Machine*) in 8 voices at speed 1, the longest predicted audio was 43.9 s (af_nicole, 508 phonemes) and the median 27.4 s (`worker/bench/max_duration.py`). The 120 s default leaves 2.7× headroom for real text while bounding what a pathological chunk can cost: the model's theoretical maximum is 512 × 51 × 600 samples (31 MB) at speed 1.
 
@@ -41,7 +41,7 @@ Choosing the cap: across 63 chunks of 450–510 phonemes (consecutive sentences 
 
 ## Changes from the first draft
 
-1. `Failed` code 3 (too long), and `u32 max_chunk_samples` in Hello: a practical cap on one chunk's audio that both sides enforce, so the front reserves the cap instead of the theoretical worst case (31 MB per chunk at speed 1, 123 MB at 0.25). Brendan's decision (2026-11-02).
+1. `Failed` code 3 (too long), and `u32 max_chunk_samples` in Hello: a practical cap on one chunk's audio that both sides enforce, replacing the front's per-chunk reservation of the theoretical worst case (31 MB per chunk at speed 1, 123 MB at 0.25) and its audio byte budget; memory is bounded by counts instead. Brendan's decision (2026-11-02).
 2. `u16 style_len` after `n_ids` (from the server side): the style row for stitched pieces.
 3. Per-type bounds on worker→front lengths, and the size rules (`n = n_ids + 2`, durations ≤ `ceil(50 / speed)`, `n_samples = 600 × sum(durations)`), as the server checks them.
 4. Duplicate outstanding ids are a violation, and at most 1024 may be outstanding (the server caps its own limit there). Defined Cancel of running or unknown ids, the Hello's fixed size, Hello before any warmup, the Durations-then-Audio adjacency, and what a closed connection does to queued work.
