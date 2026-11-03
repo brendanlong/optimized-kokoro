@@ -101,9 +101,10 @@ mod tests {
             vocab_size: 178,
             max_phonemes: 510,
             max_batch: 8,
+            max_chunk_samples: 2_880_000,
             voices: ["af_heart", "af_bella", "af_sky", "am_adam", "bf_emma"].map(String::from).to_vec(),
         };
-        Connection::new(hello, mpsc::channel(1).0, 1, crate::worker::AudioBudget::new(1))
+        Connection::new(hello, mpsc::channel(1).0, 1, crate::worker::AudioGauge::default())
     }
 
     fn ok(expr: &str) -> (Vec<(u16, f32)>, String) {

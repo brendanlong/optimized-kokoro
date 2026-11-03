@@ -8,6 +8,11 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::sync::Semaphore;
 
+/// hyper's default write-buffer limit: it polls the body for more frames until this much is queued.
+const HYPER_QUEUE_BYTES: usize = 8192 + 4096 * 100;
+/// The longest pause one request may ask for (`kokoro_text::Limits`), as samples.
+const MAX_PAUSE_SAMPLES: u64 = 60 * crate::protocol::SAMPLE_RATE as u64;
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct Config {
@@ -24,7 +29,8 @@ pub struct Config {
     /// Largest request body. Defaults to enough for `max_input_chars` characters, each written as
     /// a JSON escaped surrogate pair, plus 16 KiB.
     pub max_body_bytes: Option<usize>,
-    /// Speech requests served at once; more get 503.
+    /// Speech requests served at once; more get 503. With `lookahead`, this bounds the audio the
+    /// server can hold: see [`Config::audio_bound`].
     pub max_concurrent_requests: usize,
     /// Speech requests one API key may have in progress; more get 429.
     pub max_streams_per_key: usize,
@@ -48,11 +54,13 @@ pub struct Config {
     /// disconnected and its requests fail.
     pub worker_progress_timeout_ms: u64,
     /// Requests on the worker at once, counting cancelled ones until the worker acknowledges
-    /// them. Defaults to `max_concurrent_requests × lookahead`.
+    /// them. Defaults to `max_concurrent_requests × lookahead`; never more than the protocol's
+    /// 1024.
     pub worker_max_outstanding: Option<usize>,
-    /// Audio held in memory across all requests (rendered, reordered or being written), in
-    /// bytes. Each chunk reserves the most it could produce before it's sent to the worker.
-    pub audio_buffer_bytes: usize,
+    /// The largest per-chunk audio cap (samples at speed 1) a worker may announce in its hello.
+    /// It bounds the audio the server holds (see [`Config::audio_bound`]); a worker announcing
+    /// more is refused. Default 120 s.
+    pub worker_max_chunk_samples: u32,
     /// On shutdown, how long open connections get to finish before they're dropped.
     pub shutdown_grace_ms: u64,
     /// Whether requests may set `allow_voice_tags`.
@@ -68,8 +76,8 @@ impl Default for Config {
             default_voice: "af_heart".into(),
             max_input_chars: 20_000,
             max_body_bytes: None,
-            max_concurrent_requests: 64,
-            max_streams_per_key: 32,
+            max_concurrent_requests: 16,
+            max_streams_per_key: 16,
             max_connections: 256,
             max_requests_per_connection: 1000,
             header_read_timeout_ms: 10_000,
@@ -77,7 +85,7 @@ impl Default for Config {
             worker_hello_timeout_ms: 30_000,
             worker_progress_timeout_ms: 30_000,
             worker_max_outstanding: None,
-            audio_buffer_bytes: 512 << 20,
+            worker_max_chunk_samples: 2_880_000,
             shutdown_grace_ms: 10_000,
             lookahead: 3,
             reconnect_interval_ms: 500,
@@ -116,7 +124,7 @@ impl Config {
             ("max_connections", self.max_connections),
             ("max_requests_per_connection", self.max_requests_per_connection),
             ("worker_max_outstanding", self.worker_max_outstanding()),
-            ("audio_buffer_bytes", self.audio_buffer_bytes),
+            ("worker_max_chunk_samples", self.worker_max_chunk_samples as usize),
         ];
         if let Some((name, _)) = counts.iter().find(|(_, n)| *n == 0) {
             return Err(format!("{name} must be at least 1"));
@@ -153,7 +161,31 @@ impl Config {
     }
 
     pub fn worker_max_outstanding(&self) -> usize {
-        self.worker_max_outstanding.unwrap_or(self.max_concurrent_requests.saturating_mul(self.lookahead))
+        self.worker_max_outstanding
+            .unwrap_or(self.max_concurrent_requests.saturating_mul(self.lookahead))
+            .min(crate::protocol::MAX_OUTSTANDING)
+    }
+
+    /// The most audio, in bytes, the server can hold at once when the worker's chunk cap is
+    /// `max_chunk_samples` (at most `worker_max_chunk_samples`) and every request runs at `speed`
+    /// (use `protocol::SPEED_MIN` for the worst case). There is no byte budget; this bound comes
+    /// from counts.
+    ///
+    /// Each speech request holds at most `lookahead + 2` chunks: `lookahead - 1` finished ones
+    /// waiting in its window for an earlier one, one waiting to enter the response channel, one in
+    /// the channel, and one hyper is writing (plus up to `HYPER_QUEUE_BYTES` of smaller frames
+    /// hyper queues before it stops polling the body). A chunk is at most the request's chunk cap,
+    /// or one pause. The worker connection reads one more Audio frame at a time; audio for
+    /// cancelled requests is dropped as it arrives.
+    ///
+    /// Defaults with the worker's 120 s cap: 16 × 5 × 5.76 MB ≈ 467 MB at speed 1, and about
+    /// 1.85 GB if every request asks for speed 0.25 with chunks that hit the cap. Real sentences
+    /// are around 5 s (240 KB), so typical use holds a few MB.
+    pub fn audio_bound(&self, max_chunk_samples: u32, speed: f32) -> usize {
+        let chunk_samples = crate::protocol::chunk_cap(max_chunk_samples, speed).max(MAX_PAUSE_SAMPLES);
+        let chunk = usize::try_from(2 * chunk_samples).unwrap_or(usize::MAX);
+        let per_stream = (self.lookahead + 2).saturating_mul(chunk).saturating_add(HYPER_QUEUE_BYTES);
+        self.max_concurrent_requests.saturating_mul(per_stream).saturating_add(chunk)
     }
 
     pub fn shutdown_grace(&self) -> Duration {
@@ -167,7 +199,7 @@ impl Config {
             hello_timeout: Duration::from_millis(self.worker_hello_timeout_ms),
             progress_timeout: Duration::from_millis(self.worker_progress_timeout_ms),
             max_outstanding: self.worker_max_outstanding(),
-            audio_budget_bytes: self.audio_buffer_bytes,
+            max_chunk_samples: self.worker_max_chunk_samples,
         }
     }
 }

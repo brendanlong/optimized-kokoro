@@ -1,0 +1,14 @@
+# gpuc submit bench/job.yaml --host local   (from worker/; the image must be built on that host)
+name: kokoro-worker-bench4
+setup: uv sync --frozen
+command: bash bench/job4.sh
+python: .venv/bin/python
+gpus: 1
+env:
+  REQUIRE_CUDA: "1"
+  PYTHONUNBUFFERED: "1"
+outputs:
+  - path: results
+priority: 40
+estimated_runtime_min: 20
+max_runtime_min: 150

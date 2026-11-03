@@ -14,7 +14,7 @@ use crate::pipeline::{Chunk, Pipeline, PipelineError};
 use crate::protocol::Priority;
 use crate::request::{Segment, Speech};
 use crate::stitch::{self, STITCH_ABOVE, Stitcher};
-use crate::worker::{Connection, Reservation, SynthError, SynthRequest, Synthesized};
+use crate::worker::{Connection, HeldAudio, SynthError, SynthRequest, Synthesized};
 use bytes::Bytes;
 use futures_util::StreamExt;
 use futures_util::stream::FuturesOrdered;
@@ -123,11 +123,11 @@ enum Output {
     End,
 }
 
-/// PCM that keeps its share of the audio budget until the bytes are dropped, which for a response
-/// body is once hyper has written them.
+/// PCM that stays counted in the server's audio gauge until the bytes are dropped, which for a
+/// response body is once hyper has written them.
 struct Pcm {
     samples: Vec<i16>,
-    _reservation: Reservation,
+    _held: HeldAudio,
 }
 
 impl AsRef<[u8]> for Pcm {
@@ -136,11 +136,11 @@ impl AsRef<[u8]> for Pcm {
     }
 }
 
-fn pcm_bytes(mut samples: Vec<i16>, reservation: Reservation) -> Bytes {
+fn pcm_bytes(mut samples: Vec<i16>, held: HeldAudio) -> Bytes {
     for s in &mut samples {
         *s = s.to_le();
     }
-    Bytes::from_owner(Pcm { samples, _reservation: reservation })
+    Bytes::from_owner(Pcm { samples, _held: held })
 }
 
 /// A request's PCM, in order. It holds the request's admission permits, so they're released only
@@ -170,7 +170,7 @@ impl AudioStream {
 }
 
 enum Done {
-    Silence(usize, Reservation),
+    Silence(usize),
     Speech(Result<Synthesized, SynthError>, Finish),
 }
 
@@ -231,7 +231,7 @@ async fn drive(
             biased;
             _ = out.closed() => Err(ClientGone),
             done = window.next(), if !window.is_empty() => match done.expect("window isn't empty") {
-                Done::Silence(n, reservation) => send(pcm_bytes(vec![0; n], reservation)).await,
+                Done::Silence(n) => send(pcm_bytes(vec![0; n], connection.gauge().hold(2 * n))).await,
                 Done::Speech(result, finish) => {
                     speech_in_window -= 1;
                     let synth = result.map_err(StreamError::Synth)?;
@@ -243,7 +243,7 @@ async fn drive(
                     let range = trim_range(&pcm, &finish.text, finish.speed);
                     pcm.truncate(range.end);
                     pcm.drain(..range.start);
-                    send(pcm_bytes(pcm, synth.reservation)).await
+                    send(pcm_bytes(pcm, synth.held)).await
                 }
             },
             produced = units.recv(), if !exhausted && window.len() < lookahead => {
@@ -254,14 +254,8 @@ async fn drive(
                     }
                     Produced::Failed(e) => return Err(StreamError::Pipeline(e)),
                     Produced::Unit(Unit::Silence(n)) => {
-                        match unless_gone(out, connection.budget().reserve(2 * n)).await {
-                            Ok(reservation) => {
-                                let reservation = reservation.ok_or(StreamError::Synth(SynthError::Unrenderable))?;
-                                window.push_back(Box::pin(async move { Done::Silence(n, reservation) }));
-                                Ok(())
-                            }
-                            Err(gone) => Err(gone),
-                        }
+                        window.push_back(Box::pin(async move { Done::Silence(n) }));
+                        Ok(())
                     }
                     Produced::Unit(Unit::Speech(request, finish)) => {
                         let priority = if speech_in_window == 0 { Priority::Waiting } else { Priority::Prefetch };
