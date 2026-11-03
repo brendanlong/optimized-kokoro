@@ -366,8 +366,10 @@ impl Espeak {
                     phonemes2 = phonemes;
                     let mut end_flags = self.remove_ending(tr, w, wordx, end_type, Some(&mut word_copy));
                     let mut more_suffixes = true;
+                    // Each pass removes another suffix. C has no other bound, and would loop
+                    // forever on a rule whose suffix length is 0; no shipped rule has one.
                     let mut guard = 0;
-                    while more_suffixes && guard < 100 {
+                    while more_suffixes && guard < N_WORD_BYTES {
                         guard += 1;
                         more_suffixes = false;
                         phonemes[0] = 0;

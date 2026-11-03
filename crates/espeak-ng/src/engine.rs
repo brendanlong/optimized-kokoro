@@ -118,13 +118,11 @@ pub struct Espeak {
     // dictionary.c's phoneme string output buffer
     pub(crate) phon_out: Vec<u8>,
 
-    /// TranslateClause's stack arrays. C reads past the parts it fills (e.g. digits after the
-    /// end of the clause when grouping a number), seeing what the previous clause left there.
+    /// TranslateClause's large stack arrays, kept to reuse their allocations. Each clause
+    /// starts with them zeroed.
     pub(crate) clause_sbuf: Vec<u8>,
     pub(crate) clause_words: Vec<WordTab>,
     pub(crate) clause_charix: Vec<i16>,
-    pub(crate) clause_number_buf: [u8; 150],
-    pub(crate) clause_num_wtab: [WordTab; 50],
 }
 
 pub(crate) const N_PUNCTLIST: usize = 60;
@@ -211,8 +209,6 @@ impl Espeak {
             clause_sbuf: vec![0; N_TR_SOURCE + 8],
             clause_words: vec![WordTab::default(); N_CLAUSE_WORDS],
             clause_charix: vec![0; N_TR_SOURCE + 4],
-            clause_number_buf: [0; 150],
-            clause_num_wtab: [WordTab::default(); 50],
         };
         // LoadPhData leaves phoneme table 0 unselected; SetVoiceByName selects one.
         e.option_phonemes = 0;

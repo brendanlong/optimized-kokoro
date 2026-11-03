@@ -10,6 +10,11 @@
 #include "translate.h"
 #include "phoneme.h"
 #include "synthesize.h"
+#if __has_include(<valgrind/valgrind.h>)
+#include <valgrind/valgrind.h>
+#else
+#define VALGRIND_COUNT_ERRORS 0
+#endif
 
 static void dump_phoneme_list(void) {
 	for (int ix = 0; ix < n_phoneme_list; ix++) {
@@ -45,7 +50,10 @@ int main(int argc, char **argv) {
 	int mode = 0x02 | 0x01 << 7 | 0x361 << 8;
 	if (getenv("ESPEAK_TRACE"))
 		espeak_SetPhonemeTrace(espeakPHONEMES_TRACE, stderr);
-	for (;;) {
+	for (int record = 0;; record++) {
+		// Marks where each record's sanitizer reports start (see oracle.py --ub).
+		if (getenv("TTP_MARK_RECORDS"))
+			fprintf(stderr, "\n@@ttp-record %d\n", record);
 		char *voice = read_field();
 		if (!voice) break;
 		char *text = read_field();
@@ -64,6 +72,9 @@ int main(int argc, char **argv) {
 		}
 		putchar(0);
 		fflush(stdout);
+		// memcheck reports each distinct error once, but counts every occurrence.
+		if (getenv("TTP_MARK_RECORDS"))
+			fprintf(stderr, "\n@@ttp-errors %d\n", (int)VALGRIND_COUNT_ERRORS);
 		free(voice);
 		free(text);
 	}

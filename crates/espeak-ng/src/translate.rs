@@ -29,7 +29,6 @@ impl Espeak {
     pub(crate) fn translate_word(&mut self, tr: Tr, w: &mut [u8], word_start: isize, wtab: Option<&mut [WordTab]>, in_clause: bool, word_out: Option<&mut Vec<u8>>) -> u32 {
         let mut words_phonemes = [0u8; N_WORD_PHONEMES];
         let mut empty: [WordTab; 0] = [];
-        let has_wtab = wtab.is_some();
         let wtab: &mut [WordTab] = match wtab {
             Some(w) => w,
             None => &mut empty,
@@ -49,9 +48,7 @@ impl Espeak {
             let mut first_word = true;
             let mut available: i32 = N_WORD_PHONEMES as i32;
             let mut phonemes = 0usize;
-            let mut guard = 0;
-            while at(&word, wo) != 0 && available > 1 && guard < N_WORD_BYTES {
-                guard += 1;
+            while at(&word, wo) != 0 && available > 1 {
                 let c = utf8_in(&word, wo).0;
                 if ucd::isupper(c) {
                     if let Some(w0) = wtab.first_mut() {
@@ -62,7 +59,6 @@ impl Espeak {
                     w0.flags &= !FLAG_FIRST_UPPER;
                 }
                 let skipwords = self.dictionary_skipwords;
-                let _ = has_wtab;
                 self.translate_word3(tr, &mut word, wo, wtab, None, false);
                 let mut piece = Vec::new();
                 if first_word {
@@ -81,6 +77,10 @@ impl Espeak {
                 }
                 available -= n;
                 phonemes += n as usize;
+                // C's skip loop (`while (!isspace(*word_out)) ++word_out;`) doesn't stop at the
+                // terminator, so when the replacement has fewer words than the entry says to
+                // skip, it reads on through stack memory (`A.$U.A` in es). This one stops at
+                // the end of the text (docs/divergences.md).
                 self.dictionary_skipwords += 1;
                 while self.dictionary_skipwords > 0 {
                     while at(&word, wo) != 0 && !c_isspace(sat(&word, wo)) {
@@ -884,6 +884,12 @@ impl Espeak {
         let mut words = std::mem::take(&mut self.clause_words);
         let mut word_count: usize;
         let mut sbuf = std::mem::take(&mut self.clause_sbuf);
+        // C leaves these stack arrays uninitialised and sometimes reads past the part a clause
+        // fills (CheckThousandsGroup looks at the byte after a digit group), seeing whatever an
+        // earlier clause, or an earlier request, left there. The port zeroes them per clause so
+        // that output depends only on the text (docs/divergences.md).
+        sbuf.fill(0);
+        words.fill(WordTab::default());
         let mut tone = 0;
 
         if !self.exists(tr) {
@@ -904,9 +910,7 @@ impl Espeak {
         }
         self.clause_start_word = self.count_words + 1;
 
-        for x in charix.iter_mut().take(N_TR_SOURCE) {
-            *x = 0;
-        }
+        charix.fill(0);
         let mut source = std::mem::take(&mut self.source);
         let mut voice_change_name = Vec::new();
         let terminator = self.read_clause(tr, &mut source, &mut charix, &mut charix_top, N_TR_SOURCE as i32, &mut tone, &mut voice_change_name);
@@ -1371,8 +1375,8 @@ impl Espeak {
         }
         words[0].flags |= FLAG_FIRST_WORD;
 
-        let mut number_buf = self.clause_number_buf;
-        let mut num_wtab = self.clause_num_wtab;
+        let mut number_buf = [0u8; 150];
+        let mut num_wtab = [WordTab::default(); 50];
         let mut wix = 0usize;
         while wix < word_count && self.n_ph_list2 < N_PHONEME_LIST as i32 - 7 - 2 {
             let mut dict_flags: u32 = 0;
@@ -1517,9 +1521,8 @@ impl Espeak {
 
                 if dict_flags & FLAG_SPELLWORD != 0 {
                     let mut pw = word;
-                    let mut guard = 0;
-                    while at(&sbuf, pw) != b' ' && guard < N_TR_SOURCE {
-                        guard += 1;
+                    // C stops only at a space; this also stops at the end of the buffer.
+                    while at(&sbuf, pw) != b' ' && (pw as usize) < sbuf.len() {
                         number_buf = [0u8; 150];
                         for x in number_buf[..9].iter_mut() {
                             *x = b' ';
@@ -1552,8 +1555,6 @@ impl Espeak {
             wix += 1;
         }
 
-        self.clause_number_buf = number_buf;
-        self.clause_num_wtab = num_wtab;
         self.clause_charix = charix;
         self.clause_words = words;
         self.clause_sbuf = sbuf;

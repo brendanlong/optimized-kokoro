@@ -1236,7 +1236,8 @@ impl Espeak {
                                     }
                                     let mut vowel = false;
                                     let mut lw = letter_w;
-                                    let mut guard = 0;
+                                    // C reads on until a space, past the word's buffer if it has
+                                    // to; this stops a few bytes after the end.
                                     while lw != RULE_SPACE as i32 {
                                         if !vowel && self.is_letter(tr, lw, LETTERGP_VOWEL2) {
                                             vowel_count += 1;
@@ -1245,8 +1246,7 @@ impl Espeak {
                                         let (c, n) = utf8_in(w, p);
                                         lw = c;
                                         p += n;
-                                        guard += 1;
-                                        if lw == 0 && p > w.len() as isize + 4 || guard > 100_000 {
+                                        if lw == 0 && p > w.len() as isize + 4 {
                                             break;
                                         }
                                     }
@@ -1260,7 +1260,6 @@ impl Espeak {
                                 RULE_NOVOWELS => {
                                     let mut p = post_ptr + letter_xbytes;
                                     let mut lw = letter_w;
-                                    let mut guard = 0;
                                     while lw != RULE_SPACE as i32 {
                                         if self.is_letter(tr, lw, LETTERGP_VOWEL2) {
                                             failed = 1;
@@ -1269,8 +1268,7 @@ impl Espeak {
                                         let (c, n) = utf8_in(w, p);
                                         lw = c;
                                         p += n;
-                                        guard += 1;
-                                        if lw == 0 && p > w.len() as isize + 4 || guard > 100_000 {
+                                        if lw == 0 && p > w.len() as isize + 4 {
                                             break;
                                         }
                                     }

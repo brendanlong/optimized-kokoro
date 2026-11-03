@@ -5,7 +5,8 @@ SRC = espeak-ng-$(VERSION)
 S = $(SRC)/src
 LIB = common mnemonics error ieee80 compiledata compiledict dictionary encoding intonation langopts numbers phoneme phonemelist readclause setlengths soundicon spect ssml synthdata synthesize tr_languages translate translateword voices wavegen speech espeak_api
 UCD = case categories ctype proplist scripts tostring
-OBJS = $(addprefix obj/,$(addsuffix .o,$(LIB))) $(addprefix obj/ucd_,$(addsuffix .o,$(UCD)))
+OBJ ?= obj
+OBJS = $(addprefix $(OBJ)/,$(addsuffix .o,$(LIB))) $(addprefix $(OBJ)/ucd_,$(addsuffix .o,$(UCD)))
 CFLAGS ?= -O3 -g
 # include/compat maps iswalpha() etc. to ucd-tools, as espeak-ng's own build does.
 CF = $(CFLAGS) -fwrapv -Iinclude -I$(S)/include -I$(S)/include/compat -I$(S)/ucd-tools/src/include -I$(S)/libespeak-ng -DLIBESPEAK_NG_EXPORT=1 -DPATH_ESPEAK_DATA=\"/nonexistent\"
@@ -20,16 +21,33 @@ $(SRC)/.extracted: $(SRC).tar.gz
 	touch $@
 
 $(S)/%.c: $(SRC)/.extracted ;
+$(S)/libespeak-ng/translate.c: $(SRC)/.extracted ;
 
-$(filter-out obj/ucd_%,$(OBJS)): obj/%.o: $(S)/libespeak-ng/%.c
-	@mkdir -p obj
+$(filter-out $(OBJ)/ucd_%,$(OBJS)): $(OBJ)/%.o: $(S)/libespeak-ng/%.c
+	@mkdir -p $(OBJ)
 	$(CC) $(CF) -c $< -o $@
 
-$(filter obj/ucd_%,$(OBJS)): obj/ucd_%.o: $(S)/ucd-tools/src/%.c
-	@mkdir -p obj
+$(filter $(OBJ)/ucd_%,$(OBJS)): $(OBJ)/ucd_%.o: $(S)/ucd-tools/src/%.c
+	@mkdir -p $(OBJ)
 	$(CC) $(CF) -c $< -o $@
 
 ttp: ttp.c $(OBJS)
+	$(CC) $(CF) ttp.c $(OBJS) -lm -o $@
+
+# Builds for finding calls where C reads out of bounds (ASan, continuing after each report) or
+# reads uninitialised memory (run under valgrind's memcheck). `oracle.py pairs --ub` uses both.
+# VALGRIND_CFLAGS=-I.../include if valgrind's headers aren't installed system-wide.
+sanitized: ttp-asan ttp-memcheck
+
+ttp-asan: ttp.c $(S)/libespeak-ng/translate.c
+	$(MAKE) OBJ=obj-asan CFLAGS="-O1 -g -fno-omit-frame-pointer -fsanitize=address -fsanitize-recover=address" obj-asan/ttp
+	cp obj-asan/ttp $@
+
+ttp-memcheck: ttp.c $(S)/libespeak-ng/translate.c
+	$(MAKE) OBJ=obj-memcheck CFLAGS="-O1 -g $(VALGRIND_CFLAGS)" obj-memcheck/ttp
+	cp obj-memcheck/ttp $@
+
+$(OBJ)/ttp: ttp.c $(OBJS)
 	$(CC) $(CF) ttp.c $(OBJS) -lm -o $@
 
 bench: bench.c $(OBJS)
@@ -40,6 +58,6 @@ ucddump: ucddump.c $(OBJS)
 	$(CC) $(CF) ucddump.c $(OBJS) -lm -o $@
 
 clean:
-	rm -rf obj ttp bench ucddump
+	rm -rf obj obj-asan obj-memcheck ttp ttp-asan ttp-memcheck bench ucddump
 
-.PHONY: all clean
+.PHONY: all clean sanitized

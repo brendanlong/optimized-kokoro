@@ -4,8 +4,10 @@
 //!
 //! CALLS.jsonl lines are `{"voice": "gmw/en-US", "text": "...", "clauses": ["...", ...]}`, the
 //! clauses `espeak_TextToPhonemes` returned in phonemizer's mode (see `scratch/tools/oracle.py`).
-//! Prints the exact-match rate per voice, per call and per word, then mismatches. With `FRESH=1`
-//! each call gets a new engine, as with `oracle.py fresh`.
+//! Prints the exact-match rate per voice, per call and per word, then mismatches. Calls marked
+//! `ub` (C read memory out of bounds or uninitialised; see `oracle.py --ub`) run but aren't scored;
+//! the `ub` column counts them and `ub-same` how many still match. With `FRESH=1` each call gets
+//! a new engine, as with `oracle.py fresh`.
 
 use kokoro_espeak_ng::{Espeak, EspeakData, PHONEMES_IPA_TIE};
 use serde::Deserialize;
@@ -20,6 +22,8 @@ struct Call {
     /// C crashed on this call; it restarts with fresh state.
     #[serde(default)]
     reset: bool,
+    #[serde(default)]
+    ub: Vec<String>,
 }
 
 #[derive(Default)]
@@ -29,6 +33,8 @@ struct Tally {
     words: usize,
     words_ok: usize,
     mismatched_word_count: usize,
+    ub: usize,
+    ub_same: usize,
 }
 
 fn main() {
@@ -62,6 +68,14 @@ fn main() {
         });
         let got = e.text_to_phonemes(&call.text, PHONEMES_IPA_TIE);
         let t = tallies.entry(call.voice.clone()).or_default();
+        if !call.ub.is_empty() {
+            t.ub += 1;
+            t.ub_same += usize::from(got == call.clauses);
+            if got != call.clauses && std::env::var_os("SHOW_UB").is_some() {
+                println!("ub {} {:?}\n  {:?}", call.voice, call.text, call.ub);
+            }
+            continue;
+        }
         t.calls += 1;
         let exp_words: Vec<&str> = call.clauses.iter().flat_map(|c| c.split(' ')).collect();
         let got_words: Vec<&str> = got.iter().flat_map(|c| c.split(' ')).collect();
@@ -88,18 +102,20 @@ fn main() {
         }
     }
     let elapsed = start.elapsed();
-    println!("{:<12} {:>17} {:>19} {:>8}", "voice", "calls", "words", "badcount");
+    println!("{:<12} {:>17} {:>19} {:>8} {:>6} {:>7}", "voice", "calls", "words", "badcount", "ub", "ub-same");
     let pct = |a: usize, b: usize| 100.0 * a as f64 / b.max(1) as f64;
     for (voice, t) in &tallies {
         println!(
-            "{voice:<12} {:>7}/{:<7} {:>6.2}% {:>8}/{:<8} {:>6.2}% {:>6}",
+            "{voice:<12} {:>7}/{:<7} {:>6.2}% {:>8}/{:<8} {:>6.2}% {:>6} {:>6} {:>7}",
             t.calls_ok,
             t.calls,
             pct(t.calls_ok, t.calls),
             t.words_ok,
             t.words,
             pct(t.words_ok, t.words),
-            t.mismatched_word_count
+            t.mismatched_word_count,
+            t.ub,
+            t.ub_same
         );
     }
     eprintln!("{:.2?}", elapsed);

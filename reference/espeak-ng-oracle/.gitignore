@@ -4,3 +4,7 @@
 /ttp
 /bench
 /ucddump
+/obj-asan/
+/obj-memcheck/
+/ttp-asan
+/ttp-memcheck

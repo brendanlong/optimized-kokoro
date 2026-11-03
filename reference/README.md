@@ -26,13 +26,16 @@ Differences from the deployed image: espeak reads the same espeak-ng 1.52 data (
 
 ```sh
 cd espeak-ng-oracle && make                       # downloads the 1.52.0 source; builds ttp and bench
+make sanitized                                     # ttp-asan and ttp-memcheck, for --ub
 python3 oracle.py one gmw/en-US "Hello world."      # C's clauses for one text
 python3 gen_adversarial.py 1 3000 gmw/en-US roa/fr > /tmp/pairs.jsonl
-python3 oracle.py pairs < /tmp/pairs.jsonl > /tmp/calls.jsonl   # one C process per voice, in order
+python3 oracle.py pairs --ub < /tmp/pairs.jsonl > /tmp/calls.jsonl   # one C process per voice, in order
 cargo run --release -p kokoro-espeak-ng --example compare -- /tmp/calls.jsonl .cache/espeak-ng-data
-python3 adv.py gen_dict.py 1 4 3000 gmw/en-US zle/ru  # generate, run C, compare, for seeds 1-4
+python3 adv.py --ub gen_dict.py 1 4 3000 gmw/en-US zle/ru  # generate, run C, compare, for seeds 1-4
 python3 bench.py /tmp/calls.jsonl 3                 # C (-O3) vs Rust time per call and per word
 python3 make_fixture.py ../../crates/espeak-ng/tests/c_calls.jsonl
 ```
 
-Call files are JSON lines `{"voice", "text", "clauses"}`, with `{"voice", "reset": true}` where C crashed and restarted (espeak-ng 1.52 reads out of bounds in `CountVowelPosition` and `isAfterStress` on some inputs). The engine's parity test replays them with one engine per voice, since C carries state between calls. `ESPEAK_NG_CALLS` (paths separated by `:`) and `ESPEAK_NG_DATA` point it at more call files and the full data.
+Call files are JSON lines `{"voice", "text", "clauses"}`, with `{"voice", "reset": true}` where C crashed and restarted. The engine's parity test replays them with one engine per voice, since C carries state between calls. `ESPEAK_NG_CALLS` (paths separated by `:`) and `ESPEAK_NG_DATA` point it at more call files and the full data.
+
+C espeak-ng 1.52 reads out of bounds and reads uninitialised stack memory on some inputs (it walks off the start of phoneme lists, past the end of `$text` replacements, and past the end of a clause when grouping digits), so its answer for those calls depends on whatever was in memory. `make sanitized` builds `ttp-asan` (ASan, continuing after each report) and `ttp-memcheck` (for valgrind's memcheck; set `VALGRIND_CFLAGS=-I…/include` if valgrind's headers aren't installed). `oracle.py pairs --ub` (and `adv.py --ub`) runs every voice's sequence under both as well and adds `"ub": [reports]` to the calls where C did either. Those calls still run in the comparisons, for the state they leave, but aren't scored; `docs/divergences.md` lists what the port does instead. `VALGRIND` and `VALGRIND_LIB` select a valgrind that isn't on `PATH`.

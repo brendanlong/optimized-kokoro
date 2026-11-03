@@ -1,6 +1,7 @@
 //! Parity with misaki's espeak wrappers over C espeak-ng 1.52, from `reference/espeak_dump.py` output:
 //! the committed `tests/espeak.jsonl`, plus `espeak*.jsonl` in `reference/out/` (or
-//! `$KOKORO_REFERENCE_OUT`) when present.
+//! `$KOKORO_REFERENCE_OUT`) when present. `tests/divergences.jsonl` lists the cases where the
+//! engine intentionally differs from C (docs/divergences.md), with the engine's output.
 
 use kokoro_espeak::{EspeakFallback, EspeakG2P};
 use serde::Deserialize;
@@ -45,6 +46,27 @@ fn cases() -> Vec<Case> {
         .collect()
 }
 
+#[derive(Deserialize)]
+struct Divergence {
+    wrapper: String,
+    language: String,
+    text: String,
+    phonemes: String,
+}
+
+/// The engine's expected output for each listed divergence, by (wrapper, language, text).
+fn divergences() -> HashMap<(String, String, String), String> {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/divergences.jsonl");
+    std::fs::read_to_string(path)
+        .unwrap()
+        .lines()
+        .map(|l| {
+            let d: Divergence = serde_json::from_str(l).unwrap();
+            ((d.wrapper, d.language, d.text), d.phonemes)
+        })
+        .collect()
+}
+
 enum Wrapper {
     Fallback(EspeakFallback),
     G2P(EspeakG2P),
@@ -73,22 +95,24 @@ impl Wrapper {
 struct Tally {
     total: usize,
     matched: usize,
+    diverged: usize,
     chunks: usize,
     chunks_matched: usize,
 }
 
 fn report(tallies: &BTreeMap<(String, String), Tally>) {
-    println!("{:<10} {:<7} {:>17} {:>17}", "wrapper", "lang", "outputs", "espeak calls");
+    println!("{:<10} {:<7} {:>17} {:>17} {:>9}", "wrapper", "lang", "outputs", "espeak calls", "diverged");
     for ((wrapper, language), t) in tallies {
         let pct = |a: usize, b: usize| 100.0 * a as f64 / b.max(1) as f64;
         println!(
-            "{wrapper:<10} {language:<7} {:>7}/{:<6} {:>5.1}% {:>7}/{:<6} {:>5.1}%",
+            "{wrapper:<10} {language:<7} {:>7}/{:<6} {:>5.1}% {:>7}/{:<6} {:>5.1}% {:>9}",
             t.matched,
             t.total,
             pct(t.matched, t.total),
             t.chunks_matched,
             t.chunks,
-            pct(t.chunks_matched, t.chunks)
+            pct(t.chunks_matched, t.chunks),
+            t.diverged
         );
     }
 }
@@ -123,7 +147,8 @@ fn wrappers_match_misaki_given_c_espeak() {
 
 /// End to end on kokoro-espeak-ng. Prints exact-match rates per wrapper and language, for the
 /// wrappers' output and for each raw espeak call, then any mismatches (`KOKORO_ESPEAK_SHOW` per
-/// language). Run with `--nocapture` for the report.
+/// language). Run with `--nocapture` for the report. A listed divergence counts as matched when
+/// the output is the listed one (the `diverged` column counts them).
 #[test]
 fn parity_with_c_espeak() {
     let show: usize = std::env::var("KOKORO_ESPEAK_SHOW").map_or(20, |s| s.parse().unwrap());
@@ -131,6 +156,7 @@ fn parity_with_c_espeak() {
     let mut tallies: BTreeMap<(String, String), Tally> = BTreeMap::new();
     let mut shown: HashMap<(String, String), usize> = HashMap::new();
     let mut seen = std::collections::HashSet::new();
+    let divergences = divergences();
     for case in cases() {
         let key = (case.wrapper.clone(), case.language.clone());
         if !seen.insert((key.clone(), case.text.clone())) {
@@ -146,7 +172,12 @@ fn parity_with_c_espeak() {
         tally.total += 1;
         tally.chunks += case.espeak.len();
         tally.chunks_matched += case.espeak.iter().filter(|(text, c)| backend.espeak(text).unwrap() == *c).count();
-        if got == case.phonemes {
+        let listed = divergences.get(&(case.wrapper.clone(), case.language.clone(), case.text.clone()));
+        if listed.is_some() {
+            tally.diverged += 1;
+        }
+        let expected = listed.cloned().or_else(|| case.phonemes.clone());
+        if got == expected {
             tally.matched += 1;
         } else {
             let n = shown.entry(key).or_default();
@@ -157,7 +188,7 @@ fn parity_with_c_espeak() {
                     case.wrapper,
                     case.language,
                     case.text,
-                    case.phonemes.as_deref().unwrap_or("None"),
+                    expected.as_deref().unwrap_or("None"),
                     got.as_deref().unwrap_or("None")
                 );
             }
