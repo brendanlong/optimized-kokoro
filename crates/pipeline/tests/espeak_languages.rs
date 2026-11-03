@@ -4,7 +4,8 @@
 //! `reference/out/*.jsonl` or `$KOKORO_REFERENCE_OUT`), the chunks' text and phonemes must equal
 //! the recorded `smart_split` output. `tests/espeak_mixed.jsonl` is `reference/espeak_mixed_cases.py
 //! 1 100`: each language's Wikipedia sentences mixed with English words, Devanagari, Han, kana, the
-//! other scripts, CJK punctuation, parentheses and links.
+//! other scripts, CJK punctuation, parentheses and links. `dump.py` records no ids or word spans;
+//! `tests/requests.rs` compares those for these languages (`request_cases.py ... efhip`).
 //!
 //! Records the intentional differences in `docs/divergences.md` change are counted apart, per
 //! language:

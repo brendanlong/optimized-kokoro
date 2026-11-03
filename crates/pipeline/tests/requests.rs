@@ -56,6 +56,7 @@ fn cases() -> Vec<Case> {
         extra.sort();
         paths.extend(extra);
     }
+    let mut seen = std::collections::HashSet::new();
     paths
         .iter()
         .flat_map(|path| {
@@ -65,6 +66,8 @@ fn cases() -> Vec<Case> {
                 .map(|l| serde_json::from_str(l).unwrap_or_else(|e| panic!("{}: {e}", path.display())))
                 .collect::<Vec<Case>>()
         })
+        // The committed fixtures are the start of the dumps in `out/requests`: each request once.
+        .filter(|case| seen.insert(case.id.clone()))
         .collect()
 }
 
@@ -128,12 +131,32 @@ fn requests_match_the_reference() {
             expected.pop();
         }
         if STATE_DEPENDENT.contains(&case.id.as_str()) {
-            let shape = |c: &Expected| match c {
-                Expected::Speech { text, phonemes, .. } => Some((text.clone(), phonemes.split_whitespace().count())),
-                _ => None,
-            };
-            let shapes = |chunks: &mut dyn Iterator<Item = &Expected>| chunks.map(shape).collect::<Vec<_>>();
-            assert_eq!(shapes(&mut expected.iter().copied()), shapes(&mut actual.iter()), "{}", case.id);
+            assert!(error.is_none() && expected.len() == actual.len(), "{}", case.id);
+            let mut changed = 0;
+            for (e, a) in expected.iter().zip(&actual) {
+                match (e, a) {
+                    (
+                        Expected::Speech { text, phonemes, dropped, words, .. },
+                        Expected::Speech { text: t, phonemes: p, dropped: d, words: w, .. },
+                    ) => {
+                        // Everything but the phonemes of the words the carried-over state changed
+                        // (and the ids and word positions after them).
+                        assert_eq!((text, dropped), (t, d), "{}", case.id);
+                        let (ew, aw): (Vec<&str>, Vec<&str>) = (phonemes.split(' ').collect(), p.split(' ').collect());
+                        assert_eq!(ew.len(), aw.len(), "{}", case.id);
+                        let differ = ew.iter().zip(&aw).filter(|(x, y)| x != y).count();
+                        assert!(differ <= 1, "{}: {differ} words differ in {text:?}", case.id);
+                        changed += differ;
+                        let names = |ws: &[(String, usize, usize)]| ws.iter().map(|w| w.0.clone()).collect::<Vec<_>>();
+                        assert_eq!(names(words), names(w), "{}", case.id);
+                        if differ == 0 {
+                            assert_eq!(*e, a, "{}", case.id);
+                        }
+                    }
+                    _ => assert_eq!(*e, a, "{}", case.id),
+                }
+            }
+            assert!(changed > 0, "{} now matches: take it off STATE_DEPENDENT", case.id);
             stateful += 1;
             continue;
         }
