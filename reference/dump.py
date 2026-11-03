@@ -4,7 +4,7 @@ Usage (from reference/, after ./setup.sh):
     .cache/kfa/.venv/bin/python -I dump.py corpus.jsonl out.jsonl
 
 Input lines: {"id": str, "lang": "a"|"b"|"e"|"f"|"h"|"i"|"j"|"p"|"z", "text": str}
-Output lines add:
+Output lines add (and "error", when the server's pipeline raises):
     normalized   text after join_lines and the language normalizer, before sentence splitting
     sentences    the sentences smart_split phonemizes
     chunks       [{"text", "phonemes"}] exactly as smart_split yields them
@@ -16,12 +16,23 @@ Output lines add:
         spacy        English only: one list per misaki call, [[text, tag, whitespace]] from spaCy
         fallback     English only: [[word, phonemes]] answered by the espeak fallback
         foreign      [[segment, language, phonemes]] read by another language's G2P
+        foreign_spacy, foreign_fallback
+                     the same as spacy and fallback, for Latin runs another pipeline reads with English G2P
 """
 
 import asyncio
 import json
 import os
 import sys
+
+# Server settings come from the environment and ./.env. Run with neither, so the dump records the defaults
+# the deployed image runs with (it sets none that affect text).
+HERE = os.path.dirname(os.path.abspath(__file__))
+if os.environ.get("KOKORO_REFERENCE_CLEAN") != "1":
+    env = {k: os.environ[k] for k in ("PATH", "HOME", "TMPDIR") if k in os.environ}
+    args = [os.path.abspath(a) for a in sys.argv]
+    os.chdir(HERE)
+    os.execve(sys.executable, [sys.executable, "-I", *args], {**env, "KOKORO_REFERENCE_CLEAN": "1"})
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".cache", "kfa"))
 
@@ -37,6 +48,8 @@ EspeakWrapper.set_data_path(os.path.join(os.path.dirname(os.path.abspath(__file_
 from loguru import logger  # noqa: E402
 
 logger.remove()
+
+from misaki import en  # noqa: E402
 
 from api.src.inference import g2p  # noqa: E402
 from api.src.services.text_processing import text_processor as tp  # noqa: E402
@@ -67,26 +80,39 @@ def instrument(pipeline):
         record("foreign", [segment, language, ps])
         return ps
 
-    foreign.split, foreign.phonemize = split, phonemize
-    if pipeline.lang_code not in "ab":
+    original_get_g2p = foreign.get_g2p
+
+    def get_g2p(language):
+        g = original_get_g2p(language)
+        if language == "en" and isinstance(g, en.G2P):
+            instrument_english(g, "foreign_")
+        return g
+
+    foreign.split, foreign.phonemize, foreign.get_g2p = split, phonemize, get_g2p
+    if pipeline.lang_code in "ab":
+        instrument_english(pipeline.g2p, "")
+
+
+def instrument_english(g, prefix):
+    if getattr(g, "_instrumented", False):
         return
-    en_g2p = pipeline.g2p
-    nlp = en_g2p.nlp
+    g._instrumented = True
+    nlp = g.nlp
 
     def recording_nlp(text):
         doc = nlp(text)
-        record("spacy", [[t.text, t.tag_, t.whitespace_] for t in doc])
+        record(prefix + "spacy", [[t.text, t.tag_, t.whitespace_] for t in doc])
         return doc
 
-    en_g2p.nlp = recording_nlp
-    fallback = en_g2p.fallback
+    g.nlp = recording_nlp
+    fallback = g.fallback
     if fallback is not None:
         def recording_fallback(token):
             ps, rating = fallback(token)
-            record("fallback", [token.text, ps])
+            record(prefix + "fallback", [token.text, ps])
             return ps, rating
 
-        en_g2p.fallback = recording_fallback
+        g.fallback = recording_fallback
 
 
 original_phonemize = g2p.phonemize
@@ -128,19 +154,26 @@ async def dump(record_in):
     calls.clear()
     options = NormalizationOptions()
     text, lang = record_in["text"], record_in["lang"]
+    # smart_split normalizes each part between pause tags separately; normalized/sentences below don't.
+    if tp.PAUSE_TAG_PATTERN.search(text):
+        raise ValueError(f"{record_in['id']}: pause tags aren't supported in the corpus")
     out = dict(record_in)
-    # Pause tags and emoji removal happen before this in smart_split; the corpus has neither.
     out["normalized"] = normalized(text, lang, options)
     out["sentences"] = [s.strip() for s in tp.sentences(out["normalized"]) if s.strip()]
     out["chunks"] = []
-    async for chunk_text, phonemes, _pause in tp.smart_split(text, lang_code=lang, normalization_options=options):
-        if phonemes is not None:
-            out["chunks"].append({"text": chunk_text, "phonemes": phonemes.phonemes})
+    try:
+        async for chunk_text, phonemes, _pause in tp.smart_split(text, lang_code=lang, normalization_options=options):
+            if phonemes is not None:
+                out["chunks"].append({"text": chunk_text, "phonemes": phonemes.phonemes})
+    except Exception as e:
+        # The deployed server fails these requests (e.g. misaki's Japanese G2P asserts on some numbers).
+        out["error"] = f"{type(e).__name__}: {e}"
     out["calls"] = list(calls)
     return out
 
 
 async def main(src, dst):
+    os.makedirs(os.path.dirname(os.path.abspath(dst)), exist_ok=True)
     with open(src) as fin, open(dst, "w") as fout:
         for line in fin:
             if line.strip():

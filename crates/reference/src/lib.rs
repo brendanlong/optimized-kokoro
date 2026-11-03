@@ -16,6 +16,8 @@ pub struct Record {
     pub sentences: Vec<String>,
     pub chunks: Vec<Chunk>,
     pub calls: Vec<Call>,
+    /// Set when the reference pipeline raised; `chunks` and `calls` then stop where it failed.
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -43,6 +45,11 @@ pub struct Call {
     /// Runs read by another language's G2P: `(segment, language, phonemes)`.
     #[serde(default)]
     pub foreign: Vec<(String, String, String)>,
+    /// `spacy` and `fallback` for Latin runs in another pipeline, read by English G2P.
+    #[serde(default)]
+    pub foreign_spacy: Vec<Vec<SpacyToken>>,
+    #[serde(default)]
+    pub foreign_fallback: Vec<(String, Option<String>)>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -79,11 +86,18 @@ pub fn read(path: impl AsRef<Path>) -> Vec<Record> {
 /// when present, since the downloaded corpus isn't committed.
 pub fn all() -> Vec<Record> {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../reference");
-    let out = std::env::var_os("KOKORO_REFERENCE_OUT").map_or_else(|| root.join("out"), PathBuf::from);
+    let explicit = std::env::var_os("KOKORO_REFERENCE_OUT").map(PathBuf::from);
+    let out = explicit.clone().unwrap_or_else(|| root.join("out"));
     let mut paths = vec![root.join("fixtures/hard_cases.out.jsonl")];
-    if let Ok(entries) = std::fs::read_dir(out) {
+    let entries = match std::fs::read_dir(&out) {
+        Err(e) if explicit.is_some() || e.kind() != std::io::ErrorKind::NotFound => {
+            panic!("{}: {e}", out.display())
+        }
+        entries => entries.ok(),
+    };
+    if let Some(entries) = entries {
         let mut extra: Vec<_> = entries
-            .filter_map(|e| e.ok().map(|e| e.path()))
+            .map(|e| e.unwrap_or_else(|e| panic!("{}: {e}", out.display())).path())
             .filter(|p| p.extension().is_some_and(|x| x == "jsonl") && p.file_name().is_some_and(|n| n != "hard_cases.jsonl"))
             .collect();
         extra.sort();

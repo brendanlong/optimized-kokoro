@@ -1,0 +1,19 @@
+[package]
+name = "kokoro-spacy-en"
+version = "0.1.0"
+description = "spaCy en_core_web_sm's tokenizer and tagger (tok2vec + tagger), ported to Rust for exact parity"
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+matrixmultiply = "0.3"
+regex = "1"
+safetensors = { version = "0.8", default-features = false, features = ["alloc"] }
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+kokoro-reference = { path = "../reference" }
