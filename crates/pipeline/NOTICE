@@ -1,0 +1,19 @@
+kokoro-pipeline links kokoro-espeak and kokoro-espeak-ng, which are licensed
+under the GNU General Public License, version 3 or (at your option) any later
+version, so it is distributed under the same terms; see LICENSE.
+
+Ported from kokoro (https://github.com/hexgrad/kokoro, Apache License 2.0, by
+hexgrad), at brendanlong/kokoro commit 66c8ed5: kokoro/foreign.py, and
+KPipeline.en_g2p_tokens and tokens_to_ps in kokoro/pipeline.py.
+
+Ported from Kokoro-FastAPI (https://github.com/remsky/Kokoro-FastAPI, Apache
+License 2.0), as forked at https://github.com/brendanlong/Kokoro-FastAPI, at
+the commit reference/setup.sh pins: api/src/inference/g2p.py
+(phonemize) and _word_spans in api/src/inference/kokoro_v1.py.
+
+src/vocab.rs holds the vocabulary from Kokoro-82M's config.json
+(https://huggingface.co/hexgrad/Kokoro-82M, Apache License 2.0).
+
+src/tables.rs is generated from the Unicode data in the Python `regex` package
+the reference uses (reference/gen_pipeline_tables.py), which is derived from the
+Unicode Character Database; COPYING.UCD has the Unicode terms for that data.

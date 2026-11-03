@@ -110,6 +110,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "kokoro-pipeline"
+version = "0.1.0"
+dependencies = [
+ "kokoro-espeak",
+ "kokoro-g2p-en",
+ "kokoro-reference",
+ "kokoro-spacy-en",
+ "kokoro-text",
+ "regex",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "kokoro-reference"
 version = "0.1.0"
 dependencies = [

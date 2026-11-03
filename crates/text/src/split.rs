@@ -8,6 +8,7 @@ use crate::py::{self, parse_float};
 use crate::pyre::{Pattern, compile};
 use crate::tags::{Limits, PAUSE_TAG, strip_emoji};
 use std::collections::VecDeque;
+use std::convert::Infallible;
 use std::sync::LazyLock;
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -121,34 +122,44 @@ pub enum Chunk<P> {
     Pause(f64),
 }
 
-fn phonemize<P, F: FnMut(&str) -> P>(g2p: &mut F, text: &str) -> Piece<P> {
-    Piece { text: text.to_owned(), phonemes: g2p(text) }
+fn phonemize<P, E, F: FnMut(&str) -> Result<P, E>>(g2p: &mut F, text: &str) -> Result<Piece<P>, E> {
+    Ok(Piece { text: text.to_owned(), phonemes: g2p(text)? })
 }
 
 /// `sentence_chunks`: the sentence whole, or cut at clause punctuation and repacked when its
 /// phonemes are longer than `max_tokens`.
 pub fn sentence_chunks<P: Phonemes, F: FnMut(&str) -> P>(sentence: &str, max_tokens: usize, g2p: &mut F) -> Vec<Piece<P>> {
-    let whole = phonemize(g2p, sentence);
+    let Ok(pieces) = try_sentence_chunks(sentence, max_tokens, &mut |text: &str| Ok::<_, Infallible>(g2p(text)));
+    pieces
+}
+
+/// [`sentence_chunks`] with a G2P that can fail; the first error ends the sentence.
+pub fn try_sentence_chunks<P: Phonemes, E, F: FnMut(&str) -> Result<P, E>>(
+    sentence: &str,
+    max_tokens: usize,
+    g2p: &mut F,
+) -> Result<Vec<Piece<P>>, E> {
+    let whole = phonemize(g2p, sentence)?;
     if phoneme_len(&whole.phonemes) <= max_tokens {
-        return vec![whole];
+        return Ok(vec![whole]);
     }
     let mut out = Vec::new();
     let mut group: Vec<Piece<P>> = Vec::new();
     let mut size = 0;
     for clause in clauses(sentence) {
-        let piece = phonemize(g2p, &clause);
+        let piece = phonemize(g2p, &clause)?;
         let len = phoneme_len(&piece.phonemes);
         if !group.is_empty() && size + 1 + len > max_tokens {
-            out.push(join(std::mem::take(&mut group), g2p));
+            out.push(join(std::mem::take(&mut group), g2p)?);
             size = 0;
         }
         size += len + usize::from(!group.is_empty());
         group.push(piece);
     }
     if !group.is_empty() {
-        out.push(join(group, g2p));
+        out.push(join(group, g2p)?);
     }
-    out
+    Ok(out)
 }
 
 /// `split_clauses`' texts: each clause stripped, with the punctuation that ended it.
@@ -171,9 +182,9 @@ fn clauses(sentence: &str) -> Vec<String> {
 
 /// `_join`: one piece as it is, several phonemized again as one text, since G2P reads a word
 /// differently with its neighbours.
-fn join<P, F: FnMut(&str) -> P>(mut group: Vec<Piece<P>>, g2p: &mut F) -> Piece<P> {
+fn join<P, E, F: FnMut(&str) -> Result<P, E>>(mut group: Vec<Piece<P>>, g2p: &mut F) -> Result<Piece<P>, E> {
     if group.len() == 1 {
-        return group.pop().unwrap();
+        return Ok(group.pop().unwrap());
     }
     let text = group.iter().map(|p| p.text.as_str()).collect::<Vec<_>>().join(" ");
     phonemize(g2p, &text)
@@ -181,6 +192,22 @@ fn join<P, F: FnMut(&str) -> P>(mut group: Vec<Piece<P>>, g2p: &mut F) -> Piece<
 
 /// `smart_split`: pause tags, emoji removal, line joining, normalization, then one chunk per
 /// sentence (or per packed run of clauses), phonemized once. Lazy: G2P runs as chunks are taken.
+pub fn smart_split<'a, P: Phonemes, F: FnMut(&str) -> P>(
+    text: &str,
+    lang_code: &'a str,
+    options: &'a Options,
+    limits: &'a Limits,
+    max_tokens: usize,
+    mut g2p: F,
+) -> impl Iterator<Item = Chunk<P>> + use<'a, P, F> {
+    try_smart_split(text, lang_code, options, limits, max_tokens, move |t: &str| Ok::<_, Infallible>(g2p(t)))
+        .map(|chunk| match chunk {
+            Ok(chunk) => chunk,
+        })
+}
+
+/// [`smart_split`] with a G2P that can fail. An error takes the place of the chunks of the
+/// sentence whose G2P failed; later sentences still follow.
 pub struct SmartSplit<'a, P, F> {
     parts: std::vec::IntoIter<Option<String>>,
     lang_code: &'a str,
@@ -193,7 +220,7 @@ pub struct SmartSplit<'a, P, F> {
     pending_pause: Option<String>,
 }
 
-pub fn smart_split<'a, P: Phonemes, F: FnMut(&str) -> P>(
+pub fn try_smart_split<'a, P: Phonemes, E, F: FnMut(&str) -> Result<P, E>>(
     text: &str,
     lang_code: &'a str,
     options: &'a Options,
@@ -215,7 +242,7 @@ pub fn smart_split<'a, P: Phonemes, F: FnMut(&str) -> P>(
     }
 }
 
-impl<P: Phonemes, F: FnMut(&str) -> P> SmartSplit<'_, P, F> {
+impl<P, F> SmartSplit<'_, P, F> {
     fn start_part(&mut self, raw: &str) {
         if py::strip(raw).is_empty() {
             return;
@@ -226,18 +253,21 @@ impl<P: Phonemes, F: FnMut(&str) -> P> SmartSplit<'_, P, F> {
     }
 }
 
-impl<P: Phonemes, F: FnMut(&str) -> P> Iterator for SmartSplit<'_, P, F> {
-    type Item = Chunk<P>;
+impl<P: Phonemes, E, F: FnMut(&str) -> Result<P, E>> Iterator for SmartSplit<'_, P, F> {
+    type Item = Result<Chunk<P>, E>;
 
-    fn next(&mut self) -> Option<Chunk<P>> {
+    fn next(&mut self) -> Option<Self::Item> {
         loop {
             if let Some(chunk) = self.ready.pop_front() {
-                return Some(chunk);
+                return Some(Ok(chunk));
             }
             if let Some(sentence) = self.sentences.pop_front() {
                 let sentence = py::strip(&sentence);
                 if !sentence.is_empty() {
-                    let pieces = sentence_chunks(sentence, self.max_tokens, &mut self.g2p);
+                    let pieces = match try_sentence_chunks(sentence, self.max_tokens, &mut self.g2p) {
+                        Ok(pieces) => pieces,
+                        Err(e) => return Some(Err(e)),
+                    };
                     self.ready.extend(
                         pieces.into_iter().filter(|p| !p.phonemes.phonemes().is_empty()).map(Chunk::Speech),
                     );
@@ -247,7 +277,7 @@ impl<P: Phonemes, F: FnMut(&str) -> P> Iterator for SmartSplit<'_, P, F> {
             if let Some(duration) = self.pending_pause.take() {
                 let duration = parse_float(&duration).min(self.limits.max_pause_duration_s);
                 if duration > 0.0 {
-                    return Some(Chunk::Pause(duration));
+                    return Some(Ok(Chunk::Pause(duration)));
                 }
                 continue;
             }
@@ -300,5 +330,18 @@ mod tests {
             .collect();
         assert_eq!(shape, ["aaaa, bbbb,", "cccc.", "<1.5>", "Next."]);
         assert_eq!(calls, ["aaaa, bbbb, cccc.", "aaaa,", "bbbb,", "cccc.", "aaaa, bbbb,", "Next."]);
+    }
+
+    #[test]
+    fn a_g2p_error_stands_in_for_its_sentence() {
+        let g2p = |t: &str| if t.contains('!') { Err(t.to_owned()) } else { Ok("x".repeat(t.len())) };
+        let chunks: Vec<_> =
+            try_smart_split("aaaa, bb!, cccc. Next.", "z", &Options::default(), &Limits::default(), 12, g2p)
+                .map(|c| c.map(|c| match c {
+                    Chunk::Speech(p) => p.text,
+                    Chunk::Pause(s) => format!("<{s}>"),
+                }))
+                .collect();
+        assert_eq!(chunks, [Err("aaaa, bb!, cccc.".to_owned()), Ok("Next.".to_owned())]);
     }
 }

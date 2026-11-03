@@ -1,0 +1,21 @@
+[package]
+name = "kokoro-pipeline"
+version = "0.1.0"
+description = "Text in, Kokoro phoneme chunks out: Kokoro-FastAPI's smart_split with kokoro's English G2P, foreign-script runs and vocabulary"
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+license = "GPL-3.0-or-later"
+publish = false
+
+[dependencies]
+kokoro-espeak = { path = "../espeak" }
+kokoro-g2p-en = { path = "../g2p-en" }
+kokoro-spacy-en = { path = "../spacy-en" }
+kokoro-text = { path = "../text" }
+regex = "1"
+
+[dev-dependencies]
+kokoro-reference = { path = "../reference" }
+serde.workspace = true
+serde_json.workspace = true
