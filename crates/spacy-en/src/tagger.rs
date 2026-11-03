@@ -104,8 +104,9 @@ impl<'a> SafeTensors<'a> {
     }
 }
 
-/// Output columns per block (`b`'s rows): two rows of `a` times 16 columns is 8 SSE registers of
-/// accumulators. Other shapes measured slower, some by 8× when LLVM stopped vectorizing.
+/// Output columns per block (`b`'s rows): two rows of `a` times 16 columns is 4 AVX registers of
+/// accumulators (8 with SSE only). Other shapes measured slower, some by 8× when LLVM stopped
+/// vectorizing them (PR #13); check for `vmulps`/`vaddps` in the loop if you change it.
 const NR: usize = 16;
 /// Output rows per block (`a`'s rows).
 const MR: usize = 2;

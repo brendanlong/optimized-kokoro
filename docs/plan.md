@@ -99,6 +99,14 @@ First candidates (my proposals, not decided):
 - **espeak wrapper simplifications** listed in PR #6: phonemizer's punctuation split and restore, misaki's `()`↔`«»` swap, keeping only the first output element, and the `(en)` flags.
 - **spaCy's full tagger** is only needed for the tag-dependent rules. If a smaller rule set gives the same audio, it could go, but the port is already exact and fast (0.35 ms per sentence), so this is low priority.
 
+### Unsafe code, dependencies and the CPU target
+
+**Decided (Brendan, 2026-11-03, PR #13):**
+- **No `unsafe` in our code.** Every crate has `#![forbid(unsafe_code)]`. The spaCy tagger's matmul, the one `unsafe` call (to matrixmultiply's sgemm), is now a safe blocked loop. It gives identical tags.
+- **Build for `x86-64-v3`** (AVX2, FMA), set in `.cargo/config.toml` for every build and test. The server therefore needs an **Intel Haswell or AMD Zen 1 or newer** CPU. On baseline x86-64 (SSE2), the safe matmul made the pipeline 29% slower than sgemm, which picks AVX2 at run time. Built for v3, it is 7% faster than sgemm.
+
+The server's request path also uses fewer dependencies: no axum, tower, tracing or safetensors. `deny.toml` checks licences, sources and advisories. The audit's numbers are in PR #13.
+
 ### Licensing
 
 To publish, we need one license for the combined work. Component licenses:
