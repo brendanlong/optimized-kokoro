@@ -1,0 +1,10 @@
+/espeak-ng-1.52.0/
+/espeak-ng-1.52.0.tar.gz
+/obj/
+/ttp
+/bench
+/ucddump
+/obj-asan/
+/obj-memcheck/
+/ttp-asan
+/ttp-memcheck

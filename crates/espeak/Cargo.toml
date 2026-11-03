@@ -1,0 +1,16 @@
+[package]
+name = "kokoro-espeak"
+version = "0.1.0"
+description = "misaki's espeak-ng wrappers (EspeakFallback, EspeakG2P) and phonemizer's espeak backend, on kokoro-espeak-ng"
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+license = "GPL-3.0-or-later"
+publish = false
+
+[dependencies]
+kokoro-espeak-ng = { path = "../espeak-ng" }
+
+[dev-dependencies]
+serde.workspace = true
+serde_json.workspace = true

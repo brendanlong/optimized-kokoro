@@ -1,0 +1,14 @@
+kokoro-espeak ports misaki's espeak wrappers and phonemizer's espeak backend
+to Rust, on kokoro-espeak-ng. It is free software under the GNU General Public
+License, version 3 or (at your option) any later version; see LICENSE.
+
+Ported from phonemizer-fork 3.3.2 (https://github.com/bootphon/phonemizer,
+GPL-3.0-or-later): phonemizer/punctuation.py and
+phonemizer/backend/espeak/{espeak.py,wrapper.py}
+
+  Copyright 2015-2021 Mathieu Bernard
+
+Ported from misaki 0.9.4 (https://github.com/hexgrad/misaki, Apache License
+2.0, by hexgrad): misaki/espeak.py (EspeakFallback, EspeakG2P)
+
+eSpeak NG's notices are in ../espeak-ng/NOTICE.

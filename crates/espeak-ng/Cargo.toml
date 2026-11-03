@@ -1,0 +1,15 @@
+[package]
+name = "kokoro-espeak-ng"
+version = "0.1.0"
+description = "A faithful Rust port of espeak-ng 1.52's text-to-phoneme engine, reading its compiled language data"
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+license = "GPL-3.0-or-later"
+publish = false
+
+[dependencies]
+
+[dev-dependencies]
+serde.workspace = true
+serde_json.workspace = true
