@@ -16,6 +16,8 @@ pub struct Record {
     pub sentences: Vec<String>,
     pub chunks: Vec<Chunk>,
     pub calls: Vec<Call>,
+    /// Set when the reference pipeline raised; `chunks` and `calls` then stop where it failed.
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

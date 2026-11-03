@@ -4,7 +4,7 @@ Usage (from reference/, after ./setup.sh):
     .cache/kfa/.venv/bin/python -I dump.py corpus.jsonl out.jsonl
 
 Input lines: {"id": str, "lang": "a"|"b"|"e"|"f"|"h"|"i"|"j"|"p"|"z", "text": str}
-Output lines add:
+Output lines add (and "error", when the server's pipeline raises):
     normalized   text after join_lines and the language normalizer, before sentence splitting
     sentences    the sentences smart_split phonemizes
     chunks       [{"text", "phonemes"}] exactly as smart_split yields them
@@ -161,9 +161,13 @@ async def dump(record_in):
     out["normalized"] = normalized(text, lang, options)
     out["sentences"] = [s.strip() for s in tp.sentences(out["normalized"]) if s.strip()]
     out["chunks"] = []
-    async for chunk_text, phonemes, _pause in tp.smart_split(text, lang_code=lang, normalization_options=options):
-        if phonemes is not None:
-            out["chunks"].append({"text": chunk_text, "phonemes": phonemes.phonemes})
+    try:
+        async for chunk_text, phonemes, _pause in tp.smart_split(text, lang_code=lang, normalization_options=options):
+            if phonemes is not None:
+                out["chunks"].append({"text": chunk_text, "phonemes": phonemes.phonemes})
+    except Exception as e:
+        # The deployed server fails these requests (e.g. misaki's Japanese G2P asserts on some numbers).
+        out["error"] = f"{type(e).__name__}: {e}"
     out["calls"] = list(calls)
     return out
 
