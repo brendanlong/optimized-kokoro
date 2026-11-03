@@ -275,6 +275,13 @@ mod tests {
     }
 
     #[test]
+    fn huge_placeholder_indices_are_text() {
+        // Python's int() refuses more than 4300 digits and fails the request (docs/divergences.md).
+        let text = format!("a\u{e000}{}\u{e001} b. [x](/y/) c.", "9".repeat(5000));
+        assert_eq!(sentences(&text).concat(), text);
+    }
+
+    #[test]
     fn long_sentences_split_at_clauses() {
         let mut calls = Vec::new();
         let g2p = |t: &str| {

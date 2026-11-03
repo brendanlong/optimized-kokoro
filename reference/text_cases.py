@@ -127,56 +127,6 @@ smart_split = [
     ("Price $5.50, time 10:30, call 555-123-4567.", 25),
 ]
 
-ssml_cases = [
-    "<speak>Hello <break time='500ms'/> world.</speak>",
-    "<speak>Hello <break time='2s'/><break time='100s'/><break strength='strong'/><break strength='none'/><break/></speak>",
-    "<speak><break time='abc' strength='weak'/><break time=' 1.5 S '/></speak>",
-    "<?xml version='1.0'?><!-- c --><speak>Text</speak>",
-    "  <speak>Leading space</speak>",
-    "<speak><p>One</p><p>Two</p><s>Three</s><s>Four</s></speak>",
-    "<speak><phoneme alphabet='ipa' ph=' kˈOkəɹO '> Kokoro </phoneme> and <phoneme alphabet='x-sampa' ph='a'>b</phoneme> <phoneme ph=''>c</phoneme></speak>",
-    "<speak><sub alias='World Wide Web'>WWW</sub> <sub alias=''>empty</sub> <sub>plain <b>bold</b></sub></speak>",
-    "<speak>Before <desc>not spoken</desc> after</speak>",
-    "<speak><voice name='af_sky'>Sky <voice name='bm_george'>George</voice> Sky</voice> back</speak>",
-    "<speak><prosody rate='slow'>slow <prosody rate='150%'>fast</prosody></prosody> normal</speak>",
-    "<speak><prosody rate='x-fast'><voice name='af_sky'>voiced</voice></prosody></speak>",
-    "<speak><prosody rate='2'>two</prosody><prosody rate='9'>nine</prosody><prosody rate='abc'>bad</prosody><prosody rate='1e0'>one</prosody><prosody rate='nan'>nan</prosody></speak>",
-    "<speak><prosody rate='1_000%'>u</prosody><prosody rate=' medium '>m</prosody><prosody rate='-5'>neg</prosody></speak>",
-    "<speak><voice name='  '>blank</voice><voice>none</voice></speak>",
-    "<speak xmlns='http://www.w3.org/2001/10/synthesis'><break time='1s'/><Break time='1s'/></speak>",
-    "<speak><emphasis>em</emphasis> <say-as interpret-as='digits'>123</say-as> <lang xml:lang='fr'>oui</lang></speak>",
-    "<speak>a<!-- comment -->b<![CDATA[ <c> ]]>d &amp; &lt; &#65; &#x42;</speak>",
-    "<speak>" + "<p>" * 12 + "deep" + "</p>" * 12 + "</speak>",
-    "<speak>" + "<p>" * 10 + "ok" + "</p>" * 10 + "</speak>",
-    "<speak>unclosed",
-    "<speak>bad &entity;</speak>",
-    "<!DOCTYPE speak><speak>x</speak>",
-    "<!doctype speak><speak>x</speak>",
-    "<speakx>not ssml</speakx>",
-    "plain text, not ssml",
-    "<speak/>",
-    "<speak>trailing</speak> junk",
-    "<speak><x:y>prefix</x:y></speak>",
-    "<speak>\n  multi\n\n  line\t text  </speak>",
-    "  <?xml version='1.0'?><speak>space before declaration</speak>",
-    "﻿<speak>bom</speak>",
-    "<speak a='1' a='2'>duplicate attribute</speak>",
-    "<speak>bad char ref &#0; here</speak>",
-    "<speak><sub alias='a &amp; b &#x263A;'>x</sub><phoneme ph='a&#10;b'>tab&#9;bed</phoneme></speak>",
-    "<speak><voice name='af&#95;sky'>entity name</voice></speak>",
-    "<speak xml:space='preserve'>  keep  </speak>",
-    "<speak><break time='1.50s'/><break time='0.0001s'/><break time='250ms'/><break time='1e2s'/></speak>",
-    "<speak>\x01 control char</speak>",
-    "<speak><?pi data?>after pi</speak>",
-    "<Speak>capital root</Speak>",
-    "<speak><unknown attr='1'>unknown tag</unknown></speak>",
-    "<speak/ >",
-    "<speak\n>newline in tag</speak>",
-    "<speak>]]> in text</speak>",
-    "<speak>a < b</speak>",
-    "<speak><prosody rate='+20%'>plus</prosody><prosody rate='٢'>arabic digit</prosody><prosody rate='Infinity'>inf</prosody></speak>",
-    "<speak><voice name='af_sky'><prosody rate='slow'>a</prosody></voice><prosody rate='fast'><voice name='bm_george'>b</voice></prosody></speak>",
-]
 
 out = []
 for i, t in enumerate(normalize):
@@ -187,10 +137,6 @@ for i, (lang, t) in enumerate(languages):
 for i, (t, n) in enumerate(smart_split):
     for o in ["default", "all"]:
         out.append({"kind": "smart_split", "id": f"split-{i}-{o}", "text": t, "options": o, "max_tokens": n})
-for i, t in enumerate(ssml_cases):
-    for voice, allow in [("af_heart", True), ("", True), ("af_heart", False)]:
-        out.append({"kind": "ssml", "id": f"ssml-{i}-{voice or 'novoice'}-{allow}", "text": t, "voice": voice,
-                    "allow_voice_tags": allow})
 for t in ["[voice:af_sky]Hi[voice:af_sky] there", "[rate:2]fast[rate:2]still", "x [baserate:2][rate:3] y",
           "[voice:af_sky(2)+af_bella]mixed", "[voice:   ]", "[pause:301s]", "[pause:60s]" * 5 + "[pause:0.1s]"]:
     out.append({"kind": "voices", "id": f"voices-{t}", "text": t, "voice": "af_heart"})

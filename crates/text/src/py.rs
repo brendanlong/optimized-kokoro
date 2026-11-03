@@ -37,6 +37,17 @@ pub fn digit_value(c: char) -> Option<u32> {
     DIGIT.get(i).filter(|&&(lo, _)| lo <= c).map(|&(lo, _)| (c as u32 - lo as u32) % 10)
 }
 
+/// A character's case folding as Python's IGNORECASE compares it: the simple lowercase, with
+/// i/ı, s/ſ and µ/μ equated.
+pub(crate) fn fold(c: char) -> char {
+    match c.to_lowercase().next().unwrap_or(c) {
+        'ı' => 'i',
+        'ſ' => 's',
+        'µ' => 'μ',
+        c => c,
+    }
+}
+
 /// `str.strip()` with no arguments.
 pub fn strip(s: &str) -> &str {
     s.trim_matches(is_space)
@@ -51,26 +62,16 @@ pub fn parse_float(s: &str) -> f64 {
     ascii.parse().unwrap_or_else(|_| panic!("not a decimal number: {s:?}"))
 }
 
-/// Python's `float()` on any string; `None` where it raises `ValueError`.
-pub fn float(s: &str) -> Option<f64> {
-    let chars: Vec<char> = strip(s)
-        .chars()
-        .map(|c| digit_value(c).map_or(c, |d| char::from(b'0' + d as u8)))
-        .collect();
-    let mut cleaned = String::with_capacity(chars.len());
-    for (i, &c) in chars.iter().enumerate() {
-        if c == '_' {
-            let between_digits = i > 0
-                && chars[i - 1].is_ascii_digit()
-                && chars.get(i + 1).is_some_and(|n| n.is_ascii_digit());
-            if !between_digits {
-                return None;
-            }
-        } else {
-            cleaned.push(c);
-        }
-    }
-    cleaned.parse().ok()
+/// The shortest digits that read back as `x`, as Python picks them: of the shortest strings, the
+/// one nearest `x`, ties to an even last digit. Rust's shortest form breaks those ties the other
+/// way, and its fixed-precision form rounds the exact value ties-to-even, so this takes the length
+/// from the first and the digits from the second.
+fn shortest_sci(x: f64) -> String {
+    let shortest = format!("{x:e}");
+    let mantissa = shortest.split_once('e').unwrap().0;
+    let digits = mantissa.bytes().filter(u8::is_ascii_digit).count();
+    let nearest = format!("{:.*e}", digits - 1, x);
+    if nearest.parse::<f64>() == Ok(x) { nearest } else { shortest }
 }
 
 /// `repr(float)`: the shortest round-trip digits, in exponent form below 1e-4 or from 1e16.
@@ -81,7 +82,7 @@ pub fn float_repr(x: f64) -> String {
     if x.is_infinite() {
         return if x > 0.0 { "inf" } else { "-inf" }.into();
     }
-    let sci = format!("{:e}", x);
+    let sci = shortest_sci(x);
     let (mantissa, exp) = sci.split_once('e').unwrap();
     let exp: i32 = exp.parse().unwrap();
     let (sign, mantissa) = mantissa.strip_prefix('-').map_or(("", mantissa), |m| ("-", m));
@@ -137,16 +138,33 @@ mod tests {
             (1.5e300, "1.5e+300"),
             (-3.25, "-3.25"),
             (123.456, "123.456"),
+            (624802084152476.0 + 0.25, "624802084152476.2"),
+            (-0.0, "-0.0"),
         ] {
             assert_eq!(float_repr(x), s);
         }
+    }
+
+    /// `reference/fixtures/float_repr.txt`, or `KOKORO_FLOAT_REPR` for a bigger run of the same script.
+    #[test]
+    fn float_repr_fixture() {
+        let path = std::env::var("KOKORO_FLOAT_REPR")
+            .unwrap_or_else(|_| concat!(env!("CARGO_MANIFEST_DIR"), "/../../reference/fixtures/float_repr.txt").into());
+        let text = std::fs::read_to_string(path).unwrap();
+        let mismatches: Vec<_> = text
+            .lines()
+            .filter_map(|line| {
+                let (bits, expected) = line.split_once(' ').unwrap();
+                let actual = float_repr(f64::from_bits(u64::from_str_radix(bits, 16).unwrap()));
+                (actual != expected).then(|| format!("{expected} != {actual}"))
+            })
+            .collect();
+        assert!(mismatches.is_empty(), "{} differ: {:?}", mismatches.len(), &mismatches[..mismatches.len().min(10)]);
     }
 
     #[test]
     fn digits() {
         assert_eq!(digit_value('٣'), Some(3));
         assert_eq!(digit_value('a'), None);
-        assert_eq!(float(" 1_000.5 "), Some(1000.5));
-        assert_eq!(float("1__0"), None);
     }
 }

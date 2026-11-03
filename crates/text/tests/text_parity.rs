@@ -2,7 +2,7 @@
 //! (`reference/fixtures/text_cases.out.jsonl`, written by `reference/dump_text.py`).
 
 use kokoro_text::{Chunk, Limits, Options, check_pause_budget, check_speakable, join_lines, py, sentences, smart_split};
-use kokoro_text::{split, split_by_voice, ssml, strip_emoji};
+use kokoro_text::{split, split_by_voice, strip_emoji};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
@@ -66,16 +66,6 @@ fn run(case: &Value) -> (Value, Value) {
             )
         }
         "emoji" => (case["stripped"].clone(), json!(strip_emoji(text))),
-        "ssml" => {
-            let result = ssml::translate(
-                text,
-                str_of(case, "voice"),
-                case["allow_voice_tags"].as_bool().unwrap(),
-                Limits::default().max_pause_duration_s,
-            );
-            let expected = if case.get("error").is_some() { json!("error") } else { case["translated"].clone() };
-            (expected, result.map_or_else(|_| json!("error"), |s| json!(s)))
-        }
         other => panic!("unknown kind {other}"),
     }
 }

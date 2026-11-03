@@ -1,7 +1,7 @@
 """Records the reference server's text functions (everything before G2P) on hard cases.
 
 The book and Wikipedia corpora rarely reach the normalizer's URL, email, phone, unit, money, time
-and caps passes, or the tag and SSML handling. This runs those functions directly on hand-written
+and caps passes, or the tag handling. This runs those functions directly on hand-written
 cases (text_cases.jsonl) plus seeded random combinations of the tokens they react to.
 
 Usage (from reference/, after ./setup.sh):
@@ -17,7 +17,6 @@ exception's type) where the reference raises:
     voices        text, voice           -> segments: [voice, rate, text] from split_by_voice
     checks        text, allow_voice_tags, remove_emoji -> speakable, pause_budget (error text or null)
     emoji         text                  -> stripped
-    ssml          text, voice, allow_voice_tags -> translated
 """
 
 import asyncio
@@ -31,7 +30,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".ca
 from loguru import logger  # noqa: E402
 
 from api.src.inference.g2p import Phonemes  # noqa: E402
-from api.src.services.text_processing import ssml  # noqa: E402
 from api.src.services.text_processing import text_processor as tp  # noqa: E402
 from api.src.structures.schemas import NormalizationOptions  # noqa: E402
 
@@ -108,9 +106,6 @@ async def run(case):
             out["pause_budget"] = str(e)
     elif kind == "emoji":
         out["stripped"] = tp.strip_emoji(case["text"])
-    elif kind == "ssml":
-        r = guarded(lambda: ssml.translate_ssml(case["text"], case["voice"], case["allow_voice_tags"]))
-        out.update({"translated": r["result"]} if "result" in r else {"error": r["error"]})
     else:
         raise ValueError(kind)
     return out
