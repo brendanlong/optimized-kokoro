@@ -2,6 +2,7 @@
 //!
 //! The caller supplies spaCy's tokenization and tags ([`Tagger`]) and the espeak fallback for unknown
 //! words ([`Fallback`]), which live in other crates.
+#![forbid(unsafe_code)]
 
 mod align;
 pub mod kokoro;

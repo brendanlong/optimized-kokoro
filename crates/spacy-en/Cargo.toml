@@ -9,9 +9,10 @@ license.workspace = true
 publish = false
 
 [dependencies]
-matrixmultiply = "0.3"
+# Without the default `avx512` feature: its kernel is the newest and least used, and the hosts
+# we run on (Zen 3) have none, so AVX-512 machines then run the same AVX2+FMA kernel as ours.
+matrixmultiply = { version = "0.3", default-features = false, features = ["std"] }
 regex = "1"
-safetensors = { version = "0.8", default-features = false, features = ["alloc"] }
 serde.workspace = true
 serde_json.workspace = true
 

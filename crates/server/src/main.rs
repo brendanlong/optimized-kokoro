@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 use kokoro_server::kokoro::KokoroPipelines;
 use kokoro_server::{Config, Worker, http, serve};
 use std::path::PathBuf;
@@ -25,9 +27,7 @@ async fn shutdown_signal() {
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
-        .init();
+    kokoro_server::log::init_from_env();
     let keys = std::env::var("KOKORO_API_KEYS").ok();
     let config = match config_path().and_then(|path| Config::load(path.as_deref(), keys.as_deref())) {
         Ok(config) => config,
@@ -51,7 +51,7 @@ async fn main() -> ExitCode {
         }
     };
     let worker = Worker::spawn(config.worker_settings());
-    tracing::info!("listening on {}, worker socket {}", config.listen, config.worker_socket.display());
+    kokoro_server::info!("listening on {}, worker socket {}", config.listen, config.worker_socket.display());
     let limits = serve::Limits::from(&config);
     let app = http::router(config, worker, Arc::new(pipelines));
     serve::serve(listener, app, limits, shutdown_signal()).await;

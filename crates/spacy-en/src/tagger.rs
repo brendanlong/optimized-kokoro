@@ -1,8 +1,8 @@
 //! The `tok2vec` and `tagger` components: thinc's MultiHashEmbed, MaxoutWindowEncoder and a linear
 //! output layer, in f32.
 
-use safetensors::{Dtype, SafeTensors};
 use serde::Deserialize;
+use std::collections::HashMap;
 
 /// Hyperparameters exported alongside the weights.
 #[derive(Debug, Deserialize)]
@@ -52,17 +52,84 @@ pub(crate) struct Tagger {
     width: usize,
 }
 
-fn tensor(st: &SafeTensors, name: &str, shape: &[usize]) -> Vec<f32> {
-    let t = st.tensor(name).unwrap_or_else(|e| panic!("{name}: {e}"));
-    assert_eq!(t.dtype(), Dtype::F32, "{name}");
-    assert_eq!(t.shape(), shape, "{name}");
-    t.data().chunks_exact(4).map(|b| f32::from_le_bytes(b.try_into().unwrap())).collect()
+/// One tensor's entry in a safetensors header.
+#[derive(Deserialize)]
+struct TensorInfo {
+    dtype: String,
+    shape: Vec<usize>,
+    data_offsets: (usize, usize),
+}
+
+/// A safetensors file (8-byte little-endian header length, JSON header, then the data), read
+/// only as far as the tagger needs: little-endian `F32` tensors by name. The file is the bundled
+/// `data/tagger.safetensors`, so any inconsistency is a bug and panics.
+struct SafeTensors<'a> {
+    tensors: HashMap<String, TensorInfo>,
+    data: &'a [u8],
+}
+
+impl<'a> SafeTensors<'a> {
+    fn parse(bytes: &'a [u8]) -> Self {
+        let (len, rest) = bytes.split_first_chunk::<8>().expect("safetensors: no header length");
+        let len = usize::try_from(u64::from_le_bytes(*len)).expect("safetensors: header length");
+        assert!(len <= rest.len(), "safetensors: header length {len} past the end of the file");
+        let (header, data) = rest.split_at(len);
+        let mut entries: HashMap<String, serde_json::Value> =
+            serde_json::from_slice(header).unwrap_or_else(|e| panic!("safetensors header: {e}"));
+        entries.remove("__metadata__");
+        let tensors = entries
+            .into_iter()
+            .map(|(name, entry)| {
+                let info: TensorInfo = serde_json::from_value(entry).unwrap_or_else(|e| panic!("{name}: {e}"));
+                (name, info)
+            })
+            .collect();
+        SafeTensors { tensors, data }
+    }
+
+    fn shape(&self, name: &str) -> Option<&[usize]> {
+        self.tensors.get(name).map(|t| t.shape.as_slice())
+    }
+
+    /// The `F32` tensor `name`, which must have shape `shape`.
+    fn tensor(&self, name: &str, shape: &[usize]) -> Vec<f32> {
+        let t = self.tensors.get(name).unwrap_or_else(|| panic!("{name}: missing"));
+        assert_eq!(t.dtype, "F32", "{name}");
+        assert_eq!(t.shape, shape, "{name}");
+        let (start, end) = t.data_offsets;
+        let bytes = self.data.get(start..end).unwrap_or_else(|| panic!("{name}: data {start}..{end} out of bounds"));
+        let elements = shape.iter().try_fold(1usize, |n, &d| n.checked_mul(d));
+        assert_eq!(elements.and_then(|n| n.checked_mul(4)), Some(bytes.len()), "{name}: data size");
+        bytes.chunks_exact(4).map(|b| f32::from_le_bytes(b.try_into().unwrap())).collect()
+    }
 }
 
 /// `c = a · bᵀ` for row-major `a: (m, k)`, `b: (n, k)` with row stride `b_stride`, `c: (m, n)`.
+///
+/// The crate's only `unsafe`: matrixmultiply's `sgemm` takes raw pointers and strides. A safe
+/// blocked loop gives the same tags, but on the default x86-64 target (SSE2, no FMA) it made the
+/// pipeline 34% slower than sgemm, which picks AVX2+FMA at run time (PR #13).
+#[allow(unsafe_code)]
 fn matmul_bt(a: &[f32], b: &[f32], b_stride: usize, c: &mut [f32], m: usize, k: usize, n: usize) {
-    assert!(a.len() >= m * k && c.len() >= m * n && b.len() >= (n - 1) * b_stride + k);
-    // SAFETY: the asserts above bound every element the strides reach.
+    if m == 0 || n == 0 {
+        return;
+    }
+    if k == 0 {
+        c[..m * n].fill(0.0);
+        return;
+    }
+    // Every element sgemm reads or writes is below these ends: a[i * k + t], b[j * b_stride + t]
+    // and c[i * n + j] for i < m, j < n, t < k. Each is computed without overflow, and isize
+    // holds every stride (the slices' lengths are at most isize::MAX elements).
+    let a_end = m.checked_mul(k).expect("a's size");
+    let b_end = (n - 1).checked_mul(b_stride).and_then(|x| x.checked_add(k)).expect("b's size");
+    let c_end = m.checked_mul(n).expect("c's size");
+    assert!(b_stride >= k, "b's rows overlap");
+    assert!(a.len() >= a_end && b.len() >= b_end && c.len() >= c_end, "matmul operands too short");
+    let (k_s, b_s, n_s) = (isize::try_from(k), isize::try_from(b_stride), isize::try_from(n));
+    let (Ok(k_s), Ok(b_s), Ok(n_s)) = (k_s, b_s, n_s) else { panic!("matmul strides") };
+    // SAFETY: m, k, n > 0 and the asserts above bound every element the strides reach, inside
+    // `a` and `b` (read) and `c` (written; it doesn't alias them, being a `&mut`).
     unsafe {
         matrixmultiply::sgemm(
             m,
@@ -70,14 +137,14 @@ fn matmul_bt(a: &[f32], b: &[f32], b_stride: usize, c: &mut [f32], m: usize, k: 
             n,
             1.0,
             a.as_ptr(),
-            k as isize,
+            k_s,
             1,
             b.as_ptr(),
             1,
-            b_stride as isize,
+            b_s,
             0.0,
             c.as_mut_ptr(),
-            n as isize,
+            n_s,
             1,
         );
     }
@@ -86,9 +153,9 @@ fn matmul_bt(a: &[f32], b: &[f32], b_stride: usize, c: &mut [f32], m: usize, k: 
 impl Activation {
     fn load(st: &SafeTensors, name: &str, width: usize) -> Self {
         Activation {
-            b: tensor(st, &format!("{name}.b"), &[width * PIECES]),
-            g: tensor(st, &format!("{name}.G"), &[width]),
-            beta: tensor(st, &format!("{name}.bias"), &[width]),
+            b: st.tensor(&format!("{name}.b"), &[width * PIECES]),
+            g: st.tensor(&format!("{name}.G"), &[width]),
+            beta: st.tensor(&format!("{name}.bias"), &[width]),
         }
     }
 
@@ -120,27 +187,27 @@ impl Tagger {
         assert_eq!(meta.features, FEATURES, "feature columns");
         assert_eq!(meta.embed_columns, (0..FEATURES.len()).collect::<Vec<_>>(), "embedding columns");
         assert_eq!((meta.window, meta.pieces), (1, PIECES), "encoder shape");
-        let st = SafeTensors::deserialize(weights).expect("tagger weights");
-        let width = st.tensor("mix.G").expect("mix.G").shape()[0];
+        let st = SafeTensors::parse(weights);
+        let width = st.shape("mix.G").expect("mix.G")[0];
         let n_mix_in = width * meta.embed_seeds.len();
-        let mix_w = tensor(&st, "mix.W", &[width * PIECES, n_mix_in]);
+        let mix_w = st.tensor("mix.W", &[width * PIECES, n_mix_in]);
         let embeds = meta
             .embed_seeds
             .iter()
             .enumerate()
             .map(|(i, &seed)| {
                 let name = format!("embed.{i}.E");
-                let rows = st.tensor(&name).expect("embedding").shape()[0];
-                let table = tensor(&st, &name, &[rows, width]);
+                let rows = st.shape(&name).expect("embedding")[0];
+                let table = st.tensor(&name, &[rows, width]);
                 let mut projected = vec![0f32; rows * width * PIECES];
                 matmul_bt(&table, &mix_w[i * width..], n_mix_in, &mut projected, rows, width, width * PIECES);
                 Embed { projected, rows: rows as u32, seed }
             })
             .collect();
         let encode: Vec<_> = (0..)
-            .map_while(|i| st.tensor(&format!("encode.{i}.W")).is_ok().then_some(i))
+            .map_while(|i| st.shape(&format!("encode.{i}.W")).is_some().then_some(i))
             .map(|i| Conv {
-                w: tensor(&st, &format!("encode.{i}.W"), &[width * PIECES, width * 3]),
+                w: st.tensor(&format!("encode.{i}.W"), &[width * PIECES, width * 3]),
                 act: Activation::load(&st, &format!("encode.{i}"), width),
             })
             .collect();
@@ -150,8 +217,8 @@ impl Tagger {
             embeds,
             mix: Activation::load(&st, "mix", width),
             encode,
-            out_w: tensor(&st, "tagger.W", &[n_tags, width]),
-            out_b: tensor(&st, "tagger.b", &[n_tags]),
+            out_w: st.tensor("tagger.W", &[n_tags, width]),
+            out_b: st.tensor("tagger.b", &[n_tags]),
             width,
         }
     }
@@ -221,4 +288,70 @@ pub(crate) fn argmax(xs: &[f32]) -> usize {
         }
     }
     best
+}
+
+#[cfg(test)]
+mod tests {
+    use super::matmul_bt;
+
+    /// A deterministic spread of values in [-1, 1).
+    fn values(n: usize, seed: u32) -> Vec<f32> {
+        let mut x = seed.wrapping_mul(2_654_435_761) | 1;
+        (0..n)
+            .map(|_| {
+                x ^= x << 13;
+                x ^= x >> 17;
+                x ^= x << 5;
+                (x >> 8) as f32 / (1 << 23) as f32 - 1.0
+            })
+            .collect()
+    }
+
+    /// sgemm against a plain f64 loop at the tagger's shapes, with row counts that aren't
+    /// multiples of the kernels' blocks, a padded stride, and output past `m * n` left alone.
+    #[test]
+    fn matmul_matches_a_plain_loop() {
+        for (k, n, b_stride) in [(96, 50, 96), (288, 288, 288), (96, 288, 576), (5, 3, 7)] {
+            for m in [0, 1, 2, 7, 16, 33, 100] {
+                let a = values(m * k, 1);
+                let b = values((n - 1) * b_stride + k, 2);
+                let mut c = vec![f32::NAN; m * n + 3];
+                matmul_bt(&a, &b, b_stride, &mut c, m, k, n);
+                for i in 0..m {
+                    for j in 0..n {
+                        let want: f64 = (0..k).map(|t| f64::from(a[i * k + t]) * f64::from(b[j * b_stride + t])).sum();
+                        let got = f64::from(c[i * n + j]);
+                        assert!((got - want).abs() < 1e-4, "m={m} k={k} n={n} ({i}, {j}): {got} vs {want}");
+                    }
+                }
+                assert!(c[m * n..].iter().all(|x| x.is_nan()), "wrote past the output");
+            }
+        }
+    }
+
+    #[test]
+    fn empty_dimensions() {
+        let mut c = vec![f32::NAN; 6];
+        matmul_bt(&[], &[], 0, &mut c, 2, 0, 3);
+        assert!(c.iter().all(|&x| x == 0.0), "k = 0 gives zeros");
+        let mut c = vec![f32::NAN; 1];
+        matmul_bt(&[], &[1.0], 1, &mut c, 0, 1, 1);
+        matmul_bt(&[1.0], &[], 1, &mut c, 1, 1, 0);
+        assert!(c[0].is_nan(), "nothing to write");
+    }
+
+    #[test]
+    #[should_panic(expected = "too short")]
+    fn short_operands_panic() {
+        let mut c = vec![0.0; 4];
+        matmul_bt(&[1.0; 4], &[1.0; 3], 2, &mut c, 2, 2, 2);
+    }
+
+    #[test]
+    #[should_panic(expected = "b's size")]
+    fn overflowing_strides_panic() {
+        // 2 * (usize::MAX / 2) + 2 overflows, and wrapped it would be 0.
+        let mut c = vec![0.0; 6];
+        matmul_bt(&[1.0; 4], &[1.0; 4], usize::MAX / 2, &mut c, 2, 2, 3);
+    }
 }

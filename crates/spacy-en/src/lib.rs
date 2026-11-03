@@ -3,6 +3,8 @@
 //! en_core_web_sm 3.8.0. Each token's `text`, `tag_` and `whitespace_` match spaCy's.
 //!
 //! The model data in `data/` is exported from the installed package by `export.py`.
+// The one exception is `tagger::matmul_bt`, which calls matrixmultiply's sgemm.
+#![deny(unsafe_code)]
 
 mod hash;
 mod patterns;
