@@ -18,5 +18,5 @@ mod tables;
 pub mod tags;
 
 pub use normalize::{Normalizer, Options};
-pub use split::{Chunk, DEFAULT_MAX_TOKENS, Phonemes, Piece, SmartSplit, join_lines, sentences, smart_split};
+pub use split::{Chunk, DEFAULT_MAX_TOKENS, Phonemes, Piece, SmartSplit, join_lines, sentences, smart_split, try_smart_split};
 pub use tags::{Limits, Rejected, VoiceSegment, check_pause_budget, check_speakable, split_by_voice, strip_emoji};
