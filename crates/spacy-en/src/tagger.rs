@@ -38,8 +38,8 @@ struct Activation {
 
 /// `expand_window >> Maxout >> LayerNorm`, used residually.
 struct Conv {
-    /// `(width * PIECES, 3 * width)`, row-major.
-    w: Vec<f32>,
+    /// `(width * PIECES, 3 * width)`.
+    w: Packed,
     act: Activation,
 }
 
@@ -47,7 +47,7 @@ pub(crate) struct Tagger {
     embeds: Vec<Embed>,
     mix: Activation,
     encode: Vec<Conv>,
-    out_w: Vec<f32>,
+    out_w: Packed,
     out_b: Vec<f32>,
     width: usize,
 }
@@ -104,50 +104,72 @@ impl<'a> SafeTensors<'a> {
     }
 }
 
-/// `c = a · bᵀ` for row-major `a: (m, k)`, `b: (n, k)` with row stride `b_stride`, `c: (m, n)`.
+/// Output columns per block (`b`'s rows): two rows of `a` times 16 columns is 8 SSE registers of
+/// accumulators. Other shapes measured slower, some by 8× when LLVM stopped vectorizing.
+const NR: usize = 16;
+/// Output rows per block (`a`'s rows).
+const MR: usize = 2;
+
+/// `bᵀ` for [`matmul`], from row-major `b: (n, k)`: column blocks of `NR`, each a `(k, NR)` panel
+/// (zero-padded past `n`).
+struct Packed {
+    panels: Vec<[f32; NR]>,
+    k: usize,
+    n: usize,
+}
+
+impl Packed {
+    /// Packs `b: (n, k)`, whose rows start `b_stride` apart.
+    fn new(b: &[f32], b_stride: usize, k: usize, n: usize) -> Self {
+        let row = |j: usize| &b[j * b_stride..][..k];
+        let mut panels = Vec::with_capacity(n.div_ceil(NR) * k);
+        for j in (0..n).step_by(NR) {
+            for t in 0..k {
+                panels.push(std::array::from_fn(|l| if j + l < n { row(j + l)[t] } else { 0.0 }));
+            }
+        }
+        Packed { panels, k, n }
+    }
+}
+
+/// `c = a · bᵀ` for row-major `a: (m, k)` and `c: (m, n)`.
 ///
-/// The crate's only `unsafe`: matrixmultiply's `sgemm` takes raw pointers and strides. A safe
-/// blocked loop gives the same tags, but on the default x86-64 target (SSE2, no FMA) it made the
-/// pipeline 29% slower than sgemm, which picks AVX2+FMA at run time (PR #13).
-#[allow(unsafe_code)]
-fn matmul_bt(a: &[f32], b: &[f32], b_stride: usize, c: &mut [f32], m: usize, k: usize, n: usize) {
-    if m == 0 || n == 0 {
-        return;
-    }
+/// Every output is summed in order over `k` from zero, without FMA, so the result is the same
+/// whatever the blocking or the target's vector width.
+fn matmul(a: &[f32], m: usize, b: &Packed, c: &mut [f32]) {
+    let (k, n) = (b.k, b.n);
+    let a = &a[..m * k];
+    let c = &mut c[..m * n];
     if k == 0 {
-        c[..m * n].fill(0.0);
+        c.fill(0.0);
         return;
     }
-    // Every element sgemm reads or writes is below these ends: a[i * k + t], b[j * b_stride + t]
-    // and c[i * n + j] for i < m, j < n, t < k. Each is computed without overflow, and isize
-    // holds every stride (the slices' lengths are at most isize::MAX elements).
-    let a_end = m.checked_mul(k).expect("a's size");
-    let b_end = (n - 1).checked_mul(b_stride).and_then(|x| x.checked_add(k)).expect("b's size");
-    let c_end = m.checked_mul(n).expect("c's size");
-    assert!(b_stride >= k, "b's rows overlap");
-    assert!(a.len() >= a_end && b.len() >= b_end && c.len() >= c_end, "matmul operands too short");
-    let (k_s, b_s, n_s) = (isize::try_from(k), isize::try_from(b_stride), isize::try_from(n));
-    let (Ok(k_s), Ok(b_s), Ok(n_s)) = (k_s, b_s, n_s) else { panic!("matmul strides") };
-    // SAFETY: m, k, n > 0 and the asserts above bound every element the strides reach, inside
-    // `a` and `b` (read) and `c` (written; it doesn't alias them, being a `&mut`).
-    unsafe {
-        matrixmultiply::sgemm(
-            m,
-            k,
-            n,
-            1.0,
-            a.as_ptr(),
-            k_s,
-            1,
-            b.as_ptr(),
-            1,
-            b_s,
-            0.0,
-            c.as_mut_ptr(),
-            n_s,
-            1,
-        );
+    let mut a_panel = vec![[0f32; MR]; k];
+    for (i, a_rows) in (0..m).step_by(MR).zip(a.chunks(MR * k)) {
+        let rows = a_rows.len() / k;
+        for (t, v) in a_panel.iter_mut().enumerate() {
+            *v = std::array::from_fn(|r| if r < rows { a_rows[r * k + t] } else { 0.0 });
+        }
+        for (j, b_panel) in (0..n).step_by(NR).zip(b.panels.chunks_exact(k)) {
+            let mut acc = [[0f32; NR]; MR];
+            for (av, bv) in a_panel.iter().zip(b_panel) {
+                for (acc, &a) in acc.iter_mut().zip(av) {
+                    for (acc, &b) in acc.iter_mut().zip(bv) {
+                        *acc += a * b;
+                    }
+                }
+            }
+            let cols = NR.min(n - j);
+            for (r, acc) in acc.iter().take(rows).enumerate() {
+                c[(i + r) * n + j..][..cols].copy_from_slice(&acc[..cols]);
+            }
+        }
     }
+}
+
+/// `c = a · bᵀ` for row-major `a: (m, k)`, `b: (n, k)` with row stride `b_stride`, `c: (m, n)`.
+fn matmul_bt(a: &[f32], b: &[f32], b_stride: usize, c: &mut [f32], m: usize, k: usize, n: usize) {
+    matmul(a, m, &Packed::new(b, b_stride, k, n), c);
 }
 
 impl Activation {
@@ -207,7 +229,12 @@ impl Tagger {
         let encode: Vec<_> = (0..)
             .map_while(|i| st.shape(&format!("encode.{i}.W")).is_some().then_some(i))
             .map(|i| Conv {
-                w: st.tensor(&format!("encode.{i}.W"), &[width * PIECES, width * 3]),
+                w: Packed::new(
+                    &st.tensor(&format!("encode.{i}.W"), &[width * PIECES, width * 3]),
+                    width * 3,
+                    width * 3,
+                    width * PIECES,
+                ),
                 act: Activation::load(&st, &format!("encode.{i}"), width),
             })
             .collect();
@@ -217,7 +244,7 @@ impl Tagger {
             embeds,
             mix: Activation::load(&st, "mix", width),
             encode,
-            out_w: st.tensor("tagger.W", &[n_tags, width]),
+            out_w: Packed::new(&st.tensor("tagger.W", &[n_tags, width]), width, width, n_tags),
             out_b: st.tensor("tagger.b", &[n_tags]),
             width,
         }
@@ -261,7 +288,7 @@ impl Tagger {
             for (i, col) in (lo..hi).zip(cols.chunks_exact_mut(3 * w)) {
                 col.copy_from_slice(&x[(i - 1) * w..(i + 2) * w]);
             }
-            matmul_bt(&cols, &conv.w, 3 * w, &mut pre, rows, 3 * w, wp);
+            matmul(&cols, rows, &conv.w, &mut pre);
             conv.act.apply(&pre[..rows * wp], &mut y[..rows * w]);
             for (x, y) in x[lo * w..hi * w].iter_mut().zip(&y) {
                 *x += y;
@@ -269,7 +296,7 @@ impl Tagger {
         }
         let tags = self.n_tags();
         let mut scores = vec![0f32; n * tags];
-        matmul_bt(&x[pad * w..], &self.out_w, w, &mut scores, n, w, tags);
+        matmul(&x[pad * w..], n, &self.out_w, &mut scores);
         for s in scores.chunks_exact_mut(tags) {
             for (s, b) in s.iter_mut().zip(&self.out_b) {
                 *s += b;
@@ -307,7 +334,7 @@ mod tests {
             .collect()
     }
 
-    /// sgemm against a plain f64 loop at the tagger's shapes, with row counts that aren't
+    /// The blocked loop against a plain f64 loop at the tagger's shapes, with row counts that aren't
     /// multiples of the kernels' blocks, a padded stride, and output past `m * n` left alone.
     #[test]
     fn matmul_matches_a_plain_loop() {
@@ -338,20 +365,5 @@ mod tests {
         matmul_bt(&[], &[1.0], 1, &mut c, 0, 1, 1);
         matmul_bt(&[1.0], &[], 1, &mut c, 1, 1, 0);
         assert!(c[0].is_nan(), "nothing to write");
-    }
-
-    #[test]
-    #[should_panic(expected = "too short")]
-    fn short_operands_panic() {
-        let mut c = vec![0.0; 4];
-        matmul_bt(&[1.0; 4], &[1.0; 3], 2, &mut c, 2, 2, 2);
-    }
-
-    #[test]
-    #[should_panic(expected = "b's size")]
-    fn overflowing_strides_panic() {
-        // 2 * (usize::MAX / 2) + 2 overflows, and wrapped it would be 0.
-        let mut c = vec![0.0; 6];
-        matmul_bt(&[1.0; 4], &[1.0; 4], usize::MAX / 2, &mut c, 2, 2, 3);
     }
 }
