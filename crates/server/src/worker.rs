@@ -385,11 +385,11 @@ impl Worker {
                 match UnixStream::connect(&settings.socket).await {
                     Ok(stream) => {
                         if let Err(e) = serve(stream, &tx, &settings, &task_gauge).await {
-                            tracing::warn!("{e}");
+                            crate::warn!("{e}");
                         }
                         tx.send_replace(None);
                     }
-                    Err(e) => tracing::debug!("connecting to the worker at {}: {e}", settings.socket.display()),
+                    Err(e) => crate::debug!("connecting to the worker at {}: {e}", settings.socket.display()),
                 }
                 if tx.is_closed() {
                     return;
@@ -438,7 +438,7 @@ async fn serve(
         )));
     }
     let slots = settings.slots.min(hello.slots);
-    tracing::info!("worker connected: {} voices, max batch {}, {slots} slots", hello.voices.len(), hello.max_batch);
+    crate::info!("worker connected: {} voices, max batch {}, {slots} slots", hello.voices.len(), hello.max_batch);
     let (out_tx, mut out_rx) = mpsc::channel::<Vec<u8>>(3 * usize::from(slots));
 
     let connection = Arc::new(Connection::new(hello, out_tx, slots, gauge.clone()));

@@ -98,7 +98,7 @@ fn produce(pipeline: &dyn Pipeline, speech: &Speech, out: &mpsc::Sender<Produced
         let units = match chunk {
             Ok(chunk) => units(chunk, speech),
             Err(PipelineError::Unsupported(why)) => {
-                tracing::warn!("skipping a sentence: {why}");
+                crate::warn!("skipping a sentence: {why}");
                 continue;
             }
             Err(e) => {
@@ -121,24 +121,25 @@ enum Output {
     End,
 }
 
-/// PCM that stays counted in the server's audio gauge until the bytes are dropped, which for a
-/// response body is once hyper has written them.
+/// 16-bit little-endian PCM that stays counted in the server's audio gauge until the bytes are
+/// dropped, which for a response body is once hyper has written them.
 struct Pcm {
-    samples: Vec<i16>,
+    bytes: Vec<u8>,
     _held: HeldAudio,
 }
 
 impl AsRef<[u8]> for Pcm {
     fn as_ref(&self) -> &[u8] {
-        bytemuck::cast_slice(&self.samples)
+        &self.bytes
     }
 }
 
-fn pcm_bytes(mut samples: Vec<i16>, held: HeldAudio) -> Bytes {
-    for s in &mut samples {
-        *s = s.to_le();
+fn pcm_bytes(samples: &[i16], held: HeldAudio) -> Bytes {
+    let mut bytes = Vec::with_capacity(2 * samples.len());
+    for s in samples {
+        bytes.extend_from_slice(&s.to_le_bytes());
     }
-    Bytes::from_owner(Pcm { samples, _held: held })
+    Bytes::from_owner(Pcm { bytes, _held: held })
 }
 
 /// A request's PCM, in order. It holds the request's admission permits, so they're released only
@@ -227,19 +228,17 @@ async fn drive(
             biased;
             _ = out.closed() => Err(ClientGone),
             done = window.next(), if !window.is_empty() => match done.expect("window isn't empty") {
-                Done::Silence(n) => send(pcm_bytes(vec![0; n], connection.gauge().hold(2 * n))).await,
+                Done::Silence(n) => send(Bytes::from_owner(Pcm { bytes: vec![0; 2 * n], _held: connection.gauge().hold(2 * n) })).await,
                 Done::Speech(result, finish) => {
                     speech_in_window -= 1;
                     let synth = result.map_err(StreamError::Synth)?;
-                    let mut pcm = match &finish.stitch {
+                    let pcm = match &finish.stitch {
                         Some((plan, index)) => stitcher.piece(plan, *index, synth.pcm, &synth.durations),
                         None => synth.pcm,
                     };
 
                     let range = trim_range(&pcm, &finish.text, finish.speed);
-                    pcm.truncate(range.end);
-                    pcm.drain(..range.start);
-                    send(pcm_bytes(pcm, synth.held)).await
+                    send(pcm_bytes(&pcm[range], synth.held)).await
                 }
             },
             produced = units.recv(), if !exhausted && window.len() < lookahead => {

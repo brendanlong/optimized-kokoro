@@ -3,9 +3,9 @@
 //! connections), how many requests one connection serves, and how much hyper buffers.
 
 use crate::config::Config;
-use axum::Router;
-use axum::body::Body;
-use axum::http::{HeaderValue, Request, header};
+use crate::http::App;
+use hyper::Request;
+use hyper::header::{self, HeaderValue};
 use hyper::body::Incoming;
 use hyper::server::conn::http1;
 use hyper_util::rt::{TokioIo, TokioTimer};
@@ -17,7 +17,6 @@ use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::sync::{Semaphore, watch};
 use tokio::task::JoinSet;
-use tower::ServiceExt;
 
 /// hyper's read buffer per connection, which bounds a request's headers and how much of a body it
 /// reads ahead of the app.
@@ -44,7 +43,7 @@ impl From<&Config> for Limits {
 
 /// Serves `app` until `shutdown` resolves, then gives open connections `shutdown_grace` to finish
 /// their requests before dropping them.
-pub async fn serve(listener: TcpListener, app: Router, limits: Limits, shutdown: impl Future<Output = ()>) {
+pub async fn serve(listener: TcpListener, app: App, limits: Limits, shutdown: impl Future<Output = ()>) {
     let slots = Arc::new(Semaphore::new(limits.max_connections));
     let (closing_tx, closing_rx) = watch::channel(false);
     let mut connections = JoinSet::new();
@@ -62,7 +61,7 @@ pub async fn serve(listener: TcpListener, app: Router, limits: Limits, shutdown:
                 Ok((stream, _)) => stream,
                 Err(e) => {
                     // Typically out of file descriptors; accepting again at once would spin.
-                    tracing::warn!("accepting a connection: {e}");
+                    crate::warn!("accepting a connection: {e}");
                     tokio::time::sleep(Duration::from_secs(1)).await;
                     continue;
                 }
@@ -76,7 +75,7 @@ pub async fn serve(listener: TcpListener, app: Router, limits: Limits, shutdown:
                 let app = app.clone();
                 let last = served.fetch_add(1, Ordering::Relaxed) + 1 >= limits.max_requests_per_connection;
                 async move {
-                    let mut response = app.oneshot(request.map(Body::new)).await?;
+                    let mut response = app.handle(request).await;
                     if last {
                         response.headers_mut().insert(header::CONNECTION, HeaderValue::from_static("close"));
                     }
@@ -95,7 +94,7 @@ pub async fn serve(listener: TcpListener, app: Router, limits: Limits, shutdown:
                 }
             };
             if let Err(e) = result {
-                tracing::debug!("connection ended: {e}");
+                crate::debug!("connection ended: {e}");
             }
             drop(permit);
         });
@@ -106,7 +105,7 @@ pub async fn serve(listener: TcpListener, app: Router, limits: Limits, shutdown:
     })
     .await;
     if drained.is_err() {
-        tracing::warn!("dropping {} connections still open after the shutdown grace period", connections.len());
+        crate::warn!("dropping {} connections still open after the shutdown grace period", connections.len());
         connections.shutdown().await;
     }
 }

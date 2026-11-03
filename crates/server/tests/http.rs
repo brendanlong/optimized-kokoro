@@ -32,11 +32,37 @@ async fn health_and_voices_follow_the_worker() {
     assert_eq!(health.status(), 200);
     assert_eq!(json_body(health).await, json!({ "status": "healthy" }));
     let voices = request(server.addr, get("/v1/audio/voices", Some(KEY))).await;
-    assert_eq!(json_body(voices).await, json!({ "voices": VOICES }));
+    // Only the voices whose language the server speaks: the worker also has `jf_alpha`.
+    assert!(VOICES.contains(&"jf_alpha"));
+    let english: Vec<_> = VOICES.iter().filter(|v| v.starts_with(['a', 'b'])).collect();
+    assert_eq!(json_body(voices).await, json!({ "voices": english }));
     assert_eq!(request(server.addr, get("/v1/audio/voices", None)).await.status(), 401);
     assert_eq!(request(server.addr, get("/v1/audio/voices", Some("nope"))).await.status(), 401);
     assert_eq!(request(server.addr, get("/v1/audio/voices", Some("other-key"))).await.status(), 200);
     assert_eq!(request(server.addr, get("/docs", Some(KEY))).await.status(), 404);
+    assert_eq!(request(server.addr, get("/v1/audio/voices/", Some(KEY))).await.status(), 404);
+}
+
+#[tokio::test]
+async fn other_methods_are_refused_before_the_key_is_checked() {
+    let server = start(|_| {}, Arc::new(StubPipeline)).await;
+    let with_method = |method: &str, path: &str| {
+        let mut req = get(path, None);
+        *req.method_mut() = method.parse().unwrap();
+        req
+    };
+    for (method, path, allow) in [
+        ("POST", "/health", "GET,HEAD"),
+        ("DELETE", "/v1/audio/voices", "GET,HEAD"),
+        ("GET", "/v1/audio/speech", "POST"),
+        ("PUT", "/v1/audio/speech", "POST"),
+    ] {
+        let response = request(server.addr, with_method(method, path)).await;
+        assert_eq!(response.status(), 405, "{method} {path}");
+        assert_eq!(response.headers()["allow"], allow, "{method} {path}");
+    }
+    let head = request(server.addr, with_method("HEAD", "/v1/audio/voices")).await;
+    assert_eq!(head.status(), 401);
 }
 
 /// The server answers 401 to a request whose body never arrives, so it can't have read it.
