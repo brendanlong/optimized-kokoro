@@ -247,9 +247,13 @@ fn restore(mut text: Vec<String>, marks: &[Mark]) -> Vec<String> {
                     if text.len() == 1 {
                         text[0].push_str(mark);
                     } else {
-                        let first = text.pop().unwrap();
-                        let next = text.last_mut().unwrap();
-                        next.insert_str(0, &(first + mark));
+                        // Python's `text[1] = text[0] + mark + text[1]`, growing the joined line in
+                        // place so that a run of inner marks takes linear time.
+                        let mut first = text.pop().unwrap();
+                        let next = text.pop().unwrap();
+                        first.push_str(mark);
+                        first.push_str(&next);
+                        text.push(first);
                     }
                 }
             }

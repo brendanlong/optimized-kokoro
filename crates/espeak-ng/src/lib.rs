@@ -79,19 +79,24 @@ impl Espeak {
 
     /// Calls `espeak_TextToPhonemes` until the text is used up, as phonemizer does, returning
     /// each clause's phonemes.
+    ///
+    /// C decodes the remaining text again on each call. The UTF-8 decoder carries no state
+    /// between characters, so decoding once and continuing from where the last clause stopped
+    /// gives the same characters, in time linear in the length of the text.
     pub fn text_to_phonemes(&mut self, text: &str, phoneme_mode: i32) -> Vec<String> {
         let mut out = Vec::new();
-        let mut rest: Option<&[u8]> = Some(text.as_bytes());
-        while let Some(t) = rest {
-            match self.text_to_phonemes_clause(t, phoneme_mode) {
-                Some((ph, r)) => {
-                    out.push(ph);
-                    rest = r;
-                }
-                None => break,
+        if !self.voice_loaded || self.translator.is_none() {
+            return out;
+        }
+        self.decoder.decode_string(text.as_bytes());
+        loop {
+            self.translate_clause(Tr::Main);
+            let done = self.decoder.remaining().is_none();
+            out.push(String::from_utf8_lossy(&self.get_translated_phoneme_string(phoneme_mode)).into_owned());
+            if done {
+                return out;
             }
         }
-        out
     }
 
     /// The last clause's `phoneme_list`, one entry per line, for comparing with C while debugging.
