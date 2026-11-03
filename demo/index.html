@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kokoro streaming demo</title>
+<link rel="icon" href="data:,">
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; max-width: 42rem; margin: 2rem auto; padding: 0 1rem; }
+  textarea { width: 100%; min-height: 10rem; font: inherit; box-sizing: border-box; }
+  .controls { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin: 0.75rem 0; }
+  button { font: inherit; padding: 0.4rem 1rem; }
+  #status { color: #555; min-height: 3em; }
+</style>
+</head>
+<body>
+<h1>Kokoro streaming demo</h1>
+<p>Text goes to the optimized-kokoro server, which streams 24 kHz PCM back as each sentence is rendered. This page encodes it to AAC or Opus in fragmented MP4 and plays it through Media Source Extensions.</p>
+<textarea id="text">The quick brown fox jumps over the lazy dog. This page streams speech from the optimized Kokoro server: each sentence plays as soon as it's rendered, while the rest are still on the GPU. Dr. Smith paid $1,234.56 on Jan. 5th, 2024.</textarea>
+<div class="controls">
+  <label>Voice <select id="voice"></select></label>
+  <label>Speed <input id="speed" type="range" min="0.5" max="2" step="0.05" value="1"> <span id="speed-label">1.00×</span></label>
+  <button id="speak">Speak</button>
+  <button id="stop">Stop</button>
+</div>
+<p id="status"></p>
+<audio id="audio" controls></audio>
+<script type="module" src="dist/main.js"></script>
+</body>
+</html>

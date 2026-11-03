@@ -1,0 +1,16 @@
+{
+  "name": "kokoro-mse-demo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/main.ts --bundle --splitting --format=esm --target=es2022 --outdir=dist"
+  },
+  "dependencies": {
+    "@mediabunny/aac-encoder": "^1.62.1",
+    "mediabunny": "^1.62.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "typescript": "^5.9.0"
+  }
+}
