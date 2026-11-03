@@ -41,6 +41,8 @@ TEXTS = [
     "[read](/ɹˈɛd/) the [Kokoro](/kˈOkəɹO/) [two words](/tˈu wˈɜɹdz/) [x](/ /) [y](//)",
     "[record](-1) a [record](1) [record](2) [present](0.5) [present](-0.5) [present](+0.5) [the](-2) [ok](3)",
     "[New York](-1) [hello world](2) [it's](0) [don't](-1) [9](1) [1999](0) [$5](-1)",
+    "[ΟΣ](/x/)Α [ΣΑ ΟΣ](-1) [3ing](-1) [New York City](/nu jɔɹk/) and [the BIG Apple](/ðə bɪɡ/)s",
+    "[a b c](#an#) [1001 2](#n#) [Ab CD ef](2) [x](1)[y](-1)[z](/z/) [q q q q](/a/)",
     "An [unclosed](link and [empty]() and [bad](feature) and [nested [x](1)](2).",
     # Capitalization and stress
     "THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG. AM I IN? TO BE OR NOT TO BE.",

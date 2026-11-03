@@ -2,18 +2,19 @@
 //! indices of the `a` tokens it overlaps, concatenated. misaki indexes spaCy's tokens by position in this
 //! flat array (not by token), so the port keeps it flat.
 
-use crate::text::is_space;
+use crate::text::{is_space, lower};
 
-fn lowered(tokens: &[impl AsRef<str>]) -> (Vec<char>, Vec<usize>) {
-    let mut chars = Vec::new();
+/// `"".join(tokens).lower()` (lowered as a whole, so final sigma sees its neighbours) and each character's
+/// token, counted from each token's own lowered length as spaCy does. `None` if those lengths disagree.
+fn lowered(tokens: &[impl AsRef<str>]) -> Option<(Vec<char>, Vec<usize>)> {
     let mut owner = Vec::new();
+    let mut joined = String::new();
     for (i, t) in tokens.iter().enumerate() {
-        for c in t.as_ref().to_lowercase().chars() {
-            chars.push(c);
-            owner.push(i);
-        }
+        owner.extend(std::iter::repeat_n(i, lower(t.as_ref()).chars().count()));
+        joined.push_str(t.as_ref());
     }
-    (chars, owner)
+    let chars: Vec<char> = lower(&joined).chars().collect();
+    (chars.len() == owner.len()).then_some((chars, owner))
 }
 
 fn without_space(chars: &[char]) -> impl Iterator<Item = &char> {
@@ -22,8 +23,8 @@ fn without_space(chars: &[char]) -> impl Iterator<Item = &char> {
 
 /// `None` where spaCy raises (the texts differ by more than whitespace and case).
 pub(crate) fn y2x_data(a: &[impl AsRef<str>], b: &[impl AsRef<str>]) -> Option<Vec<usize>> {
-    let (str_a, tok_a) = lowered(a);
-    let (str_b, tok_b) = lowered(b);
+    let (str_a, tok_a) = lowered(a)?;
+    let (str_b, tok_b) = lowered(b)?;
     if !without_space(&str_a).eq(without_space(&str_b)) {
         return None;
     }
@@ -75,5 +76,6 @@ mod tests {
         let b = ["I", "ca", "n't", "go", "."];
         assert_eq!(y2x_data(&a, &b), Some(vec![0, 1, 1, 2, 2]));
         assert_eq!(y2x_data(&["ab"], &["a", "c"]), None);
+        assert_eq!(y2x_data(&["ΟΣ", "Α"], &["ΟΣΑ"]), Some(vec![0, 1]));
     }
 }
