@@ -6,8 +6,8 @@
 use crate::config::Config;
 use crate::http::App;
 use hyper::Request;
-use hyper::header::{self, HeaderValue};
 use hyper::body::Incoming;
+use hyper::header::{self, HeaderValue};
 use hyper::server::conn::http1;
 use hyper_util::rt::{TokioIo, TokioTimer};
 use std::convert::Infallible;
@@ -20,9 +20,9 @@ use std::task::{Context, Poll, ready};
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::time::Sleep;
 use tokio::sync::{Semaphore, watch};
 use tokio::task::JoinSet;
+use tokio::time::Sleep;
 
 /// hyper's read buffer per connection (`max_buf_size`). hyper stops reading once the buffer holds
 /// this much, but one read may fill whatever capacity the buffer already has, so a connection can
@@ -119,10 +119,8 @@ pub async fn serve(listener: TcpListener, app: App, limits: Limits, shutdown: im
         });
     }
     closing_tx.send_replace(true);
-    let drained = tokio::time::timeout(limits.shutdown_grace, async {
-        while connections.join_next().await.is_some() {}
-    })
-    .await;
+    let drained =
+        tokio::time::timeout(limits.shutdown_grace, async { while connections.join_next().await.is_some() {} }).await;
     if drained.is_err() {
         crate::warn!("dropping {} connections still open after the shutdown grace period", connections.len());
         connections.shutdown().await;

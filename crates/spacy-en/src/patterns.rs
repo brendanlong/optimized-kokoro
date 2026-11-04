@@ -146,9 +146,8 @@ impl Affix {
     /// checks), so at most one of the two ends can work.
     fn full_match_at(&self, s: &str, pos: usize) -> Option<usize> {
         let ends = std::iter::once(s.len()).chain(s.strip_suffix('\n').map(str::len));
-        ends.filter(|&end| end >= pos).find(|&end| {
-            self.rules.iter().any(|r| Self::behind_ok(r, s, pos) && r.full.is_match(&s[pos..end]))
-        })
+        ends.filter(|&end| end >= pos)
+            .find(|&end| self.rules.iter().any(|r| Self::behind_ok(r, s, pos) && r.full.is_match(&s[pos..end])))
     }
 
     /// `infix_finditer`: the non-overlapping matches, left to right, as byte ranges.
@@ -246,9 +245,8 @@ impl UrlMatcher {
         let is_edge = |i: usize| i < n && d.label_edge.contains(chars[i].1);
 
         let path = |i: usize| {
-            ends.iter().any(|&e| {
-                i == e || (i < e && d.path_start.contains(chars[i].1) && not_space[i + 1] >= e - (i + 1))
-            })
+            ends.iter()
+                .any(|&e| i == e || (i < e && d.path_start.contains(chars[i].1) && not_space[i + 1] >= e - (i + 1)))
         };
         // port? path? $ from each position.
         let tail: Vec<bool> = (0..=n)
@@ -290,9 +288,9 @@ impl UrlMatcher {
             spaces_before[i + 1] = spaces_before[i] + usize::from(space.contains(chars[i].1));
         }
         let credentials_from = |base: usize, at: usize| at > base && spaces_before[at] == spaces_before[base];
-        let after_credentials = (1..n).filter(|&at| chars[at].1 == '@').filter(|&at| {
-            credentials_from(0, at) || scheme_end.is_some_and(|base| credentials_from(base, at))
-        });
+        let after_credentials = (1..n)
+            .filter(|&at| chars[at].1 == '@')
+            .filter(|&at| credentials_from(0, at) || scheme_end.is_some_and(|base| credentials_from(base, at)));
         std::iter::once(0).chain(scheme_end).chain(after_credentials.map(|at| at + 1)).any(host)
     }
 }

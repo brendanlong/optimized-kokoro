@@ -29,8 +29,10 @@ fn files(suffix: &str) -> Vec<PathBuf> {
     let mut out = Vec::new();
     for d in dirs {
         let Ok(entries) = std::fs::read_dir(&d) else { continue };
-        let mut found: Vec<PathBuf> =
-            entries.filter_map(|e| e.ok().map(|e| e.path())).filter(|p| p.to_string_lossy().ends_with(suffix)).collect();
+        let mut found: Vec<PathBuf> = entries
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| p.to_string_lossy().ends_with(suffix))
+            .collect();
         found.sort();
         out.extend(found);
     }
@@ -82,7 +84,12 @@ fn mecab_words_match_fugashi() {
                 if bad <= show() {
                     let theirs = r["morphs"].as_array().unwrap();
                     let i = ours.iter().zip(theirs).position(|(a, b)| a != b).unwrap_or(ours.len().min(theirs.len()));
-                    eprintln!("{}: {text:?}\n  ours   {:?}\n  theirs {:?}", path.display(), &ours[i..ours.len().min(i + 4)], &theirs[i..theirs.len().min(i + 4)]);
+                    eprintln!(
+                        "{}: {text:?}\n  ours   {:?}\n  theirs {:?}",
+                        path.display(),
+                        &ours[i..ours.len().min(i + 4)],
+                        &theirs[i..theirs.len().min(i + 4)]
+                    );
                 }
             }
         }
@@ -123,7 +130,12 @@ fn jag2p_matches_misaki() {
             }
         }
     }
-    eprintln!("jag2p: {}/{} match, {errors} where misaki raises ({:.1?})", total - errors - bad, total - errors, start.elapsed());
+    eprintln!(
+        "jag2p: {}/{} match, {errors} where misaki raises ({:.1?})",
+        total - errors - bad,
+        total - errors,
+        start.elapsed()
+    );
     assert_eq!(bad, 0);
 }
 

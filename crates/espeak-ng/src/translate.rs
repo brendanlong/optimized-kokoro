@@ -3,7 +3,7 @@
 
 use crate::common::*;
 use crate::defs::*;
-use crate::engine::{Espeak, Tr, N_EMBEDDED_LIST};
+use crate::engine::{Espeak, N_EMBEDDED_LIST, Tr};
 use crate::tr_languages::select_translator;
 use crate::ucd;
 
@@ -12,8 +12,9 @@ const BREAKS: [u16; 2] = [b'_' as u16, 0];
 const UCASE_GA: [&[u8]; 11] = [b"bp", b"bhf", b"dt", b"gc", b"hA", b"mb", b"nd", b"ng", b"ts", b"tA", b"nA"];
 
 const HANGUL_COMPATIBILITY: [u8; 0x34] = [
-    0, 0x00, 0x01, 0xaa, 0x02, 0xac, 0xad, 0x03, 0x04, 0x05, 0xb0, 0xb1, 0xb2, 0xb3, 0xb4, 0xb4, 0xb6, 0x06, 0x07, 0x08, 0xb9, 0x09, 0x0a, 0xbc, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x61,
-    0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x6b, 0x6c, 0x6d, 0x6e, 0x6f, 0x70, 0x71, 0x72, 0x73, 0x74, 0x75,
+    0, 0x00, 0x01, 0xaa, 0x02, 0xac, 0xad, 0x03, 0x04, 0x05, 0xb0, 0xb1, 0xb2, 0xb3, 0xb4, 0xb4, 0xb6, 0x06, 0x07,
+    0x08, 0xb9, 0x09, 0x0a, 0xbc, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67,
+    0x68, 0x69, 0x6a, 0x6b, 0x6c, 0x6d, 0x6e, 0x6f, 0x70, 0x71, 0x72, 0x73, 0x74, 0x75,
 ];
 
 fn wt(words: &[WordTab], ix: isize) -> WordTab {
@@ -26,7 +27,15 @@ fn wt_mut(words: &mut [WordTab], ix: isize) -> Option<&mut WordTab> {
 
 impl Espeak {
     /// `TranslateWord`: `TranslateWord3`, then re-translates replacement text word by word.
-    pub(crate) fn translate_word(&mut self, tr: Tr, w: &mut [u8], word_start: isize, wtab: Option<&mut [WordTab]>, in_clause: bool, word_out: Option<&mut Vec<u8>>) -> u32 {
+    pub(crate) fn translate_word(
+        &mut self,
+        tr: Tr,
+        w: &mut [u8],
+        word_start: isize,
+        wtab: Option<&mut [WordTab]>,
+        in_clause: bool,
+        word_out: Option<&mut Vec<u8>>,
+    ) -> u32 {
         let mut words_phonemes = [0u8; N_WORD_PHONEMES];
         let mut empty: [WordTab; 0] = [];
         let wtab: &mut [WordTab] = match wtab {
@@ -35,7 +44,8 @@ impl Espeak {
         };
         let want_out = word_out.is_some();
         let mut out_text = Vec::new();
-        let flags = self.translate_word3(tr, w, word_start, wtab, if want_out { Some(&mut out_text) } else { None }, in_clause);
+        let flags =
+            self.translate_word3(tr, w, word_start, wtab, if want_out { Some(&mut out_text) } else { None }, in_clause);
         if (flags & FLAG_TEXTMODE) != 0 && want_out {
             if let Some(o) = word_out {
                 o.clear();
@@ -194,7 +204,16 @@ impl Espeak {
     /// `TranslateWord2`: translates the word at `w[word]` (whose entry is `words[wix]`) and
     /// adds its phonemes to `ph_list2`.
     #[allow(clippy::too_many_arguments)]
-    fn translate_word2(&mut self, tr: Tr, w: &mut [u8], word: isize, words: &mut [WordTab], wix: usize, mut pre_pause: i32, in_clause: bool) -> u32 {
+    fn translate_word2(
+        &mut self,
+        tr: Tr,
+        w: &mut [u8],
+        word: isize,
+        words: &mut [WordTab],
+        wix: usize,
+        mut pre_pause: i32,
+        in_clause: bool,
+    ) -> u32 {
         let mut flags: u32;
         let mut stress: i32;
         let mut next_stress: i32;
@@ -253,7 +272,10 @@ impl Espeak {
             pre_pause += 4;
         }
 
-        if word_flags & FLAG_FIRST_UPPER != 0 && self.option_capitals > 2 && self.embedded_ix < N_EMBEDDED_LIST as i32 - 6 {
+        if word_flags & FLAG_FIRST_UPPER != 0
+            && self.option_capitals > 2
+            && self.embedded_ix < N_EMBEDDED_LIST as i32 - 6
+        {
             if self.embedded_flag != 0 {
                 if let Some(e) = self.embedded_list.get_mut((self.embedded_ix - 1) as usize) {
                     *e &= !0x80;
@@ -326,7 +348,14 @@ impl Espeak {
                             flags = self.translate_word(Tr::Second, &mut wr, 1, Some(&mut words[wix..]), false, None);
                         } else {
                             let mut rep = Vec::new();
-                            flags = self.translate_word(Tr::Second, w, word, Some(&mut words[wix..]), in_clause, Some(&mut rep));
+                            flags = self.translate_word(
+                                Tr::Second,
+                                w,
+                                word,
+                                Some(&mut words[wix..]),
+                                in_clause,
+                                Some(&mut rep),
+                            );
                             if !rep.is_empty() {
                                 cstrcpy(&mut word_replaced, 2, &rep);
                             }
@@ -378,7 +407,8 @@ impl Espeak {
         srcix = 0;
         max_stress = -1;
 
-        let found_dict_flag = if (flags & FLAG_FOUND) != 0 && (flags & FLAG_TEXTMODE) == 0 { SFLAG_DICTIONARY } else { 0 };
+        let found_dict_flag =
+            if (flags & FLAG_FOUND) != 0 && (flags & FLAG_TEXTMODE) == 0 { SFLAG_DICTIONARY } else { 0 };
 
         while pre_pause > 0 && self.n_ph_list2 < N_PHONEME_LIST as i32 - 7 - 2 {
             let n = self.n_ph_list2 as usize;
@@ -622,7 +652,14 @@ impl Espeak {
     }
 
     /// `FindReplacementChars`: searches the `.replace` list for `c` (and following chars).
-    fn find_replacement_chars(&self, tr: Tr, from: usize, c: i32, next_pos: isize, ignore_next_n: &mut i32) -> Option<usize> {
+    fn find_replacement_chars(
+        &self,
+        tr: Tr,
+        from: usize,
+        c: i32,
+        next_pos: isize,
+        ignore_next_n: &mut i32,
+    ) -> Option<usize> {
         let dict = self.t(tr).dict.clone()?;
         let d = &dict.data;
         let mut from = from as isize;
@@ -669,7 +706,15 @@ impl Espeak {
     }
 
     /// `SubstituteChar`: the `.replace` rules in `*_rules`.
-    fn substitute_char(&mut self, tr: Tr, c: i32, next_in: i32, next_pos: isize, insert: &mut i32, wordflags: &mut u32) -> i32 {
+    fn substitute_char(
+        &mut self,
+        tr: Tr,
+        c: i32,
+        next_in: i32,
+        next_pos: isize,
+        insert: &mut i32,
+        wordflags: &mut u32,
+    ) -> i32 {
         if self.ignore_next_n > 0 {
             self.ignore_next_n -= 1;
             return 8;
@@ -709,7 +754,16 @@ impl Espeak {
 
     /// `TranslateChar`: language-specific character changes (Korean jamo, Dutch 'n, .replace).
     #[allow(clippy::too_many_arguments)]
-    fn translate_char(&mut self, tr: Tr, ptr: isize, prev_in: i32, c: i32, next_in: i32, insert: &mut i32, wordflags: &mut u32) -> i32 {
+    fn translate_char(
+        &mut self,
+        tr: Tr,
+        ptr: isize,
+        prev_in: i32,
+        c: i32,
+        next_in: i32,
+        insert: &mut i32,
+        wordflags: &mut u32,
+    ) -> i32 {
         let code = c - 0xac00;
         if code >= 0 && c <= 0xd7af {
             let initial = (code / 28) / 21;
@@ -760,7 +814,13 @@ impl Espeak {
         false
     }
 
-    fn calc_word_length(source_index: isize, charix_top: i32, charix: &[i16], words: &mut [WordTab], word_count: usize) -> u8 {
+    fn calc_word_length(
+        source_index: isize,
+        charix_top: i32,
+        charix: &[i16],
+        words: &mut [WordTab],
+        word_count: usize,
+    ) -> u8 {
         let ch = |j: isize| if j < 0 { 0 } else { charix.get(j as usize).copied().unwrap_or(0) };
         let mut j = source_index;
         while j < charix_top as isize && ch(j) <= 0 {
@@ -781,7 +841,16 @@ impl Espeak {
 
     /// `CombineFlag`: joins a word marked `$combine` with the next one.
     #[allow(clippy::too_many_arguments)]
-    fn combine_flag(&mut self, tr: Tr, w: &mut [u8], word: isize, words: &mut [WordTab], wix: usize, flags: &mut u32, in_clause: bool) {
+    fn combine_flag(
+        &mut self,
+        tr: Tr,
+        w: &mut [u8],
+        word: isize,
+        words: &mut [WordTab],
+        wix: usize,
+        flags: &mut u32,
+        in_clause: bool,
+    ) {
         let sylimit = self.t(tr).langopts.param[LOPT_COMBINE_WORDS];
         let mut p2 = word;
         while at(w, p2) != b' ' && (p2 as usize) < w.len() {
@@ -913,7 +982,15 @@ impl Espeak {
         charix.fill(0);
         let mut source = std::mem::take(&mut self.source);
         let mut voice_change_name = Vec::new();
-        let terminator = self.read_clause(tr, &mut source, &mut charix, &mut charix_top, N_TR_SOURCE as i32, &mut tone, &mut voice_change_name);
+        let terminator = self.read_clause(
+            tr,
+            &mut source,
+            &mut charix,
+            &mut charix_top,
+            N_TR_SOURCE as i32,
+            &mut tone,
+            &mut voice_change_name,
+        );
         self.source = source;
         let mut terminator = terminator;
 
@@ -1154,7 +1231,10 @@ impl Espeak {
                     if c != b' ' as i32 {
                         letter_count += 1;
                         let lbo = self.t(tr).letter_bits_offset;
-                        if lbo > 0 && ((c < 0x250 && prev_out >= lbo) || (c >= lbo && letter_count > 1 && prev_out < 0x250)) && is_alpha(prev_out) {
+                        if lbo > 0
+                            && ((c < 0x250 && prev_out >= lbo) || (c >= lbo && letter_count > 1 && prev_out < 0x250))
+                            && is_alpha(prev_out)
+                        {
                             c = b' ' as i32;
                             space_inserted = true;
                             word_flags |= FLAG_HYPHEN_AFTER;
@@ -1178,7 +1258,11 @@ impl Espeak {
                             }
                         } else if c != b' ' as i32 && ucd::isupper(prev_in) && ucd::islower(next_in) {
                             let next2_in = utf8_in(&self.source, source_index + next_in_nbytes).0;
-                            if self.t(tr).translator_name == l2(b'n', b'l') && letter_count == 2 && c == b'j' as i32 && prev_in == b'I' as i32 {
+                            if self.t(tr).translator_name == l2(b'n', b'l')
+                                && letter_count == 2
+                                && c == b'j' as i32
+                                && prev_in == b'I' as i32
+                            {
                             } else if prev_out != b' ' as i32 && is_alpha(next2_in) {
                                 c = b' ' as i32;
                                 space_inserted = true;
@@ -1235,7 +1319,9 @@ impl Espeak {
                     }
                 } else if c == b'\'' as i32 {
                     let apostrophe = self.t(tr).langopts.param[LOPT_APOSTROPHE];
-                    if ((prev_in == b'.' as i32 && next_in == b's' as i32) || ucd::isalnum(prev_in)) && is_alpha(next_in) {
+                    if ((prev_in == b'.' as i32 && next_in == b's' as i32) || ucd::isalnum(prev_in))
+                        && is_alpha(next_in)
+                    {
                         single_quoted = false;
                     } else if (apostrophe & 1) != 0 && is_alpha(next_in) {
                         single_quoted = false;
@@ -1327,7 +1413,8 @@ impl Espeak {
                     word_count += 1;
                     words[word_count].start = ix as u16;
                     words[word_count].flags = 0;
-                    words[word_count].length = Self::calc_word_length(source_index, charix_top, &charix, &mut words, word_count);
+                    words[word_count].length =
+                        Self::calc_word_length(source_index, charix_top, &charix, &mut words, word_count);
 
                     word_flags = next_word_flags;
                     next_word_flags = 0;
@@ -1498,7 +1585,8 @@ impl Espeak {
                 let mut q = 3usize;
                 while q < pn {
                     let pp = words[wix].pre_pause as i32;
-                    dict_flags = self.translate_word2(tr, &mut number_buf, q as isize, &mut num_wtab, nw.min(49), pp, false);
+                    dict_flags =
+                        self.translate_word2(tr, &mut number_buf, q as isize, &mut num_wtab, nw.min(49), pp, false);
                     nw += 1;
                     loop {
                         let b = number_buf.get(q).copied().unwrap_or(b' ');

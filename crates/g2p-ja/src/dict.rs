@@ -8,9 +8,9 @@
 //! token's feature string it keeps only the reading cutlet takes (`pron`, else `kana`), already
 //! turned into hiragana. [`Dictionary::load`] memory-maps the result.
 
+use memmap2::Mmap;
 use std::fmt;
 use std::fs::File;
-use memmap2::Mmap;
 use std::io::{self, BufWriter, Write};
 use std::ops::Range;
 use std::path::Path;
@@ -170,7 +170,11 @@ impl Cursor<'_> {
     }
 
     fn section(&mut self, len: usize) -> Result<Range<usize>, Error> {
-        let end = self.pos.checked_add(len).filter(|&e| e <= self.b.len()).ok_or_else(|| format("dictionary file is truncated"))?;
+        let end = self
+            .pos
+            .checked_add(len)
+            .filter(|&e| e <= self.b.len())
+            .ok_or_else(|| format("dictionary file is truncated"))?;
         let r = self.pos..end;
         self.pos = end;
         Ok(r)
@@ -336,14 +340,33 @@ impl Dictionary {
         let n = c.u32()? as usize;
         let reading_ends = c.section(n.checked_mul(4).ok_or_else(|| format("reading count"))?)?;
         c.section(c.pos.next_multiple_of(MATRIX_ALIGN) - c.pos)?;
-        let matrix = c.section(lsize.checked_mul(rsize).and_then(|n| n.checked_mul(2)).ok_or_else(|| format("matrix size"))?)?;
+        let matrix =
+            c.section(lsize.checked_mul(rsize).and_then(|n| n.checked_mul(2)).ok_or_else(|| format("matrix size"))?)?;
         if c.pos != map.len() {
-            return Err(format(format!("{}: {} bytes, but its sections add up to {}", path.display(), map.len(), c.pos)));
+            return Err(format(format!(
+                "{}: {} bytes, but its sections add up to {}",
+                path.display(),
+                map.len(),
+                c.pos
+            )));
         }
         if chars.iter().any(|c| c.default_type() as usize >= unknown.len()) {
             return Err(format("character table refers to an unknown category"));
         }
-        Ok(Dictionary { version, lsize, rsize, chars, unknown, category_names, map, da, tokens, readings, reading_ends, matrix })
+        Ok(Dictionary {
+            version,
+            lsize,
+            rsize,
+            chars,
+            unknown,
+            category_names,
+            map,
+            da,
+            tokens,
+            readings,
+            reading_ends,
+            matrix,
+        })
     }
 }
 
@@ -400,7 +423,10 @@ impl MecabDic {
         if f_start + fsize != b.len() || dsize % 8 != 0 || tsize % 16 != 0 {
             return Err(format(format!("{}: sizes don't add up", path.display())));
         }
-        let da = (da_start..t_start).step_by(8).map(|i| Unit { base: u32_at(&b, i) as i32, check: u32_at(&b, i + 4) }).collect();
+        let da = (da_start..t_start)
+            .step_by(8)
+            .map(|i| Unit { base: u32_at(&b, i) as i32, check: u32_at(&b, i + 4) })
+            .collect();
         let tokens = (t_start..f_start)
             .step_by(16)
             .map(|i| (u16_at(&b, i), u16_at(&b, i + 2), u16_at(&b, i + 6) as i16, u32_at(&b, i + 8)))
@@ -410,7 +436,11 @@ impl MecabDic {
 
     fn feature(&self, offset: u32) -> Result<&str, Error> {
         let start = offset as usize;
-        let len = self.features.get(start..).and_then(|f| f.iter().position(|&c| c == 0)).ok_or_else(|| format("feature offset"))?;
+        let len = self
+            .features
+            .get(start..)
+            .and_then(|f| f.iter().position(|&c| c == 0))
+            .ok_or_else(|| format("feature offset"))?;
         std::str::from_utf8(&self.features[start..start + len]).map_err(|_| format("feature isn't UTF-8"))
     }
 
@@ -517,7 +547,8 @@ impl ContextOrder {
         let mut new = vec![u16::MAX; n];
         let mut next = 0u16;
         for &id in std::iter::once(&0).chain(listed).chain(&(0..n as u16).collect::<Vec<_>>()) {
-            let slot = new.get_mut(id as usize).ok_or_else(|| format(format!("context order: id {id} out of range")))?;
+            let slot =
+                new.get_mut(id as usize).ok_or_else(|| format(format!("context order: id {id} out of range")))?;
             if *slot == u16::MAX {
                 *slot = next;
                 next += 1;
@@ -574,7 +605,12 @@ pub fn build(dicdir: &Path, version: &str, order: &ContextOrder, out: &Path) -> 
     for &(l, r, c, f) in &sys.tokens {
         let raw = sys.feature(f)?;
         let reading = token_reading(raw).map_err(|e| format(format!("fugashi can't read a feature: {e}")))?;
-        tokens.push(Token { left: left_ids[l as usize], right: right_ids[r as usize], cost: c, reading: intern(reading) });
+        tokens.push(Token {
+            left: left_ids[l as usize],
+            right: right_ids[r as usize],
+            cost: c,
+            reading: intern(reading),
+        });
     }
     let mut unknown = Vec::new();
     for name in &names {
@@ -584,7 +620,12 @@ pub fn build(dicdir: &Path, version: &str, order: &ContextOrder, out: &Path) -> 
             .map(|&(l, r, c, f)| {
                 // UniDic's unknown words have six fields, so fugashi's pron and kana are None.
                 let reading = token_reading(unk.feature(f)?).map_err(format)?;
-                Ok(Token { left: left_ids[l as usize], right: right_ids[r as usize], cost: c, reading: intern(reading) })
+                Ok(Token {
+                    left: left_ids[l as usize],
+                    right: right_ids[r as usize],
+                    cost: c,
+                    reading: intern(reading),
+                })
             })
             .collect::<Result<Vec<_>, Error>>()?;
         unknown.push(list);

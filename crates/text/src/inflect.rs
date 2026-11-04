@@ -12,9 +12,8 @@ use std::sync::LazyLock;
 pub struct OutOfRange;
 
 const UNIT: [&str; 10] = ["", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
-const TEEN: [&str; 10] = [
-    "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen",
-];
+const TEEN: [&str; 10] =
+    ["ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"];
 const TEN: [&str; 10] = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"];
 const MILL: [&str; 12] = [
     " ",
@@ -196,12 +195,65 @@ pub fn no(word: &str, count: &str) -> String {
 
 /// Nouns whose plural adds an "s" (checked against inflect by the parity fixtures).
 const PLAIN_NOUNS: &[&str] = &[
-    "amp", "atmosphere", "bit", "byte", "cent", "centiliter", "centimeter", "deciliter", "degree", "dollar", "euro",
-    "gigabit", "gigabyte", "gram", "hour", "joule", "kelvin", "kiloamp", "kilobit", "kilobyte", "kilogram",
-    "kilojoule", "kilometer", "kiloohm", "kilopascal", "kilovolt", "kilowatt", "liter", "megaamp", "megabit",
-    "megabyte", "megajoule", "megaohm", "megapascal", "megawatt", "mergavolt", "meter", "microfarad", "mile",
-    "mililiter", "milimeter", "milligram", "millimeter", "millisecond", "minute", "nanofarad", "ohm", "pascal",
-    "petabit", "petabyte", "picofarad", "pixel", "pound", "second", "terabit", "terabyte", "volt", "watt", "yard",
+    "amp",
+    "atmosphere",
+    "bit",
+    "byte",
+    "cent",
+    "centiliter",
+    "centimeter",
+    "deciliter",
+    "degree",
+    "dollar",
+    "euro",
+    "gigabit",
+    "gigabyte",
+    "gram",
+    "hour",
+    "joule",
+    "kelvin",
+    "kiloamp",
+    "kilobit",
+    "kilobyte",
+    "kilogram",
+    "kilojoule",
+    "kilometer",
+    "kiloohm",
+    "kilopascal",
+    "kilovolt",
+    "kilowatt",
+    "liter",
+    "megaamp",
+    "megabit",
+    "megabyte",
+    "megajoule",
+    "megaohm",
+    "megapascal",
+    "megawatt",
+    "mergavolt",
+    "meter",
+    "microfarad",
+    "mile",
+    "mililiter",
+    "milimeter",
+    "milligram",
+    "millimeter",
+    "millisecond",
+    "minute",
+    "nanofarad",
+    "ohm",
+    "pascal",
+    "petabit",
+    "petabyte",
+    "picofarad",
+    "pixel",
+    "pound",
+    "second",
+    "terabit",
+    "terabyte",
+    "volt",
+    "watt",
+    "yard",
 ];
 
 #[cfg(test)]

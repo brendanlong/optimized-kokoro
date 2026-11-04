@@ -154,7 +154,10 @@ fn pass_order(options: &Options) -> Vec<(&'static str, Pass)> {
         }),
         ("urls", options.url_normalization, |p, t| p.url.sub(t, |c| url(p, &c[0]))),
         ("units", options.unit_normalization, |p, t| {
-            replace_spans(t, scan::units(t, &p.units).into_iter().map(|m| (m.range, units(p, &t[m.number], &t[m.unit]))))
+            replace_spans(
+                t,
+                scan::units(t, &p.units).into_iter().map(|m| (m.range, units(p, &t[m.number], &t[m.unit]))),
+            )
         }),
         ("optional_plurals", options.optional_pluralization_normalization, |_, t| t.replace("(s)", "s")),
         ("phone_numbers", options.phone_normalization, |p, t| p.phone.sub(t, |c| phone(p, c))),
@@ -299,11 +302,7 @@ fn phone(p: &Patterns, c: &Captures) -> String {
         .filter(|g| !g.is_empty())
         .map(|g| {
             let digits = p.non_digit.sub_str(g, "");
-            digits
-                .chars()
-                .map(|d| number_to_words(&d.to_string()).expect("one digit"))
-                .collect::<Vec<_>>()
-                .join(" ")
+            digits.chars().map(|d| number_to_words(&d.to_string()).expect("one digit")).collect::<Vec<_>>().join(" ")
         })
         .collect::<Vec<_>>()
         .join(", ")
@@ -348,9 +347,8 @@ fn abbreviations(p: &Patterns, text: &str) -> String {
 
 fn numbers(p: &Patterns, text: &str) -> String {
     let text = p.digit_s.sub_str(text, " S");
-    let text = p.comma_run.sub(&text, |c| {
-        if p.thousands.is_match(&c[0]) { c[0].to_owned() } else { c[0].replace(',', "") }
-    });
+    let text =
+        p.comma_run.sub(&text, |c| if p.thousands.is_match(&c[0]) { c[0].to_owned() } else { c[0].replace(',', "") });
     let text = p.range_dash.sub_str(&text, " to ");
     let text = p.version.sub(&text, |c| unchanged_on_error(c, versions));
     let text = p.money.sub(&text, |c| unchanged_on_error(c, money));
@@ -438,7 +436,8 @@ fn signed(sign: &str, body: &str) -> f64 {
 
 fn money(c: &Captures) -> Result<String, Unspeakable> {
     let symbol = c[2].chars().next().unwrap();
-    let &(_, bill, coin) = MONEY_UNITS.iter().find(|(s, _, _)| *s == symbol).expect("pattern only matches known symbols");
+    let &(_, bill, coin) =
+        MONEY_UNITS.iter().find(|(s, _, _)| *s == symbol).expect("pattern only matches known symbols");
     let number = signed(&c[1], &c[3]);
     let mut multiplier = translate_multiplier(&c[4]);
     if !multiplier.is_empty() {
@@ -500,16 +499,101 @@ mod tests {
     fn patterns_match_the_backtracker() {
         let p = &*PATTERNS;
         let patterns = [
-            &p.multi_space, &p.non_space_whitespace, &p.ellipsis_word, &p.spaces, &p.caps_word, &p.long_caps,
-            &p.contraction, &p.contraction_bare, &p.url, &p.url_scheme, &p.url_www, &p.url_port, &p.phone,
-            &p.non_digit, &p.doctor, &p.mister, &p.miss, &p.missus, &p.etc, &p.yeah, &p.digit_s, &p.comma_run,
-            &p.thousands, &p.range_dash, &p.version, &p.money, &p.number, &p.dashes, &p.dotted_acronym, &p.acronym_dot,
+            &p.multi_space,
+            &p.non_space_whitespace,
+            &p.ellipsis_word,
+            &p.spaces,
+            &p.caps_word,
+            &p.long_caps,
+            &p.contraction,
+            &p.contraction_bare,
+            &p.url,
+            &p.url_scheme,
+            &p.url_www,
+            &p.url_port,
+            &p.phone,
+            &p.non_digit,
+            &p.doctor,
+            &p.mister,
+            &p.miss,
+            &p.missus,
+            &p.etc,
+            &p.yeah,
+            &p.digit_s,
+            &p.comma_run,
+            &p.thousands,
+            &p.range_dash,
+            &p.version,
+            &p.money,
+            &p.number,
+            &p.dashes,
+            &p.dotted_acronym,
+            &p.acronym_dot,
         ];
         let alphabet = [
-            "a", "A", "1", "٣", " ", ".", ",", ":", "-", "/", "?", "$", "€", "_", "'", "’", "…", "é", "\u{301}", "²", "\n",
-            "\t", "\u{1c}", "ı", "İ", "ſ", "K", "k", "m", "b", "t", " thousand", " million", "how", "they", "re", "'re",
-            "yea", "h", "Dr", "DR", "Mr", "MR", "Ms", "Mrs", "MRS", "etc", " T", "S", "www.", "http://", "https://", "x.com",
-            ".io", ":80", "555", "(555)", "1234", "+1", "AAAA", "ABCDEF", "IV", "--",
+            "a",
+            "A",
+            "1",
+            "٣",
+            " ",
+            ".",
+            ",",
+            ":",
+            "-",
+            "/",
+            "?",
+            "$",
+            "€",
+            "_",
+            "'",
+            "’",
+            "…",
+            "é",
+            "\u{301}",
+            "²",
+            "\n",
+            "\t",
+            "\u{1c}",
+            "ı",
+            "İ",
+            "ſ",
+            "K",
+            "k",
+            "m",
+            "b",
+            "t",
+            " thousand",
+            " million",
+            "how",
+            "they",
+            "re",
+            "'re",
+            "yea",
+            "h",
+            "Dr",
+            "DR",
+            "Mr",
+            "MR",
+            "Ms",
+            "Mrs",
+            "MRS",
+            "etc",
+            " T",
+            "S",
+            "www.",
+            "http://",
+            "https://",
+            "x.com",
+            ".io",
+            ":80",
+            "555",
+            "(555)",
+            "1234",
+            "+1",
+            "AAAA",
+            "ABCDEF",
+            "IV",
+            "--",
         ];
         let references: Vec<_> = patterns.iter().map(|p| p.reference()).collect();
         for text in random_texts(&alphabet, 20000, 5) {

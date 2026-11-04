@@ -6,7 +6,8 @@ use std::io::BufRead;
 
 fn main() {
     let voice = std::env::args().nth(1).expect("voice");
-    let dir = std::env::var("ESPEAK_DATA").unwrap_or_else(|_| concat!(env!("CARGO_MANIFEST_DIR"), "/espeak-ng-data").to_string());
+    let dir = std::env::var("ESPEAK_DATA")
+        .unwrap_or_else(|_| concat!(env!("CARGO_MANIFEST_DIR"), "/espeak-ng-data").to_string());
     let mut e = Espeak::new(EspeakData::load(dir).unwrap());
     e.set_voice_by_name(&voice).unwrap();
     for line in std::io::stdin().lock().lines() {

@@ -13,9 +13,9 @@
 //! those starts.
 
 use crate::tables::{DIGIT, SPACE, WORD};
+use std::collections::HashMap;
 use std::fmt::Write;
 use std::ops::{Index, Range};
-use std::collections::HashMap;
 use std::sync::LazyLock;
 
 type Ranges = Vec<(u32, u32)>;
@@ -157,7 +157,8 @@ impl Translator<'_> {
         }
         let covers = |c: char| literals.iter().any(|&(a, b)| (a..=b).contains(&(c as u32)));
         let has_i = covers('i') || covers('I');
-        let has_letter = literals.iter().any(|&(a, b)| (a..=b).any(|c| char::from_u32(c).is_some_and(char::is_alphabetic)));
+        let has_letter =
+            literals.iter().any(|&(a, b)| (a..=b).any(|c| char::from_u32(c).is_some_and(char::is_alphabetic)));
         let shorthand = !shorthands.is_empty();
         if self.ignore_case && has_letter {
             // Python's \w, \s and \d are fixed sets that IGNORECASE doesn't touch, so they are
@@ -185,10 +186,8 @@ impl Translator<'_> {
 
     fn open_paren(&mut self) {
         let ahead: String = self.chars.clone().take(3).collect();
-        let lookaround = ahead.starts_with("?=")
-            || ahead.starts_with("?!")
-            || ahead.starts_with("?<=")
-            || ahead.starts_with("?<!");
+        let lookaround =
+            ahead.starts_with("?=") || ahead.starts_with("?!") || ahead.starts_with("?<=") || ahead.starts_with("?<!");
         if self.lookaround_depth > 0 {
             self.lookaround_depth += 1;
         } else if lookaround {
@@ -501,7 +500,10 @@ fn finite_language(pattern: &str, ignore_case: bool) -> Option<Language> {
                     let one = std::mem::take(&mut piece);
                     piece = vec![Vec::new()];
                     for _ in 0..n {
-                        piece = piece.iter().flat_map(|p| one.iter().map(move |o| [p.clone(), o.clone()].concat())).collect();
+                        piece = piece
+                            .iter()
+                            .flat_map(|p| one.iter().map(move |o| [p.clone(), o.clone()].concat()))
+                            .collect();
                     }
                 }
                 Some('*' | '+') => return None,
@@ -568,7 +570,8 @@ fn conds(pattern: &str, ignore_case: bool) -> Conds {
     let lead = items.iter().take_while(|(item, _)| is_look(item, true)).count();
     let trail = items[lead..].iter().rev().take_while(|(item, _)| is_look(item, false)).count();
     let leading: Vec<Cond> = items[..lead].iter().map_while(|(item, _)| cond(item, ignore_case)).collect();
-    let trailing: Vec<Cond> = items[items.len() - trail..].iter().map_while(|(item, _)| cond(item, ignore_case)).collect();
+    let trailing: Vec<Cond> =
+        items[items.len() - trail..].iter().map_while(|(item, _)| cond(item, ignore_case)).collect();
     let core_start = items.get(lead).map_or(pattern.len(), |(_, r)| r.start);
     let core_end = if trail == 0 { pattern.len() } else { items[items.len() - trail].1.start };
     let core = &pattern[core_start..core_end.max(core_start)];
@@ -724,7 +727,8 @@ impl Pattern {
                     let s = range.start;
                     let other_path = self.leading.iter().all(|c| c.holds(text, s))
                         && language.iter().any(|sequence| {
-                            sequence_end(text, s, sequence).is_some_and(|e| self.trailing.iter().all(|c| c.holds(text, e)))
+                            sequence_end(text, s, sequence)
+                                .is_some_and(|e| self.trailing.iter().all(|c| c.holds(text, e)))
                         });
                     if other_path
                         && let Some(caps) = anchored.captures_from_pos(text, s).expect("backtracking has no limit")

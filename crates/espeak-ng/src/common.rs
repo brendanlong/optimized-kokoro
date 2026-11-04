@@ -75,7 +75,11 @@ pub fn utf8_in(b: &[u8], i: isize) -> (i32, isize) {
 pub fn utf8_in2(b: &[u8], mut i: isize, backwards: bool) -> (i32, isize) {
     const MASK: [i32; 4] = [0xff, 0x1f, 0x0f, 0x07];
     while at(b, i) & 0xc0 == 0x80 {
-        if backwards { i -= 1 } else { i += 1 }
+        if backwards {
+            i -= 1
+        } else {
+            i += 1
+        }
         if i < -1 || i > b.len() as isize {
             break;
         }
@@ -140,7 +144,6 @@ pub fn push_utf8(out: &mut Vec<u8>, c: i32) {
     let n = utf8_out(c, &mut b, 0) as usize;
     out.extend_from_slice(&b[..n]);
 }
-
 
 pub fn lookupwchar(list: &[u16], c: i32) -> i32 {
     for (ix, &x) in list.iter().enumerate() {
@@ -315,11 +318,7 @@ pub fn atoi(b: &[u8], mut i: isize) -> i32 {
     let mut v: i64 = 0;
     while at(b, i).is_ascii_digit() {
         let d = (at(b, i) - b'0') as i64;
-        v = if neg {
-            v.saturating_mul(10).saturating_sub(d)
-        } else {
-            v.saturating_mul(10).saturating_add(d)
-        };
+        v = if neg { v.saturating_mul(10).saturating_sub(d) } else { v.saturating_mul(10).saturating_add(d) };
         i += 1;
     }
     v as i32

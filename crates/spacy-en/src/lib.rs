@@ -94,10 +94,7 @@ impl Nlp {
     /// Tokenizes and tags `text`, as `nlp(text)` does.
     pub fn process<'t>(&self, text: &'t str) -> Vec<Token<'t>> {
         let (raw, scores) = self.scores(text);
-        raw.iter()
-            .zip(scores.chunks_exact(TAGS.len()))
-            .map(|(t, s)| token(text, t, TAGS[tagger::argmax(s)]))
-            .collect()
+        raw.iter().zip(scores.chunks_exact(TAGS.len())).map(|(t, s)| token(text, t, TAGS[tagger::argmax(s)])).collect()
     }
 
     /// Tokens with the tagger's unnormalized scores, `TAGS.len()` per token.
@@ -173,7 +170,14 @@ mod tests {
         let words: Vec<_> = tokens.iter().map(|t| (t.text, t.tag, t.whitespace)).collect();
         assert_eq!(
             words,
-            [("I", "PRP", " "), ("ca", "MD", ""), ("n't", "RB", " "), ("read", "VB", " "), ("it", "PRP", ""), (".", ".", "")]
+            [
+                ("I", "PRP", " "),
+                ("ca", "MD", ""),
+                ("n't", "RB", " "),
+                ("read", "VB", " "),
+                ("it", "PRP", ""),
+                (".", ".", "")
+            ]
         );
     }
 }

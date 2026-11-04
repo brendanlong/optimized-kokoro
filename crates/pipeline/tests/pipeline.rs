@@ -42,7 +42,8 @@ fn japanese_runs_are_read_by_the_japanese_g2p() {
         assert_eq!(pipeline.phonemize(text).unwrap().0, expected, "{text}");
     }
     let options = NormalizationOptions::default();
-    let unread: Vec<usize> = pipeline.chunks("ありがとう, Goodbye 你好. ゃ", &options).map(|c| c.unwrap().unread).collect();
+    let unread: Vec<usize> =
+        pipeline.chunks("ありがとう, Goodbye 你好. ゃ", &options).map(|c| c.unwrap().unread).collect();
     assert_eq!(unread, [0]);
 }
 
@@ -179,7 +180,10 @@ fn every_voice_a_run_may_go_to_loads() {
 #[test]
 fn invisible_characters_neither_split_nor_fuse_placeholders() {
     for (text, expected) in [
-        ("Thai \u{e2a}\u{e27}\u{e31}\u{e2a}\u{e14}\u{e35}\u{200b}\u{e04}\u{e23}\u{e31}\u{e1a}\u{200b}\u{e1c}\u{e21} is hello.", "tˈI tˈI tˈɛkst ɪz həlˈO."),
+        (
+            "Thai \u{e2a}\u{e27}\u{e31}\u{e2a}\u{e14}\u{e35}\u{200b}\u{e04}\u{e23}\u{e31}\u{e1a}\u{200b}\u{e1c}\u{e21} is hello.",
+            "tˈI tˈI tˈɛkst ɪz həlˈO.",
+        ),
         ("\u{e2a}\u{e27}\u{e31}\u{e2a}\u{ad}\u{e14}\u{e35}", "tˈI tˈɛkst"),
         ("カナ\u{200b}カナ", "ʤˌæpənˈiz tˈɛkst"),
         ("カナ\u{200e}カナ", "ʤˌæpənˈiz tˈɛkst"),
@@ -314,8 +318,12 @@ fn speech(chunks: &[Result<Chunk, Error>]) -> Vec<Result<&str, String>> {
 #[test]
 fn placeholders_are_counted_and_a_sentence_of_one_is_spoken() {
     let options = NormalizationOptions::default();
-    let chunks: Vec<_> = pipeline().chunks("Hello there. 東京。 [pause:0.5s] ありがとう, Goodbye 你好. สวัสดี", &options).collect();
-    assert_eq!(speech(&chunks), [Ok("Hello there."), Ok("東京."), Ok("<pause>"), Ok("ありがとう, Goodbye 你好."), Ok("สวัสดี")]);
+    let chunks: Vec<_> =
+        pipeline().chunks("Hello there. 東京。 [pause:0.5s] ありがとう, Goodbye 你好. สวัสดี", &options).collect();
+    assert_eq!(
+        speech(&chunks),
+        [Ok("Hello there."), Ok("東京."), Ok("<pause>"), Ok("ありがとう, Goodbye 你好."), Ok("สวัสดี")]
+    );
     let unread: Vec<usize> = chunks.iter().map(|c| c.as_ref().unwrap().unread).collect();
     assert_eq!(unread, [0, 0, 0, 1, 1]);
 }
@@ -323,7 +331,8 @@ fn placeholders_are_counted_and_a_sentence_of_one_is_spoken() {
 #[test]
 fn pauses_ids_and_words() {
     let options = NormalizationOptions::default();
-    let chunks: Vec<_> = pipeline().chunks("Hello world! [pause:1.5s] ¡Привет!", &options).map(Result::unwrap).collect();
+    let chunks: Vec<_> =
+        pipeline().chunks("Hello world! [pause:1.5s] ¡Привет!", &options).map(Result::unwrap).collect();
     assert_eq!(chunks.len(), 3);
     assert_eq!(chunks[1].pause, Some(1.5));
     let hello = &chunks[0];
@@ -376,17 +385,16 @@ fn shared_across_threads() {
     check::<Pipeline>();
     let options = NormalizationOptions::default();
     let texts = ["One sentence here.", "Another, with Привет.", "And qzxv, a third."];
-    let expected: Vec<Vec<String>> = texts
-        .iter()
-        .map(|t| pipeline().chunks(t, &options).map(|c| c.unwrap().phonemes).collect())
-        .collect();
+    let expected: Vec<Vec<String>> =
+        texts.iter().map(|t| pipeline().chunks(t, &options).map(|c| c.unwrap().phonemes).collect()).collect();
     std::thread::scope(|s| {
         let handles: Vec<_> = (0..4)
             .map(|_| {
                 s.spawn(|| {
                     for _ in 0..20 {
                         for (t, e) in texts.iter().zip(&expected) {
-                            let got: Vec<String> = pipeline().chunks(t, &options).map(|c| c.unwrap().phonemes).collect();
+                            let got: Vec<String> =
+                                pipeline().chunks(t, &options).map(|c| c.unwrap().phonemes).collect();
                             assert_eq!(&got, e);
                         }
                     }

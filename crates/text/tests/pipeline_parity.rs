@@ -26,7 +26,12 @@ impl Stage {
 
     fn report(&self) -> bool {
         let matched = self.total - self.mismatches.len();
-        println!("{}: {matched}/{} exact ({:.3}%)", self.name, self.total, 100.0 * matched as f64 / self.total.max(1) as f64);
+        println!(
+            "{}: {matched}/{} exact ({:.3}%)",
+            self.name,
+            self.total,
+            100.0 * matched as f64 / self.total.max(1) as f64
+        );
         for m in self.mismatches.iter().take(20) {
             println!("{m}");
         }
@@ -83,12 +88,16 @@ fn reference_dumps() {
     for record in &records {
         let actual = split::normalize(&join_lines(&record.text), &record.lang, &options);
         normalized.check(&record.id, &record.normalized, &actual);
-        let actual: Vec<String> =
-            sentences(&record.normalized).iter().map(|s| kokoro_text::py::strip(s).to_owned()).filter(|s| !s.is_empty()).collect();
+        let actual: Vec<String> = sentences(&record.normalized)
+            .iter()
+            .map(|s| kokoro_text::py::strip(s).to_owned())
+            .filter(|s| !s.is_empty())
+            .collect();
         sentence_stage.check(&record.id, &record.sentences, &actual);
         let mut calls = Vec::new();
         let actual = chunks(record, &mut calls);
-        let expected: Vec<(String, String)> = record.chunks.iter().map(|c| (c.text.clone(), c.phonemes.clone())).collect();
+        let expected: Vec<(String, String)> =
+            record.chunks.iter().map(|c| (c.text.clone(), c.phonemes.clone())).collect();
         chunk_stage.check(&record.id, &expected, &actual);
         let expected: Vec<String> = record.calls.iter().map(|c| c.input.clone()).collect();
         call_stage.check(&record.id, &expected, &calls);

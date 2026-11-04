@@ -150,10 +150,8 @@ fn set_letter_bits_utf8(tr: &mut Translator, group: i32, letters: &[u8], offset:
 // ignore these characters
 static CHARS_IGNORE_DEFAULT: [u16; 6] = [
     // U+00AD SOFT HYPHEN
-    0xad, 1,
-    // U+200C ZERO WIDTH NON-JOINER
-    0x200c, 1,
-    // U+200D ZERO WIDTH JOINER is not ignored.
+    0xad, 1, // U+200C ZERO WIDTH NON-JOINER
+    0x200c, 1, // U+200D ZERO WIDTH JOINER is not ignored.
     // End of the ignored character list.
     0, 0,
 ];
@@ -161,13 +159,17 @@ static CHARS_IGNORE_DEFAULT: [u16; 6] = [
 // alternatively, ignore characters but allow zero-width-non-joiner (lang-fa)
 static CHARS_IGNORE_ZWNJ_HYPHEN: [u16; 8] = [
     // U+00AD SOFT HYPHEN
-    0xad, 1,
+    0xad,
+    1,
     // U+0640 TATWEEL (KASHIDA)
-    0x640, 1,
+    0x640,
+    1,
     // U+200C ZERO WIDTH NON-JOINER
-    0x200c, b'-' as u16,
+    0x200c,
+    b'-' as u16,
     // End of the ignored character list.
-    0, 0,
+    0,
+    0,
 ];
 
 static UTF8_ORDINAL: [u8; 2] = [0xc2, 0xba]; // masculine ordinal character, UTF-8
@@ -324,8 +326,8 @@ static RU_VOWELS: [u8; 16] =
     [0x10, 0x15, 0x31, 0x18, 0x1e, 0x23, 0x2b, 0x2d, 0x2e, 0x2f, 0xb9, 0xc9, 0x91, 0x8f, 0x36, 0];
 // б в г д ж з й к л м н п р с т ф х ц ч ш щ ъ ь қ ң һ
 static RU_CONSONANTS: [u8; 28] = [
-    0x11, 0x12, 0x13, 0x14, 0x16, 0x17, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1f, 0x20, 0x21, 0x22, 0x24,
-    0x25, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x2c, 0x73, 0x7b, 0x83, 0x9b, 0,
+    0x11, 0x12, 0x13, 0x14, 0x16, 0x17, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1f, 0x20, 0x21, 0x22, 0x24, 0x25, 0x26, 0x27,
+    0x28, 0x29, 0x2a, 0x2c, 0x73, 0x7b, 0x83, 0x9b, 0,
 ];
 
 fn set_arabic_letters(tr: &mut Translator) {
@@ -354,8 +356,8 @@ fn set_cyrillic_letters(tr: &mut Translator) {
     static CYRL_SOFT: [u8; 5] = [0x2c, 0x19, 0x27, 0x29, 0]; // letter group B  [k ts; s;] -- ь й ч щ
     static CYRL_HARD: [u8; 5] = [0x2a, 0x16, 0x26, 0x28, 0]; // letter group H  [S Z ts] -- ъ ж ц ш
     static CYRL_NOTHARD: [u8; 20] = [
-        0x11, 0x12, 0x13, 0x14, 0x17, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1f, 0x20, 0x21, 0x22, 0x24,
-        0x25, 0x27, 0x29, 0x2c, 0,
+        0x11, 0x12, 0x13, 0x14, 0x17, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1f, 0x20, 0x21, 0x22, 0x24, 0x25, 0x27, 0x29,
+        0x2c, 0,
     ]; // б в г д з й к л м н п р с т ф х ч щ ь
     static CYRL_VOICED: [u8; 7] = [0x11, 0x12, 0x13, 0x14, 0x16, 0x17, 0]; // letter group G  (voiced obstruents) -- б в г д ж з
     static CYRL_IVOWELS: [u8; 5] = [0x2c, 0x2e, 0x2f, 0x31, 0]; // letter group Y  (iotated vowels & soft-sign) -- ь ю я ё
@@ -431,8 +433,7 @@ pub fn select_translator(name: &[u8]) -> Translator {
             tr.langopts.param[LOPT_PREFIXES] = 1;
             set_letter_vowel(&mut tr, b'y' as usize); // add 'y' to vowels
 
-            tr.langopts.numbers =
-                NUM_SWAP_TENS | NUM_HUNDRED_AND | NUM_SINGLE_AND | NUM_ROMAN | NUM_1900;
+            tr.langopts.numbers = NUM_SWAP_TENS | NUM_HUNDRED_AND | NUM_SINGLE_AND | NUM_ROMAN | NUM_1900;
             tr.langopts.accents = 1;
         }
         b"am" => {
@@ -462,12 +463,11 @@ pub fn select_translator(name: &[u8]) -> Translator {
         b"be" => {
             // Belarusian
             // offset by 0x420 -- а е ё о у ы э ю я і
-            static VOWELS_BE: [u32; 11] =
-                [0x10, 0x15, 0x31, 0x1e, 0x23, 0x2b, 0x2d, 0x2e, 0x2f, 0x36, 0];
+            static VOWELS_BE: [u32; 11] = [0x10, 0x15, 0x31, 0x1e, 0x23, 0x2b, 0x2d, 0x2e, 0x2f, 0x36, 0];
             // б в г д ж з й к л м н п р с т ф х ц ч ш ў
             static CONSONANTS_BE: [u8; 22] = [
-                0x11, 0x12, 0x13, 0x14, 0x16, 0x17, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1f, 0x20,
-                0x21, 0x22, 0x24, 0x25, 0x26, 0x27, 0x28, 0x3e, 0,
+                0x11, 0x12, 0x13, 0x14, 0x16, 0x17, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1f, 0x20, 0x21, 0x22, 0x24, 0x25,
+                0x26, 0x27, 0x28, 0x3e, 0,
             ];
             // C passes the wchar_t array as `char *`, so SetLetterBits sees its little-endian
             // bytes and stops at the first zero byte: only 0x10 is set.
@@ -569,8 +569,7 @@ pub fn select_translator(name: &[u8]) -> Translator {
             tr.langopts.param[LOPT_REGRESSIVE_VOICING] = 0x100; // devoice at end of word
             tr.langopts.param[LOPT_LONG_VOWEL_THRESHOLD] = 175 / 2;
 
-            tr.langopts.numbers =
-                NUM_DECIMAL_COMMA | NUM_SWAP_TENS | NUM_ALLOW_SPACE | NUM_ORDINAL_DOT | NUM_ROMAN;
+            tr.langopts.numbers = NUM_DECIMAL_COMMA | NUM_SWAP_TENS | NUM_ALLOW_SPACE | NUM_ORDINAL_DOT | NUM_ROMAN;
             set_letter_vowel(&mut tr, b'y' as usize);
             tr.langopts.param[LOPT_UNPRONOUNCABLE] = 2; // use de_rules for unpronouncable rules
         }
@@ -588,14 +587,14 @@ pub fn select_translator(name: &[u8]) -> Translator {
             // Greek, Ancient Greek
             // character codes offset by 0x380
             static EL_VOWELS: [u8; 20] = [
-                0x10, 0x2c, 0x2d, 0x2e, 0x2f, 0x30, 0x31, 0x35, 0x37, 0x39, 0x3f, 0x45, 0x49, 0x4a,
-                0x4b, 0x4c, 0x4d, 0x4e, 0x4f, 0,
+                0x10, 0x2c, 0x2d, 0x2e, 0x2f, 0x30, 0x31, 0x35, 0x37, 0x39, 0x3f, 0x45, 0x49, 0x4a, 0x4b, 0x4c, 0x4d,
+                0x4e, 0x4f, 0,
             ];
             static EL_FVOWELS: [u8; 9] = [0x2d, 0x2e, 0x2f, 0x35, 0x37, 0x39, 0x45, 0x4d, 0]; // ε η ι υ  έ ή ί ύ _
             static EL_VOICELESS: [u8; 10] = [0x38, 0x3a, 0x3e, 0x40, 0x42, 0x43, 0x44, 0x46, 0x47, 0]; // θ κ ξ π ς σ τ φ χ _
             static EL_CONSONANTS: [u8; 19] = [
-                0x32, 0x33, 0x34, 0x36, 0x38, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x40, 0x41, 0x42, 0x43,
-                0x44, 0x46, 0x47, 0x48, 0,
+                0x32, 0x33, 0x34, 0x36, 0x38, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x40, 0x41, 0x42, 0x43, 0x44, 0x46, 0x47,
+                0x48, 0,
             ];
             static EL_CHAR_APOSTROPHE: [u32; 2] = [0x3c3, 0]; // σ _
 
@@ -616,8 +615,7 @@ pub fn select_translator(name: &[u8]) -> Translator {
             tr.langopts.param[LOPT_SONORANT_MIN] = 130; // limit the shortening of sonorants before short vowels
 
             tr.langopts.numbers = NUM_SINGLE_STRESS | NUM_DECIMAL_COMMA;
-            tr.langopts.numbers2 =
-                NUM2_THOUSANDPLEX_VAR_THOUSANDS | NUM2_MULTIPLE_ORDINAL | NUM2_ORDINAL_NO_AND;
+            tr.langopts.numbers2 = NUM2_THOUSANDPLEX_VAR_THOUSANDS | NUM2_MULTIPLE_ORDINAL | NUM2_ORDINAL_NO_AND;
 
             if name2 == l3(b'g', b'r', b'c') {
                 // ancient greek
@@ -662,18 +660,12 @@ pub fn select_translator(name: &[u8]) -> Translator {
             if name2 == l2(b'c', b'a') {
                 // stress last syllable unless word ends with a vowel
                 tr.punct_within_word = &CA_PUNCT_WITHIN_WORD;
-                tr.langopts.stress_flags = S_FINAL_SPANISH
-                    | S_FINAL_DIM_ONLY
-                    | S_FINAL_NO_2
-                    | S_NO_AUTO_2
-                    | S_FIRST_PRIMARY;
+                tr.langopts.stress_flags =
+                    S_FINAL_SPANISH | S_FINAL_DIM_ONLY | S_FINAL_NO_2 | S_NO_AUTO_2 | S_FIRST_PRIMARY;
             } else if name2 == l2(b'i', b'a') {
                 tr.langopts.stress_flags = S_FINAL_SPANISH | S_FINAL_DIM_ONLY | S_FINAL_NO_2;
-                tr.langopts.numbers = NUM_DECIMAL_COMMA
-                    | NUM_OMIT_1_HUNDRED
-                    | NUM_OMIT_1_THOUSAND
-                    | NUM_ROMAN
-                    | NUM_ROMAN_AFTER;
+                tr.langopts.numbers =
+                    NUM_DECIMAL_COMMA | NUM_OMIT_1_HUNDRED | NUM_OMIT_1_THOUSAND | NUM_ROMAN | NUM_ROMAN_AFTER;
             } else if name2 == l2(b'a', b'n') {
                 tr.langopts.stress_flags = S_FINAL_SPANISH | S_FINAL_DIM_ONLY | S_FINAL_NO_2;
                 tr.langopts.numbers = NUM_SINGLE_STRESS
@@ -688,8 +680,7 @@ pub fn select_translator(name: &[u8]) -> Translator {
             } else if name2 == l3(b'p', b'a', b'p') {
                 // stress last syllable unless word ends with a vowel
                 tr.langopts.stress_rule = STRESSPOSN_1R;
-                tr.langopts.stress_flags =
-                    S_FINAL_VOWEL_UNSTRESSED | S_FINAL_DIM_ONLY | S_FINAL_NO_2 | S_NO_AUTO_2;
+                tr.langopts.stress_flags = S_FINAL_VOWEL_UNSTRESSED | S_FINAL_DIM_ONLY | S_FINAL_NO_2 | S_NO_AUTO_2;
             } else {
                 tr.langopts.param[LOPT_UNPRONOUNCABLE] = 2; // use es_rules for unpronouncable rules
             }
@@ -737,8 +728,7 @@ pub fn select_translator(name: &[u8]) -> Translator {
             // Estonian (only sets the encoding, then falls through), Finnish
             tr.langopts.long_stop = 130;
 
-            tr.langopts.numbers =
-                NUM_DECIMAL_COMMA | NUM_ALLOW_SPACE | NUM_DFRACTION_2 | NUM_ORDINAL_DOT;
+            tr.langopts.numbers = NUM_DECIMAL_COMMA | NUM_ALLOW_SPACE | NUM_DFRACTION_2 | NUM_ORDINAL_DOT;
             set_letter_vowel(&mut tr, b'y' as usize);
         }
         b"fo" => {
@@ -832,9 +822,8 @@ pub fn select_translator(name: &[u8]) -> Translator {
                 | NUM_THOUS_SPACE
                 | NUM_DFRACTION_2
                 | NUM_ROMAN_CAPITALS;
-            tr.langopts.numbers2 = NUM2_THOUSANDPLEX_VAR_THOUSANDS
-                | NUM2_THOUSANDPLEX_VAR_MILLIARDS
-                | NUM2_THOUSANDS_VAR5;
+            tr.langopts.numbers2 =
+                NUM2_THOUSANDPLEX_VAR_THOUSANDS | NUM2_THOUSANDPLEX_VAR_MILLIARDS | NUM2_THOUSANDS_VAR5;
             tr.langopts.our_alphabet = OFFSET_CYRILLIC; // don't say "cyrillic" before letter names
 
             set_letter_vowel(&mut tr, b'y' as usize);
@@ -844,19 +833,14 @@ pub fn select_translator(name: &[u8]) -> Translator {
             // Haitian Creole
             tr.langopts.stress_rule = STRESSPOSN_1R; // stress on final syllable
             tr.langopts.stress_flags = S_NO_AUTO_2 | S_FINAL_DIM; // don't use secondary stress
-            tr.langopts.numbers = NUM_SINGLE_STRESS
-                | NUM_OMIT_1_HUNDRED
-                | NUM_NOPAUSE
-                | NUM_ROMAN
-                | NUM_VIGESIMAL
-                | NUM_DFRACTION_4;
+            tr.langopts.numbers =
+                NUM_SINGLE_STRESS | NUM_OMIT_1_HUNDRED | NUM_NOPAUSE | NUM_ROMAN | NUM_VIGESIMAL | NUM_DFRACTION_4;
         }
         b"hu" => {
             // Hungarian
             tr.langopts.vowel_pause = 0x20;
             tr.langopts.stress_rule = STRESSPOSN_1L;
-            tr.langopts.stress_flags =
-                S_FINAL_DIM_ONLY | S_FINAL_NO_2 | S_NO_AUTO_2 | 0x8000 | S_HYPEN_UNSTRESS;
+            tr.langopts.stress_flags = S_FINAL_DIM_ONLY | S_FINAL_NO_2 | S_NO_AUTO_2 | 0x8000 | S_HYPEN_UNSTRESS;
             tr.langopts.unstressed_wd1 = 2;
             tr.langopts.param[LOPT_ANNOUNCE_PUNCT] = 2; // don't break clause before announcing . ? !
 
@@ -879,9 +863,8 @@ pub fn select_translator(name: &[u8]) -> Translator {
             // Armenian
             static HY_VOWELS: [u8; 8] = [0x31, 0x35, 0x37, 0x38, 0x3b, 0x48, 0x55, 0];
             static HY_CONSONANTS: [u8; 31] = [
-                0x32, 0x33, 0x34, 0x36, 0x39, 0x3a, 0x3c, 0x3d, 0x3e, 0x3f, 0x40, 0x41, 0x42, 0x43,
-                0x44, 0x46, 0x47, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f, 0x50, 0x51, 0x52, 0x53,
-                0x54, 0x56, 0,
+                0x32, 0x33, 0x34, 0x36, 0x39, 0x3a, 0x3c, 0x3d, 0x3e, 0x3f, 0x40, 0x41, 0x42, 0x43, 0x44, 0x46, 0x47,
+                0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f, 0x50, 0x51, 0x52, 0x53, 0x54, 0x56, 0,
             ];
             static HY_CONSONANTS2: [u8; 2] = [0x45, 0];
 
@@ -908,12 +891,8 @@ pub fn select_translator(name: &[u8]) -> Translator {
             tr.langopts.stress_flags = S_FINAL_DIM_ONLY | S_FINAL_NO_2;
             tr.langopts.unstressed_wd2 = 2;
 
-            tr.langopts.numbers = NUM_DECIMAL_COMMA
-                | NUM_OMIT_1_HUNDRED
-                | NUM_ALLOW_SPACE
-                | NUM_AND_UNITS
-                | NUM_HUNDRED_AND
-                | NUM_ROMAN;
+            tr.langopts.numbers =
+                NUM_DECIMAL_COMMA | NUM_OMIT_1_HUNDRED | NUM_ALLOW_SPACE | NUM_AND_UNITS | NUM_HUNDRED_AND | NUM_ROMAN;
         }
         b"id" | b"ms" => {
             // Indonesian, Malay
@@ -925,10 +904,8 @@ pub fn select_translator(name: &[u8]) -> Translator {
         b"is" => {
             // Icelandic
             // voiceless conants, including 'þ'  ?? 's'
-            static IS_LETTERGROUP_B: [u32; 9] = [
-                b'c' as u32, b'f' as u32, b'h' as u32, b'k' as u32, b'p' as u32, b't' as u32,
-                b'x' as u32, 0xfe, 0,
-            ];
+            static IS_LETTERGROUP_B: [u32; 9] =
+                [b'c' as u32, b'f' as u32, b'h' as u32, b'k' as u32, b'p' as u32, b't' as u32, b'x' as u32, 0xfe, 0];
 
             tr.langopts.stress_rule = STRESSPOSN_1L;
             tr.langopts.stress_flags = S_FINAL_NO_2;
@@ -940,8 +917,7 @@ pub fn select_translator(name: &[u8]) -> Translator {
             set_letter_bits(&mut tr, 3, b"jvr"); // Letter group H
             tr.letter_groups[1] = Some(&IS_LETTERGROUP_B);
             set_letter_vowel(&mut tr, b'y' as usize);
-            tr.langopts.numbers =
-                NUM_DECIMAL_COMMA | NUM_SINGLE_AND | NUM_HUNDRED_AND | NUM_AND_UNITS | NUM_1900;
+            tr.langopts.numbers = NUM_DECIMAL_COMMA | NUM_SINGLE_AND | NUM_HUNDRED_AND | NUM_AND_UNITS | NUM_1900;
             tr.langopts.numbers2 = NUM2_THOUSANDPLEX_VAR_THOUSANDS;
         }
         b"it" => {
@@ -970,8 +946,7 @@ pub fn select_translator(name: &[u8]) -> Translator {
         b"jbo" => {
             // Lojban
             // allow period and comma within a word, also stress marker (from LOPT_CAPS_IN_WORD)
-            static JBO_PUNCT_WITHIN_WORD: [u32; 5] =
-                [b'.' as u32, b',' as u32, b'\'' as u32, 0x2c8, 0];
+            static JBO_PUNCT_WITHIN_WORD: [u32; 5] = [b'.' as u32, b',' as u32, b'\'' as u32, 0x2c8, 0];
 
             tr.langopts.stress_rule = STRESSPOSN_2R;
             tr.langopts.vowel_pause = 0x20c; // pause before a word which starts with a vowel, or after a word which ends in a consonant
@@ -986,9 +961,8 @@ pub fn select_translator(name: &[u8]) -> Translator {
             // character codes offset by 0x1080
             static KA_VOWELS: [u8; 8] = [0x30, 0x34, 0x38, 0x3d, 0x43, 0x55, 0x57, 0];
             static KA_CONSONANTS: [u8; 34] = [
-                0x31, 0x32, 0x33, 0x35, 0x36, 0x37, 0x39, 0x3a, 0x3b, 0x3c, 0x3e, 0x3f, 0x40, 0x41,
-                0x42, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f, 0x50,
-                0x51, 0x52, 0x53, 0x54, 0x56, 0,
+                0x31, 0x32, 0x33, 0x35, 0x36, 0x37, 0x39, 0x3a, 0x3b, 0x3c, 0x3e, 0x3f, 0x40, 0x41, 0x42, 0x44, 0x45,
+                0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f, 0x50, 0x51, 0x52, 0x53, 0x54, 0x56, 0,
             ];
             tr.letter_bits = [0; 256];
             set_letter_bits(&mut tr, LETTERGP_A, &KA_VOWELS);
@@ -1000,12 +974,8 @@ pub fn select_translator(name: &[u8]) -> Translator {
             tr.letter_bits_offset = OFFSET_GEORGIAN;
             tr.langopts.max_initial_consonants = 7;
             tr.langopts.max_digits = 32;
-            tr.langopts.numbers = NUM_VIGESIMAL
-                | NUM_AND_UNITS
-                | NUM_OMIT_1_HUNDRED
-                | NUM_OMIT_1_THOUSAND
-                | NUM_DFRACTION_5
-                | NUM_ROMAN;
+            tr.langopts.numbers =
+                NUM_VIGESIMAL | NUM_AND_UNITS | NUM_OMIT_1_HUNDRED | NUM_OMIT_1_THOUSAND | NUM_DFRACTION_5 | NUM_ROMAN;
 
             tr.langopts.alt_alphabet = OFFSET_CYRILLIC;
             tr.langopts.alt_alphabet_lang = l2(b'r', b'u');
@@ -1063,8 +1033,7 @@ pub fn select_translator(name: &[u8]) -> Translator {
             // Kurdish
             tr.langopts.stress_rule = STRESSPOSN_1RU; // stress on the last syllable, before any explicitly unstressed syllable
 
-            tr.langopts.numbers =
-                NUM_HUNDRED_AND | NUM_AND_UNITS | NUM_OMIT_1_HUNDRED | NUM_AND_HUNDRED;
+            tr.langopts.numbers = NUM_HUNDRED_AND | NUM_AND_UNITS | NUM_OMIT_1_HUNDRED | NUM_AND_HUNDRED;
             tr.langopts.max_initial_consonants = 2;
         }
         b"ky" => {
@@ -1088,8 +1057,7 @@ pub fn select_translator(name: &[u8]) -> Translator {
             tr.langopts.unstressed_wd1 = 0;
             tr.langopts.unstressed_wd2 = 2;
             tr.langopts.param[LOPT_DIERESES] = 1;
-            tr.langopts.numbers =
-                NUM_DECIMAL_COMMA | NUM_OMIT_1_HUNDRED | NUM_DFRACTION_4 | NUM_ORDINAL_DOT;
+            tr.langopts.numbers = NUM_DECIMAL_COMMA | NUM_OMIT_1_HUNDRED | NUM_DFRACTION_4 | NUM_ORDINAL_DOT;
             tr.langopts.numbers2 = NUM2_THOUSANDS_VAR4;
             tr.langopts.max_roman = 5000;
         }
@@ -1098,16 +1066,15 @@ pub fn select_translator(name: &[u8]) -> Translator {
             tr.langopts.stress_rule = STRESSPOSN_1L;
             tr.langopts.spelling_stress = true;
             tr.langopts.max_digits = 33;
-            tr.langopts.numbers =
-                NUM_DECIMAL_COMMA | NUM_OMIT_1_HUNDRED | NUM_DFRACTION_4 | NUM_ORDINAL_DOT;
+            tr.langopts.numbers = NUM_DECIMAL_COMMA | NUM_OMIT_1_HUNDRED | NUM_DFRACTION_4 | NUM_ORDINAL_DOT;
             tr.langopts.stress_flags = S_NO_AUTO_2 | S_FINAL_DIM | S_FINAL_DIM_ONLY | S_EO_CLAUSE1;
         }
         b"mk" => {
             // Macedonian
             static VOWELS_CYRILLIC: [u32; 18] = [
                 // also include 'р' [R]
-                0x440, 0x430, 0x435, 0x438, 0x439, 0x43e, 0x443, 0x44b, 0x44d, 0x44e, 0x44f,
-                0x450, 0x451, 0x456, 0x457, 0x45d, 0x45e, 0,
+                0x440, 0x430, 0x435, 0x438, 0x439, 0x43e, 0x443, 0x44b, 0x44d, 0x44e, 0x44f, 0x450, 0x451, 0x456, 0x457,
+                0x45d, 0x45e, 0,
             ];
 
             tr.letter_groups[0] = Some(&VOWELS_CYRILLIC);
@@ -1115,14 +1082,10 @@ pub fn select_translator(name: &[u8]) -> Translator {
             tr.letter_bits_offset = OFFSET_CYRILLIC;
 
             tr.langopts.stress_rule = STRESSPOSN_3R; // antipenultimate
-            tr.langopts.numbers = NUM_DECIMAL_COMMA
-                | NUM_AND_UNITS
-                | NUM_OMIT_1_HUNDRED
-                | NUM_OMIT_1_THOUSAND
-                | NUM_DFRACTION_2;
-            tr.langopts.numbers2 = NUM2_THOUSANDPLEX_VAR_THOUSANDS
-                | NUM2_THOUSANDPLEX_VAR_MILLIARDS
-                | NUM2_THOUSANDS_VAR2;
+            tr.langopts.numbers =
+                NUM_DECIMAL_COMMA | NUM_AND_UNITS | NUM_OMIT_1_HUNDRED | NUM_OMIT_1_THOUSAND | NUM_DFRACTION_2;
+            tr.langopts.numbers2 =
+                NUM2_THOUSANDPLEX_VAR_THOUSANDS | NUM2_THOUSANDPLEX_VAR_MILLIARDS | NUM2_THOUSANDS_VAR2;
         }
         b"mt" => {
             // Maltese
@@ -1153,8 +1116,7 @@ pub fn select_translator(name: &[u8]) -> Translator {
             // Norwegian
             tr.langopts.stress_rule = STRESSPOSN_1L;
             set_letter_vowel(&mut tr, b'y' as usize);
-            tr.langopts.numbers =
-                NUM_DECIMAL_COMMA | NUM_HUNDRED_AND | NUM_ALLOW_SPACE | NUM_1900 | NUM_ORDINAL_DOT;
+            tr.langopts.numbers = NUM_DECIMAL_COMMA | NUM_HUNDRED_AND | NUM_ALLOW_SPACE | NUM_1900 | NUM_ORDINAL_DOT;
         }
         b"om" => {
             // Oromo
@@ -1177,15 +1139,10 @@ pub fn select_translator(name: &[u8]) -> Translator {
         b"pt" => {
             // Portuguese
             tr.langopts.stress_rule = STRESSPOSN_1R; // stress on final syllable
-            tr.langopts.stress_flags =
-                S_FINAL_DIM_ONLY | S_FINAL_NO_2 | S_INITIAL_2 | S_PRIORITY_STRESS;
-            tr.langopts.numbers = NUM_DECIMAL_COMMA
-                | NUM_DFRACTION_2
-                | NUM_HUNDRED_AND
-                | NUM_AND_UNITS
-                | NUM_ROMAN_CAPITALS;
-            tr.langopts.numbers2 =
-                NUM2_MULTIPLE_ORDINAL | NUM2_NO_TEEN_ORDINALS | NUM2_ORDINAL_NO_AND;
+            tr.langopts.stress_flags = S_FINAL_DIM_ONLY | S_FINAL_NO_2 | S_INITIAL_2 | S_PRIORITY_STRESS;
+            tr.langopts.numbers =
+                NUM_DECIMAL_COMMA | NUM_DFRACTION_2 | NUM_HUNDRED_AND | NUM_AND_UNITS | NUM_ROMAN_CAPITALS;
+            tr.langopts.numbers2 = NUM2_MULTIPLE_ORDINAL | NUM2_NO_TEEN_ORDINALS | NUM2_ORDINAL_NO_AND;
             tr.langopts.max_roman = 5000;
             set_letter_vowel(&mut tr, b'y' as usize);
             reset_letter_bits(&mut tr, 0x2);
@@ -1198,11 +1155,7 @@ pub fn select_translator(name: &[u8]) -> Translator {
             tr.langopts.stress_rule = STRESSPOSN_1R;
             tr.langopts.stress_flags = S_FINAL_VOWEL_UNSTRESSED | S_FINAL_DIM_ONLY;
 
-            tr.langopts.numbers = NUM_DECIMAL_COMMA
-                | NUM_ALLOW_SPACE
-                | NUM_DFRACTION_3
-                | NUM_AND_UNITS
-                | NUM_ROMAN;
+            tr.langopts.numbers = NUM_DECIMAL_COMMA | NUM_ALLOW_SPACE | NUM_DFRACTION_3 | NUM_AND_UNITS | NUM_ROMAN;
             tr.langopts.numbers2 = NUM2_THOUSANDPLEX_VAR_ALL;
         }
         b"ru" => {
@@ -1295,8 +1248,7 @@ pub fn select_translator(name: &[u8]) -> Translator {
             tr.langopts.stress_rule = STRESSPOSN_1R;
             tr.langopts.stress_flags = S_FINAL_DIM_ONLY | S_FINAL_NO_2 | S_FINAL_VOWEL_UNSTRESSED;
             set_letter_vowel(&mut tr, b'y' as usize);
-            tr.langopts.numbers =
-                NUM_DECIMAL_COMMA | NUM_HUNDRED_AND | NUM_AND_UNITS | NUM_DFRACTION_4;
+            tr.langopts.numbers = NUM_DECIMAL_COMMA | NUM_HUNDRED_AND | NUM_AND_UNITS | NUM_DFRACTION_4;
             tr.langopts.accents = 2; // "capital" after letter name
         }
         b"sv" => {
@@ -1313,8 +1265,7 @@ pub fn select_translator(name: &[u8]) -> Translator {
             tr.langopts.stress_flags = S_FINAL_DIM_ONLY | S_FINAL_NO_2;
             tr.langopts.max_initial_consonants = 4; // for example: mwngi
 
-            tr.langopts.numbers =
-                NUM_AND_UNITS | NUM_HUNDRED_AND | NUM_SINGLE_AND | NUM_OMIT_1_HUNDRED;
+            tr.langopts.numbers = NUM_AND_UNITS | NUM_HUNDRED_AND | NUM_SINGLE_AND | NUM_OMIT_1_HUNDRED;
         }
         b"ta" | b"kn" | b"ml" | b"te" => {
             // Tamil, Kannada, Malayalam, Telugu
@@ -1359,11 +1310,8 @@ pub fn select_translator(name: &[u8]) -> Translator {
                     | NUM_OMIT_1_THOUSAND
                     | NUM_DFRACTION_2;
             } else {
-                tr.langopts.numbers = NUM_SINGLE_STRESS
-                    | NUM_DECIMAL_COMMA
-                    | NUM_OMIT_1_HUNDRED
-                    | NUM_OMIT_1_THOUSAND
-                    | NUM_DFRACTION_2;
+                tr.langopts.numbers =
+                    NUM_SINGLE_STRESS | NUM_DECIMAL_COMMA | NUM_OMIT_1_HUNDRED | NUM_OMIT_1_THOUSAND | NUM_DFRACTION_2;
             }
             tr.langopts.max_initial_consonants = 2;
         }
@@ -1372,11 +1320,8 @@ pub fn select_translator(name: &[u8]) -> Translator {
             set_cyrillic_letters(&mut tr);
             tr.langopts.stress_rule = STRESSPOSN_1R; // stress on final syllable
             tr.langopts.stress_flags = S_NO_AUTO_2; // no automatic secondary stress
-            tr.langopts.numbers = NUM_SINGLE_STRESS
-                | NUM_DECIMAL_COMMA
-                | NUM_OMIT_1_HUNDRED
-                | NUM_OMIT_1_THOUSAND
-                | NUM_DFRACTION_4;
+            tr.langopts.numbers =
+                NUM_SINGLE_STRESS | NUM_DECIMAL_COMMA | NUM_OMIT_1_HUNDRED | NUM_OMIT_1_THOUSAND | NUM_DFRACTION_4;
         }
         b"uk" => {
             // Ukrainian
@@ -1414,8 +1359,7 @@ pub fn select_translator(name: &[u8]) -> Translator {
             tr.letter_groups[7] = Some(&VOWELS_VI);
             tr.langopts.tone_language = 1; // Tone language, use  CalcPitches_Tone() rather than CalcPitches()
             tr.langopts.unstressed_wd1 = 2;
-            tr.langopts.numbers =
-                NUM_DECIMAL_COMMA | NUM_HUNDRED_AND_DIGIT | NUM_DFRACTION_4 | NUM_ZERO_HUNDRED;
+            tr.langopts.numbers = NUM_DECIMAL_COMMA | NUM_HUNDRED_AND_DIGIT | NUM_DFRACTION_4 | NUM_ZERO_HUNDRED;
         }
         b"xex" => {
             // Xextan

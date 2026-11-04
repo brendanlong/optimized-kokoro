@@ -160,9 +160,13 @@ fn requests_match_the_reference() {
             stateful += 1;
             continue;
         }
-        let flags = expected.iter().any(|e| matches!(e, Expected::Speech { phonemes, .. } if without_language_flags(phonemes).is_some()));
+        let flags = expected
+            .iter()
+            .any(|e| matches!(e, Expected::Speech { phonemes, .. } if without_language_flags(phonemes).is_some()));
         let texts = |chunks: &mut dyn Iterator<Item = &Expected>| -> Vec<String> {
-            chunks.filter_map(|c| if let Expected::Speech { text, .. } = c { Some(text.clone()) } else { None }).collect()
+            chunks
+                .filter_map(|c| if let Expected::Speech { text, .. } = c { Some(text.clone()) } else { None })
+                .collect()
         };
         if flags && texts(&mut expected.iter().copied()) != texts(&mut actual.iter().take(expected.len())) {
             rechunked += 1;

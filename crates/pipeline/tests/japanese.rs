@@ -48,7 +48,8 @@ fn japanese_reference_records() {
             })
             .collect();
         chunks += actual.len();
-        let expected: Vec<(String, String)> = record.chunks.iter().map(|c| (c.text.clone(), c.phonemes.clone())).collect();
+        let expected: Vec<(String, String)> =
+            record.chunks.iter().map(|c| (c.text.clone(), c.phonemes.clone())).collect();
         if uses_new_script(&record.text) {
             skipped += 1;
             if actual != expected && std::env::var_os("SHOW_SKIPPED").is_some() {
@@ -67,7 +68,8 @@ fn japanese_reference_records() {
         if ok {
             matched += 1;
         } else {
-            let first = expected.iter().zip(&actual).position(|(e, a)| e != a).unwrap_or(expected.len().min(actual.len()));
+            let first =
+                expected.iter().zip(&actual).position(|(e, a)| e != a).unwrap_or(expected.len().min(actual.len()));
             mismatches.push(format!(
                 "{} ({} vs {} chunks, first difference at {first})\n  expected: {:?}\n  actual:   {:?}",
                 record.id,

@@ -7,7 +7,8 @@ use std::time::Instant;
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let voice = &args[2];
-    let dir = args.get(3).cloned().unwrap_or_else(|| concat!(env!("CARGO_MANIFEST_DIR"), "/espeak-ng-data").to_string());
+    let dir =
+        args.get(3).cloned().unwrap_or_else(|| concat!(env!("CARGO_MANIFEST_DIR"), "/espeak-ng-data").to_string());
     let repeats: usize = args.get(4).map_or(3, |s| s.parse().unwrap());
     let texts: Vec<String> = std::fs::read_to_string(&args[1])
         .unwrap()

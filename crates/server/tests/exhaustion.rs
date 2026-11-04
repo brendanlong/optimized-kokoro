@@ -222,9 +222,10 @@ async fn phoneme_ids_per_request_are_capped_counting_stitched_context() {
 /// (about 481k ids, 7 hours of audio) stops at the default cap.
 #[tokio::test]
 async fn the_reviewers_worst_input_stops_at_the_id_cap() {
-    let body: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../tools/security/worst.json")).unwrap())
-            .unwrap();
+    let body: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../tools/security/worst.json")).unwrap(),
+    )
+    .unwrap();
     let pipelines = Arc::new(kokoro_server::kokoro::KokoroPipelines::load().unwrap());
     let server = start(|_| {}, pipelines).await;
     let worker = AutoWorker::listen(&server.socket, Duration::ZERO);

@@ -17,8 +17,8 @@
 
 use kokoro_pipeline::foreign::{self, Language, Script, script};
 use kokoro_pipeline::{ForeignG2p, Lang, NormalizationOptions, Pipeline};
-use std::collections::HashMap;
 use kokoro_reference::{Call, Record};
+use std::collections::HashMap;
 use std::time::Instant;
 
 fn is_cjk(language: &Option<String>) -> bool {
@@ -41,7 +41,11 @@ fn uses_new_script(record: &Record) -> bool {
 /// G2P, which the port reads as "Chinese text".
 fn reads_unreadable_han(record: &Record) -> bool {
     record.lang != "z"
-        && record.calls.iter().flat_map(|c| &c.segments).any(|(s, l)| l.is_none() && s.chars().any(|c| script(c) == Some(Script::Han)))
+        && record
+            .calls
+            .iter()
+            .flat_map(|c| &c.segments)
+            .any(|(s, l)| l.is_none() && s.chars().any(|c| script(c) == Some(Script::Han)))
 }
 
 fn has_language_flag(record: &Record) -> bool {
@@ -108,7 +112,8 @@ fn with_placeholders(call: &Call, placeholder: impl Fn(&str) -> Vec<String>) -> 
         }
         // A word right after the placeholder is kept apart from it: the next token that is
         // spoken (phonemes or whitespace), if its phonemes start with a letter.
-        let next = tokens.clone().find(|t| t.phonemes.as_deref().is_some_and(|p| !p.is_empty()) || !t.whitespace.is_empty());
+        let next =
+            tokens.clone().find(|t| t.phonemes.as_deref().is_some_and(|p| !p.is_empty()) || !t.whitespace.is_empty());
         let next = next.and_then(|t| t.phonemes.as_deref());
         if let Some(previous) = out.iter_mut().rev().find(|o| !o.phonemes.is_empty() || o.whitespace)
             && previous.phonemes.ends_with(char::is_alphabetic)
@@ -118,11 +123,7 @@ fn with_placeholders(call: &Call, placeholder: impl Fn(&str) -> Vec<String>) -> 
         let words = placeholder("Japanese");
         let n = words.len();
         for (i, phonemes) in words.into_iter().enumerate() {
-            let whitespace = if i + 1 < n {
-                true
-            } else {
-                !whitespace.is_empty() || starts_word(next)
-            };
+            let whitespace = if i + 1 < n { true } else { !whitespace.is_empty() || starts_word(next) };
             out.push(Out { phonemes, whitespace });
         }
     }
@@ -158,7 +159,8 @@ fn reference_records() {
         .filter(|(_, l, _)| l == "ja")
         .map(|(segment, _, phonemes)| (segment.clone(), phonemes.clone()))
         .collect();
-    let chinese_recorded = Pipeline::new(Lang::Chinese).unwrap().with_foreign_g2p(Language::Japanese, Box::new(Recorded(japanese)));
+    let chinese_recorded =
+        Pipeline::new(Lang::Chinese).unwrap().with_foreign_g2p(Language::Japanese, Box::new(Recorded(japanese)));
     let options = NormalizationOptions::default();
     let show: usize = std::env::var("PARITY_SHOW").ok().and_then(|s| s.parse().ok()).unwrap_or(20);
     let (mut matched, mut compared, mut chars) = (0, 0, 0);
@@ -228,7 +230,8 @@ fn reference_records() {
                 failing_matched += usize::from(record.error.is_some());
             }
         } else {
-            let first = expected.iter().zip(&actual).position(|(e, a)| e != a).unwrap_or(expected.len().min(actual.len()));
+            let first =
+                expected.iter().zip(&actual).position(|(e, a)| e != a).unwrap_or(expected.len().min(actual.len()));
             mismatches.push(format!(
                 "{} ({} vs {} chunks, first difference at {first}; error {error:?}, reference {:?})\n  expected: {:?}\n  actual:   {:?}",
                 record.id,
@@ -244,7 +247,11 @@ fn reference_records() {
     println!(
         "{matched}/{compared} records match exactly ({:.3}%): {zh_matched}/{zh} of them Chinese ({}), {failing_matched}/{failing} up to where the reference fails; {cjk_matched}/{cjk} English records with Japanese runs match with placeholders ({cjk_skipped} not compared: a chunk spans several G2P calls)",
         100.0 * matched as f64 / compared.max(1) as f64,
-        if japanese_read { "Japanese runs read with UniDic" } else { "no UniDic: Japanese runs read with the reference's phonemes" }
+        if japanese_read {
+            "Japanese runs read with UniDic"
+        } else {
+            "no UniDic: Japanese runs read with the reference's phonemes"
+        }
     );
     println!(
         "not compared: {} with other scripts {new_script:?}, {} with espeak language flags {flagged:?}, {} with Han characters pypinyin can't read {unreadable:?}",

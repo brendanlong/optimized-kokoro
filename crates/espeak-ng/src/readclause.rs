@@ -119,8 +119,28 @@ impl Espeak {
             if (phonemes[0] == 0 || phonemes[0] == PHON_SWITCH) && self.t(tr).translator_name != l2(b'e', b'n') {
                 self.set_translator2(ESPEAKNG_DEFAULT_VOICE);
                 single_letter[1] = b'_';
-                if !self.lookup_dict_list(Tr::Second, &single_letter, 1, false, &mut phonemes, &mut flags, 0, None, None) {
-                    self.lookup_dict_list(Tr::Second, &single_letter, 2, false, &mut phonemes, &mut flags, 0, None, None);
+                if !self.lookup_dict_list(
+                    Tr::Second,
+                    &single_letter,
+                    1,
+                    false,
+                    &mut phonemes,
+                    &mut flags,
+                    0,
+                    None,
+                    None,
+                ) {
+                    self.lookup_dict_list(
+                        Tr::Second,
+                        &single_letter,
+                        2,
+                        false,
+                        &mut phonemes,
+                        &mut flags,
+                        0,
+                        None,
+                        None,
+                    );
                 }
                 if phonemes[0] != 0 {
                     lang_name = true;
@@ -149,7 +169,15 @@ impl Espeak {
 
     /// `AnnouncePunctuation`: with punctuation announcement on (`\x01B` in the text).
     #[allow(clippy::too_many_arguments)]
-    fn announce_punctuation(&mut self, tr: Tr, c1: i32, c2_ptr: &mut i32, output: &mut [u8], bufix: &mut isize, end_clause: bool) -> i32 {
+    fn announce_punctuation(
+        &mut self,
+        tr: Tr,
+        c1: i32,
+        c2_ptr: &mut i32,
+        output: &mut [u8],
+        bufix: &mut isize,
+        end_clause: bool,
+    ) -> i32 {
         let mut c2 = *c2_ptr;
         let mut buf: Vec<u8> = Vec::new();
         let mut punctname: Option<Vec<u8>> = None;
@@ -206,7 +234,8 @@ impl Espeak {
             return CLAUSE_NONE;
         }
         let attributes = ucd::clause_type_from_codepoint(c1);
-        let short_pause = if (attributes & CLAUSE_INTONATION_TYPE) == 0x1000 { CLAUSE_SHORTCOMMA } else { CLAUSE_SHORTFALL };
+        let short_pause =
+            if (attributes & CLAUSE_INTONATION_TYPE) == 0x1000 { CLAUSE_SHORTCOMMA } else { CLAUSE_SHORTFALL };
         if bufix1 > 0 && (self.t(tr).langopts.param[LOPT_ANNOUNCE_PUNCT] & 2) == 0 {
             if (attributes & !CLAUSE_OPTIONAL_SPACE_AFTER) == CLAUSE_SEMICOLON {
                 return CLAUSE_SHORTFALL;
@@ -221,7 +250,16 @@ impl Espeak {
 
     /// `ReadClause`: reads the next clause into `buf`, returning its terminator.
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn read_clause(&mut self, tr: Tr, buf: &mut [u8], charix: &mut [i16], charix_top: &mut i32, n_buf: i32, tone_type: &mut i32, voice_change: &mut Vec<u8>) -> i32 {
+    pub(crate) fn read_clause(
+        &mut self,
+        tr: Tr,
+        buf: &mut [u8],
+        charix: &mut [i16],
+        charix_top: &mut i32,
+        n_buf: i32,
+        tone_type: &mut i32,
+        voice_change: &mut Vec<u8>,
+    ) -> i32 {
         let mut c1: i32 = b' ' as i32;
         let mut c2: i32;
         let mut cprev: i32 = b' ' as i32;
@@ -460,7 +498,9 @@ impl Espeak {
                 punct_data = ucd::clause_type_from_codepoint(c1);
                 if punct_data != CLAUSE_NONE {
                     if punct_data & (CLAUSE_QUESTION | CLAUSE_EXCLAMATION) != 0 {
-                        while !self.eof() && (ucd::clause_type_from_codepoint(c2) & (CLAUSE_QUESTION | CLAUSE_EXCLAMATION)) != 0 {
+                        while !self.eof()
+                            && (ucd::clause_type_from_codepoint(c2) & (CLAUSE_QUESTION | CLAUSE_EXCLAMATION)) != 0
+                        {
                             c_next = self.get_c();
                             c2 = c_next;
                         }
@@ -470,7 +510,13 @@ impl Espeak {
                         *tone_type = (punct_data >> 12) & 0xf;
                         continue;
                     }
-                    if ucd::isspace(c2) || (punct_data & CLAUSE_OPTIONAL_SPACE_AFTER) != 0 || is_bracket(c2) || c2 == b'?' as i32 || self.eof() || c2 == CTRL_EMBEDDED {
+                    if ucd::isspace(c2)
+                        || (punct_data & CLAUSE_OPTIONAL_SPACE_AFTER) != 0
+                        || is_bracket(c2)
+                        || c2 == b'?' as i32
+                        || self.eof()
+                        || c2 == CTRL_EMBEDDED
+                    {
                         is_end_clause = true;
                     }
                 }
@@ -530,7 +576,8 @@ impl Espeak {
                         }
                         if c1 == b'.' as i32 {
                             if (self.t(tr).langopts.numbers & NUM_ORDINAL_DOT) != 0
-                                && (ucd::isdigit(cprev) || (is_roman_u(cprev) && (is_roman_u(cprev2) || ucd::isspace(cprev2))))
+                                && (ucd::isdigit(cprev)
+                                    || (is_roman_u(cprev) && (is_roman_u(cprev2) || ucd::isspace(cprev2))))
                             {
                                 if !ucd::isdigit(cprev) || ucd::islower(c_next) || c_next == b'-' as i32 {
                                     is_end_clause = false;

@@ -40,7 +40,8 @@ struct Tally {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let path = args.get(1).expect("calls.jsonl");
-    let data_dir = args.get(2).cloned().unwrap_or_else(|| concat!(env!("CARGO_MANIFEST_DIR"), "/espeak-ng-data").to_string());
+    let data_dir =
+        args.get(2).cloned().unwrap_or_else(|| concat!(env!("CARGO_MANIFEST_DIR"), "/espeak-ng-data").to_string());
     let only = args.get(3).filter(|s| !s.is_empty() && *s != "-").cloned();
     let show: usize = args.get(4).map_or(20, |s| s.parse().unwrap());
     let data = EspeakData::load(&data_dir).unwrap();

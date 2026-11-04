@@ -4,8 +4,7 @@
 
 use crate::common::{at, c_isspace, cstrlen, is_str_totally_null};
 use crate::defs::{
-    N_HASH_DICT, N_LETTER_GROUPS, N_RULE_GROUP2, RULE_GROUP_END, RULE_GROUP_START, RULE_LETTERGP2,
-    RULE_REPLACEMENTS,
+    N_HASH_DICT, N_LETTER_GROUPS, N_RULE_GROUP2, RULE_GROUP_END, RULE_GROUP_START, RULE_LETTERGP2, RULE_REPLACEMENTS,
 };
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -91,7 +90,14 @@ impl Dict {
     /// `LoadDictionary` + `InitGroups`.
     pub fn parse(data: Vec<u8>) -> std::result::Result<Self, String> {
         let size = data.len();
-        let rd = |i: usize| i32::from_le_bytes([at(&data, i as isize), at(&data, i as isize + 1), at(&data, i as isize + 2), at(&data, i as isize + 3)]);
+        let rd = |i: usize| {
+            i32::from_le_bytes([
+                at(&data, i as isize),
+                at(&data, i as isize + 1),
+                at(&data, i as isize + 2),
+                at(&data, i as isize + 3),
+            ])
+        };
         if size <= N_HASH_DICT + 8 {
             return Err("empty _dict file".into());
         }
@@ -254,7 +260,8 @@ impl EspeakData {
             let n_phonemes = at(&tab, p as isize) as usize;
             let includes = at(&tab, p as isize + 1);
             p += 4;
-            let name_bytes = tab.get(p..p + N_PHONEME_TAB_NAME).ok_or_else(|| Error::BadData("phontab truncated".into()))?;
+            let name_bytes =
+                tab.get(p..p + N_PHONEME_TAB_NAME).ok_or_else(|| Error::BadData("phontab truncated".into()))?;
             let name = name_bytes[..cstrlen(name_bytes, 0)].to_vec();
             p += N_PHONEME_TAB_NAME;
             let mut phonemes = Vec::with_capacity(n_phonemes);

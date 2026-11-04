@@ -70,7 +70,9 @@ async fn other_methods_are_refused_before_the_key_is_checked() {
 #[tokio::test]
 async fn auth_is_checked_before_the_body_is_read() {
     let (server, _worker) = with_scripted(|_| {}).await;
-    for auth in ["", "Authorization: Bearer wrong\r\n", "Authorization: Basic dGVzdC1rZXk=\r\n", "Authorization: Bearer \r\n"] {
+    for auth in
+        ["", "Authorization: Bearer wrong\r\n", "Authorization: Basic dGVzdC1rZXk=\r\n", "Authorization: Bearer \r\n"]
+    {
         let mut stream = TcpStream::connect(server.addr).await.unwrap();
         let head = format!(
             "POST /v1/audio/speech HTTP/1.1\r\nHost: test\r\n{auth}Content-Type: application/json\r\nContent-Length: 100000\r\n\r\n"
@@ -144,8 +146,10 @@ async fn refuses_bad_requests_before_text_processing() {
 #[tokio::test]
 async fn the_clients_requests_are_served() {
     let (server, mut worker) = with_scripted(|_| {}).await;
-    let lion_reader = json!({ "model": "tts-1", "voice": "af_heart", "input": "Hi.", "response_format": "pcm", "stream": true });
-    let clawed_abode = json!({ "model": "kokoro", "input": "Hi.", "voice": "am_adam", "speed": 1.25, "response_format": "pcm" });
+    let lion_reader =
+        json!({ "model": "tts-1", "voice": "af_heart", "input": "Hi.", "response_format": "pcm", "stream": true });
+    let clawed_abode =
+        json!({ "model": "kokoro", "input": "Hi.", "voice": "am_adam", "speed": 1.25, "response_format": "pcm" });
     for (body, voice, speed) in [(lion_reader, 0, 100), (clawed_abode, 3, 125)] {
         let client = tokio::spawn(speak(server.addr, body));
         let (slot, _, got_speed, got_voice, ids) = worker.synthesize().await;
@@ -561,7 +565,8 @@ async fn speaks_english_with_the_real_pipeline() {
 
     assert_eq!(chunks.len(), 3);
     // Read by the Japanese G2P when UniDic is installed, else as "Japanese text".
-    let japanese = if kokoro_pipeline::japanese_available() { ("toːkʲoː e ikɯ", 0) } else { ("ʤˌæpənˈiz tˈɛkst", 1) };
+    let japanese =
+        if kokoro_pipeline::japanese_available() { ("toːkʲoː e ikɯ", 0) } else { ("ʤˌæpənˈiz tˈɛkst", 1) };
     assert_eq!((chunks[2].phonemes.as_str(), chunks[2].unread), japanese);
     let mut expected = Vec::new();
     for chunk in &chunks {

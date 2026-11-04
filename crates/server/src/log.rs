@@ -101,7 +101,10 @@ fn timestamp(since_epoch: std::time::Duration) -> String {
 #[doc(hidden)]
 pub fn write(level: Level, target: &str, message: std::fmt::Arguments) {
     #[cfg(test)]
-    if CAPTURED.with_borrow_mut(|c| c.as_mut().map(|c| c.push(format!("{} {target}: {message}", level.name())))).is_some() {
+    if CAPTURED
+        .with_borrow_mut(|c| c.as_mut().map(|c| c.push(format!("{} {target}: {message}", level.name()))))
+        .is_some()
+    {
         return;
     }
     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();

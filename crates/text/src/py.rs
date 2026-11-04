@@ -55,10 +55,7 @@ pub fn strip(s: &str) -> &str {
 
 /// Python's `float()` on a string of decimal digits with at most one `.`, after `,` grouping is removed.
 pub fn parse_float(s: &str) -> f64 {
-    let ascii: String = s
-        .chars()
-        .map(|c| digit_value(c).map_or(c, |d| char::from(b'0' + d as u8)))
-        .collect();
+    let ascii: String = s.chars().map(|c| digit_value(c).map_or(c, |d| char::from(b'0' + d as u8))).collect();
     ascii.parse().unwrap_or_else(|_| panic!("not a decimal number: {s:?}"))
 }
 

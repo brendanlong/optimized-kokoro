@@ -106,11 +106,25 @@ impl Espeak {
         if ix < 0 { 0 } else { self.data.phoneme_index.get(ix as usize).copied().unwrap_or(0) }
     }
 
-    fn stress_condition(&self, tr: Option<Tr>, list: &[PhonemeList], plist: Target, prev_vowel: &PhonemeList, condition: i32, control: i32) -> bool {
+    fn stress_condition(
+        &self,
+        tr: Option<Tr>,
+        list: &[PhonemeList],
+        plist: Target,
+        prev_vowel: &PhonemeList,
+        condition: i32,
+        control: i32,
+    ) -> bool {
         const CONDITION_LEVEL: [i32; 4] = [1, 2, 4, 15];
         let get = |off: isize| match plist {
             Target::List(i) => pl(list, i + off),
-            Target::PrevVowel => if off == 0 { *prev_vowel } else { PhonemeList::default() },
+            Target::PrevVowel => {
+                if off == 0 {
+                    *prev_vowel
+                } else {
+                    PhonemeList::default()
+                }
+            }
         };
         let p0 = get(0);
         let pl_ = if self.phz(p0.phcode).typ == PH_VOWEL {
@@ -126,7 +140,8 @@ impl Espeak {
         let mut stress_level = (pl_.stresslevel & 0xf) as i32;
         if let Some(tr) = tr {
             let t = self.t(tr);
-            if (control & 1) != 0 && (p0.synthflags & SFLAG_DICTIONARY) != 0 && (t.langopts.param[LOPT_REDUCE] & 1) == 0 {
+            if (control & 1) != 0 && (p0.synthflags & SFLAG_DICTIONARY) != 0 && (t.langopts.param[LOPT_REDUCE] & 1) == 0
+            {
                 return false;
             }
             if (t.langopts.param[LOPT_REDUCE] & 0x2) != 0 && stress_level >= pl_.wordstress as i32 {
@@ -162,7 +177,15 @@ impl Espeak {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn interpret_condition(&self, tr: Option<Tr>, control: i32, list: &mut [PhonemeList], plist_ix: isize, prog: isize, prev_vowel: &mut Option<PhonemeList>) -> bool {
+    fn interpret_condition(
+        &self,
+        tr: Option<Tr>,
+        control: i32,
+        list: &mut [PhonemeList],
+        plist_ix: isize,
+        prog: isize,
+        prev_vowel: &mut Option<PhonemeList>,
+    ) -> bool {
         let instn = (self.prog(prog) & 0xfff) as u32;
         let mut data = instn & 0xff;
         let instn2 = instn >> 8;
@@ -386,7 +409,14 @@ impl Espeak {
         }
     }
 
-    fn switch_on_vowel_type(&self, list: &[PhonemeList], plist_ix: isize, phdata: &mut PhonemeData, prog: &mut isize, instn_type: usize) {
+    fn switch_on_vowel_type(
+        &self,
+        list: &[PhonemeList],
+        plist_ix: isize,
+        phdata: &mut PhonemeData,
+        prog: &mut isize,
+        instn_type: usize,
+    ) {
         let voweltype = if instn_type == 2 {
             phdata.pd_control |= PD_FORNEXTPH;
             pl(list, plist_ix + 1).ph.map_or(0, |p| p.start_type) as i32
@@ -402,7 +432,15 @@ impl Espeak {
     }
 
     /// `InterpretPhoneme`: runs the program of `list[ix].ph`.
-    pub(crate) fn interpret_phoneme(&self, tr: Option<Tr>, control: i32, list: &mut [PhonemeList], ix: isize, phdata: &mut PhonemeData, mut worddata: Option<&mut Option<PhonemeList>>) {
+    pub(crate) fn interpret_phoneme(
+        &self,
+        tr: Option<Tr>,
+        control: i32,
+        list: &mut [PhonemeList],
+        ix: isize,
+        phdata: &mut PhonemeData,
+        mut worddata: Option<&mut Option<PhonemeList>>,
+    ) {
         const N_RETURN: usize = 10;
         let mut n_return = 0usize;
         let mut return_addr = [0isize; N_RETURN];

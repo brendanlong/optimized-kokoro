@@ -13,16 +13,14 @@ struct Case {
 }
 
 fn cases() -> Vec<(String, Case)> {
-    let mut files = vec![(
-        "tests/cases.jsonl".to_owned(),
-        include_str!("cases.jsonl").to_owned(),
-    )];
+    let mut files = vec![("tests/cases.jsonl".to_owned(), include_str!("cases.jsonl").to_owned())];
     let out = std::env::var_os("KOKORO_REFERENCE_OUT")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../reference/out"))
         .join("zh-g2p");
     if let Ok(entries) = std::fs::read_dir(&out) {
-        let mut paths: Vec<_> = entries.map(|e| e.unwrap().path()).filter(|p| p.extension().is_some_and(|x| x == "jsonl")).collect();
+        let mut paths: Vec<_> =
+            entries.map(|e| e.unwrap().path()).filter(|p| p.extension().is_some_and(|x| x == "jsonl")).collect();
         paths.sort();
         for p in paths {
             files.push((p.display().to_string(), std::fs::read_to_string(&p).unwrap()));
@@ -49,7 +47,10 @@ fn matches_misaki() {
             _ => false,
         };
         if !ok {
-            failures.push(format!("{file}: {:?}\n  expected {:?} {:?}\n  got      {:?}", case.text, case.phonemes, case.error, got));
+            failures.push(format!(
+                "{file}: {:?}\n  expected {:?} {:?}\n  got      {:?}",
+                case.text, case.phonemes, case.error, got
+            ));
         }
     }
     eprintln!("{} of {} cases match", cases.len() - failures.len(), cases.len());

@@ -20,8 +20,7 @@ struct Case {
 
 fn cases() -> Vec<Case> {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let out = std::env::var_os("KOKORO_REFERENCE_OUT")
-        .map_or_else(|| root.join("../../reference/out"), PathBuf::from);
+    let out = std::env::var_os("KOKORO_REFERENCE_OUT").map_or_else(|| root.join("../../reference/out"), PathBuf::from);
     let mut paths = vec![root.join("tests/espeak.jsonl")];
     if let Ok(entries) = std::fs::read_dir(out) {
         let mut extra: Vec<_> = entries
@@ -124,9 +123,8 @@ fn wrappers_match_misaki_given_c_espeak() {
     let mut wrappers = HashMap::new();
     let mut failures = Vec::new();
     for case in cases() {
-        let wrapper = wrappers
-            .entry((case.wrapper.clone(), case.language.clone()))
-            .or_insert_with(|| Wrapper::new(&case));
+        let wrapper =
+            wrappers.entry((case.wrapper.clone(), case.language.clone())).or_insert_with(|| Wrapper::new(&case));
         let mut calls = case.espeak.iter();
         let mut asked = Vec::new();
         let mut espeak = |chunk: &str| {

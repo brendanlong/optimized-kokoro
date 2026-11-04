@@ -42,7 +42,7 @@ mod ucd;
 mod ucd_tables;
 mod voices;
 
-pub use data::{EspeakData, Error, Result, VoiceInfo};
+pub use data::{Error, EspeakData, Result, VoiceInfo};
 pub use engine::Espeak;
 pub use tr_languages::alphabet_languages;
 
@@ -137,7 +137,12 @@ impl Espeak {
     /// [`text_to_phonemes`](Self::text_to_phonemes), calling `after_clause` after each clause,
     /// e.g. to print [`debug_phoneme_list`](Self::debug_phoneme_list).
     #[doc(hidden)]
-    pub fn translate_text(&mut self, text: &str, phoneme_mode: i32, mut after_clause: impl FnMut(&Self)) -> Vec<String> {
+    pub fn translate_text(
+        &mut self,
+        text: &str,
+        phoneme_mode: i32,
+        mut after_clause: impl FnMut(&Self),
+    ) -> Vec<String> {
         let mut out = Vec::new();
         if self.used {
             let Some(after_set_voice) = self.after_set_voice.clone() else { return out };

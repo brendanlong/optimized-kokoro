@@ -37,7 +37,11 @@ fn uses_new_script(record: &Record) -> bool {
 }
 
 fn reads_unreadable_han(record: &Record) -> bool {
-    record.calls.iter().flat_map(|c| &c.segments).any(|(s, l)| l.is_none() && s.chars().any(|c| script(c) == Some(Script::Han)))
+    record
+        .calls
+        .iter()
+        .flat_map(|c| &c.segments)
+        .any(|(s, l)| l.is_none() && s.chars().any(|c| script(c) == Some(Script::Han)))
 }
 
 fn uses_japanese(record: &Record) -> bool {
@@ -100,7 +104,8 @@ fn espeak_reference_records() {
             })
             .collect();
         count.chunks += actual.len();
-        let expected: Vec<(String, String)> = record.chunks.iter().map(|c| (c.text.clone(), c.phonemes.clone())).collect();
+        let expected: Vec<(String, String)> =
+            record.chunks.iter().map(|c| (c.text.clone(), c.phonemes.clone())).collect();
         assert!(record.error.is_none(), "{}: the reference failed: {:?}", record.id, record.error);
         let reason = if uses_new_script(record) {
             Some("other scripts")
@@ -126,7 +131,8 @@ fn espeak_reference_records() {
         if actual == expected {
             count.matched += 1;
         } else {
-            let first = expected.iter().zip(&actual).position(|(e, a)| e != a).unwrap_or(expected.len().min(actual.len()));
+            let first =
+                expected.iter().zip(&actual).position(|(e, a)| e != a).unwrap_or(expected.len().min(actual.len()));
             mismatches.push(format!(
                 "{} ({} vs {} chunks, first difference at {first})\n  expected: {:?}\n  actual:   {:?}",
                 record.id,
@@ -146,7 +152,10 @@ fn espeak_reference_records() {
             c.records,
             c.chunks,
             c.chars,
-            c.skipped.iter().map(|(reason, ids)| format!("{} {reason} (e.g. {:?})", ids.len(), &ids[..ids.len().min(3)])).collect::<Vec<_>>()
+            c.skipped
+                .iter()
+                .map(|(reason, ids)| format!("{} {reason} (e.g. {:?})", ids.len(), &ids[..ids.len().min(3)]))
+                .collect::<Vec<_>>()
         );
     }
     println!("{} records in {elapsed:.2?}", records.len());

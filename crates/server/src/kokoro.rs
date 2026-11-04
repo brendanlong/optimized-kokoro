@@ -35,13 +35,19 @@ mod tests {
     #[test]
     fn reads_english_and_names_what_it_cant_read() {
         let pipelines = KokoroPipelines::load().unwrap();
-        let chunks: Vec<_> =
-            pipelines.chunks(Lang::AmericanEnglish, "Hello there. [pause:0.5s] 東京 is big. カナ too.").map(Result::unwrap).collect();
+        let chunks: Vec<_> = pipelines
+            .chunks(Lang::AmericanEnglish, "Hello there. [pause:0.5s] 東京 is big. カナ too.")
+            .map(Result::unwrap)
+            .collect();
         assert_eq!(chunks[0].text, "Hello there.");
         assert!(!chunks[0].ids.is_empty() && chunks[0].ids.len() == chunks[0].phonemes.chars().count());
         assert_eq!(chunks[1].pause, Some(0.5));
         assert_eq!((chunks[2].phonemes.as_str(), chunks[2].unread), ("dˈʊŋʨˈiŋ ɪz bˈɪɡ.", 0));
-        let kana = if kokoro_pipeline::japanese_available() { ("kana tˈu.", 0) } else { ("ʤˌæpənˈiz tˈɛkst tˈu.", 1) };
+        let kana = if kokoro_pipeline::japanese_available() {
+            ("kana tˈu.", 0)
+        } else {
+            ("ʤˌæpənˈiz tˈɛkst tˈu.", 1)
+        };
         assert_eq!((chunks[3].phonemes.as_str(), chunks[3].unread), kana);
     }
 

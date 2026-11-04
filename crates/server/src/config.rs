@@ -200,7 +200,9 @@ impl Config {
         if self.api_keys.iter().any(|k| k.key.is_empty()) {
             return Err("an API key is empty".into());
         }
-        if let Some(i) = (0..self.api_keys.len()).find(|&i| !(1..=Semaphore::MAX_PERMITS).contains(&self.max_streams(i))) {
+        if let Some(i) =
+            (0..self.api_keys.len()).find(|&i| !(1..=Semaphore::MAX_PERMITS).contains(&self.max_streams(i)))
+        {
             return Err(format!("API key {} (by position): max_streams must be at least 1", i + 1));
         }
         let counts = [

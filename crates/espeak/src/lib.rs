@@ -15,7 +15,7 @@ use phonemizer::{Backend, py_strip};
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
-pub use kokoro_espeak_ng::{EspeakData, Error, Result, alphabet_languages, default_data_dir};
+pub use kokoro_espeak_ng::{Error, EspeakData, Result, alphabet_languages, default_data_dir};
 
 /// The data in [`default_data_dir`], loaded once per process.
 pub fn default_data() -> Result<Arc<EspeakData>> {
@@ -84,11 +84,7 @@ impl EspeakFallback {
     }
 
     /// [`phonemize`](Self::phonemize) with `espeak` standing in for the engine.
-    pub fn phonemize_with(
-        &self,
-        word: &str,
-        espeak: impl FnMut(&str) -> Result<String>,
-    ) -> Result<Option<String>> {
+    pub fn phonemize_with(&self, word: &str, espeak: impl FnMut(&str) -> Result<String>) -> Result<Option<String>> {
         let Some(first) = self.backend.phonemize_with(word, espeak)?.into_iter().next() else {
             return Ok(None);
         };
@@ -100,12 +96,7 @@ impl EspeakFallback {
         if self.british {
             ps = ps.replace("e^ə", "ɛː").replace("iə", "ɪə").replace("ə^ʊ", "Q");
         } else {
-            ps = ps
-                .replace("o^ʊ", "O")
-                .replace("ɜːɹ", "ɜɹ")
-                .replace("ɜː", "ɜɹ")
-                .replace("ɪə", "iə")
-                .replace('ː', "");
+            ps = ps.replace("o^ʊ", "O").replace("ɜːɹ", "ɜɹ").replace("ɜː", "ɜɹ").replace("ɪə", "iə").replace('ː', "");
         }
         ps = ps.replace('o', "ɔ").replace('ɾ', "T").replace('ʔ', "t").replace('^', "");
         Ok(Some(ps))
@@ -170,11 +161,7 @@ impl EspeakG2P {
 
     /// [`phonemize`](Self::phonemize) with `espeak` standing in for the engine.
     pub fn phonemize_with(&self, text: &str, espeak: impl FnMut(&str) -> Result<String>) -> Result<String> {
-        let text = text
-            .replace('«', "\u{201c}")
-            .replace('»', "\u{201d}")
-            .replace('(', "«")
-            .replace(')', "»");
+        let text = text.replace('«', "\u{201c}").replace('»', "\u{201d}").replace('(', "«").replace(')', "»");
         let Some(first) = self.backend.phonemize_with(&text, espeak)?.into_iter().next() else {
             return Ok(String::new());
         };

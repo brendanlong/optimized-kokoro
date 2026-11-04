@@ -50,9 +50,7 @@ fn table_char(c: char) -> Option<&'static str> {
 
 /// `jaconv.kata2hira`
 pub fn kata2hira(s: &str) -> String {
-    s.chars()
-        .map(|c| KATA2HIRA.binary_search_by(|(k, _)| k.cmp(&c)).map_or(c, |i| KATA2HIRA[i].1))
-        .collect()
+    s.chars().map(|c| KATA2HIRA.binary_search_by(|(k, _)| k.cmp(&c)).map_or(c, |i| KATA2HIRA[i].1)).collect()
 }
 
 /// `misaki/data/ja_words.txt`, which cutlet joins MeCab's words by.
@@ -64,7 +62,8 @@ pub struct Words {
 
 impl Words {
     pub fn bundled() -> Words {
-        let set: HashSet<String> = include_str!("../data/ja_words.txt").lines().map(|l| py::strip(l).to_owned()).collect();
+        let set: HashSet<String> =
+            include_str!("../data/ja_words.txt").lines().map(|l| py::strip(l).to_owned()).collect();
         let longest = set.iter().map(|w| w.chars().count()).max().unwrap_or(0);
         Words { set, longest }
     }
@@ -72,7 +71,8 @@ impl Words {
 
 /// `Katakana_Phonetic_Extensions`: small katakana ㇰ–ㇿ as their full-size kana.
 fn phonetic_extension(c: char) -> Option<char> {
-    const FULL: [char; 16] = ['ク', 'シ', 'ス', 'ト', 'ヌ', 'ハ', 'ヒ', 'フ', 'ヘ', 'ホ', 'ム', 'ラ', 'リ', 'ル', 'レ', 'ロ'];
+    const FULL: [char; 16] =
+        ['ク', 'シ', 'ス', 'ト', 'ヌ', 'ハ', 'ヒ', 'フ', 'ヘ', 'ホ', 'ム', 'ラ', 'リ', 'ル', 'レ', 'ロ'];
     matches!(c, '\u{31f0}'..='\u{31ff}').then(|| FULL[c as usize - 0x31f0])
 }
 
@@ -118,7 +118,8 @@ pub fn normalize(text: &str) -> Vec<Part> {
                 out.push_str(&num2kana::convert_kana(&ascii));
             } else {
                 parts.push(Part::Text(std::mem::take(out)));
-                let words: Vec<String> = num2kana::number_words(&ascii).iter().map(|kana| kana_phonemes(kana)).collect();
+                let words: Vec<String> =
+                    num2kana::number_words(&ascii).iter().map(|kana| kana_phonemes(kana)).collect();
                 parts.push(Part::Number(String::from_utf8(ascii).expect("ASCII"), words.join(" ")));
             }
         } else {
@@ -423,11 +424,13 @@ pub fn phonemize(dict: &Dictionary, ja_words: &Words, text: &str) -> Result<Stri
         match part {
             Part::Text(text) => {
                 let text = shorten_spaces(dict, text);
-                words.extend(mecab::analyze(dict, &text)?.into_iter().map(|Morph { surface, reading, char_type, unknown }| Word {
-                    surface: surface.to_owned(),
-                    hira: reading.map_or_else(|| kata2hira(surface), str::to_owned),
-                    char_type: if char_type == KATAKANA || !unknown { HIRAGANA } else { char_type },
-                }));
+                words.extend(mecab::analyze(dict, &text)?.into_iter().map(
+                    |Morph { surface, reading, char_type, unknown }| Word {
+                        surface: surface.to_owned(),
+                        hira: reading.map_or_else(|| kata2hira(surface), str::to_owned),
+                        char_type: if char_type == KATAKANA || !unknown { HIRAGANA } else { char_type },
+                    },
+                ));
             }
             Part::Number(digits, phonemes) => words.push(Word { surface: digits, hira: phonemes, char_type: NUMBER }),
         }

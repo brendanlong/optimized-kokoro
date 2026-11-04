@@ -39,7 +39,10 @@ fn valid_frames(rng: &mut Rng) -> Vec<u8> {
         let ids: Vec<u8> = (0..=slot).map(|_| 1 + rng.below(177) as u8).collect();
         match rng.below(3) {
             0 => out.extend(respond(slot, &ids)),
-            1 => out.extend(worker_side::failed(slot, if rng.below(2) == 0 { FailCode::Cancelled } else { FailCode::Internal })),
+            1 => out.extend(worker_side::failed(
+                slot,
+                if rng.below(2) == 0 { FailCode::Cancelled } else { FailCode::Internal },
+            )),
             _ => {
                 let durations: Vec<u16> = (0..ids.len() + 2).map(|_| 1 + rng.below(3) as u16).collect();
                 let units: usize = durations.iter().map(|&d| usize::from(d)).sum();

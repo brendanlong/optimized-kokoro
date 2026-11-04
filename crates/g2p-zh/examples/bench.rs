@@ -33,5 +33,10 @@ fn main() {
     }
     let elapsed = start.elapsed().as_secs_f64() * 1e6;
     let n = sentences.len() * repeat;
-    println!("{} sentences: {:.1} µs per sentence, {:.3} µs per character", sentences.len(), elapsed / n as f64, elapsed / chars as f64);
+    println!(
+        "{} sentences: {:.1} µs per sentence, {:.3} µs per character",
+        sentences.len(),
+        elapsed / n as f64,
+        elapsed / chars as f64
+    );
 }

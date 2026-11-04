@@ -34,7 +34,9 @@ pub enum StreamError {
     Pipeline(PipelineError),
     Synth(SynthError),
     /// The text needs more phoneme ids than one request may send to the worker.
-    TooMuchSpeech { max_ids: usize },
+    TooMuchSpeech {
+        max_ids: usize,
+    },
     /// A stage stopped without finishing or reporting an error.
     Aborted,
 }

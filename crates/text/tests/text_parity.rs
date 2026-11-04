@@ -1,7 +1,9 @@
 //! Parity with the reference's text functions on hard and randomized cases
 //! (`reference/fixtures/text_cases.out.jsonl`, written by `reference/dump_text.py`).
 
-use kokoro_text::{Chunk, Limits, Options, check_pause_budget, check_speakable, join_lines, py, sentences, smart_split};
+use kokoro_text::{
+    Chunk, Limits, Options, check_pause_budget, check_speakable, join_lines, py, sentences, smart_split,
+};
 use kokoro_text::{split, strip_emoji};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -69,8 +71,9 @@ fn run(case: &Value) -> (Value, Value) {
 #[test]
 fn text_cases() {
     // KOKORO_TEXT_CASES points at a larger dump from the same script.
-    let path = std::env::var("KOKORO_TEXT_CASES")
-        .unwrap_or_else(|_| concat!(env!("CARGO_MANIFEST_DIR"), "/../../reference/fixtures/text_cases.out.jsonl").into());
+    let path = std::env::var("KOKORO_TEXT_CASES").unwrap_or_else(|_| {
+        concat!(env!("CARGO_MANIFEST_DIR"), "/../../reference/fixtures/text_cases.out.jsonl").into()
+    });
     let mut totals: BTreeMap<String, (usize, usize)> = BTreeMap::new();
     let mut mismatches = Vec::new();
     for line in std::fs::read_to_string(path).unwrap().lines().filter(|l| !l.trim().is_empty()) {

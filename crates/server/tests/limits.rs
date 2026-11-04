@@ -137,7 +137,9 @@ async fn hostile_http_is_refused() {
         ),
         (
             "100-continue, then no body",
-            format!("POST /v1/audio/speech HTTP/1.1\r\nHost: t\r\n{auth}Expect: 100-continue\r\nContent-Length: 100\r\n\r\n"),
+            format!(
+                "POST /v1/audio/speech HTTP/1.1\r\nHost: t\r\n{auth}Expect: 100-continue\r\nContent-Length: 100\r\n\r\n"
+            ),
             &|out| out.contains("100 Continue") && out.contains("408"),
         ),
         (
@@ -147,7 +149,9 @@ async fn hostile_http_is_refused() {
         ),
         (
             "stalled trailers",
-            format!("POST /v1/audio/speech HTTP/1.1\r\nHost: t\r\n{auth}Transfer-Encoding: chunked\r\n\r\n2\r\n{{}}\r\n0\r\nX-Foo: "),
+            format!(
+                "POST /v1/audio/speech HTTP/1.1\r\nHost: t\r\n{auth}Transfer-Encoding: chunked\r\n\r\n2\r\n{{}}\r\n0\r\nX-Foo: "
+            ),
             &|out| out.contains("408"),
         ),
         (
@@ -160,11 +164,9 @@ async fn hostile_http_is_refused() {
             format!("GET /health HTTP/1.1\r\nHost: t\r\n{}\r\n", "X-Foo: x\r\n".repeat(101)),
             &|out| out.contains("431"),
         ),
-        (
-            "huge header",
-            format!("GET /health HTTP/1.1\r\nHost: t\r\nX-Foo: {}\r\n\r\n", "x".repeat(500_000)),
-            &|out| out.contains("431"),
-        ),
+        ("huge header", format!("GET /health HTTP/1.1\r\nHost: t\r\nX-Foo: {}\r\n\r\n", "x".repeat(500_000)), &|out| {
+            out.contains("431")
+        }),
         ("h2 preface", "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n".into(), &|out| !out.contains("200")),
         (
             "h2c upgrade",
@@ -173,7 +175,8 @@ async fn hostile_http_is_refused() {
         ),
         (
             "pipelining",
-            "GET /health HTTP/1.1\r\nHost: t\r\n\r\nGET /health HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n".into(),
+            "GET /health HTTP/1.1\r\nHost: t\r\n\r\nGET /health HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n"
+                .into(),
             &|out| out.matches("HTTP/1.1 200").count() == 2,
         ),
     ];

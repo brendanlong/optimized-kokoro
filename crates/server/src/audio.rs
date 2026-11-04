@@ -18,7 +18,6 @@ pub fn silence(seconds: f64) -> usize {
     (seconds * f64::from(SAMPLE_RATE)) as usize
 }
 
-
 fn end_padding(text: &str, speed: f64) -> usize {
     let multiplier = match py::strip(text).chars().next_back() {
         Some('!') => 0.9,
@@ -79,7 +78,6 @@ mod tests {
             }
         }
     }
-
 
     #[test]
     fn silence_truncates() {

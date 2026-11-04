@@ -240,7 +240,6 @@ async fn hello_with_the_most_voices_parses_quickly() {
     assert_eq!(parsed, protocol::WorkerFrame::Hello(h));
 }
 
-
 #[tokio::test]
 async fn disconnecting_before_the_first_audio_cancels_the_work() {
     let server = start(one_stream, Arc::new(StubPipeline)).await;
@@ -406,4 +405,3 @@ async fn maximal_audio_at_the_chunk_cap_is_accepted() {
     drop(rendered);
     assert_eq!(server.worker.gauge().held(), 0);
 }
-

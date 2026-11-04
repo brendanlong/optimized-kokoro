@@ -21,11 +21,89 @@ impl Rng {
 }
 
 const PIECES: &[&str] = &[
-    " ", " ", "  ", "\n", "\n\n", "\t", ".", ",", "!", "?", ";", ":", "-", "--", "'", "\"", "(", ")", "[", "]", "[[", "]]",
-    "\u{1}", "\u{1}B1", "\u{1}V", "\u{1}Y", "\u{1}+10S", "[\u{2}", "_^_", "...", "…", "'s", "1", "12", "123", "1234",
-    "12345678", "1,234", "1.234", "3.14", "0", "007", "XIV", "Mr.", "U.S.A.", "e.g.", "the", "a", "I", "one", "and",
-    "café", "naïve", "Łódź", "Nguyễn", "ω", "λόγος", "мир", "שלום", "سلام", "नमस्ते", "한국어", "日本語", "😀", "\u{200b}",
-    "\u{301}", "ß", "İ", "ı", "ǅ", "\u{fffd}", "\u{e000}", "\u{10ffff}", "%", "$", "€", "£", "@", "#", "&", "*", "/", "\\",
+    " ",
+    " ",
+    "  ",
+    "\n",
+    "\n\n",
+    "\t",
+    ".",
+    ",",
+    "!",
+    "?",
+    ";",
+    ":",
+    "-",
+    "--",
+    "'",
+    "\"",
+    "(",
+    ")",
+    "[",
+    "]",
+    "[[",
+    "]]",
+    "\u{1}",
+    "\u{1}B1",
+    "\u{1}V",
+    "\u{1}Y",
+    "\u{1}+10S",
+    "[\u{2}",
+    "_^_",
+    "...",
+    "…",
+    "'s",
+    "1",
+    "12",
+    "123",
+    "1234",
+    "12345678",
+    "1,234",
+    "1.234",
+    "3.14",
+    "0",
+    "007",
+    "XIV",
+    "Mr.",
+    "U.S.A.",
+    "e.g.",
+    "the",
+    "a",
+    "I",
+    "one",
+    "and",
+    "café",
+    "naïve",
+    "Łódź",
+    "Nguyễn",
+    "ω",
+    "λόγος",
+    "мир",
+    "שלום",
+    "سلام",
+    "नमस्ते",
+    "한국어",
+    "日本語",
+    "😀",
+    "\u{200b}",
+    "\u{301}",
+    "ß",
+    "İ",
+    "ı",
+    "ǅ",
+    "\u{fffd}",
+    "\u{e000}",
+    "\u{10ffff}",
+    "%",
+    "$",
+    "€",
+    "£",
+    "@",
+    "#",
+    "&",
+    "*",
+    "/",
+    "\\",
 ];
 
 fn random_text(rng: &mut Rng) -> String {
@@ -64,7 +142,8 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let iterations: usize = args.get(1).map_or(10_000, |s| s.parse().unwrap());
     let seed: u64 = args.get(2).map_or(1, |s| s.parse().unwrap());
-    let dir = args.get(3).cloned().unwrap_or_else(|| concat!(env!("CARGO_MANIFEST_DIR"), "/espeak-ng-data").to_string());
+    let dir =
+        args.get(3).cloned().unwrap_or_else(|| concat!(env!("CARGO_MANIFEST_DIR"), "/espeak-ng-data").to_string());
     let data = EspeakData::load(&dir).unwrap();
     let voices: Vec<String> = data.list_voices().iter().map(|v| v.identifier.clone()).collect();
     let mut engines: Vec<Option<Espeak>> = voices.iter().map(|_| None).collect();
@@ -91,5 +170,12 @@ fn main() {
             engines[v] = None;
         }
     }
-    println!("{iterations} calls over {} voices, {panics} panics; slowest {:?} ({} {:?} bytes={})", voices.len(), slowest.0, slowest.1, slowest.2.chars().take(60).collect::<String>(), slowest.2.len());
+    println!(
+        "{iterations} calls over {} voices, {panics} panics; slowest {:?} ({} {:?} bytes={})",
+        voices.len(),
+        slowest.0,
+        slowest.1,
+        slowest.2.chars().take(60).collect::<String>(),
+        slowest.2.len()
+    );
 }

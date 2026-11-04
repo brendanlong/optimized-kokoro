@@ -20,7 +20,8 @@ use tokio::net::{TcpStream, UnixListener};
 use tokio::sync::mpsc;
 
 pub const KEY: &str = "test-key";
-pub const VOICES: [&str; 9] = ["af_heart", "af_bella", "af_sky", "am_adam", "bf_emma", "jf_alpha", "zf_xiaobei", "ef_dora", "xf_nobody"];
+pub const VOICES: [&str; 9] =
+    ["af_heart", "af_bella", "af_sky", "am_adam", "bf_emma", "jf_alpha", "zf_xiaobei", "ef_dora", "xf_nobody"];
 
 pub fn hello() -> Hello {
     Hello {
@@ -253,7 +254,6 @@ impl AutoWorker {
                     log.push(Rendered { slot, priority, first_id: ids[0], waited });
                 }
                 if writer.write_all(&respond(slot, &ids)).await.is_err() {
-
                     return;
                 }
             }
@@ -272,7 +272,6 @@ impl Pipeline for CountingPipeline {
     fn chunks<'a>(&'a self, lang: Lang, text: &'a str) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         StubPipeline.chunks(lang, text)
-
     }
 }
 
@@ -315,7 +314,8 @@ pub async fn request(addr: SocketAddr, req: Request<Full<Bytes>>) -> Response<In
 }
 
 pub fn speech_request(key: Option<&str>, body: serde_json::Value) -> Request<Full<Bytes>> {
-    let mut builder = Request::post("/v1/audio/speech").header("host", "test").header("content-type", "application/json");
+    let mut builder =
+        Request::post("/v1/audio/speech").header("host", "test").header("content-type", "application/json");
     if let Some(key) = key {
         builder = builder.header("authorization", format!("Bearer {key}"));
     }
@@ -377,8 +377,7 @@ pub struct BrokenPipeline {
 
 impl Pipeline for BrokenPipeline {
     fn chunks<'a>(&'a self, lang: Lang, text: &'a str) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
-        Box::new(StubPipeline.chunks(lang, text)
-.enumerate().map(|(i, chunk)| {
+        Box::new(StubPipeline.chunks(lang, text).enumerate().map(|(i, chunk)| {
             if i < self.fail_at {
                 chunk
             } else if self.panic {
