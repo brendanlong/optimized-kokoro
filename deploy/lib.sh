@@ -57,10 +57,26 @@ take_lock() {
 check_driver() {
     local driver supported
     command -v nvidia-smi > /dev/null || die "nvidia-smi isn't installed (the NVIDIA driver is required)"
-    driver=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -n 1)
+    driver=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader) || die "nvidia-smi failed"
+    driver=${driver%%$'\n'*}
     supported=$(runsc nvproxy list-supported-drivers) || die "runsc nvproxy list-supported-drivers failed; is runsc too old?"
     grep -qxF "$driver" <<< "$supported" ||
-        die "this runsc ($(runsc --version | head -n 1)) doesn't support NVIDIA driver $driver; see runsc nvproxy list-supported-drivers"
+        die "this runsc ($(runsc --version | sed -n 1p)) doesn't support NVIDIA driver $driver; see runsc nvproxy list-supported-drivers"
+}
+
+# The worker's GPU comes through Docker's CDI support, not --gpus (compose.yaml says why): the NVIDIA
+# Container Toolkit's CDI spec must name KOKORO_GPU, and Docker must have CDI enabled.
+check_cdi() {
+    local devices dirs
+    command -v nvidia-ctk > /dev/null || die "nvidia-ctk isn't installed (the NVIDIA Container Toolkit is required)"
+    devices=$(nvidia-ctk cdi list 2> /dev/null) || die "nvidia-ctk cdi list failed"
+    grep -qxF "nvidia.com/gpu=$KOKORO_GPU" <<< "$devices" || die "no CDI device nvidia.com/gpu=$KOKORO_GPU; nvidia-ctk cdi list shows:
+$devices
+Generate the spec (sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml) or set KOKORO_GPU to one of those names in $root/settings.env."
+    dirs=$(docker info --format '{{json .CDISpecDirs}}' 2> /dev/null) || die "docker info failed"
+    case $dirs in
+    "" | null | "[]") die "Docker's CDI support is off: add \"features\": {\"cdi\": true} to $daemon_json and restart Docker (it's on by default from Docker 28)" ;;
+    esac
 }
 
 # Runs a command as the build user in a login shell (for cargo and uv on its PATH), in directory $1.
@@ -235,7 +251,7 @@ ensure_dirs() {
         cat > "$root/settings.env" << 'EOF'
 # Settings for deploy/compose.yaml, copied into each release's .env by install.sh and update.sh.
 # Run update.sh after a change. Unset settings take the defaults shown.
-# The GPU for the worker: an index, a UUID or a MIG device from nvidia-smi -L.
+# The GPU for the worker: a CDI device from nvidia-ctk cdi list (nvidia.com/gpu=NAME), by index or UUID.
 #KOKORO_GPU=0
 # Where the server listens (IPv4:port). 0.0.0.0 would expose it to every network the host is on.
 #KOKORO_LISTEN=127.0.0.1:8880
@@ -260,12 +276,13 @@ load_settings() {
         key=${line%%=*}
         value=${line#*=}
         case $key in
-        KOKORO_GPU) [[ $value =~ ^[A-Za-z0-9._:/-]+$ ]] ;;
+        # One GPU, never all of them (as worker/run.sh).
+        KOKORO_GPU) [[ $value =~ ^[A-Za-z0-9._:/-]+$ ]] && [ "$value" != all ] ;;
         KOKORO_LISTEN | KOKORO_DEMO_LISTEN) valid_address "$value" ;;
         # The worker's own range.
         KOKORO_MAX_BATCH) [[ $value =~ ^[0-9]{1,2}$ ]] && ((10#$value >= 1 && 10#$value <= 64)) ;;
         *) false ;;
-        esac || die "$root/settings.env line $n isn't a valid KOKORO_GPU (an nvidia-smi -L index, UUID or MIG device), KOKORO_LISTEN or KOKORO_DEMO_LISTEN (IPv4:port) or KOKORO_MAX_BATCH (1-64): $line"
+        esac || die "$root/settings.env line $n isn't a valid KOKORO_GPU (a CDI GPU name, not all), KOKORO_LISTEN or KOKORO_DEMO_LISTEN (IPv4:port) or KOKORO_MAX_BATCH (1-64): $line"
         printf -v "$key" %s "$value"
     done < "$root/settings.env"
     [ "$(port_of "$KOKORO_LISTEN")" != "$(port_of "$KOKORO_DEMO_LISTEN")" ] || die "KOKORO_LISTEN and KOKORO_DEMO_LISTEN use the same port"

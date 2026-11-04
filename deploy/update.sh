@@ -22,6 +22,7 @@ check_checkout
 prev=$(basename "$(readlink "$root/current")")
 check_driver
 ensure_dirs
+check_cdi
 # The ports the running release holds are its own; any other must be free.
 used=("$(port_of "$(release_setting "$prev" LISTEN)")" "$(port_of "$(release_setting "$prev" DEMO_LISTEN)")")
 check_port_free "$KOKORO_LISTEN" "${used[@]}"

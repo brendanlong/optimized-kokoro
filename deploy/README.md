@@ -12,7 +12,9 @@ Three containers on the host's system Docker, defined by `compose.yaml`:
 - Linux on x86-64-v3 (AVX2: Intel Haswell, AMD Zen or newer; `.cargo/config.toml`).
 - Docker Engine (rootful, the system daemon) with the Compose plugin.
 - gVisor's `runsc`, recent enough to support your NVIDIA driver: `runsc nvproxy list-supported-drivers` must list the version `nvidia-smi` reports. `install.sh` checks this. nvproxy supports exact driver versions only, so hold the driver and runsc together. Distribution packages of runsc are often too old; gVisor's own apt repository tracks its releases.
-- An NVIDIA GPU with its driver and the NVIDIA Container Toolkit, so that `docker run --gpus` works (gVisor uses its legacy hook mode). The model needs about 2 GB of GPU memory at `--max-batch 1`.
+- An NVIDIA GPU with its driver, and the NVIDIA Container Toolkit with a CDI spec (`nvidia-ctk cdi list` shows `nvidia.com/gpu=0`; `sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml` makes one). Docker's CDI support must be on, which is the default from Docker 28 (before that, `"features": {"cdi": true}` in `daemon.json`). `install.sh` checks all of this. The model needs about 2 GB of GPU memory at `--max-batch 1`.
+
+  The worker gets its GPU as a CDI device (`devices: nvidia.com/gpu=N`) with `NVIDIA_VISIBLE_DEVICES=void`, not with `--gpus`. With an image that sets `NVIDIA_VISIBLE_DEVICES=all` (every CUDA base image), `--gpus` takes the NVIDIA legacy hook path. Under runsc release-20261102.0 the sandbox then dies at boot with `Error reading mounts file: error unmarshaling mounts: unexpected end of JSON input`. CDI plus `void` works under `runsc-kokoro`: checked with `docker run --runtime=runsc-kokoro --device nvidia.com/gpu=0 -e NVIDIA_VISIBLE_DEVICES=void nvidia/cuda:12.6.3-base-ubuntu24.04 nvidia-smi`.
 - `jq`, `curl`, `flock`, `ss` and `sha256sum` on the host. For the converters (unless you import their output, below): uv for the models, and cargo for UniDic.
 - About 16 GB of disk for the images and data, and 12 GB of RAM for the worker.
 
@@ -46,14 +48,14 @@ sudo deploy/install.sh
 It fails before building anything if the server's or the demo's port is already in use, naming what holds it. For other addresses or another GPU, create `/srv/optimized-kokoro/settings.env` first. Otherwise `install.sh` writes it with these defaults commented out:
 
 ```sh
-KOKORO_GPU=0                        # an index, a UUID or a MIG device from nvidia-smi -L
+KOKORO_GPU=0                        # a CDI device name from nvidia-ctk cdi list (an index or UUID; not all)
 KOKORO_LISTEN=127.0.0.1:8880        # the server (IPv4:port); 0.0.0.0 exposes it everywhere
 KOKORO_DEMO_LISTEN=127.0.0.1:25436  # the demo page
 KOKORO_MAX_BATCH=1                  # the worker's --max-batch, 1-64 (worker/README.md)
 ```
 
 What it does:
-1. Checks the checkout, the driver against runsc and the ports. Adds the runtime and creates `/srv/optimized-kokoro`.
+1. Checks the checkout, the driver against runsc, the CDI device and the ports. Adds the runtime and creates `/srv/optimized-kokoro`.
 2. UniDic: fetches and converts it as you (`crates/g2p-ja/tools/fetch_unidic.sh`), and checks it against that script's checksum once root has the copy.
 3. Models: converts them as you with `uv run python -m kokoro_worker.convert`, from a pinned Hugging Face revision. The conversion is deterministic. Only `config.json`, `model.safetensors` and `voices.safetensors` are taken.
 4. API keys: makes one key for your clients, and a separate key for the demo page. The demo's key is limited to 4 streams, so it can't take all of the clients' capacity.

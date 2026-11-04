@@ -41,6 +41,7 @@ check_checkout
 [ ! -e "$root/current" ] || die "already installed ($root/current); use deploy/update.sh"
 check_driver
 ensure_dirs
+check_cdi
 check_port_free "$KOKORO_LISTEN"
 check_port_free "$KOKORO_DEMO_LISTEN"
 ensure_runtime

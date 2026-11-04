@@ -14,7 +14,7 @@
 # --host-uds=all: each container is its own gVisor kernel, so a Unix socket the worker binds in the
 #   shared volume only reaches the server as a real host socket. The worker needs `create`, the
 #   server `open`.
-# GPU support turns on by itself when Docker adds the NVIDIA devices (--gpus, legacy hook mode).
+# GPU support turns on by itself when the spec has NVIDIA devices (from CDI, see the worker).
 
 name: optimized-kokoro
 
@@ -38,6 +38,8 @@ services:
     command: ["--max-batch", "${KOKORO_MAX_BATCH:?}"]
     environment:
       KOKORO_CACHE_SEED: /cache-seed
+      # The device comes from CDI; "void" keeps runsc off the legacy nvidia-container-cli path.
+      NVIDIA_VISIBLE_DEVICES: void
     # Triton and Inductor write their caches there and dlopen the launcher they compile (exec).
     tmpfs:
       - /tmp:rw,exec,nosuid,nodev,size=2g,mode=1777
@@ -51,13 +53,11 @@ services:
     cpus: 4
     pids_limit: 1024
     stop_grace_period: 30s
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: ["${KOKORO_GPU:?}"]
-              capabilities: [gpu]
+    # One GPU through Docker's CDI support (the NVIDIA Container Toolkit's spec), as worker/run.sh
+    # does with podman. Not --gpus: with an image that sets NVIDIA_VISIBLE_DEVICES=all (every CUDA
+    # base image), that takes the legacy hook path, which fails under runsc release-20261102.0 with
+    # "Error reading mounts file: error unmarshaling mounts: unexpected end of JSON input".
+    devices: ["nvidia.com/gpu=${KOKORO_GPU:?}"]
 
   server:
     <<: *hardening
