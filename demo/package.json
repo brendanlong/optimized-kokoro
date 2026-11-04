@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "esbuild src/main.ts --bundle --splitting --format=esm --target=es2022 --outdir=dist"
+    "build": "esbuild src/main.ts --bundle --splitting --format=esm --target=es2022 --outdir=dist",
+    "typecheck": "tsc"
   },
   "dependencies": {
     "@mediabunny/aac-encoder": "^1.62.1",
