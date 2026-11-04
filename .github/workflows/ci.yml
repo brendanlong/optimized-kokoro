@@ -8,6 +8,9 @@ on:
 permissions:
   contents: read
 
+# Caches are saved only from main, so a PR can't fill the cache quota or seed what main restores;
+# PRs restore main's.
+#
 # A new push to a PR cancels its older runs; pushes to main all run.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
@@ -58,15 +61,14 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      # UniDic (516 MB) for the Japanese tests, which skip themselves without it. Keyed on the
-      # converted dictionary's checksum in fetch_unidic.sh, so a new dictionary or converter output
-      # gets a new cache entry.
+      # UniDic (516 MB) for the Japanese tests. Keyed on the converted dictionary's checksum in
+      # fetch_unidic.sh, so a new dictionary or converter output gets a new cache entry.
       - name: UniDic checksum
         id: unidic
         run: echo "sha256=$(sed -n 's/^OUT_SHA256=//p' crates/g2p-ja/tools/fetch_unidic.sh)" >> "$GITHUB_OUTPUT"
       - name: Restore UniDic
         id: unidic-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             crates/g2p-ja/data/unidic.dic
@@ -76,14 +78,28 @@ jobs:
         if: steps.unidic-cache.outputs.cache-hit != 'true'
         run: crates/g2p-ja/tools/fetch_unidic.sh
       - name: Check UniDic
-        run: echo "${{ steps.unidic.outputs.sha256 }}  crates/g2p-ja/data/unidic.dic" | sha256sum -c -
+        env:
+          UNIDIC_SHA256: ${{ steps.unidic.outputs.sha256 }}
+        run: echo "$UNIDIC_SHA256  crates/g2p-ja/data/unidic.dic" | sha256sum -c -
+      - name: Save UniDic
+        if: github.ref == 'refs/heads/main' && steps.unidic-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            crates/g2p-ja/data/unidic.dic
+            crates/g2p-ja/data/unidic.dic.LICENSE
+          key: unidic-${{ steps.unidic.outputs.sha256 }}
       - name: Build tests
         run: cargo test --release --workspace --locked --no-run
+      # The Japanese tests skip themselves without UniDic; here a skip is a failure.
       - name: cargo test --release
+        env:
+          KOKORO_REQUIRE_UNIDIC: 1
         run: cargo test --release --workspace --locked
 
+  # Advisories run in advisories.yml (main and daily), so a new advisory can't fail unrelated PRs.
   cargo-deny:
-    name: cargo deny
+    name: cargo deny (licenses, bans, sources)
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -94,7 +110,7 @@ jobs:
         with:
           tool: cargo-deny@0.20.2
       - name: cargo deny check
-        run: cargo deny check -D warnings
+        run: cargo deny --locked check -D warnings licenses bans sources
 
   worker:
     name: Worker (pytest, CPU)
@@ -113,6 +129,7 @@ jobs:
         with:
           version: "0.11.4"
           enable-cache: true
+          save-cache: ${{ github.ref == 'refs/heads/main' }}
           cache-dependency-glob: uv.lock
           cache-python: true
           working-directory: worker
@@ -139,11 +156,25 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
-          cache: pnpm
-          cache-dependency-path: demo/pnpm-lock.yaml
+      # setup-node's pnpm cache always saves, so the store is cached by hand (saved from main only).
+      - name: pnpm store path
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - name: Restore pnpm store
+        id: pnpm-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('demo/pnpm-lock.yaml') }}
       # esbuild works without its install script (as in demo/Containerfile).
       - name: pnpm install
         run: pnpm install --frozen-lockfile --config.strict-dep-builds=false
+      - name: Save pnpm store
+        if: github.ref == 'refs/heads/main' && steps.pnpm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('demo/pnpm-lock.yaml') }}
       - name: Typecheck
         run: pnpm run typecheck
       - name: Build
@@ -161,7 +192,8 @@ jobs:
         run: >-
           docker run --rm -v "$PWD:/mnt:ro" -w /mnt
           koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d
-          deploy/*.sh worker/run.sh crates/g2p-ja/tools/fetch_unidic.sh
+          -x deploy/*.sh worker/run.sh worker/bench/*.sh crates/g2p-ja/tools/fetch_unidic.sh
+          reference/setup.sh tools/security/*.sh
       - name: docker compose config
         run: |
           # The variables deploy/lib.sh writes into a release's .env, with placeholder values.

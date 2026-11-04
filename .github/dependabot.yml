@@ -55,3 +55,26 @@ updates:
     groups:
       github-actions:
         patterns: ['*']
+
+  # Base images in the Containerfiles' FROM lines (tag and digest). A new Rust image needs
+  # RUST_TOOLCHAIN in .github/workflows/ci.yml bumped with it.
+  - package-ecosystem: 'docker'
+    directories: ['/deploy', '/demo', '/worker']
+    schedule:
+      interval: 'weekly'
+    cooldown:
+      default-days: 7
+    groups:
+      docker:
+        patterns: ['*']
+
+  # The cloudflared image in deploy/compose.yaml.
+  - package-ecosystem: 'docker-compose'
+    directory: '/deploy'
+    schedule:
+      interval: 'weekly'
+    cooldown:
+      default-days: 7
+    groups:
+      docker-compose:
+        patterns: ['*']
