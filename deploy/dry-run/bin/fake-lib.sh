@@ -5,13 +5,23 @@ log() {
     echo "[$1] ${*:2}" >> "$FAKE_LOG"
 }
 
-# Ctrl-C: SIGINT to the whole process group (test.sh runs each script in its own), the first time
-# a call matches INT_AT.
+# Ctrl-C: SIGINT to the whole process group (test.sh runs each script in its own), at the first
+# INT_COUNT (1) calls that match INT_AT. KILL_AT: SIGKILL instead, at the first match (a kill -9 or
+# a power cut: nothing gets to clean up).
 maybe_interrupt() {
-    [ -n "${INT_AT:-}" ] && [ ! -e "$FAKE_STATE/.interrupted" ] || return 0
+    local n
+    # Both patterns are globs.
+    # shellcheck disable=SC2053
+    if [ -n "${KILL_AT:-}" ] && [[ $1 == $KILL_AT ]]; then
+        log kill "at: $1"
+        kill -KILL 0
+    fi
+    [ -n "${INT_AT:-}" ] || return 0
     # shellcheck disable=SC2053
     [[ $1 == $INT_AT ]] || return 0
-    touch "$FAKE_STATE/.interrupted"
+    n=$(cat "$FAKE_STATE/.interrupted" 2> /dev/null || echo 0)
+    [ "$n" -lt "${INT_COUNT:-1}" ] || return 0
+    echo $((n + 1)) > "$FAKE_STATE/.interrupted"
     log interrupt "at: $1"
     kill -INT 0
     /usr/bin/sleep 1

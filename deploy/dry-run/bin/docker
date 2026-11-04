@@ -9,7 +9,9 @@
 #   FAKE_WORKER=crash    a started worker keeps restarting
 #   FAIL_TUNNEL=1        the newest release's cloudflared never registers
 #   INT_AT=PATTERN       the first docker or curl call whose arguments match PATTERN (a bash glob)
-#                        sends SIGINT to the process group, as Ctrl-C does
+#                        sends SIGINT to the process group, as Ctrl-C does (INT_COUNT=N: the first
+#                        N such calls)
+#   KILL_AT=PATTERN      SIGKILL instead, so nothing cleans up
 set -uo pipefail
 # shellcheck source=deploy/dry-run/bin/fake-lib.sh
 . "$(dirname "$0")/fake-lib.sh"
@@ -205,6 +207,10 @@ network | volume)
             [ "$a" != -f ] || continue
             if [ "$kind" = network ]; then f=$S/${a%_kokoro}/network; else f=$S/${a%_sock}/volume; fi
             [ -e "$f" ] || { echo "Error: No such $kind: $a" >&2; exit 1; }
+            if [ "$kind" = network ] && compgen -G "$(dirname "$f")/svc/[dcs]*" > /dev/null; then
+                echo "Error response from daemon: error while removing network: network $a has active endpoints" >&2
+                exit 1
+            fi
             rm -f "$f"
         done
         ;;

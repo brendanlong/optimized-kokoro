@@ -1,6 +1,6 @@
 #!/bin/bash
-# Updates the Docker deployment from this checkout (after deploy/install.sh), with a second or two
-# of downtime:
+# Updates the Docker deployment from this checkout (after deploy/install.sh), with seconds of
+# downtime (the old server's shutdown and the new one's start):
 #
 #   sudo deploy/update.sh
 #
@@ -35,6 +35,17 @@ ensure_runtime
 # A worker, network or volume an update killed before it could clean up left (also the previous
 # scheme's project, optimized-kokoro, if an update already moved off it).
 sweep_projects "$(project_of "$prev")"
+# An update killed during its swap can leave the previous release's worker without its server: put
+# the server, demo and tunnel back now (the worker is warm), rather than be down until the next swap.
+running=$(compose ps --status running --services 2> /dev/null || true)
+if grep -qx worker <<< "$running" && ! grep -qx server <<< "$running"; then
+    echo "== $prev's worker runs without its server (an interrupted update?); starting the rest of $prev"
+    listen=$KOKORO_LISTEN # start_current sets it to the release's
+    start_current || die "couldn't start $prev again; see sudo docker compose -f $root/current/compose.yaml ps"
+    KOKORO_LISTEN=$listen
+elif ! grep -qx server <<< "$running"; then
+    echo "($prev isn't running, so the service is down until the swap)"
+fi
 ensure_unidic
 ensure_models
 stage_release

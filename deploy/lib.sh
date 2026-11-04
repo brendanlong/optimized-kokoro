@@ -162,9 +162,12 @@ on_abort=
 cleanup() {
     local abort=$on_abort
     on_abort=
+    # A second Ctrl-C would cut the undoing short and leave nothing serving. Ignored signals stay
+    # ignored in what this runs (docker compose too), so it finishes.
+    trap '' INT TERM
     gpu_watch_stop
     if [ -n "$abort" ]; then
-        echo "== undoing: $abort" >&2
+        echo "== undoing: $abort (Ctrl-C is ignored until it's done)" >&2
         $abort || echo "undoing failed; see sudo docker compose -f $root/current/compose.yaml ps" >&2
     fi
     rm -rf "${tmps[@]}"
@@ -257,8 +260,8 @@ remove_project() {
     local kind ids
     for kind in container network volume; do
         case $kind in
-        container) ids=$(docker ps -aq --filter "label=com.docker.compose.project=$1" 2> /dev/null) ;;
-        *) ids=$(docker "$kind" ls -q --filter "label=com.docker.compose.project=$1" 2> /dev/null) ;;
+        container) ids=$(docker ps -aq --filter "label=com.docker.compose.project=$1" 2> /dev/null) || ids= ;;
+        *) ids=$(docker "$kind" ls -q --filter "label=com.docker.compose.project=$1" 2> /dev/null) || ids= ;;
         esac
         [ -n "$ids" ] || continue
         # shellcheck disable=SC2086
@@ -689,7 +692,7 @@ point_current() {
 healthy_at=
 # shellcheck disable=SC2034 # healthy_at is update.sh's
 wait_healthy() {
-    local url
+    local url end=$((SECONDS + 600))
     url=$(health_url)
     # The worker takes about 3.5 minutes to start in gVisor with directfs off, even with a seed.
     echo "== waiting for $url"
@@ -698,6 +701,7 @@ wait_healthy() {
             healthy_at=$EPOCHREALTIME
             return 0
         fi
+        ((SECONDS < end)) || break
         sleep 0.2
     done
     echo "not healthy after 10 minutes" >&2
@@ -745,8 +749,9 @@ stop_front() {
     local net
     compose_rel "$1" rm -sf server demo cloudflared || return 1
     net="$(project_of "$1")_kokoro"
-    if docker network inspect "$net" > /dev/null 2>&1; then
-        docker network rm "$net" > /dev/null || return 1
+    if docker network inspect "$net" > /dev/null 2>&1 && ! docker network rm "$net" > /dev/null; then
+        echo "couldn't remove the network $net; still attached: $(docker network inspect -f '{{range .Containers}}{{.Name}} {{end}}' "$net" 2> /dev/null)" >&2
+        return 1
     fi
 }
 
@@ -758,13 +763,19 @@ gpu_query() {
 gpu_used() { gpu_query memory.used; }
 gpu_total() { gpu_query memory.total; }
 
-# Samples KOKORO_GPU's memory in use twice a second into log $1 until gpu_watch_stop; gpu_peak $1
-# is the highest sample (MiB), or nothing.
+# Samples KOKORO_GPU's memory in use about twice a second into log $1 until gpu_watch_stop;
+# gpu_peak $1 is the highest sample (MiB), or nothing. A loop rather than nvidia-smi -lms, whose
+# output to a file may sit in its buffer until it's killed.
 gpu_dir='' gpu_pid=''
 gpu_watch_start() {
     [ -n "$gpu_dir" ] || make_tmp gpu_dir
     # Without the lock's descriptor, so nothing it leaves behind could hold the lock.
-    nvidia-smi -i "$KOKORO_GPU" --query-gpu=memory.used --format=csv,noheader,nounits -lms 500 > "$gpu_dir/$1" 2> /dev/null 9>&- &
+    (
+        while :; do
+            gpu_used
+            sleep 0.5
+        done
+    ) > "$gpu_dir/$1" 9>&- &
     gpu_pid=$!
 }
 gpu_watch_stop() {

@@ -361,6 +361,24 @@ t_int_after_swap() {
     run update.sh
     expect_rc 0 && check_state && expect_out "removing the Compose project $before_project"
 }
+# A second Ctrl-C while the first is being undone doesn't cut the undoing short.
+t_int_twice() {
+    installed || return 1
+    run 'INT_AT=curl *' INT_COUNT=2 update.sh
+    expect_rc 130 && check_back && expect "not interrupted twice" [ "$(grep -c '^\[interrupt\]' "$FAKE_LOG")" = 2 ]
+}
+# Killed (kill -9, a power cut) between taking the old server down and starting the new one: the
+# next update puts the old server back next to its worker first, then updates.
+t_killed_mid_swap() {
+    installed || return 1
+    run 'KILL_AT=docker network rm *' update.sh
+    expect "the old server is still up" [ ! -e "$S/$before_project/svc/server" ] || return 1
+    # What the killed run couldn't clean up: its temporary directories.
+    rm -rf "${TMPDIR:?}"/*
+    run update.sh
+    expect_rc 0 && check_updated && expect_out "starting the rest of $before_cur" &&
+        expect "the old release wasn't started again" grep -q "^\[docker\] compose -p $before_project .* up -d --remove-orphans" "$FAKE_LOG"
+}
 t_leftover_project() {
     installed || return 1
     mkdir -p "$S/optimized-kokoro-20290101t000000z/svc"
