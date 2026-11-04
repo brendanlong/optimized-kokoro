@@ -5,7 +5,7 @@ Three containers on the host's system Docker, defined by `compose.yaml`:
 - `server`: the Rust front, on `127.0.0.1:8880` by default.
 - `demo`: the demo page and its proxy, on `127.0.0.1:25436` by default.
 
-`install.sh` sets them up once and `update.sh` replaces them with a new build. Both run as root (with sudo), and nothing runs as the user who installs it.
+`install.sh` sets them up once and `update.sh` replaces them with a new build. Both run as root (with sudo). No container runs as the user who installs it: they all run as nobody. Only the converters run as that user, outside the containers.
 
 ## Requirements
 
@@ -31,7 +31,7 @@ Three containers on the host's system Docker, defined by `compose.yaml`:
 - The socket lives in a named volume: a tmpfs created as `uid=65534,gid=65534,mode=0700` and mounted with `nocopy`, so Docker never copies an image directory's ownership onto it. Only the worker and the server mount it, and the worker replaces a stale `worker.sock` when it starts.
 - The API keys are in `secrets/server.toml` and `secrets/demo.key`, each `root:65534` mode 0640, in a 0700 directory. Docker bind-mounts them as Compose secrets. Outside swarm, Compose can't change their owner or mode, so the files carry them. The keys never go through the environment.
 - The server and the demo share a bridge network, 172.30.88.0/24. The addresses are fixed because Docker's embedded DNS doesn't work under runsc. The network isn't `internal`, since published ports need a gateway, so both could make outbound connections; neither does. Ports are published only on the addresses in `settings.env`, `127.0.0.1` by default. Behind anything public, an edge must filter unauthenticated traffic first (see `crates/server/src/config.rs`).
-- The scripts run as root from your checkout, and build images from it. So they refuse a checkout, or any directory above it, that anyone but you and root can change: by owner or by mode. Group write is allowed only for your private group, and sticky directories are allowed. ACLs aren't checked.
+- The scripts run as root from your checkout, and build images from it. So they refuse a checkout, or any directory above it, that anyone but you and root can change: by owner or by mode. Group write is allowed only for your private group, and sticky directories are allowed. ACLs aren't checked. This catches a misconfigured checkout, such as one another user can write. It can't detect a checkout that has already been tampered with, since the check itself runs from it.
 - The converters run as you, not as root. Root never opens a file inside a directory someone else owns. It reads each one with `sudo -u OWNER cat` into its own temporary directory, so a symlink can't make it copy something that user couldn't read. A root-owned import is read directly, but only through root-owned directories without symlinks.
 
 ## Install
@@ -49,7 +49,7 @@ It fails before building anything if the server's or the demo's port is already 
 KOKORO_GPU=0                        # an index, a UUID or a MIG device from nvidia-smi -L
 KOKORO_LISTEN=127.0.0.1:8880        # the server (IPv4:port); 0.0.0.0 exposes it everywhere
 KOKORO_DEMO_LISTEN=127.0.0.1:25436  # the demo page
-KOKORO_MAX_BATCH=1                  # the worker's --max-batch (worker/README.md)
+KOKORO_MAX_BATCH=1                  # the worker's --max-batch, 1-64 (worker/README.md)
 ```
 
 What it does:
@@ -68,9 +68,9 @@ sudo deploy/install.sh --keys-from FILE --models-from DIR --unidic-from FILE
 
 - `--keys-from FILE`: a `KOKORO_API_KEYS=a,b` line, or one key per line (with `#` comments).
 - `--models-from DIR`: what `kokoro_worker.convert` wrote.
-- `--unidic-from FILE`: a converted `unidic.dic` with its `unidic.dic.LICENSE` next to it. It must match the checksum.
+- `--unidic-from FILE`: a converted `unidic.dic`, with its license next to it as `FILE.LICENSE` (what `fetch_unidic.sh` writes). It must match the checksum.
 
-The clients' keys are then in `/srv/optimized-kokoro/secrets/server.toml` (`sudo cat` it). Clients send one as `Authorization: Bearer KEY`.
+Keys are at least 16 characters, from letters, digits and `._~+/=-`. An import is skipped, with a message, when that data is already installed. The clients' keys are then in `/srv/optimized-kokoro/secrets/server.toml` (`sudo cat` it). Clients send one as `Authorization: Bearer KEY`.
 
 The demo page needs HTTPS (a secure context) to use WebCodecs; over plain HTTP it falls back to a WASM encoder. Put it behind a TLS-terminating proxy on the host, pointing at `KOKORO_DEMO_LISTEN`.
 
@@ -78,7 +78,7 @@ The demo page needs HTTPS (a secure context) to use WebCodecs; over plain HTTP i
 
 With `c="sudo docker compose -f /srv/optimized-kokoro/current/compose.yaml"`:
 
-1. `$c ps` shows worker, server and demo up, and `curl -s 127.0.0.1:8880/health` prints 200. It's 503 until the worker is ready, which takes about 3.5 minutes.
+1. `$c ps` shows worker, server and demo up, and `curl -s -o /dev/null -w '%{http_code}\n' 127.0.0.1:8880/health` prints 200. It's 503 until the worker is ready, which takes about 3.5 minutes.
 2. `$c exec worker sh -c 'id; uname -r'` prints uid 65534 and gVisor's kernel version, not the host's. The server and demo images have no shell. `ps -eo user,args | grep runsc-sandbox` should show the sandboxes running as `nobody`, not root.
 3. `$c logs worker` shows `compile caches seeded`, the warmups and `listening on /run/kokoro/worker.sock`. There should be no CUDA errors, and no `Read-only file system` or `Permission denied` from Triton under `/tmp`.
 4. `sudo ls -l /var/lib/docker/volumes/optimized-kokoro_sock/_data` shows `srw-rw---- 65534 65534 worker.sock`.
@@ -105,7 +105,7 @@ sudo ln -sfn releases/PREVIOUS /srv/optimized-kokoro/current
 sudo docker compose -f /srv/optimized-kokoro/current/compose.yaml up -d
 ```
 
-To change a setting, edit `/srv/optimized-kokoro/settings.env` and run `update.sh`. A new address must be free.
+To change a setting, edit `/srv/optimized-kokoro/settings.env` and run `update.sh`. A new port must be free; a port the running release holds is fine (for example 127.0.0.1:8880 to 0.0.0.0:8880).
 
 ## Uninstall
 
@@ -126,6 +126,8 @@ Then, if nothing else uses it, remove `runsc-kokoro` from `/etc/docker/daemon.js
 - `releases/REL/`: `compose.yaml` (a copy of `deploy/compose.yaml`), `.env` (`KOKORO_ROOT`, `KOKORO_RELEASE`, `KOKORO_UNIDIC_FILE` and the settings) and `cache-seed/`. Images are `optimized-kokoro-{worker,server,demo}:REL`.
 - `current`: a symlink to the running release.
 - `.lock`: held while `install.sh` or `update.sh` runs.
+
+The scripts ignore inherited `KOKORO_*`, `COMPOSE_*` and `DOCKER_*` variables (except `KOKORO_BUILD_USER`), so `sudo -E` can't change what Compose sees. If either script is interrupted (Ctrl-C) or fails after swapping, it puts the previous release back, or takes a first install down again.
 
 ## Notes
 

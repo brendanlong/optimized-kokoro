@@ -50,17 +50,19 @@ ensure_models "$models_from"
 ensure_secrets "$keys_from"
 stage_release
 
-echo "== start $rel"
-if ! { point_current "$rel" && start_current; }; then
+# Takes a release that didn't come up (or was interrupted) down again; cleanup then removes it.
+take_down() {
     if [ -e "$root/current" ]; then
         show_logs
         compose down || true
     fi
     rm -f "$root/current"
-    pending_release=
-    prune_releases
-    die "install failed"
-fi
+}
+
+echo "== start $rel"
+on_abort=take_down
+if ! { point_current "$rel" && start_current; }; then die "install failed"; fi
+on_abort=
 pending_release=
 
 cat << EOF

@@ -22,25 +22,27 @@ check_checkout
 prev=$(basename "$(readlink "$root/current")")
 check_driver
 ensure_dirs
-# A changed address must be free; the current one is the running release's own.
-[ "$KOKORO_LISTEN" = "$(release_setting "$prev" LISTEN)" ] || check_port_free "$KOKORO_LISTEN"
-[ "$KOKORO_DEMO_LISTEN" = "$(release_setting "$prev" DEMO_LISTEN)" ] || check_port_free "$KOKORO_DEMO_LISTEN"
+# The ports the running release holds are its own; any other must be free.
+used=("$(port_of "$(release_setting "$prev" LISTEN)")" "$(port_of "$(release_setting "$prev" DEMO_LISTEN)")")
+check_port_free "$KOKORO_LISTEN" "${used[@]}"
+check_port_free "$KOKORO_DEMO_LISTEN" "${used[@]}"
 ensure_runtime
 ensure_unidic
 ensure_models
 stage_release
 
-echo "== swap $prev -> $rel"
-point_current "$rel"
-if ! start_current; then
+# Goes back to the previous release after a failed (or interrupted) swap; cleanup then removes the
+# new one.
+go_back() {
     show_logs
-    echo "update failed; going back to $prev" >&2
-    point_current "$prev"
-    start_current || echo "$prev isn't healthy either; see sudo docker compose -f $root/current/compose.yaml logs" >&2
-    remove_release "$rel"
-    pending_release=
-    exit 1
-fi
+    echo "going back to $prev" >&2
+    point_current "$prev" && start_current
+}
+
+echo "== swap $prev -> $rel"
+on_abort=go_back
+if ! { point_current "$rel" && start_current; }; then die "update failed"; fi
+on_abort=
 pending_release=
 prune_releases "$rel" "$prev"
 echo "up: $rel (previous: $prev, kept for going back)"

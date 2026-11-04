@@ -13,9 +13,20 @@
 #   .lock                   held by install.sh and update.sh while they run
 # Images are tagged optimized-kokoro-{worker,server,demo}:REL.
 
+# Compose gives the environment priority over a release's .env, so nothing inherited (sudo -E, say)
+# may set what the scripts decide. The only inputs are KOKORO_BUILD_USER and SUDO_USER (and DESTDIR,
+# for dry runs).
+for _v in $(compgen -e); do
+    case $_v in
+    KOKORO_BUILD_USER) ;;
+    KOKORO_* | COMPOSE_* | DOCKER_*) unset "$_v" ;;
+    esac
+done
+unset _v
+
 root=${DESTDIR:-}/srv/optimized-kokoro
 daemon_json=${DESTDIR:-}/etc/docker/daemon.json
-repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 nobody=65534
 images=(worker server demo)
 # Owns the checkout, and builds and runs the converters (cargo, uv).
@@ -44,10 +55,11 @@ take_lock() {
 
 # nvproxy supports exact driver versions only.
 check_driver() {
-    local driver
+    local driver supported
     command -v nvidia-smi > /dev/null || die "nvidia-smi isn't installed (the NVIDIA driver is required)"
     driver=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -n 1)
-    runsc nvproxy list-supported-drivers | grep -qxF "$driver" ||
+    supported=$(runsc nvproxy list-supported-drivers) || die "runsc nvproxy list-supported-drivers failed; is runsc too old?"
+    grep -qxF "$driver" <<< "$supported" ||
         die "this runsc ($(runsc --version | head -n 1)) doesn't support NVIDIA driver $driver; see runsc nvproxy list-supported-drivers"
 }
 
@@ -66,12 +78,15 @@ check_build_user() {
     fi
 }
 
-# The group whose write bit is harmless: the build user's private group (its own name, no members).
+# The group whose write bit is harmless: the build user's private group (its own name, no members,
+# and no other user's primary group).
 private_group() {
-    local g members
+    local g gid members users
     g=$(id -gn "$build_user")
+    gid=$(id -g "$build_user")
     members=$(getent group "$g" | cut -d: -f4)
-    if [ "$g" = "$build_user" ] && [ -z "$members" ]; then echo "$g"; fi
+    users=$(getent passwd | awk -F: -v gid="$gid" '$4 == gid' | wc -l)
+    if [ "$g" = "$build_user" ] && [ -z "$members" ] && [ "$users" = 1 ]; then echo "$g"; fi
 }
 
 # Whether $1 is a sticky directory (others may write it, but not rename or delete what isn't theirs).
@@ -118,7 +133,16 @@ check_checkout() {
 tmps=()
 # A release being staged; removed on exit unless the caller cleared this or current points at it.
 pending_release=
+# A command that undoes a half-done swap (going back to the previous release, or taking a failed
+# install down), run on exit until the caller clears it: on failure, but also on Ctrl-C.
+on_abort=
 cleanup() {
+    local abort=$on_abort
+    on_abort=
+    if [ -n "$abort" ]; then
+        echo "== undoing: $abort" >&2
+        $abort || echo "undoing failed; see sudo docker compose -f $root/current/compose.yaml ps" >&2
+    fi
     rm -rf "${tmps[@]}"
     if [ -n "$pending_release" ] && [ "$(readlink "$root/current" 2> /dev/null)" != "releases/$pending_release" ]; then
         echo "removing the unfinished release $pending_release" >&2
@@ -126,6 +150,7 @@ cleanup() {
     fi
 }
 trap cleanup EXIT
+trap 'exit 130' INT TERM
 make_tmp() {
     local t
     t=$(mktemp -d)
@@ -227,7 +252,7 @@ EOF
 # Reads settings.env into KOKORO_GPU, KOKORO_LISTEN, KOKORO_DEMO_LISTEN and KOKORO_MAX_BATCH (with
 # defaults); anything else in it is an error, not dropped.
 load_settings() {
-    local line n=0 key value addr='^([0-9]{1,3}\.){3}[0-9]{1,3}:[0-9]{1,5}$'
+    local line n=0 key value
     KOKORO_GPU=0 KOKORO_LISTEN=127.0.0.1:8880 KOKORO_DEMO_LISTEN=127.0.0.1:25436 KOKORO_MAX_BATCH=1
     while IFS= read -r line || [ -n "$line" ]; do
         n=$((n + 1))
@@ -236,13 +261,26 @@ load_settings() {
         value=${line#*=}
         case $key in
         KOKORO_GPU) [[ $value =~ ^[A-Za-z0-9._:/-]+$ ]] ;;
-        KOKORO_LISTEN | KOKORO_DEMO_LISTEN) [[ $value =~ $addr ]] ;;
-        KOKORO_MAX_BATCH) [[ $value =~ ^[1-9][0-9]{0,2}$ ]] ;;
+        KOKORO_LISTEN | KOKORO_DEMO_LISTEN) valid_address "$value" ;;
+        # The worker's own range.
+        KOKORO_MAX_BATCH) [[ $value =~ ^[0-9]{1,2}$ ]] && ((10#$value >= 1 && 10#$value <= 64)) ;;
         *) false ;;
-        esac || die "$root/settings.env line $n isn't a valid KOKORO_GPU, KOKORO_LISTEN, KOKORO_DEMO_LISTEN or KOKORO_MAX_BATCH: $line"
+        esac || die "$root/settings.env line $n isn't a valid KOKORO_GPU (an nvidia-smi -L index, UUID or MIG device), KOKORO_LISTEN or KOKORO_DEMO_LISTEN (IPv4:port) or KOKORO_MAX_BATCH (1-64): $line"
         printf -v "$key" %s "$value"
     done < "$root/settings.env"
-    [ "$KOKORO_LISTEN" != "$KOKORO_DEMO_LISTEN" ] || die "KOKORO_LISTEN and KOKORO_DEMO_LISTEN are the same"
+    [ "$(port_of "$KOKORO_LISTEN")" != "$(port_of "$KOKORO_DEMO_LISTEN")" ] || die "KOKORO_LISTEN and KOKORO_DEMO_LISTEN use the same port"
+}
+
+# Whether $1 is IPv4:port, with octets 0-255 and a port 1-65535.
+valid_address() {
+    local o
+    [[ $1 =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3}):([0-9]{1,5})$ ]] || return 1
+    for o in "${BASH_REMATCH[@]:1:4}"; do ((10#$o <= 255)) || return 1; done
+    ((10#${BASH_REMATCH[5]} >= 1 && 10#${BASH_REMATCH[5]} <= 65535))
+}
+
+port_of() {
+    echo $((10#${1##*:}))
 }
 
 settings_env() {
@@ -259,9 +297,12 @@ health_url() {
 }
 
 # Fails if something already listens on the port of address $1 (any address on that port, which is
-# stricter than needed but never wrong), naming it.
+# stricter than needed but never wrong), naming it. Ports given after it are skipped: the running
+# release's own, which it gives up when it's replaced.
 check_port_free() {
-    local port=${1##*:} lines
+    local port lines p
+    port=$(port_of "$1")
+    for p in "${@:2}"; do [ "$port" != "$p" ] || return 0; done
     lines=$(ss -Hltnp "sport = :$port" 2> /dev/null || true)
     [ -z "$lines" ] || die "$1: port $port is already in use, by:
 $lines
@@ -291,7 +332,10 @@ ensure_unidic() {
     local from=${1:-} sha dest rt bt
     sha=$(unidic_sha)
     dest=$root/unidic/$sha.dic
-    unidic_ok "$dest" && return
+    if unidic_ok "$dest"; then
+        [ -z "$from" ] || echo "keeping the UniDic already in $root/unidic (not importing $from)"
+        return
+    fi
     echo "== UniDic"
     make_tmp rt
     if [ -n "$from" ]; then
@@ -326,7 +370,10 @@ prune_unidic() {
 # (kokoro_worker.convert downloads a pinned revision). Only the three files the converter writes.
 ensure_models() {
     local from=${1:-} files=(config.json model.safetensors voices.safetensors) src rt bt f
-    [ -f "$root/models/voices.safetensors" ] && return
+    if [ -f "$root/models/voices.safetensors" ]; then
+        [ -z "$from" ] || echo "keeping the models already in $root/models (not importing $from)"
+        return
+    fi
     echo "== models"
     if [ -n "$from" ]; then
         src=$from
@@ -348,7 +395,8 @@ ensure_models() {
 # secrets/server.toml (the clients' API keys, imported from $1 or one new one, plus the demo's) and
 # secrets/demo.key. Written once; root:65534 0640, so the containers (nobody) read them and no
 # other host user does. The demo's key may use 4 streams at most, which keeps capacity for clients.
-# $1 holds either a KOKORO_API_KEYS=a,b line or one key per line (# comments allowed).
+# $1 holds either a KOKORO_API_KEYS=a,b line or one key per line (# comments allowed; other NAME=...
+# lines are refused, since they're config, not keys). Keys have at least 16 characters.
 ensure_secrets() {
     local from=${1:-} dir=$root/secrets rt line k keys=() demo
     if [ -f "$dir/server.toml" ] && [ -f "$dir/demo.key" ]; then
@@ -360,17 +408,21 @@ ensure_secrets() {
     if [ -n "$from" ]; then
         make_tmp rt
         import_file "$from" "$rt/keys"
-        line=$(sed -n 's/^KOKORO_API_KEYS=//p' "$rt/keys" | head -n 1)
+        line=$(sed -n '/^KOKORO_API_KEYS=/{s///p;q}' "$rt/keys")
         if [ -n "$line" ]; then
             IFS=, read -ra keys <<< "$line"
         else
             while IFS= read -r line || [ -n "$line" ]; do
-                [[ $line =~ ^[[:space:]]*(#.*)?$ ]] || keys+=("$line")
+                [[ $line =~ ^[[:space:]]*(#.*)?$ ]] && continue
+                # NAME=value, but not a base64 key's trailing = padding.
+                [[ ! $line =~ ^[A-Za-z_][A-Za-z0-9_]*=.*[^=] ]] || die "$from has a ${line%%=*}= line but no KOKORO_API_KEYS=; give it a KOKORO_API_KEYS=a,b line or one key per line"
+                keys+=("$line")
             done < "$rt/keys"
         fi
         for k in "${keys[@]}"; do
             # Characters that are safe inside a TOML basic string: base64 keys (+ / =) included.
             [[ $k =~ ^[A-Za-z0-9._~+/=-]+$ ]] || die "a key in $from has characters other than letters, digits and ._~+/=-"
+            [ ${#k} -ge 16 ] || die "a key in $from is shorter than 16 characters"
         done
         [ ${#keys[@]} -gt 0 ] || die "no keys in $from"
         echo "imported ${#keys[@]} key(s) from $from"
