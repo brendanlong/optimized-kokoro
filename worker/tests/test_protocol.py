@@ -16,8 +16,9 @@ def parse(frame: bytes):
 
 
 def test_synthesize_round_trip():
-    msg = parse(P.synthesize(3, [1, 16, 177], 2, speed=125, priority=1, style_len=300))
-    assert msg == P.Synthesize(3, 1, 125, 2, 300, (1, 16, 177))
+    msg = parse(P.synthesize(3, [1, 16, 177], 2, speed=125, priority=255, waiting=0, style_len=300))
+    assert msg == P.Synthesize(3, 255, 0, 125, 2, 300, (1, 16, 177))
+    assert parse(P.synthesize(0, [1], 0, priority=0)).priority == 0
     assert parse(P.synthesize(0, [1, 16], 0)).style_len == 2
 
 
@@ -30,7 +31,8 @@ def test_cancel_round_trip():
     [
         dict(slot=SLOTS),
         dict(slot=65535),
-        dict(priority=2),
+        dict(waiting=2),
+        dict(waiting=255),
         dict(speed=0),
         dict(speed=24),
         dict(speed=401),
@@ -46,7 +48,7 @@ def test_cancel_round_trip():
     ],
 )
 def test_synthesize_rejects(kwargs):
-    args = dict(slot=1, ids=[1, 2], voice=0, speed=100, priority=0)
+    args = dict(slot=1, ids=[1, 2], voice=0, speed=100, priority=0, waiting=0)
     args.update(kwargs)
     with pytest.raises(P.ProtocolError):
         parse(P.synthesize(**args))
@@ -66,14 +68,14 @@ def test_wrong_length_rejected(delta):
 
 
 @pytest.mark.parametrize("body", [b"", b"\x00", b"\x12", b"\x11", b"\x11\x00", b"\x11\x00\x00\x00",
-                                  b"\x11\x04\x00", b"\x10" + bytes(10)])
+                                  b"\x11\x04\x00", b"\x10" + bytes(11)])
 def test_bad_bodies_rejected(body):
     with pytest.raises(P.ProtocolError):
         P.parse_request(body, SLOTS, 3, VOCAB, 510)
 
 
 def test_largest_body_is_the_bound():
-    assert len(P.synthesize(0, [1] * 510, 0)) - 4 == P.max_front_body(510) == 522
+    assert len(P.synthesize(0, [1] * 510, 0)) - 4 == P.max_front_body(510) == 523
 
 
 def test_fuzz_only_protocol_errors():

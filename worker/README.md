@@ -36,7 +36,7 @@ The 14,400-frame run had about 5 GB free next to the desktop and another worker.
 ## Files
 
 - `kokoro_worker/protocol.py`: framing and validation, no torch.
-- `kokoro_worker/scheduler.py`: the queue, by (priority, arrival), with its slots and cancellation.
+- `kokoro_worker/scheduler.py`: the queue, most urgent first (priority, higher first; then waiting before prefetch; then arrival), with its slots and cancellation.
 - `kokoro_worker/server.py`: the socket, a reader thread per connection, and the GPU loop.
 - `kokoro_worker/model.py`: loads the weights and runs a batch. The modules are the kokoro fork's (`brendanlong/kokoro@66c8ed5`, imported without its G2P); the forward pass is ours.
 - `kokoro_worker/masked.py`: the decoder's forward pass with padding masked out.

@@ -29,25 +29,29 @@ pub fn soft_open_file_limit(limits: &str) -> Option<u64> {
     }
 }
 
-/// An API key, and how many speech requests it may have in progress at once.
+/// An API key, how many speech requests it may have in progress at once, and the highest
+/// priority its requests may ask for.
 ///
-/// In the TOML file, either a string or a table: `api_keys = ["k1", { key = "k2", max_streams = 4 }]`.
+/// In the TOML file, either a string or a table:
+/// `api_keys = ["k1", { key = "k2", max_streams = 4, max_priority = 100 }]`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ApiKey {
     pub key: String,
     /// Overrides [`Config::max_streams_per_key`] for this key.
     pub max_streams: Option<usize>,
+    /// Overrides [`Config::max_priority_per_key`] for this key.
+    pub max_priority: Option<u8>,
 }
 
 impl From<&str> for ApiKey {
     fn from(key: &str) -> Self {
-        Self { key: key.into(), max_streams: None }
+        key.to_owned().into()
     }
 }
 
 impl From<String> for ApiKey {
     fn from(key: String) -> Self {
-        Self { key, max_streams: None }
+        Self { key, max_streams: None, max_priority: None }
     }
 }
 
@@ -58,6 +62,7 @@ impl<'de> Deserialize<'de> for ApiKey {
         struct Table {
             key: String,
             max_streams: Option<usize>,
+            max_priority: Option<u8>,
         }
         #[derive(Deserialize)]
         #[serde(untagged)]
@@ -67,7 +72,7 @@ impl<'de> Deserialize<'de> for ApiKey {
         }
         Ok(match Raw::deserialize(deserializer)? {
             Raw::Plain(key) => key.into(),
-            Raw::Table(Table { key, max_streams }) => Self { key, max_streams },
+            Raw::Table(Table { key, max_streams, max_priority }) => Self { key, max_streams, max_priority },
         })
     }
 }
@@ -89,8 +94,11 @@ pub struct Config {
     /// Largest request body. Defaults to enough for `max_input_chars` characters, each written as
     /// a JSON escaped surrogate pair, plus 16 KiB.
     pub max_body_bytes: Option<usize>,
-    /// Speech requests served at once; more get 503. With `lookahead`, this bounds the audio the
-    /// server can hold: see [`Config::audio_bound`].
+    /// Speech requests served at once; more get 503, unless a more urgent request can displace a
+    /// queued one. With `lookahead`, this bounds the audio the server can hold: see
+    /// [`Config::audio_bound`]. The default, 48 (16 until 2026-11-04, Brendan's decision on PR
+    /// #38), leans on latency-based shedding to keep first audio fast, and keeps the worst case
+    /// inside the server container's 3 GiB with room to spare.
     pub max_concurrent_requests: usize,
     /// Speech requests one API key may have in progress, unless the key sets its own
     /// `max_streams`; more get 429. The default equals `max_concurrent_requests`: a key belongs to
@@ -98,6 +106,20 @@ pub struct Config {
     /// server, so this only keeps one client's bug from taking every stream. Lower it per key to
     /// reserve capacity for the other client.
     pub max_streams_per_key: usize,
+    /// The priority of a speech request that doesn't set `priority` (0..=255, higher more
+    /// urgent), or the key's maximum if that is lower. Default 128, the middle, so a client can
+    /// mark requests as more or less urgent than one that doesn't say.
+    pub default_priority: u8,
+    /// The highest `priority` one API key's requests may ask for, unless the key sets its own
+    /// `max_priority`; a request above it is refused with 400. The default, 255, lets our own
+    /// clients use every level; lower it per key to keep one client below another.
+    pub max_priority_per_key: u8,
+    /// Shed load when the estimated time to a new request's first audio is over this many
+    /// milliseconds: requests that haven't sent audio yet are refused (503 with `Retry-After`),
+    /// lowest priority first and newest first within a priority (`crate::load`). The default,
+    /// 800 ms, is under the ~1 s first-audio latency of the clients' fallback provider, so a
+    /// shed client still gets audio sooner elsewhere. 0 turns latency-based shedding off.
+    pub max_estimated_latency_ms: u64,
     /// Open client connections. Further connections wait in the listen backlog. An idle
     /// connection costs a file descriptor and a few KB, so the default is high (4096): a client
     /// holding connections open without sending a request (each for up to the header timeout,
@@ -133,7 +155,7 @@ pub struct Config {
     pub worker_progress_timeout_ms: u64,
     /// Longest one slot may stay outstanding after its Synthesize, queueing included, before the
     /// connection is reset (a worker answering other slots can't hold one forever). Legitimate
-    /// waits are bounded by the slots ahead of it times the longest render (a 120 s chunk renders
+    /// waits are bounded by the slots ahead of it times the longest render (a 60 s chunk renders
     /// in a few seconds), so the default, 5 minutes, leaves a wide margin.
     pub worker_slot_timeout_ms: u64,
     /// Worker slots the server uses: requests on the worker at once, counting cancelled ones until
@@ -142,7 +164,7 @@ pub struct Config {
     pub worker_slots: Option<u16>,
     /// The largest per-chunk audio cap (samples at speed 1) a worker may announce in its hello.
     /// It bounds the audio the server holds (see [`Config::audio_bound`]); a worker announcing
-    /// more is refused. Default 120 s.
+    /// more is refused. Default 60 s, the worker's own default since 2026-11-04 (it was 120 s).
     pub worker_max_chunk_samples: u32,
     /// On shutdown, how long open connections get to finish before they're dropped.
     pub shutdown_grace_ms: u64,
@@ -157,8 +179,11 @@ impl Default for Config {
             default_voice: "af_heart".into(),
             max_input_chars: 20_000,
             max_body_bytes: None,
-            max_concurrent_requests: 16,
-            max_streams_per_key: 16,
+            max_concurrent_requests: 48,
+            max_streams_per_key: 48,
+            default_priority: 128,
+            max_priority_per_key: 255,
+            max_estimated_latency_ms: 800,
             max_connections: 4096,
             max_requests_per_connection: 1000,
             header_read_timeout_ms: 5_000,
@@ -169,7 +194,7 @@ impl Default for Config {
             worker_progress_timeout_ms: 30_000,
             worker_slot_timeout_ms: 300_000,
             worker_slots: None,
-            worker_max_chunk_samples: 2_880_000,
+            worker_max_chunk_samples: 1_440_000,
             shutdown_grace_ms: 10_000,
             lookahead: 3,
             reconnect_interval_ms: 500,
@@ -240,6 +265,21 @@ impl Config {
         self.api_keys[i].max_streams.unwrap_or(self.max_streams_per_key)
     }
 
+    /// The highest priority the `i`th API key's requests may ask for.
+    pub fn max_priority(&self, i: usize) -> u8 {
+        self.api_keys[i].max_priority.unwrap_or(self.max_priority_per_key)
+    }
+
+    /// The priority of the `i`th API key's requests that don't set one.
+    pub fn default_priority(&self, i: usize) -> u8 {
+        self.default_priority.min(self.max_priority(i))
+    }
+
+    /// The latency budget that sheds load; `None` if shedding is off.
+    pub fn latency_budget(&self) -> Option<Duration> {
+        (self.max_estimated_latency_ms > 0).then(|| Duration::from_millis(self.max_estimated_latency_ms))
+    }
+
     pub fn response_write_timeout(&self) -> Duration {
         Duration::from_millis(self.response_write_timeout_ms)
     }
@@ -296,9 +336,14 @@ impl Config {
     /// requests is dropped as it arrives. Worker slots don't add to this: a slot is freed when its
     /// Result arrives, and its audio then counts against its request.
     ///
-    /// Defaults with the worker's 120 s cap: 16 × 5 × 5.76 MB ≈ 467 MB at speed 1, and about
-    /// 1.85 GB if every request asks for speed 0.25 with chunks that hit the cap. Real sentences
-    /// are around 5 s (240 KB), so typical use holds a few MB.
+    /// Defaults (48 requests, lookahead 3, the 60 s ceiling): a chunk is at most 2.88 MB at
+    /// speed 1, so 48 × (5 × 2.88 MB + 0.42 MB) + 2.88 MB ≈ 714 MB; at speed 0.25 with every
+    /// chunk at the cap, 11.52 MB a chunk, 48 × 58.0 MB + 11.5 MB = 2,796,374,016 bytes (2.80 GB,
+    /// 2.60 GiB). The server's other memory is about 160 MB (measured: the nine text pipelines
+    /// loaded, 32 requests in flight), so the worst case is about 2.96 GB, inside the container's
+    /// 3 GiB (`deploy/compose.yaml`, 3.22 GB) with about 260 MB to spare (52 would leave about
+    /// 30 MB, and 53 would not fit). Real sentences are around
+    /// 5 s (240 KB), so typical use holds a few MB.
     pub fn audio_bound(&self, max_chunk_samples: u32, speed: Speed) -> usize {
         let chunk_samples = speed.chunk_cap(max_chunk_samples).max(MAX_PAUSE_SAMPLES);
         let chunk = usize::try_from(2 * chunk_samples).unwrap_or(usize::MAX);
@@ -346,12 +391,42 @@ mod tests {
         let toml = "max_streams_per_key = 6\napi_keys = [\"plain\", { key = \"lion\", max_streams = 2 }]\n";
         std::fs::write(&path, toml).unwrap();
         let config = Config::load(Some(&path), Some("env")).unwrap();
-        assert_eq!(config.api_keys[1], ApiKey { key: "lion".into(), max_streams: Some(2) });
+        assert_eq!(config.api_keys[1], ApiKey { key: "lion".into(), max_streams: Some(2), max_priority: None });
         assert_eq!((0..3).map(|i| config.max_streams(i)).collect::<Vec<_>>(), [6, 2, 6]);
-        for bad in ["api_keys = [{ key = \"k\", max_streams = 0 }]", "api_keys = [{ key = \"k\", streams = 1 }]"] {
+        for bad in [
+            "api_keys = [{ key = \"k\", max_streams = 0 }]",
+            "api_keys = [{ key = \"k\", streams = 1 }]",
+            "api_keys = [{ key = \"k\", max_priority = 256 }]",
+            "api_keys = [{ key = \"k\", max_priority = -1 }]",
+        ] {
             std::fs::write(&path, bad).unwrap();
             assert!(Config::load(Some(&path), None).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn keys_may_cap_their_priority() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("server.toml");
+        let toml = "max_priority_per_key = 200\napi_keys = [\"plain\", { key = \"demo\", max_streams = 4, max_priority = 64 }, { key = \"top\", max_priority = 255 }]\n";
+        std::fs::write(&path, toml).unwrap();
+        let config = Config::load(Some(&path), None).unwrap();
+        assert_eq!((0..3).map(|i| config.max_priority(i)).collect::<Vec<_>>(), [200, 64, 255]);
+        assert_eq!((0..3).map(|i| config.default_priority(i)).collect::<Vec<_>>(), [128, 64, 128]);
+        assert_eq!(Config::default().latency_budget(), Some(Duration::from_millis(800)));
+        assert_eq!(Config { max_estimated_latency_ms: 0, ..Config::default() }.latency_budget(), None);
+    }
+
+    #[test]
+    fn the_worst_case_audio_fits_the_server_container() {
+        let config = Config::default();
+        let worst = config.audio_bound(config.worker_max_chunk_samples, Speed::MIN);
+        assert_eq!(worst, 2_796_374_016);
+        // deploy/compose.yaml gives the server 3 GiB; the rest of the process is about 160 MB.
+        const CONTAINER: usize = 3 << 30;
+        const REST: usize = 160_000_000;
+        assert!(worst + REST + 200_000_000 < CONTAINER, "{worst}");
+        assert_eq!(config.audio_bound(config.worker_max_chunk_samples, Speed::NORMAL), 714_134_016);
     }
 
     #[test]

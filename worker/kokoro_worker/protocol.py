@@ -1,4 +1,4 @@
-"""Worker protocol v2 framing and validation (docs/worker-protocol.md). No torch here.
+"""Worker protocol v3 framing and validation (docs/worker-protocol.md). No torch here.
 
 Every check the spec asks for happens in `parse_request`, except whether a slot is busy, which
 the queue knows; anything rejected is a ProtocolError, and the caller closes the connection.
@@ -7,7 +7,7 @@ the queue knows; anything rejected is a ProtocolError, and the caller closes the
 import struct
 from dataclasses import dataclass
 
-VERSION = 2
+VERSION = 3
 MAGIC = b"KOKW"
 MAX_PHONEMES = 510
 MIN_SPEED, MAX_SPEED = 25, 400  # hundredths
@@ -20,7 +20,7 @@ SYNTHESIZE, CANCEL = 0x10, 0x11
 
 CANCELLED, INTERNAL_ERROR, TOO_LONG = 1, 2, 3
 
-SYNTHESIZE_FIXED = 12  # type, slot, priority, speed, voice, n_ids, style_len
+SYNTHESIZE_FIXED = 13  # type, slot, priority, waiting, speed, voice, n_ids, style_len
 
 
 def max_front_body(max_phonemes: int) -> int:
@@ -34,7 +34,8 @@ class ProtocolError(Exception):
 @dataclass(frozen=True)
 class Synthesize:
     slot: int
-    priority: int
+    priority: int  # the request's level, 0..255, higher first
+    waiting: int  # 1: a listener is waiting for this chunk now (before prefetch at the same level)
     speed: int  # hundredths
     voice: int
     style_len: int  # voice-pack row style_len - 1; n_ids except for pieces of a stitched clause
@@ -63,11 +64,11 @@ def parse_request(body: bytes, slots: int, n_voices: int, vocab_size: int, max_p
 
     if len(body) < SYNTHESIZE_FIXED:
         raise ProtocolError("Synthesize: short")
-    slot, priority, speed, voice, n_ids, style_len = struct.unpack_from("<HBHHHH", body, 1)
+    slot, priority, waiting, speed, voice, n_ids, style_len = struct.unpack_from("<HBBHHHH", body, 1)
     if slot >= slots:
         raise ProtocolError("slot")
-    if priority > 1:
-        raise ProtocolError("priority")
+    if waiting > 1:  # any priority byte is valid
+        raise ProtocolError("waiting")
     if not MIN_SPEED <= speed <= MAX_SPEED:
         raise ProtocolError("speed")
     if voice >= n_voices:
@@ -81,7 +82,7 @@ def parse_request(body: bytes, slots: int, n_voices: int, vocab_size: int, max_p
     ids = tuple(body[SYNTHESIZE_FIXED:])
     if min(ids) < 1 or max(ids) >= vocab_size:
         raise ProtocolError("phoneme id out of range")
-    return Synthesize(slot, priority, speed, voice, style_len, ids)
+    return Synthesize(slot, priority, waiting, speed, voice, style_len, ids)
 
 
 def frame(body: bytes) -> bytes:
@@ -123,9 +124,11 @@ def failed(slot: int, code: int) -> bytes:
 # Front side, for the test client and tests.
 
 
-def synthesize(slot: int, ids, voice: int, speed: int = 100, priority: int = 0, style_len=None) -> bytes:
+def synthesize(slot: int, ids, voice: int, speed: int = 100, priority: int = 128, waiting: int = 1,
+               style_len=None) -> bytes:
     style_len = len(ids) if style_len is None else style_len
-    return frame(struct.pack("<BHBHHHH", SYNTHESIZE, slot, priority, speed, voice, len(ids), style_len) + bytes(ids))
+    return frame(struct.pack("<BHBBHHHH", SYNTHESIZE, slot, priority, waiting, speed, voice, len(ids), style_len)
+                 + bytes(ids))
 
 
 def cancel(slot: int) -> bytes:

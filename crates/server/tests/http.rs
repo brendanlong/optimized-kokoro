@@ -3,8 +3,8 @@ mod common;
 use common::*;
 use kokoro_server::StubPipeline;
 use kokoro_server::pipeline::{Chunk, Lang, Pipeline, PipelineError};
-use kokoro_server::protocol::FailCode;
 use kokoro_server::protocol::worker_side::{self, FrontFrame};
+use kokoro_server::protocol::{FailCode, Priority};
 use serde_json::json;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
@@ -190,7 +190,7 @@ async fn streams_in_order_when_the_worker_answers_out_of_order() {
     for _ in 0..3 {
         first_batch.push(worker.synthesize().await);
     }
-    assert_eq!(first_batch.iter().map(|r| r.1).collect::<Vec<_>>(), [0, 1, 1]);
+    assert_eq!(first_batch.iter().map(|r| r.1.waiting).collect::<Vec<_>>(), [true, false, false]);
     assert_eq!(worker.quiet(Duration::from_millis(200)).await, None, "more than the lookahead in flight");
     for (id, _, _, _, ids) in first_batch.iter().rev() {
         worker.send(respond(*id, ids));
@@ -352,7 +352,7 @@ async fn a_long_request_does_not_starve_a_short_one() {
     let log = worker.log.lock().unwrap().clone();
     let z = 43 + 25;
     let short_chunk = log.iter().find(|r| r.first_id == z).unwrap();
-    assert_eq!(short_chunk.priority, 0);
+    assert_eq!(short_chunk.priority, Priority { level: 128, waiting: true });
     assert!(short_chunk.waited <= 1, "the short request waited for {} long chunks", short_chunk.waited);
     long.await.unwrap();
     assert!(worker.most_queued.load(Ordering::SeqCst) <= 2 * 3, "more than the lookahead queued");

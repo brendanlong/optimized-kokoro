@@ -1,12 +1,12 @@
-//! Worker protocol v2 frames (`docs/worker-protocol.md`): length-prefixed, little-endian, no floats.
+//! Worker protocol v3 frames (`docs/worker-protocol.md`): length-prefixed, little-endian, no floats.
 //!
-//! Synthesize is `u8 type, u16 slot, u8 priority, u16 speed (hundredths), u16 voice_index,
-//! u16 n_ids, u16 style_len, n_ids × u8 id`. The style vector is row `style_len - 1` of the voice
+//! Synthesize is `u8 type, u16 slot, u8 priority, u8 waiting, u16 speed (hundredths),
+//! u16 voice_index, u16 n_ids, u16 style_len, n_ids × u8 id`. The style vector is row `style_len - 1` of the voice
 //! pack (`1..=max_phonemes`): `n_ids` for a normal chunk, and the whole clause's length (capped at
 //! 510) for each piece of a stitched one.
 //!
 //! What the front accepts from the worker, beyond the frame layouts:
-//! - Hello comes first and only once, with version 2, `2 <= vocab_size <= 256`,
+//! - Hello comes first and only once, with version 3, `2 <= vocab_size <= 256`,
 //!   `max_phonemes == 510`, `max_batch >= 1`, `slots >= 1`, `sample_rate == 24000`,
 //!   `max_chunk_samples >= 1` and at most the configured ceiling (`worker_max_chunk_samples`), and
 //!   1 or more distinct voice names of 1 to 64 bytes of `[a-z0-9_]`.
@@ -29,14 +29,14 @@ use std::io;
 use tokio::io::{AsyncRead, AsyncReadExt};
 
 pub const MAGIC: [u8; 4] = *b"KOKW";
-pub const VERSION: u16 = 2;
+pub const VERSION: u16 = 3;
 pub const MAX_PHONEMES: u16 = 510;
 pub const SAMPLE_RATE: u32 = 24_000;
 /// Kokoro v1.0 renders 600 samples per predicted duration unit, so a Result has exactly
 /// `600 * sum(durations)` samples.
 pub const SAMPLES_PER_FRAME: u64 = 600;
-/// Synthesize's fixed part: type, slot, priority, speed, voice_index, n_ids, style_len.
-const SYNTHESIZE_FIXED: usize = 1 + 2 + 1 + 2 + 2 + 2 + 2;
+/// Synthesize's fixed part: type, slot, priority, waiting, speed, voice_index, n_ids, style_len.
+const SYNTHESIZE_FIXED: usize = 1 + 2 + 1 + 1 + 2 + 2 + 2 + 2;
 /// The largest front→worker body: a Synthesize with `MAX_PHONEMES` ids.
 pub const MAX_FRONT_BODY: usize = SYNTHESIZE_FIXED + MAX_PHONEMES as usize;
 const CANCEL_LEN: usize = 1 + 2;
@@ -338,10 +338,15 @@ async fn read_result<R: AsyncRead + Unpin>(
     Ok(WorkerFrame::Result { slot, durations, pcm })
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Priority {
-    Waiting = 0,
-    Prefetch = 1,
+/// How urgent a chunk is. The worker serves the greatest first (then the oldest): the request's
+/// level, higher first, and within a level a chunk a listener is waiting for before prefetch.
+/// The derived order is exactly that, lexicographic on `(level, waiting)`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Priority {
+    /// The request's priority, 0..=255, higher more urgent.
+    pub level: u8,
+    /// A listener is waiting for this chunk now (the first in its request's window).
+    pub waiting: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -366,7 +371,8 @@ pub fn encode_synthesize(s: &Synthesize) -> Vec<u8> {
     let mut body = Vec::with_capacity(SYNTHESIZE_FIXED + s.ids.len());
     body.push(TYPE_SYNTHESIZE);
     body.extend_from_slice(&s.slot.to_le_bytes());
-    body.push(s.priority as u8);
+    body.push(s.priority.level);
+    body.push(u8::from(s.priority.waiting));
     body.extend_from_slice(&s.speed.hundredths().to_le_bytes());
     body.extend_from_slice(&s.voice.to_le_bytes());
     body.extend_from_slice(&(s.ids.len() as u16).to_le_bytes());
@@ -431,7 +437,7 @@ pub mod worker_side {
 
     #[derive(Debug, Clone, PartialEq)]
     pub enum FrontFrame {
-        Synthesize { slot: u16, priority: u8, speed: u16, voice: u16, ids: Vec<u8>, style_len: u16 },
+        Synthesize { slot: u16, priority: u8, waiting: u8, speed: u16, voice: u16, ids: Vec<u8>, style_len: u16 },
         Cancel { slot: u16 },
     }
 
@@ -448,12 +454,13 @@ pub mod worker_side {
             TYPE_SYNTHESIZE => {
                 let slot = c.u16()?;
                 let priority = c.u8()?;
+                let waiting = c.u8()?;
                 let speed = c.u16()?;
                 let voice = c.u16()?;
                 let n_ids = c.u16()?;
                 let style_len = c.u16()?;
                 let ids = c.bytes(n_ids.into())?.to_vec();
-                FrontFrame::Synthesize { slot, priority, speed, voice, ids, style_len }
+                FrontFrame::Synthesize { slot, priority, waiting, speed, voice, ids, style_len }
             }
             TYPE_CANCEL => FrontFrame::Cancel { slot: c.u16()? },
             other => return violation(format!("unknown front frame type {other:#04x}")),
@@ -510,16 +517,24 @@ mod tests {
         let speed = Speed::from_hundredths(150).unwrap();
         let bytes = encode_synthesize(&Synthesize {
             slot: 3,
-            priority: Priority::Prefetch,
+            priority: Priority { level: 200, waiting: false },
             speed,
             voice: 1,
             ids: &[43, 16, 44],
             style_len: 7,
         });
-        assert_eq!(bytes.len(), 4 + 12 + 3);
+        assert_eq!(bytes.len(), 4 + 13 + 3);
         assert_eq!(
             read_front(&mut &bytes[..]).await.unwrap(),
-            FrontFrame::Synthesize { slot: 3, priority: 1, speed: 150, voice: 1, ids: vec![43, 16, 44], style_len: 7 }
+            FrontFrame::Synthesize {
+                slot: 3,
+                priority: 200,
+                waiting: 0,
+                speed: 150,
+                voice: 1,
+                ids: vec![43, 16, 44],
+                style_len: 7
+            }
         );
         assert_eq!(read_front(&mut &encode_cancel(4)[..]).await.unwrap(), FrontFrame::Cancel { slot: 4 });
     }
@@ -592,6 +607,14 @@ mod tests {
         assert!(matches!(read(&huge, None).await, Err(ReadError::Violation(_))));
         assert!(matches!(read(&[0, 0, 0, 0], None).await, Err(ReadError::Violation(_))));
         assert!(matches!(read(&[1, 0, 0, 0, 0x7f], None).await, Err(ReadError::Violation(_))));
+    }
+
+    #[test]
+    fn priorities_order_by_level_then_waiting() {
+        let p = |level, waiting| Priority { level, waiting };
+        let mut order = [p(0, true), p(255, false), p(128, false), p(128, true), p(127, true), p(255, true)];
+        order.sort_unstable_by(|a, b| b.cmp(a));
+        assert_eq!(order, [p(255, true), p(255, false), p(128, true), p(128, false), p(127, true), p(0, true)]);
     }
 
     #[test]

@@ -436,7 +436,8 @@ ensure_models() {
 # secrets/keys (the clients' named API keys, imported from $1 as imported-N or one new one named
 # default; root 0600, edited with deploy/keys.sh), secrets/demo.key, and secrets/server.toml made
 # from them. Written once; demo.key and server.toml are root:65534 0640, so the containers (nobody)
-# read them and no other host user does. The demo's key may use 4 streams at most, which keeps capacity for clients.
+# read them and no other host user does. The demo's key may use 4 streams at most, at priority 64 at most,
+# which keeps capacity for clients and puts them first.
 # $1 holds either a KOKORO_API_KEYS=a,b line or one key per line (# comments allowed; other NAME=...
 # lines are refused, since they're config, not keys). Keys have at least 16 characters.
 ensure_secrets() {
@@ -481,7 +482,7 @@ ensure_secrets() {
             i=$((i + 1))
             name=default
             [ -z "$from" ] || name=imported-$i
-            printf '%s\t%s\t-\n' "$name" "$k"
+            printf '%s\t%s\t-\t-\n' "$name" "$k"
         done > "$dir/keys.new"
         echo "$demo" > "$dir/demo.key.new"
     )
@@ -503,15 +504,15 @@ ensure_keys_file() {
     fi
     # Only what install.sh ever wrote, which render_server_toml makes again; anything else (a hand
     # edit) would be lost.
-    other=$(grep -vE '^(#.*|listen = "0\.0\.0\.0:8880"|worker_socket = "/run/kokoro/worker\.sock"|api_keys = \[|    "[^"]*",|    # .*|    \{ key = "[^"]*", max_streams = 4 \},|\])$' "$dir/server.toml" || true)
+    other=$(grep -vE '^(#.*|listen = "0\.0\.0\.0:8880"|worker_socket = "/run/kokoro/worker\.sock"|api_keys = \[|    "[^"]*",|    # .*|    \{ key = "[^"]*", max_streams = 4(, max_priority = 64)? \},|\])$' "$dir/server.toml" || true)
     [ -z "$other" ] || die "$dir/server.toml has lines install.sh didn't write, which keys.sh would drop:
 $other
-Move them out (or into secrets/keys by hand: NAME<tab>KEY<tab>MAX_STREAMS or -) first."
+Move them out (or into secrets/keys by hand: NAME<tab>KEY<tab>MAX_STREAMS<tab>MAX_PRIORITY, each a number or -) first."
     (
         umask 077
         while IFS= read -r k; do
             i=$((i + 1))
-            printf 'imported-%s\t%s\t-\n' "$i" "$k"
+            printf 'imported-%s\t%s\t-\t-\n' "$i" "$k"
         done < <(sed -n 's/^    "\([^"]*\)",$/\1/p' "$dir/server.toml") > "$dir/keys.new"
     )
     [ -s "$dir/keys.new" ] || die "found no client keys in $dir/server.toml"
@@ -522,7 +523,7 @@ Move them out (or into secrets/keys by hand: NAME<tab>KEY<tab>MAX_STREAMS or -) 
 # Writes secrets/server.toml.new from a keys file ($1, default secrets/keys) and secrets/demo.key,
 # root:65534 0640; the caller renames it into place.
 render_server_toml() {
-    local dir=$root/secrets name key streams keys_file=${1:-$root/secrets/keys}
+    local dir=$root/secrets name key streams priority fields keys_file=${1:-$root/secrets/keys}
     (
         umask 077
         {
@@ -531,19 +532,28 @@ render_server_toml() {
             echo 'listen = "0.0.0.0:8880"'
             echo 'worker_socket = "/run/kokoro/worker.sock"'
             echo 'api_keys = ['
-            while IFS=$'\t' read -r name key streams || [ -n "$name" ]; do
+            while IFS=$'\t' read -r name key streams priority || [ -n "$name" ]; do
+                # Lines written before MAX_PRIORITY existed have three fields: the server's default.
+                priority=${priority:--}
                 # Whatever edited the file, nothing but these may reach the TOML.
-                [[ $name =~ ^[a-z0-9][a-z0-9-]{0,31}$ && $key =~ ^[A-Za-z0-9._~+/=-]{16,}$ && $streams =~ ^(-|[1-9][0-9]{0,3})$ ]] ||
-                    die "$keys_file has a line that isn't NAME<tab>KEY<tab>MAX_STREAMS (or -): $name"
+                if ! [[ $name =~ ^[a-z0-9][a-z0-9-]{0,31}$ && $key =~ ^[A-Za-z0-9._~+/=-]{16,}$ && $streams =~ ^(-|[1-9][0-9]{0,3})$ &&
+                    ($priority = - || ($priority =~ ^(0|[1-9][0-9]{0,2})$ && $priority -le 255)) ]]; then
+                    die "$keys_file has a line that isn't NAME<tab>KEY<tab>MAX_STREAMS<tab>MAX_PRIORITY (each limit a number or -; MAX_PRIORITY 0-255, or left out): $name"
+                fi
                 echo "    # $name"
-                if [ "$streams" = - ]; then
+                fields=
+                [ "$streams" = - ] || fields+=", max_streams = $streams"
+                [ "$priority" = - ] || fields+=", max_priority = $priority"
+                if [ -z "$fields" ]; then
                     echo "    \"$key\","
                 else
-                    echo "    { key = \"$key\", max_streams = $streams },"
+                    echo "    { key = \"$key\"$fields },"
                 fi
             done < "$keys_file"
+            # The demo page gets 4 streams, and priority 64 at most (its requests run at 64), so it
+            # can neither take the clients' capacity nor go ahead of their default priority.
             echo "    # demo (demo.key)"
-            echo "    { key = \"$(cat "$dir/demo.key")\", max_streams = 4 },"
+            echo "    { key = \"$(cat "$dir/demo.key")\", max_streams = 4, max_priority = 64 },"
             echo ']'
         } > "$dir/server.toml.new"
     )

@@ -2,6 +2,7 @@
 //! `GET /health`. Nothing else.
 
 use crate::config::{ApiKey, Config};
+use crate::load::{Load, Shed};
 use crate::pipeline::{Pipeline, voice_lang};
 use crate::request::{self, SpeechRequest};
 use crate::stream::{self, StreamError};
@@ -16,7 +17,7 @@ use hyper::{Method, Request, Response, StatusCode};
 use serde_json::json;
 use std::sync::Arc;
 use subtle::{ConditionallySelectable, ConstantTimeEq};
-use tokio::sync::Semaphore;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
@@ -30,7 +31,12 @@ struct AppState {
     slots: Arc<Semaphore>,
     /// Streams per API key, by the key's position in the config.
     key_slots: Vec<Arc<Semaphore>>,
+    load: Arc<Load>,
 }
+
+/// How long a request waits for the permit of a less urgent request it displaced, which frees it
+/// as soon as that request's text processing notices (milliseconds, normally).
+const DISPLACE_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// The HTTP application: cheap to clone, one per connection.
 #[derive(Clone)]
@@ -43,7 +49,8 @@ struct KeyIndex(usize);
 pub fn router(config: Config, worker: Worker, pipeline: Arc<dyn Pipeline>) -> App {
     let slots = Arc::new(Semaphore::new(config.max_concurrent_requests));
     let key_slots = (0..config.api_keys.len()).map(|i| Arc::new(Semaphore::new(config.max_streams(i)))).collect();
-    App(Arc::new(AppState { config, worker, pipeline, slots, key_slots }))
+    let load = Load::new(config.latency_budget());
+    App(Arc::new(AppState { config, worker, pipeline, slots, key_slots, load }))
 }
 
 impl App {
@@ -107,6 +114,14 @@ fn unavailable(message: &str) -> Response<Body> {
     error(StatusCode::SERVICE_UNAVAILABLE, "unavailable", "server_error", message)
 }
 
+/// The server is too busy to serve this request soon: 503 with `Retry-After: 1`, before any
+/// audio. Clients should send this request to another provider rather than retry it here.
+fn overloaded(message: impl Into<String>) -> Response<Body> {
+    let mut response = error(StatusCode::SERVICE_UNAVAILABLE, "overloaded", "server_error", message);
+    response.headers_mut().insert(header::RETRY_AFTER, HeaderValue::from_static("1"));
+    response
+}
+
 /// The index of the key equal to `token`, comparing against every key in constant time.
 fn find_key(keys: &[ApiKey], token: &str) -> Option<usize> {
     let mut found = subtle::Choice::from(0);
@@ -164,6 +179,7 @@ fn stream_failure(e: &StreamError) -> Response<Body> {
     match e {
         StreamError::Synth(SynthError::ConnectionLost) => unavailable("Lost the connection to the model worker"),
         StreamError::TooMuchSpeech { .. } => invalid(e.to_string()),
+        StreamError::Shed(_) => overloaded(e.to_string()),
         _ => error(StatusCode::INTERNAL_SERVER_ERROR, "processing_error", "server_error", e.to_string()),
     }
 }
@@ -198,6 +214,23 @@ where
     }
 }
 
+/// A permit from `slots`, or, when there is none, the one a less urgent queued request (from API
+/// key `key`, if given) frees when it is shed for this one. `None` if there's neither.
+async fn permit_for(
+    state: &AppState,
+    slots: &Arc<Semaphore>,
+    level: u8,
+    key: Option<usize>,
+) -> Option<OwnedSemaphorePermit> {
+    if let Ok(permit) = slots.clone().try_acquire_owned() {
+        return Some(permit);
+    }
+    if !state.load.displace(level, key) {
+        return None;
+    }
+    tokio::time::timeout(DISPLACE_WAIT, slots.clone().acquire_owned()).await.ok()?.ok()
+}
+
 async fn speech<B>(state: &Arc<AppState>, key: KeyIndex, body: B) -> Response<Body>
 where
     B: hyper::body::Body<Data = Bytes>,
@@ -214,10 +247,25 @@ where
     if let Err(message) = request::check_fields(&request, &state.config) {
         return invalid(message);
     }
+    let max_priority = state.config.max_priority(key.0);
+    let level = match request.priority {
+        Some(p) if p > max_priority => {
+            return invalid(format!("priority {p} is above this API key's maximum, {max_priority}"));
+        }
+        Some(p) => p,
+        None => state.config.default_priority(key.0),
+    };
     let Some(connection) = state.worker.current() else {
         return unavailable("The model worker is not connected");
     };
-    let Ok(key_permit) = state.key_slots[key.0].clone().try_acquire_owned() else {
+    state.load.set_max_batch(connection.max_batch());
+    // Refused at once if over budget, before it can displace anything (`admit` decides for sure).
+    if state.load.would_refuse(level) {
+        return overloaded(StreamError::Shed(Shed { estimate: state.load.estimate(level) }).to_string());
+    }
+    // At either limit, a request may take the permits of a less urgent one that hasn't sent audio
+    // yet (of the same key, for the key's limit), which is shed for it.
+    let Some(key_permit) = permit_for(state, &state.key_slots[key.0], level, Some(key.0)).await else {
         return error(
             StatusCode::TOO_MANY_REQUESTS,
             "rate_limited",
@@ -225,8 +273,12 @@ where
             format!("This API key already has {} speech requests in progress", state.config.max_streams(key.0)),
         );
     };
-    let Ok(permit) = state.slots.clone().try_acquire_owned() else {
-        return unavailable("Too many requests in progress");
+    let Some(permit) = permit_for(state, &state.slots, level, None).await else {
+        return overloaded("Too many requests in progress");
+    };
+    let admission = match state.load.admit(level, key.0) {
+        Ok(admission) => Arc::new(admission),
+        Err(shed) => return overloaded(StreamError::Shed(shed).to_string()),
     };
 
     // The text checks scan the whole input, so they run on the blocking pool. The permits go with
@@ -244,11 +296,16 @@ where
         (Ok(speech), permits) => (speech, permits),
         (Err(message), _) => return invalid(message),
     };
+    // Shed while its text was checked: don't send the worker anything.
+    if admission.is_shed() {
+        return overloaded(StreamError::Shed(Shed { estimate: admission.shed_estimate() }).to_string());
+    }
     let mut audio = stream::start(
         speech,
         connection,
         state.pipeline.clone(),
         stream::Limits { lookahead: state.config.lookahead, max_ids: state.config.max_request_ids },
+        admission,
         permits,
     );
 
