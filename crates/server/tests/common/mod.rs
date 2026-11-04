@@ -29,7 +29,7 @@ pub fn hello() -> Hello {
         max_phonemes: 510,
         max_batch: 1,
         slots: 1024,
-        max_chunk_samples: 2_880_000,
+        max_chunk_samples: 1_440_000,
         voices: VOICES.map(String::from).to_vec(),
     }
 }

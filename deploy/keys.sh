@@ -7,7 +7,7 @@
 #   sudo deploy/keys.sh rename OLD NEW
 #
 # NAME is 1-32 of a-z, 0-9 and -, starting with a letter or digit. --max-streams caps that key's
-# speech requests in progress (default: the server's max_streams_per_key, 16). --max-priority, 0-255,
+# speech requests in progress (default: the server's max_streams_per_key, 48). --max-priority, 0-255,
 # is the highest request priority the key may ask for (default: the server's max_priority_per_key,
 # 255); its requests that don't set one run at the lower of 128 and this. Changes go to
 # /srv/optimized-kokoro/secrets/keys (NAME, KEY, MAX_STREAMS and MAX_PRIORITY, tab-separated, - for
