@@ -84,8 +84,9 @@ pub fn digits(digits: &str) -> String {
     names.join(" ")
 }
 
-/// A cardinal from ASCII digits: "one thousand two hundred and thirty-four". "and" comes before
-/// tens and units, as both readers in the reference had it, but no commas: a comma is a pause.
+/// A cardinal from digits: "one thousand two hundred and thirty-four". "and" comes before tens
+/// and units, as both readers in the reference had it. Commas (pauses) only between the groups
+/// of numbers from a million.
 /// Past the decillions (36 digits), the digits one by one.
 pub fn cardinal(digits_str: &str) -> String {
     let ascii: String = digits_str.chars().filter_map(digit_value).map(|d| char::from(b'0' + d as u8)).collect();
@@ -106,16 +107,21 @@ pub fn cardinal(digits_str: &str) -> String {
         end = start;
     }
     let mut words: Vec<String> = Vec::new();
-    for (scale, &group) in groups.iter().enumerate().rev() {
-        if group == 0 {
-            continue;
-        }
+    // From a million up, a comma after each group's scale word, before the next group: a short
+    // pause (150-175 ms against 75 ms for a word boundary) that lets listeners hear the groups as
+    // written ("one million, two hundred and thirty-four thousand, five hundred and sixty-seven").
+    let grouped = groups.len() > 2;
+    let nonzero: Vec<usize> = (0..groups.len()).rev().filter(|&s| groups[s] != 0).collect();
+    for (k, &scale) in nonzero.iter().enumerate() {
+        let group = groups[scale];
+        let last = k + 1 == nonzero.len();
         if scale == 0 && group < 100 && !words.is_empty() {
             words.push("and".to_owned());
         }
         words.push(under_1000(group));
         if scale > 0 {
-            words.push(SCALES[scale].to_owned());
+            let comma = grouped && !last && !(nonzero[k + 1] == 0 && groups[0] < 100);
+            words.push(format!("{}{}", SCALES[scale], if comma { "," } else { "" }));
         }
     }
     words.join(" ")
@@ -1114,7 +1120,8 @@ mod tests {
             ("1234", "one thousand two hundred and thirty-four"),
             ("101000", "one hundred and one thousand"),
             ("1000050", "one million and fifty"),
-            ("2000100", "two million one hundred"),
+            ("2000100", "two million, one hundred"),
+            ("1234567", "one million, two hundred and thirty-four thousand, five hundred and sixty-seven"),
         ] {
             assert_eq!(cardinal(n), w, "{n}");
         }
@@ -1188,7 +1195,7 @@ mod tests {
             ("the 1500s", "the fifteen hundreds"),
             (
                 "1,00,000 rupees and 12,34,56,789",
-                "one hundred thousand rupees and one hundred and twenty-three million four hundred and fifty-six thousand seven hundred and eighty-nine",
+                "one hundred thousand rupees and one hundred and twenty-three million, four hundred and fifty-six thousand, seven hundred and eighty-nine",
             ),
             ("0,000 and 10m/s and 5m", "zero, zero zero zero and ten meters per second and five million"),
             ("Wait...5 more", "Wait...five more"),
