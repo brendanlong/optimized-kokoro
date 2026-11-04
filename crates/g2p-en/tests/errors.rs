@@ -41,10 +41,40 @@ fn unknown_words_without_fallback_have_no_phonemes() {
 #[test]
 fn hyphen_boundaries() {
     use kokoro_g2p_en::hyphen_boundary;
-    for yes in ["US-China", "Paris-Berlin", "Smith-Jones", "NATO-EU", "nato-EU", "US-based", "Austro-Hungarian"] {
+    for yes in ["US-China", "NATO-EU", "nato-EU", "US-based", "EU-wide", "US-UK"] {
         assert!(hyphen_boundary(yes), "{yes}");
     }
-    for no in ["well-crafted", "X-ray", "T-shirt", "A-list", "co-founder", "state-of-the-art", "US"] {
+    let no = [
+        "well-crafted",
+        "X-ray",
+        "T-shirt",
+        "A-list",
+        "co-founder",
+        "state-of-the-art",
+        "US",
+        "Paris-Berlin",
+        "Smith-Jones",
+        "Spider-Man",
+        "Mary-Jane",
+        "Anti-American",
+        "Pre-Columbian",
+        "Mid-Atlantic",
+        "Mid-July",
+        "Non-EU",
+        "Pro-EU",
+        "anti-US",
+        "Ex-President",
+        "Long-Term",
+        "Co-Op",
+        "No-No",
+        "The-End",
+        "COVID-nineteen",
+        "UTF-eight",
+        "Windows-ninety-five",
+        "MP-three-player",
+        "ISO-eight",
+    ];
+    for no in no {
         assert!(!hyphen_boundary(no), "{no}");
     }
 }

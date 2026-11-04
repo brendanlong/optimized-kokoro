@@ -180,6 +180,10 @@ fn cjk_punctuation(text: &str) -> String {
         // "US-China" (the reference's "- " left "US" alone and read it as the word "us").
         let glued = |c: Option<char>| c.is_some_and(|c| !py::is_space(c));
         let inside = glued(previous) && glued(chars.peek().copied()) && !previous.is_some_and(|c| c == '–');
+        if c == '–' && previous == Some('–') {
+            // A run of en dashes is one dash, as "--" is.
+            continue;
+        }
         if c == '–' && (inside || digit(previous) && (digit(chars.peek().copied()) || money(chars.peek().copied()))) {
             out.push('-');
             previous = Some(c);
@@ -315,6 +319,8 @@ mod tests {
         let n = |t: &str| english(t, &Options::default());
         assert_eq!(n("The US–China talks"), "The US-China talks");
         assert_eq!(n("think of - a plan, good – very good"), "think of — a plan, good — very good");
+        assert_eq!(n("a ––b and a –– b"), "a — b and a — b");
+        assert_eq!(n("a–z and the A–Z list"), "A to Z and the A to Z list");
         assert_eq!(n("1939–1945 and $5–$10"), "nineteen thirty-nine to nineteen forty-five and five to ten dollars");
     }
 

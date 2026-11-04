@@ -327,20 +327,78 @@ fn resolve_tokens(tokens: &mut [MToken]) {
     }
 }
 
-/// Whether a hyphenated run gets a word boundary at its hyphens: compounds of names or acronyms
-/// ("US-China", "Paris-Berlin", "Smith-Jones", "NATO-EU", "US-based"), which read rushed as one
-/// word. Every part has two letters or more, and all are capitalised or one is an acronym; other
-/// compounds ("well-crafted", "X-ray", "T-shirt") stay one word, as in misaki (docs/divergences.md).
+/// Whether a hyphenated run gets a word boundary at its hyphens: compounds with an acronym
+/// ("US-China", "NATO-EU", "US-based", "EU-wide"), which read rushed as one word. Every part has
+/// two letters or more and one is an acronym (all capitals; a capitalised word alone doesn't
+/// count: "Spider-Man", "Mary-Jane" and "Paris-Berlin" stay one word). Not when the first part is
+/// a prefix ("Anti-American", "Non-EU", "Mid-July", "Co-Op"), a part is a function word
+/// ("The-End") or a number word ("COVID-nineteen", "UTF-eight": digits before normalization),
+/// or the parts repeat ("No-No"). Other compounds ("well-crafted", "X-ray", "T-shirt") stay one
+/// word, as in misaki (docs/divergences.md).
 pub fn hyphen_boundary(text: &str) -> bool {
     if !text.contains('-') {
         return false;
     }
     let parts: Vec<&str> = text.split('-').collect();
+    let lower: Vec<String> = parts.iter().map(|p| p.to_lowercase()).collect();
     let word = |p: &&str| p.chars().count() >= 2 && p.chars().all(text::is_alpha);
-    let capitalised = |p: &&str| p.chars().next().is_some_and(char::is_uppercase);
     let acronym = |p: &&str| p.chars().all(char::is_uppercase);
-    parts.iter().all(word) && (parts.iter().all(capitalised) || parts.iter().any(acronym))
+    parts.iter().all(word)
+        && parts.iter().any(acronym)
+        && !PREFIXES.contains(&lower[0].as_str())
+        && !lower.iter().any(|w| FUNCTION_WORDS.contains(&w.as_str()) || NUMBER_WORDS.contains(&w.as_str()))
+        && !lower.windows(2).any(|w| w[0] == w[1])
 }
+
+/// Prefixes that make one word with what follows, in any case ("Anti-American", "non-EU").
+const PREFIXES: &[&str] = &[
+    "anti", "pre", "post", "mid", "non", "ex", "pro", "co", "sub", "super", "inter", "trans", "neo", "pan", "semi",
+    "ultra", "over", "under", "multi", "counter", "self", "all", "re", "de", "dis", "mis", "out", "pseudo", "quasi",
+    "proto", "micro", "macro", "mega", "mini", "auto", "bi", "tri", "uni", "intra", "extra", "hyper", "infra", "meta",
+    "para", "vice", "half", "well", "long", "short", "cross", "full", "part", "un", "in", "en",
+];
+
+const FUNCTION_WORDS: &[&str] =
+    &["the", "a", "an", "of", "and", "or", "to", "in", "on", "at", "by", "for", "with", "from", "as", "is", "it"];
+
+/// The words the number pass writes for digits: a compound with one was a number before
+/// normalization ("COVID-19", "UTF-8", "Windows-95", "MP3-player").
+const NUMBER_WORDS: &[&str] = &[
+    "zero",
+    "oh",
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+    "eight",
+    "nine",
+    "ten",
+    "eleven",
+    "twelve",
+    "thirteen",
+    "fourteen",
+    "fifteen",
+    "sixteen",
+    "seventeen",
+    "eighteen",
+    "nineteen",
+    "twenty",
+    "thirty",
+    "forty",
+    "fifty",
+    "sixty",
+    "seventy",
+    "eighty",
+    "ninety",
+    "hundred",
+    "thousand",
+    "million",
+    "billion",
+    "point",
+];
 
 /// Whether a text has a hyphenated compound that [`hyphen_boundary`] gives a word boundary, for
 /// the parity tests to tell those readings apart.

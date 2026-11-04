@@ -581,6 +581,18 @@ pub fn explain(input: &str, reference: &str, ours: &str) -> Result<BTreeSet<Kind
             kinds.insert(Kind::Dashes);
             continue;
         }
+        // A range of letters: "a - z" against "A to Z".
+        let letter = |m: &Masked| m.text.len() == 1 && m.text.chars().all(|c| c.is_ascii_alphabetic());
+        if input.contains(['-', '–'])
+            && let [a, to, b] = mine
+            && letter(a)
+            && to.text == "to"
+            && letter(b)
+            && dashless(theirs).to_lowercase() == format!("{}{}", a.text, b.text).to_lowercase()
+        {
+            kinds.insert(Kind::Dashes);
+            continue;
+        }
         // A symbol the reference left in the text, or read as "number" where this reads "hashtag"
         // or "sharp": the reference's other words must all still be there.
         let symbol_word = |m: &Masked| matches!(m.token, "number" | "hashtag" | "sharp");
@@ -679,6 +691,8 @@ mod tests {
             ok("think of - a, US–China", "think of - a, US- China", "think of — a, US-China"),
             BTreeSet::from([Kind::Dashes])
         );
+        assert_eq!(ok("from a–z", "from a - z", "from A to Z"), BTreeSet::from([Kind::Dashes]));
+        err("from a z", "from a z", "from A to Z");
         err("think of a", "think of a", "think of — a");
     }
 }

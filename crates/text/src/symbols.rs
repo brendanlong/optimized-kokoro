@@ -393,6 +393,21 @@ pub fn symbols(text: &str) -> String {
                 // A hyphen standing alone between spaces is a dash, a pause, whatever spaCy
                 // would tag it (misaki only pauses for one tagged `:`).
                 '-' if i > 0 && t[i - 1] == ' ' && next == Some(' ') => "—",
+                // A range of letters, "A-Z" or "a–z": "A to Z" (capitals, so "a" isn't the article).
+                // Only standing alone: not spelled out ("a-h-o-y") or in a formula ("(xy)z-x(yz)").
+                '-' if i >= 1
+                    && t[i - 1].is_ascii_alphabetic()
+                    && (i < 2 || t[i - 2].is_whitespace() || "(\"'“‘".contains(t[i - 2]))
+                    && next.is_some_and(|c| c.is_ascii_alphabetic())
+                    && t.get(i + 2).is_none_or(|&c| c.is_whitespace() || ",.;:!?)\"'”’".contains(c)) =>
+                {
+                    out.text.pop();
+                    out.text.push(t[i - 1].to_ascii_uppercase());
+                    out.text.push_str(" to ");
+                    out.text.push(t[i + 1].to_ascii_uppercase());
+                    i += 2;
+                    continue;
+                }
                 '-' if next == Some('>') => {
                     out.say("to", t.get(i + 2).copied());
                     i += 2;
@@ -558,6 +573,8 @@ mod tests {
             ("<html>", "<html>"),
             ("a -> b", "a to b"),
             ("think of - a well-made A - B", "think of — a well-made A — B"),
+            ("a-z, A-Z list, X-ray, T-shirt and A-list", "A to Z, A to Z list, X-ray, T-shirt and A-list"),
+            ("a-h-o-y, (xy)z-x(yz)", "a-h-o-y, (xy)z-x(yz)"),
             ("★★★☆", ""),
             ("ℇ and ℏ", "Euler's constant and h bar"),
             ("Ω and \u{2126}", "Ω and ohm"),
