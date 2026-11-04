@@ -1,8 +1,16 @@
 # The production deployment on the host's system Docker: the GPU worker, the Rust server and the demo
 # page, each in gVisor as nobody (65534), with no capabilities and a read-only root. deploy/install.sh
 # and deploy/update.sh copy this file to /srv/optimized-kokoro/releases/RELEASE/compose.yaml next to a
-# .env that sets KOKORO_ROOT, KOKORO_RELEASE, KOKORO_UNIDIC_FILE and the settings from /srv/optimized-kokoro/settings.env;
-# /srv/optimized-kokoro/current points at the release that runs. See deploy/README.md.
+# .env that sets KOKORO_ROOT, KOKORO_RELEASE, KOKORO_UNIDIC_FILE, COMPOSE_PROJECT_NAME and the
+# settings from /srv/optimized-kokoro/settings.env; /srv/optimized-kokoro/current points at the
+# release that runs. See deploy/README.md.
+#
+# Each release is its own Compose project, optimized-kokoro-REL (COMPOSE_PROJECT_NAME in its .env,
+# so there's no name: here), with its own socket volume and network. update.sh starts a new
+# release's worker (no network) next to the running release, then replaces the old server, demo
+# and tunnel with the new ones. The networks all have the same subnet, so the addresses below
+# (the tunnel's ingress is 172.30.88.2:8880) never change; update.sh removes the old network before
+# the new one is made, since two networks can't share a subnet.
 #
 #   sudo docker compose -f /srv/optimized-kokoro/current/compose.yaml ps|logs -f|restart
 #
@@ -15,8 +23,6 @@
 #   shared volume only reaches the server as a real host socket. The worker needs `create`, the
 #   server `open`.
 # GPU support turns on by itself when the spec has NVIDIA devices (from CDI, see the worker).
-
-name: optimized-kokoro
 
 x-hardening: &hardening
   restart: unless-stopped
@@ -128,7 +134,8 @@ services:
 
 volumes:
   # A tmpfs owned by nobody, mounted on the host while either container uses it; it only ever holds
-  # worker.sock (mode 0660), which the worker replaces when it starts.
+  # worker.sock (mode 0660), which the worker replaces when it starts. One per release (project), so
+  # a new worker never touches the running one's socket.
   sock:
     driver: local
     driver_opts:
@@ -137,6 +144,7 @@ volumes:
       o: uid=65534,gid=65534,mode=0700,size=1m
 
 networks:
+  # One per release, all with this subnet, so only one exists at a time (update.sh's stop_front).
   kokoro:
     ipam:
       config:

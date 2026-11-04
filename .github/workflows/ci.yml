@@ -181,9 +181,9 @@ jobs:
         run: pnpm run build
 
   deploy:
-    name: Deploy (shellcheck, compose, hadolint)
+    name: Deploy (shellcheck, compose, dry runs, hadolint)
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -192,7 +192,7 @@ jobs:
         run: >-
           docker run --rm -v "$PWD:/mnt:ro" -w /mnt
           koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d
-          -x deploy/*.sh worker/run.sh worker/bench/*.sh crates/g2p-ja/tools/fetch_unidic.sh
+          -x deploy/*.sh deploy/dry-run/*.sh deploy/dry-run/bin/* worker/run.sh worker/bench/*.sh crates/g2p-ja/tools/fetch_unidic.sh
           reference/setup.sh tools/security/*.sh
       - name: docker compose config
         run: |
@@ -205,9 +205,15 @@ jobs:
           KOKORO_LISTEN=127.0.0.1:8880
           KOKORO_DEMO_LISTEN=127.0.0.1:25436
           KOKORO_MAX_BATCH=1
+          COMPOSE_PROJECT_NAME=optimized-kokoro-ci
           EOF
           docker compose -f deploy/compose.yaml --env-file "$RUNNER_TEMP/ci.env" config --quiet
           COMPOSE_PROFILES=cloudflared docker compose -f deploy/compose.yaml --env-file "$RUNNER_TEMP/ci.env" config --quiet
+      # install.sh, update.sh and keys.sh against fakes (no Docker daemon, GPU or root): success,
+      # failures and Ctrl-C at each step of an update, and the move off the single project.
+      - name: deploy dry runs
+        if: ${{ !cancelled() }}
+        run: deploy/dry-run/test.sh
       - name: hadolint
         if: ${{ !cancelled() }}
         run: |

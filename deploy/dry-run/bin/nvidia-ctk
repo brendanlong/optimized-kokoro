@@ -1,0 +1,2 @@
+#!/bin/bash
+[ "$*" != "cdi list" ] || printf 'nvidia.com/gpu=0\nnvidia.com/gpu=all\n'

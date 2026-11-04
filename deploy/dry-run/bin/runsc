@@ -1,0 +1,5 @@
+#!/bin/bash
+case "$*" in
+"nvproxy list-supported-drivers") printf '580.159.03\n580.178.04\n' ;;
+--version) echo "runsc version fake" ;;
+esac

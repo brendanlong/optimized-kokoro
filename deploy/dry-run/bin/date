@@ -1,0 +1,8 @@
+#!/bin/bash
+# A release name a second later than the last one, so runs in quick succession don't collide.
+if [ "$*" = "-u +%Y%m%dT%H%M%SZ" ]; then
+    n=$(($(cat "$FAKE_DATE" 2> /dev/null || echo 0) + 1))
+    echo "$n" > "$FAKE_DATE"
+    exec /usr/bin/date -u -d "@$((1893456000 + n))" +%Y%m%dT%H%M%SZ
+fi
+exec /usr/bin/date "$@"

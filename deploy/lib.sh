@@ -13,8 +13,12 @@
 #   resolv.conf             for cloudflared (Docker's DNS doesn't work under runsc)
 #   releases/REL/           compose.yaml, .env and the compile-cache seed made with REL's worker image
 #   current -> releases/REL the release that runs; swapped by rename
-#   .lock                   held by install.sh and update.sh while they run
-# Images are tagged optimized-kokoro-{worker,server,demo}:REL.
+#   .lock                   held by install.sh, update.sh and keys.sh while they run
+# Images are tagged optimized-kokoro-{worker,server,demo}:REL. Each release is its own Compose
+# project, optimized-kokoro-rel (REL in lower case, COMPOSE_PROJECT_NAME in its .env), with its own
+# socket volume and network, so update.sh can start a new release's worker next to the running
+# release. Releases from before that have no COMPOSE_PROJECT_NAME and share the project
+# optimized-kokoro (compose.yaml's name then); update.sh moves off it like any other release.
 
 # Compose gives the environment priority over a release's .env, so nothing inherited (sudo -E, say)
 # may set what the scripts decide. The only inputs are KOKORO_BUILD_USER and SUDO_USER (and DESTDIR,
@@ -158,6 +162,7 @@ on_abort=
 cleanup() {
     local abort=$on_abort
     on_abort=
+    gpu_watch_stop
     if [ -n "$abort" ]; then
         echo "== undoing: $abort" >&2
         $abort || echo "undoing failed; see sudo docker compose -f $root/current/compose.yaml ps" >&2
@@ -211,8 +216,71 @@ import_file() {
     fi
 }
 
+# The release current points at.
+current_release() {
+    basename "$(readlink "$root/current")"
+}
+
+# The Compose project stage_release gives release $1 (Compose wants lower case).
+new_project() {
+    echo "optimized-kokoro-${1,,}"
+}
+
+# The Compose project of release $1: COMPOSE_PROJECT_NAME in its .env, or optimized-kokoro for a
+# release from before per-release projects (whose .env has none); new_project before it has a .env.
+project_of() {
+    local env=$root/releases/$1/.env p
+    [ -f "$env" ] || {
+        new_project "$1"
+        return
+    }
+    p=$(sed -n 's/^COMPOSE_PROJECT_NAME=//p' "$env")
+    echo "${p:-optimized-kokoro}"
+}
+
+# docker compose for release $1. The project is in its .env too, so a plain
+# docker compose -f .../compose.yaml finds it as well; -p only makes it explicit.
+compose_rel() {
+    local r=$1
+    shift
+    docker compose -p "$(project_of "$r")" -f "$root/releases/$r/compose.yaml" "$@"
+}
+
+# docker compose for the release current points at.
 compose() {
-    docker compose -f "$root/current/compose.yaml" "$@"
+    compose_rel "$(current_release)" "$@"
+}
+
+# Removes Compose project $1's containers, networks and volumes, by their labels (so it needs no
+# compose file, and also finds what an interrupted run left). Never fails: it also runs in cleanup.
+remove_project() {
+    local kind ids
+    for kind in container network volume; do
+        case $kind in
+        container) ids=$(docker ps -aq --filter "label=com.docker.compose.project=$1" 2> /dev/null) ;;
+        *) ids=$(docker "$kind" ls -q --filter "label=com.docker.compose.project=$1" 2> /dev/null) ;;
+        esac
+        [ -n "$ids" ] || continue
+        # shellcheck disable=SC2086
+        docker "$kind" rm -f $ids > /dev/null || echo "couldn't remove all of $1's ${kind}s" >&2
+    done
+    return 0
+}
+
+# Removes every project of ours (optimized-kokoro and optimized-kokoro-REL) except $1: what an
+# update or install that was killed before it could clean up left, such as a new worker holding
+# GPU memory, or a network holding the subnet.
+sweep_projects() {
+    local p
+    for p in $({
+        docker ps -a --format '{{.Label "com.docker.compose.project"}}'
+        docker network ls --format '{{.Label "com.docker.compose.project"}}'
+        docker volume ls --format '{{.Label "com.docker.compose.project"}}'
+    } | grep -xE 'optimized-kokoro(-[0-9]{8}t[0-9]{6}z)?' | sort -u); do
+        [ "$p" != "${1:-}" ] || continue
+        echo "== removing the Compose project $p, left by an interrupted install or update"
+        remove_project "$p"
+    done
 }
 
 new_key() {
@@ -562,9 +630,10 @@ render_server_toml() {
 }
 
 # Builds the images and the compile cache for a new release, while whatever runs keeps running.
-# Sets $rel, and $pending_release until the caller has started it.
+# Sets $rel, and $pending_release until the caller has started it, and $gpu_need: the GPU memory
+# (MiB) the new worker's warmup took, if nvidia-smi could tell.
 stage_release() {
-    local dir
+    local dir before peak
     rel=$(date -u +%Y%m%dT%H%M%SZ)
     dir=$root/releases/$rel
     [ ! -e "$dir" ] || die "$dir exists"
@@ -582,19 +651,29 @@ stage_release() {
         echo "KOKORO_ROOT=$root"
         echo "KOKORO_RELEASE=$rel"
         echo "KOKORO_UNIDIC_FILE=$(unidic_sha).dic"
+        echo "COMPOSE_PROJECT_NAME=$(new_project "$rel")"
         settings_env
     } > "$dir/.env"
     chmod 0644 "$dir/.env"
-    docker compose -f "$dir/compose.yaml" config --quiet
+    compose_rel "$rel" config --quiet
 
     echo "== compile cache (warms up in gVisor next to the running worker, then exits without listening)"
     # Written by nobody into a directory only it can write, then handed to root and mounted
     # read-only from then on. Same image and flags as the worker that will load it.
     install -d -m 0700 "$dir/cache-seed"
     chown "$nobody:$nobody" "$dir/cache-seed"
-    docker compose -f "$dir/compose.yaml" run --rm --no-deps -T -e KOKORO_CACHE_SEED= \
+    before=$(gpu_used)
+    gpu_watch_start export
+    compose_rel "$rel" run --rm --no-deps -T -e KOKORO_CACHE_SEED= \
         -v "$dir/cache-seed:/cache-export" worker \
         --max-batch "$KOKORO_MAX_BATCH" --export-cache /cache-export
+    gpu_watch_stop
+    peak=$(gpu_peak export)
+    gpu_need=
+    if [ -n "$before" ] && [ -n "$peak" ]; then
+        gpu_need=$((peak > before ? peak - before : 0))
+        echo "GPU memory during the export: $before MiB before, $peak MiB at the peak (the warmup took $gpu_need MiB)"
+    fi
     chown -hR root:root "$dir/cache-seed"
     chmod -R u=rwX,go=rX "$dir/cache-seed"
     [ -n "$(ls -A "$dir/cache-seed")" ] || die "the compile cache is empty"
@@ -605,25 +684,119 @@ point_current() {
     ln -sfn "releases/$1" "$root/current.new" && mv -T "$root/current.new" "$root/current"
 }
 
-# Waits for the server of the release current points at.
+# Waits for the server of the release current points at, and sets $healthy_at ($EPOCHREALTIME)
+# when it answers. Polls often: after update.sh's swap, this wait is the downtime.
+healthy_at=
+# shellcheck disable=SC2034 # healthy_at is update.sh's
 wait_healthy() {
     local url
     url=$(health_url)
     # The worker takes about 3.5 minutes to start in gVisor with directfs off, even with a seed.
     echo "== waiting for $url"
-    for _ in $(seq 600); do
-        curl -sf -o /dev/null "$url" && return 0
-        sleep 1
+    for _ in $(seq 3000); do
+        if curl -sf -o /dev/null --max-time 2 "$url"; then
+            healthy_at=$EPOCHREALTIME
+            return 0
+        fi
+        sleep 0.2
     done
     echo "not healthy after 10 minutes" >&2
     return 1
+}
+
+# Seconds from $1 to $2 (both $EPOCHREALTIME), to a tenth.
+elapsed() {
+    local d=$((10#${2//[.,]/} - 10#${1//[.,]/}))
+    d=$((d / 100000))
+    echo "$((d / 10)).$((d % 10))"
+}
+
+# Waits for release $1's worker to listen on its socket, which it does only once it has warmed up.
+# Fails at once if the container stops or restarts (out of GPU memory, say), or after 10 minutes.
+wait_worker() {
+    local id logs status=missing restarts=0
+    echo "== waiting for $1's worker to warm up (about as long as the cache export took)"
+    for _ in $(seq 300); do
+        logs=$(compose_rel "$1" logs --no-log-prefix worker 2> /dev/null || true)
+        if grep -q 'listening on /run/kokoro/worker.sock' <<< "$logs"; then
+            echo "$1's worker is ready"
+            return 0
+        fi
+        id=$(compose_rel "$1" ps -aq worker 2> /dev/null || true)
+        status=missing restarts=0
+        if [ -n "$id" ]; then
+            read -r status restarts < <(docker inspect -f '{{.State.Status}} {{.RestartCount}}' "$id" 2> /dev/null || echo missing 0)
+        fi
+        if [ "$status" != running ] || [ "$restarts" != 0 ]; then
+            echo "$1's worker stopped before it was ready ($status, restarted $restarts times)" >&2
+            break
+        fi
+        sleep 2
+    done
+    [ "$status" != running ] || [ "$restarts" != 0 ] || echo "$1's worker wasn't ready after 10 minutes" >&2
+    compose_rel "$1" logs --no-color --tail 40 worker >&2 || true
+    return 1
+}
+
+# Removes release $1's server, demo and tunnel, and then its network, which frees the published
+# ports and the subnet (172.30.88.0/24) for the next release's network. Its worker keeps running,
+# so the release comes back in seconds (start_current) if the next one doesn't.
+stop_front() {
+    local net
+    compose_rel "$1" rm -sf server demo cloudflared || return 1
+    net="$(project_of "$1")_kokoro"
+    if docker network inspect "$net" > /dev/null 2>&1; then
+        docker network rm "$net" > /dev/null || return 1
+    fi
+}
+
+# KOKORO_GPU's memory in MiB: in use (gpu_used) and in all (gpu_total). Nothing if nvidia-smi
+# can't name the CDI device (a MIG device, say).
+gpu_query() {
+    nvidia-smi -i "$KOKORO_GPU" --query-gpu="$1" --format=csv,noheader,nounits 2> /dev/null | sed -n '1{/^[0-9][0-9]*$/p}' || true
+}
+gpu_used() { gpu_query memory.used; }
+gpu_total() { gpu_query memory.total; }
+
+# Samples KOKORO_GPU's memory in use twice a second into log $1 until gpu_watch_stop; gpu_peak $1
+# is the highest sample (MiB), or nothing.
+gpu_dir='' gpu_pid=''
+gpu_watch_start() {
+    [ -n "$gpu_dir" ] || make_tmp gpu_dir
+    # Without the lock's descriptor, so nothing it leaves behind could hold the lock.
+    nvidia-smi -i "$KOKORO_GPU" --query-gpu=memory.used --format=csv,noheader,nounits -lms 500 > "$gpu_dir/$1" 2> /dev/null 9>&- &
+    gpu_pid=$!
+}
+gpu_watch_stop() {
+    [ -n "$gpu_pid" ] || return 0
+    kill "$gpu_pid" 2> /dev/null || true
+    wait "$gpu_pid" 2> /dev/null || true
+    gpu_pid=
+}
+gpu_peak() {
+    { grep -xE '[0-9]+' "$gpu_dir/$1" 2> /dev/null || true; } | sort -n | tail -1
+}
+
+# Before a second worker starts next to the running one: fails if KOKORO_GPU hasn't the memory the
+# new worker's warmup took during the export, with 256 MiB to spare (running out could also fail
+# the running worker's requests).
+check_gpu_room() {
+    local used total
+    used=$(gpu_used) total=$(gpu_total)
+    if [ -z "${gpu_need:-}" ] || [ -z "$used" ] || [ -z "$total" ]; then
+        echo "(nvidia-smi -i $KOKORO_GPU doesn't show the GPU's memory, so not checking that a second worker fits)"
+        return 0
+    fi
+    echo "GPU memory: $used of $total MiB in use; the new worker's warmup took $gpu_need MiB"
+    ((total - used >= gpu_need + 256)) ||
+        die "not enough free GPU memory for a second worker: $((total - used)) MiB, against the $gpu_need MiB its warmup took and 256 to spare. Nothing was changed; try again when there's room"
 }
 
 # Starts the release current points at (recreating containers whose image or config changed), with
 # that release's settings.
 start_current() {
     local r
-    r=$(basename "$(readlink "$root/current")")
+    r=$(current_release)
     KOKORO_LISTEN=$(release_setting "$r" LISTEN)
     # --remove-orphans keeps containers of services that are only switched off by a profile, so a
     # tunnel turned off in settings.env would keep running.
@@ -634,22 +807,36 @@ start_current() {
 }
 
 # With the tunnel on, waits for cloudflared to register a connection with Cloudflare, so a bad or
-# revoked token fails the install or update (and rolls back) instead of restarting forever.
+# revoked token fails the install or update (and rolls back) instead of restarting forever. Sets
+# $tunnel_at ($EPOCHREALTIME) when it has.
+tunnel_at=
+# shellcheck disable=SC2034 # tunnel_at is update.sh's
 wait_tunnel() {
+    local logs
     grep -qx 'COMPOSE_PROFILES=cloudflared' "$root/current/.env" || return 0
     echo "== waiting for the Cloudflare tunnel to connect"
-    for _ in $(seq 120); do
-        compose logs --no-log-prefix cloudflared 2> /dev/null | grep -q 'Registered tunnel connection' && return 0
-        sleep 1
+    for _ in $(seq 240); do
+        logs=$(compose logs --no-log-prefix cloudflared 2> /dev/null || true)
+        if grep -q 'Registered tunnel connection' <<< "$logs"; then
+            tunnel_at=$EPOCHREALTIME
+            return 0
+        fi
+        sleep 0.5
     done
     echo "cloudflared didn't connect in 2 minutes:" >&2
     compose logs --tail 20 cloudflared >&2 || true
     return 1
 }
 
-# Removes a release's images and directory, and the dictionaries no release names any more.
+# Removes a release's Compose project, images and directory, and the dictionaries no release names
+# any more. The project only if it's the release's own (not the shared optimized-kokoro of releases
+# from before per-release projects, which sweep_projects removes) and not the running one.
 remove_release() {
-    local i
+    local i p
+    p=$(project_of "$1")
+    if [ "$p" != optimized-kokoro ] && { [ ! -L "$root/current" ] || [ "$p" != "$(project_of "$(current_release)")" ]; }; then
+        remove_project "$p"
+    fi
     for i in "${images[@]}"; do docker image rm "optimized-kokoro-$i:$1" > /dev/null 2>&1 || true; done
     rm -rf "${root:?}/releases/$1"
     prune_unidic
@@ -669,7 +856,8 @@ prune_releases() {
     prune_unidic
 }
 
+# The last log lines of release $1.
 show_logs() {
-    echo "--- last log lines of the failed release" >&2
-    compose logs --no-color --tail 40 >&2 || true
+    echo "--- last log lines of $1" >&2
+    compose_rel "$1" logs --no-color --tail 40 >&2 || true
 }

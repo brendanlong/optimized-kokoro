@@ -1,0 +1,26 @@
+#!/bin/bash
+# A fake nvidia-smi for deploy/dry-run/test.sh: each running worker holds 1300 MiB, a cache export
+# 1600 more. FAKE_GPU_TOTAL sets the total (24564); FAKE_NO_GPU_MEMORY=1 makes memory queries fail.
+set -uo pipefail
+# shellcheck source=deploy/dry-run/bin/fake-lib.sh
+. "$(dirname "$0")/fake-lib.sh"
+used() {
+    local n extra=0
+    n=$(compgen -G "$FAKE_STATE/*/svc/worker" | wc -l)
+    [ ! -e "$FAKE_STATE/.exporting" ] || extra=1600
+    echo $((n * 1300 + extra))
+}
+case "$*" in
+*driver_version*) echo 580.178.04 ;;
+*memory.*)
+    [ -z "${FAKE_NO_GPU_MEMORY:-}" ] || exit 6
+    ;;&
+*memory.used*-lms*)
+    while :; do
+        used
+        /usr/bin/sleep 0.5
+    done
+    ;;
+*memory.used*) used ;;
+*memory.total*) echo "${FAKE_GPU_TOTAL:-24564}" ;;
+esac
