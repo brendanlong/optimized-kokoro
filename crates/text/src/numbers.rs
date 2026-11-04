@@ -127,6 +127,15 @@ pub fn cardinal(digits_str: &str) -> String {
     words.join(" ")
 }
 
+/// Whether a word is one this reader writes for a number ("seven", "twenty", "hundred", "minus").
+pub(crate) fn is_number_word(word: &str) -> bool {
+    let w = word.to_lowercase();
+    ONES.contains(&w.as_str())
+        || TENS[2..].contains(&w.as_str())
+        || SCALES[1..].contains(&w.as_str())
+        || matches!(w.as_str(), "hundred" | "and" | "point" | "minus" | "plus" | "times" | "oh")
+}
+
 /// The ordinal of a cardinal reading: its last word made ordinal ("twenty-one" → "twenty-first").
 pub fn ordinal_of(reading: &str) -> String {
     let split = reading.rfind([' ', '-']).map_or(0, |i| i + 1);

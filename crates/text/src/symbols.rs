@@ -204,6 +204,28 @@ fn curated(c: char) -> Option<Reading> {
     })
 }
 
+/// Whether `before` ends in a bracket around math: numbers (already words here), one-letter
+/// variables and operators, as in "(a+b)²", "(x-1)³" or "[2n]²". "(see Smith)²" is a footnote.
+fn bracketed_math(before: &[char]) -> bool {
+    let (close, open) = match before.last() {
+        Some(')') => (')', '('),
+        Some(']') => (']', '['),
+        _ => return false,
+    };
+    let Some(start) = before[..before.len() - 1].iter().rposition(|&c| c == open) else { return false };
+    let inside = &before[start + 1..before.len() - 1];
+    if inside.is_empty() || inside.contains(&close) {
+        return false;
+    }
+    let text: String = inside.iter().collect();
+    let symbols_ok = inside.iter().all(|&c| c.is_alphanumeric() || c.is_whitespace() || "+-−×*/÷=^.,".contains(c));
+    symbols_ok
+        && text
+            .split(|c: char| !c.is_alphabetic())
+            .filter(|w| !w.is_empty())
+            .all(|w| w.chars().count() == 1 || crate::numbers::is_number_word(w))
+}
+
 /// Units a superscript after which is a power ("km²", "s²").
 const POWER_UNITS: &[&str] = &["m", "cm", "mm", "km", "nm", "µm", "μm", "ft", "in", "yd", "mi", "s", "ms", "g", "kg"];
 
@@ -455,7 +477,8 @@ pub fn symbols(text: &str) -> String {
             };
             let after_variable = word.chars().count() == 1
                 || POWER_UNITS.contains(&word.as_str())
-                || (word.starts_with('=') && word.len() > 1);
+                || (word.starts_with('=') && word.len() > 1)
+                || bracketed_math(&t[..i]);
 
             if sub {
                 // "H₂O" as "H-two-O", one word, as the number pass joins numbers inside words.
@@ -518,6 +541,8 @@ mod tests {
             ("Smith² said, E=mc²", "Smith said, E equals mc squared"),
             ("m², x², km² and 3 m/s²", "m squared, x squared, km squared and 3 m slash s squared"),
             ("word², end.², Smith³ and [²] and x²³", "word, end., Smith and and x to the power of twenty-three"),
+            ("(a+b)², (x-one)³ and [two n]²", "(a plus b) squared, (x-one) cubed and [two n] squared"),
+            ("(see Smith)² and (end.)²", "(see Smith) and (end.)"),
             ("① and ⑳", "one and twenty"),
             ("½ cup", "one half cup"),
             ("C# and #hashtag and # 1", "C sharp and hashtag hashtag and number 1"),
