@@ -1,0 +1,18 @@
+# gpuc submit bench/job_buckets.yaml --host local   (from worker/). For the HTTP measurement, put a
+# kokoro-server binary and its espeak-ng-data at bench/bin/ (not committed) and set ESPEAK_DATA_LINK
+# to the espeak-ng-data path the binary was built with; or drop KOKORO_SERVER_BIN.
+name: kokoro-worker-buckets
+setup: uv sync --frozen
+command: KOKORO_SERVER_BIN=$PWD/bench/bin/kokoro-server bash bench/job_buckets.sh
+python: .venv/bin/python
+gpus: 1
+env:
+  REQUIRE_CUDA: "1"
+  PYTHONUNBUFFERED: "1"
+  STEPS: "shapes equiv first serve seed"
+  ESPEAK_DATA_LINK: /home/claude/worktrees/decf45d1-3ba3-4e7a-b872-21145ffc217e/optimized-kokoro/crates/espeak-ng/espeak-ng-data
+outputs:
+  - path: results
+priority: 40
+estimated_runtime_min: 120
+max_runtime_min: 300

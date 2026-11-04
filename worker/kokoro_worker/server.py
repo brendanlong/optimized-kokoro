@@ -171,6 +171,9 @@ class Connection:
         except OSError as e:
             log.info("connection error: %s", e)
         finally:
+            torch = sys.modules.get("torch")
+            if torch is not None and torch.cuda.is_initialized():
+                self.stats["gpu_reserved_mib"] = torch.cuda.memory_reserved() >> 20
             log.info("connection done: %s", self.stats)
             self.close()
             if reader is not None:
@@ -193,8 +196,14 @@ def accept_loop(listener: socket.socket, synth, max_batch: int, frame_timeout: f
 def warmup(synth, max_batch: int) -> None:
     """Compile before accepting connections: batch 1, batches > 1, and the masked path that a
     decoder group with padding takes all have graphs of their own."""
-    from .model import Request
+    from .model import SAMPLES_PER_FRAME, Request
 
+    if synth.buckets:
+        # Every shape a request at speed 1 or faster can run at, within --max-chunk-seconds.
+        t = time.monotonic()
+        n = synth.warm(synth.max_chunk_samples // SAMPLES_PER_FRAME, log.info)
+        log.info("warmup: %d shapes in %.1f s", n, time.monotonic() - t)
+        return
     ids = sorted(synth.vocab_ids)
     # Warm every shape even if --max-chunk-seconds would refuse some of these requests.
     cap, synth.max_chunk_samples = synth.max_chunk_samples, 2**32 - 1
@@ -250,7 +259,12 @@ def main() -> None:
     parser.add_argument("--pad-slack", type=float, default=0.25,
                         help="decoder groups may hold this fraction of padding frames")
     parser.add_argument("--no-exact", action="store_true",
-                        help="pad decoder groups without masking (faster, changes the audio slightly)")
+                        help="pad decoder groups without masking (faster, changes the audio slightly; "
+                             "turns size buckets off)")
+    parser.add_argument("--bucket-ratio", type=float, default=0.05,
+                        help="pad decoder frames to buckets this far apart (and ids to multiples of 16, "
+                             "batches to powers of two), all warmed before listening; 0 runs exact sizes, "
+                             "each paying ~35 ms the first time it occurs")
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--fp32", action="store_true")
     parser.add_argument("--no-compile", action="store_true")
@@ -259,6 +273,8 @@ def main() -> None:
         parser.error("--socket is required (or --export-cache)")
     if not 1 <= args.max_batch <= 64:
         parser.error("--max-batch must be 1..64")
+    if not 0 <= args.bucket_ratio <= 1:
+        parser.error("--bucket-ratio must be 0..1")
     max_chunk_samples = round(args.max_chunk_seconds * P.SAMPLE_RATE)
     if not 1 <= max_chunk_samples <= 2**32 - 1:
         parser.error("--max-chunk-seconds out of range")
@@ -276,14 +292,21 @@ def main() -> None:
 
     t = time.monotonic()
     synth = Synth(args.models, device=args.device, half=not args.fp32, compile=not args.no_compile,
-                  max_chunk_samples=max_chunk_samples, pad_slack=args.pad_slack, exact=not args.no_exact)
+                  max_chunk_samples=max_chunk_samples, pad_slack=args.pad_slack, exact=not args.no_exact,
+                  max_batch=args.max_batch, bucket_ratio=args.bucket_ratio)
     log.info("loaded in %.1f s: %d voices", time.monotonic() - t, len(synth.voice_names))
     warmup(synth, args.max_batch)
     if args.export_cache:
         copy_caches(None, args.export_cache)
         log.info("compile caches exported to %s in %.1f s; exiting", args.export_cache, time.monotonic() - t)
         return
-    log.info("ready in %.1f s", time.monotonic() - t)
+    if synth.device.type == "cuda":
+        import torch
+
+        log.info("ready in %.1f s, GPU memory reserved %d MiB (peak %d MiB)", time.monotonic() - t,
+                 torch.cuda.memory_reserved() >> 20, torch.cuda.max_memory_reserved() >> 20)
+    else:
+        log.info("ready in %.1f s", time.monotonic() - t)
 
     try:
         os.unlink(args.socket)
