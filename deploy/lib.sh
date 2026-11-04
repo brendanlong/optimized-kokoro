@@ -276,7 +276,8 @@ ensure_secrets() {
         line=$(sed -n 's/^KOKORO_API_KEYS=//p' <<< "$line" | head -n 1)
         IFS=, read -ra keys <<< "$line"
         for k in "${keys[@]}"; do
-            [[ $k =~ ^[A-Za-z0-9._~-]+$ ]] || die "a key in $old/server.env has unexpected characters"
+            # Characters that are safe inside a TOML basic string: base64 keys (+ / =) included.
+            [[ $k =~ ^[A-Za-z0-9._~+/=-]+$ ]] || die "a key in $old/server.env has characters other than letters, digits and ._~+/=-"
         done
         echo "reusing ${#keys[@]} key(s) from $old/server.env"
     fi
