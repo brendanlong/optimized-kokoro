@@ -171,7 +171,7 @@ fn reference_records() {
     let (mut cjk, mut cjk_matched, mut cjk_skipped, mut new_script, mut flagged) = (0, 0, 0, Vec::new(), Vec::new());
     let (mut zh, mut zh_matched, mut failing, mut failing_matched, mut unreadable) = (0, 0, 0, 0, Vec::new());
     let mut mismatches = Vec::new();
-    let (mut changed, mut numbers, mut symbols, mut unchanged_chunks) = (0, 0, 0, 0);
+    let (mut changed, mut numbers, mut symbols, mut unchanged_chunks, mut dashes) = (0, 0, 0, 0, 0);
     let start = Instant::now();
     for record in &records {
         let chinese_with_japanese = record.lang == "z" && uses_cjk(record);
@@ -229,6 +229,7 @@ fn reference_records() {
                     }
                     numbers += usize::from(kinds.contains(&Kind::Numbers));
                     symbols += usize::from(kinds.contains(&Kind::Symbols));
+                    dashes += usize::from(kinds.contains(&Kind::Dashes));
                     changed += 1;
                     // `PARITY_CHANGED=FILE` writes each such record, to review the differences.
                     if let Ok(path) = std::env::var("PARITY_CHANGED") {
@@ -302,7 +303,7 @@ fn reference_records() {
         unreadable.len()
     );
     println!(
-        "normalized differently, by the number reader and symbol pass: {changed} records ({numbers} with numbers, {symbols} with symbols), whose {unchanged_chunks} chunks with unchanged text match"
+        "normalized differently, by the number reader and symbol pass: {changed} records ({numbers} with numbers, {symbols} with symbols, {dashes} with dashes), whose {unchanged_chunks} chunks with unchanged text match"
     );
     println!("{} records, {chars} characters in {:.2?}", records.len(), elapsed);
     for m in mismatches.iter().take(show) {

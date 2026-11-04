@@ -166,8 +166,9 @@ fn quotes(text: &str) -> String {
 const CJK_PUNCTUATION: [(char, &str); 8] =
     [('、', ", "), ('。', ". "), ('！', "! "), ('，', ", "), ('：', ": "), ('；', "; "), ('？', "? "), ('–', "- ")];
 
-/// The reference's CJK punctuation pass, except that an en dash between digits stays a dash
-/// ("1939–1945"), for the number pass to read as "to".
+/// The reference's CJK punctuation pass, except that an en dash between digits or inside a word
+/// stays a hyphen ("1939–1945", "US–China"), for the number pass to read as "to" or misaki as a
+/// compound.
 fn cjk_punctuation(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut chars = text.chars().peekable();
@@ -175,7 +176,15 @@ fn cjk_punctuation(text: &str) -> String {
     while let Some(c) = chars.next() {
         let digit = |c: Option<char>| c.is_some_and(|c| py::digit_value(c).is_some());
         let money = |c: Option<char>| c.is_some_and(|c| "$£€¥₹₩₽₿₱₪₺".contains(c));
-        if c == '–' && digit(previous) && (digit(chars.peek().copied()) || money(chars.peek().copied())) {
+        // An en dash inside a word ("US–China") is a hyphen, so the words around it read as in
+        // "US-China" (the reference's "- " left "US" alone and read it as the word "us").
+        let glued = |c: Option<char>| c.is_some_and(|c| !py::is_space(c));
+        let inside = glued(previous) && glued(chars.peek().copied()) && !previous.is_some_and(|c| c == '–');
+        if c == '–' && previous == Some('–') {
+            // A run of en dashes is one dash, as "--" is.
+            continue;
+        }
+        if c == '–' && (inside || digit(previous) && (digit(chars.peek().copied()) || money(chars.peek().copied()))) {
             out.push('-');
             previous = Some(c);
             continue;
@@ -305,6 +314,16 @@ mod tests {
 
     /// Every pattern's fast paths (native conditions, relaxed matches) against the plain
     /// backtracker, on random text made of the pieces the patterns react to.
+    #[test]
+    fn dashes() {
+        let n = |t: &str| english(t, &Options::default());
+        assert_eq!(n("The US–China talks"), "The US-China talks");
+        assert_eq!(n("think of - a plan, good – very good"), "think of — a plan, good — very good");
+        assert_eq!(n("a ––b and a –– b"), "a — b and a — b");
+        assert_eq!(n("a–z and the A–Z list"), "A to Z and the A to Z list");
+        assert_eq!(n("1939–1945 and $5–$10"), "nineteen thirty-nine to nineteen forty-five and five to ten dollars");
+    }
+
     #[test]
     fn patterns_match_the_backtracker() {
         let p = &*PATTERNS;
