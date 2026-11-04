@@ -230,6 +230,8 @@ const UNITS: &[&str] = &[
     "1,111",
     // The number reader and the symbol pass (docs/divergences.md, "Numbers" and "Symbols").
     "1st",
+    "1,11",
+    "1,11,",
     "1st ",
     "1990s ",
     "'80s ",

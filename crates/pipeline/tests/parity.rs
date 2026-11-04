@@ -171,7 +171,7 @@ fn reference_records() {
     let (mut cjk, mut cjk_matched, mut cjk_skipped, mut new_script, mut flagged) = (0, 0, 0, Vec::new(), Vec::new());
     let (mut zh, mut zh_matched, mut failing, mut failing_matched, mut unreadable) = (0, 0, 0, 0, Vec::new());
     let mut mismatches = Vec::new();
-    let (mut changed, mut numbers, mut symbols) = (0, 0, 0);
+    let (mut changed, mut numbers, mut symbols, mut unchanged_chunks) = (0, 0, 0, 0);
     let start = Instant::now();
     for record in &records {
         let chinese_with_japanese = record.lang == "z" && uses_cjk(record);
@@ -210,8 +210,23 @@ fn reference_records() {
         }
         let normalized = kokoro_text::split::normalize(&kokoro_text::join_lines(&record.text), &record.lang, &options);
         if normalized != record.normalized {
-            match divergence::explain(&record.normalized, &normalized) {
+            match divergence::explain(&record.text, &record.normalized, &normalized) {
                 Ok(kinds) => {
+                    // Chunks whose text is unchanged must still be read exactly as before.
+                    let reference: HashMap<&str, &str> =
+                        record.chunks.iter().map(|c| (c.text.as_str(), c.phonemes.as_str())).collect();
+                    let placeholders = uses_cjk(record) && !japanese_read;
+                    for (text, phonemes) in actual.iter().filter(|_| !placeholders) {
+                        if let Some(&expected) = reference.get(text.as_str())
+                            && expected != phonemes
+                        {
+                            mismatches.push(format!(
+                                "{}: unchanged chunk {text:?} read differently\n  expected: {expected}\n  actual:   {phonemes}",
+                                record.id
+                            ));
+                        }
+                        unchanged_chunks += usize::from(reference.contains_key(text.as_str()));
+                    }
                     numbers += usize::from(kinds.contains(&Kind::Numbers));
                     symbols += usize::from(kinds.contains(&Kind::Symbols));
                     changed += 1;
@@ -287,7 +302,7 @@ fn reference_records() {
         unreadable.len()
     );
     println!(
-        "normalized differently, by the number reader and symbol pass: {changed} records ({numbers} with numbers, {symbols} with symbols)"
+        "normalized differently, by the number reader and symbol pass: {changed} records ({numbers} with numbers, {symbols} with symbols), whose {unchanged_chunks} chunks with unchanged text match"
     );
     println!("{} records, {chars} characters in {:.2?}", records.len(), elapsed);
     for m in mismatches.iter().take(show) {

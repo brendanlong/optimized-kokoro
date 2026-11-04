@@ -87,6 +87,7 @@ fn text_cases() {
     let mut totals: BTreeMap<String, (usize, usize)> = BTreeMap::new();
     let mut mismatches = Vec::new();
     let mut changed: BTreeMap<String, usize> = BTreeMap::new();
+    let mut by_input_only = 0;
     for line in std::fs::read_to_string(path).unwrap().lines().filter(|l| !l.trim().is_empty()) {
         let case: Value = serde_json::from_str(line).unwrap();
         let (expected, actual) = run(&case);
@@ -94,19 +95,22 @@ fn text_cases() {
         entry.0 += 1;
         // Numbers and symbols are read differently on purpose (docs/divergences.md): those
         // differences are counted, every other one fails.
-        // Under the other option sets ("all" had the reference's unit option, which is gone), and
+        // Under the other option sets ("all" had the reference's unit option, which is gone; "none"
+        // leaves URLs and symbols to the number pass), and
         // in the seeded fuzz cases, which glue numbers, symbols and words together in ways the
         // word-by-word check can't line up, a digit or symbol in the input is the explanation.
         let text = str_of(&case, "text");
         let has_number_or_symbol = text.chars().any(|c| {
             c.is_numeric() || (!c.is_alphanumeric() && !c.is_whitespace() && !".,;:!?'\"()[]{}-—–…“”‘’«»`".contains(c))
         });
-        let explained = matches!(str_of(&case, "kind"), "normalize" | "smart_split")
-            && (kokoro_reference::divergence::explain(&strings(&expected), &strings(&actual)).is_ok()
-                || ((case["options"] != "default" || str_of(&case, "id").starts_with("fuzz-"))
-                    && has_number_or_symbol));
-        if expected != actual && explained {
+        let kind = matches!(str_of(&case, "kind"), "normalize" | "smart_split");
+        let strict =
+            kind && kokoro_reference::divergence::explain(text, &strings(&expected), &strings(&actual)).is_ok();
+        let by_input =
+            kind && (case["options"] != "default" || str_of(&case, "id").starts_with("fuzz-")) && has_number_or_symbol;
+        if expected != actual && (strict || by_input) {
             *changed.entry(str_of(&case, "kind").to_owned()).or_default() += 1;
+            by_input_only += usize::from(!strict);
         } else if expected != actual {
             entry.1 += 1;
             mismatches.push(format!(
@@ -120,6 +124,7 @@ fn text_cases() {
         let differ = changed.get(kind).copied().unwrap_or(0);
         println!("{kind}: {}/{total} exact, {differ} with numbers or symbols read differently", total - bad - differ);
     }
+    println!("of those, {by_input_only} explained only by a digit or symbol in the input (fuzz and other option sets)");
     for m in mismatches.iter().take(40) {
         println!("{m}");
     }

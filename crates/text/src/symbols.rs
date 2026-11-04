@@ -378,7 +378,10 @@ pub fn symbols(text: &str) -> String {
             i += 1;
             continue;
         }
-        if is_modifier(c) {
+        // Variation selectors and the like, and combining marks on a symbol (`😀\u{301}`), go
+        // with the symbol.
+        let combining = matches!(c as u32, 0x300..=0x36F | 0x1AB0..=0x1AFF | 0x20D0..=0x20FF);
+        if is_modifier(c) || (combining && i > 0 && (in_symbol_block(t[i - 1]) || is_modifier(t[i - 1]))) {
             i += 1;
             continue;
         }
@@ -422,8 +425,9 @@ pub fn symbols(text: &str) -> String {
                 run.push(char::from(b'0' + d));
                 end += 1;
             }
-            let after_variable =
-                i >= 1 && (t[i - 1] == ')' || t[i - 1].is_alphabetic() && (i < 2 || !t[i - 2].is_alphabetic()));
+            // After a closing parenthesis or a word of one or two letters ("x²", "mc²"): a power.
+            let letters = t[..i].iter().rev().take_while(|c| c.is_alphabetic()).take(3).count();
+            let after_variable = i >= 1 && (t[i - 1] == ')' || (1..=2).contains(&letters));
             if sub {
                 // "H₂O" as "H-two-O", one word, as the number pass joins numbers inside words.
                 if out.text.chars().next_back().is_some_and(char::is_alphanumeric) {
@@ -482,7 +486,7 @@ mod tests {
             ("word† and ‡", "word and"),
             ("Wait‼", "Wait!"),
             ("x² and H₂O and CO₂.", "x squared and H-two-O and CO-two."),
-            ("Smith² said", "Smith said"),
+            ("Smith² said, E=mc²", "Smith said, E equals mc squared"),
             ("① and ⑳", "one and twenty"),
             ("½ cup", "one half cup"),
             ("C# and #hashtag and # 1", "C sharp and hashtag hashtag and number 1"),

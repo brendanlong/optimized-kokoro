@@ -303,7 +303,8 @@ fn made_of(word: &str, words: &[&str]) -> bool {
 }
 
 fn class(word: &str) -> Class {
-    if word.chars().any(char::is_numeric) || ABBREVIATIONS.contains(&word) || made_of(word, NUMERALS) {
+    let degree = matches!(word, "°" | "℃" | "℉" | "C" | "F" | "K");
+    if degree || word.chars().any(char::is_numeric) || ABBREVIATIONS.contains(&word) || made_of(word, NUMERALS) {
         Class::Numeral
     } else if made_of(word, CONNECTIVES) || word.chars().all(is_plain_punctuation) {
         Class::Connective
@@ -332,7 +333,7 @@ fn tokens(text: &str) -> Vec<&str> {
         let mut previous: Option<char> = None;
         for (i, c) in core.char_indices() {
             let at = start + i;
-            if matches!(c, '-' | ',' | '.' | ':' | '/') {
+            if matches!(c, '-' | ',' | '.' | ':' | '/') || is_symbol(c) {
                 if piece < at {
                     out.push(&word[piece..at]);
                 }
@@ -387,35 +388,42 @@ fn mask<'a>(tokens: &[&'a str]) -> Vec<Masked<'a>> {
                 end = j;
             }
         }
-        out.push(Masked { token: "<n>", text: tokens[i..end].concat() });
+        out.push(Masked { token: "<n>", text: tokens[i..end].join(" ") });
         i = end;
     }
     out
 }
 
-/// The ranges of `a` and `b` that differ, compared by token: a longest-common-subsequence diff.
-fn hunks(a: &[Masked], b: &[Masked]) -> Vec<(std::ops::Range<usize>, std::ops::Range<usize>)> {
+/// A longest-common-subsequence diff of two masked texts, compared by token: the pairs that line
+/// up, and the ranges that differ.
+struct Alignment {
+    same: Vec<(usize, usize)>,
+    hunks: Vec<(std::ops::Range<usize>, std::ops::Range<usize>)>,
+}
+
+fn align(a: &[Masked], b: &[Masked]) -> Alignment {
     let same = |x: &Masked, y: &Masked| x.token == y.token;
     let prefix = a.iter().zip(b).take_while(|(x, y)| same(x, y)).count();
     let suffix = a[prefix..].iter().rev().zip(b[prefix..].iter().rev()).take_while(|(x, y)| same(x, y)).count();
     let (n, m) = (a.len() - suffix - prefix, b.len() - suffix - prefix);
-    let (a, b) = (&a[prefix..prefix + n], &b[prefix..prefix + m]);
+    let (ca, cb) = (&a[prefix..prefix + n], &b[prefix..prefix + m]);
     let mut lcs = vec![0u32; (n + 1) * (m + 1)];
     let at = |i: usize, j: usize| i * (m + 1) + j;
     for i in (0..n).rev() {
         for j in (0..m).rev() {
             lcs[at(i, j)] =
-                if same(&a[i], &b[j]) { lcs[at(i + 1, j + 1)] + 1 } else { lcs[at(i + 1, j)].max(lcs[at(i, j + 1)]) };
+                if same(&ca[i], &cb[j]) { lcs[at(i + 1, j + 1)] + 1 } else { lcs[at(i + 1, j)].max(lcs[at(i, j + 1)]) };
         }
     }
-    let mut out = Vec::new();
+    let mut out = Alignment { same: (0..prefix).map(|i| (i, i)).collect(), hunks: Vec::new() };
     let (mut i, mut j) = (0, 0);
     let mut start: Option<(usize, usize)> = None;
     while i < n || j < m {
-        if i < n && j < m && same(&a[i], &b[j]) {
+        if i < n && j < m && same(&ca[i], &cb[j]) {
             if let Some((si, sj)) = start.take() {
-                out.push((prefix + si..prefix + i, prefix + sj..prefix + j));
+                out.hunks.push((prefix + si..prefix + i, prefix + sj..prefix + j));
             }
+            out.same.push((prefix + i, prefix + j));
             i += 1;
             j += 1;
             continue;
@@ -428,14 +436,15 @@ fn hunks(a: &[Masked], b: &[Masked]) -> Vec<(std::ops::Range<usize>, std::ops::R
         }
     }
     if let Some((si, sj)) = start {
-        out.push((prefix + si..prefix + n, prefix + sj..prefix + m));
+        out.hunks.push((prefix + si..prefix + n, prefix + sj..prefix + m));
     }
+    out.same.extend((0..suffix).map(|k| (a.len() - suffix + k, b.len() - suffix + k)));
     out
 }
 
 /// The text without spaces, hyphens, commas or periods.
 fn squeezed(tokens: &[Masked]) -> String {
-    tokens.iter().flat_map(|w| w.text.chars()).filter(|&c| !"-,.".contains(c)).collect()
+    tokens.iter().flat_map(|w| w.text.chars()).filter(|&c| !"-,. ".contains(c)).collect()
 }
 
 /// `word` is `other` with number words glued to it: "USten" and "US", "vtwo" and "v".
@@ -445,52 +454,170 @@ fn glued(word: &str, other: &str) -> bool {
             || word.strip_suffix(other).is_some_and(|rest| made_of(rest, NUMERALS)))
 }
 
-/// Why `ours` differs from the reference's normalized text: the divergences that explain every
-/// differing run of tokens, or the first run nothing explains.
-pub fn explain(reference: &str, ours: &str) -> Result<BTreeSet<Kind>, String> {
+/// The cardinal number words: a changed run of number words must hold one of these (or a digit)
+/// on both sides, so a changed "first" or "hour" alone isn't taken for a number.
+const CARDINALS: &[&str] = &[
+    "zero",
+    "oh",
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+    "eight",
+    "nine",
+    "ten",
+    "eleven",
+    "twelve",
+    "thirteen",
+    "fourteen",
+    "fifteen",
+    "sixteen",
+    "seventeen",
+    "eighteen",
+    "nineteen",
+    "twenty",
+    "thirty",
+    "forty",
+    "fifty",
+    "sixty",
+    "seventy",
+    "eighty",
+    "ninety",
+    "hundred",
+    "thousand",
+    "million",
+    "billion",
+    "trillion",
+    "quadrillion",
+    "quintillion",
+    "sextillion",
+    "septillion",
+    "octillion",
+    "nonillion",
+    "decillion",
+];
+
+/// Whether a run's text holds a digit or a cardinal word (in any number: "nineties").
+fn has_cardinal(text: &str) -> bool {
+    has_number_word(text, false)
+}
+
+/// [`has_cardinal`], or an ordinal of one ("first", "nineteenth", "twentieth").
+fn has_cardinal_or_ordinal(text: &str) -> bool {
+    has_number_word(text, true)
+}
+
+fn has_number_word(text: &str, ordinals: bool) -> bool {
+    text.chars().any(char::is_numeric)
+        || text.split(|c: char| !c.is_alphabetic()).any(|w| {
+            let w = w.to_lowercase();
+            let mut forms = vec![w.clone()];
+            forms.extend(w.strip_suffix("ies").map(|s| format!("{s}y")));
+            forms.extend(w.strip_suffix('s').map(str::to_owned));
+            if ordinals {
+                forms.extend(w.strip_suffix("ieth").map(|s| format!("{s}y")));
+                forms.extend(w.strip_suffix("th").map(str::to_owned));
+                forms.extend(
+                    match w.as_str() {
+                        "first" => Some("one"),
+                        "second" => Some("two"),
+                        "third" => Some("three"),
+                        "fifth" => Some("five"),
+                        "eighth" => Some("eight"),
+                        "ninth" => Some("nine"),
+                        "twelfth" => Some("twelve"),
+                        _ => None,
+                    }
+                    .map(str::to_owned),
+                );
+            }
+            forms.iter().any(|f| CARDINALS.contains(&f.as_str()))
+        })
+}
+
+/// Why `ours` differs from the reference's normalized text of `input`: the divergences that
+/// explain every difference, or the first one nothing explains. A number difference needs a
+/// number in the input (a digit or another number character: `²`, `½`, `①`), and a symbol
+/// difference a symbol.
+pub fn explain(input: &str, reference: &str, ours: &str) -> Result<BTreeSet<Kind>, String> {
+    let input_numbers = input.chars().any(char::is_numeric);
+    let input_symbols = input.chars().any(is_symbol);
     let (a, b) = (tokens(reference), tokens(ours));
     let (ma, mb) = (mask(&a), mask(&b));
+    let alignment = align(&ma, &mb);
     let mut kinds = BTreeSet::new();
-    let numbers = |m: &[Masked]| m.iter().filter(|m| m.token == "<n>").map(|m| m.text.clone()).collect::<Vec<_>>();
-    if numbers(&ma) != numbers(&mb) {
-        kinds.insert(Kind::Numbers);
+    let unexplained = |what: String| Err(format!("{what} (input {input:?})"));
+    // Runs of numbers read differently, where the rest lines up.
+    let mut changed_numbers = std::collections::HashSet::new();
+    for &(i, j) in &alignment.same {
+        if ma[i].token == "<n>" && ma[i].text != mb[j].text {
+            // A number glued to the word before it in the reference ("abfive dollars") counts too.
+            let glued_before = i > 0
+                && ma[i - 1].class() == Class::Other
+                && CARDINALS.iter().any(|w| ma[i - 1].text.to_lowercase().ends_with(w));
+            let digit = ma[i].text.chars().any(char::is_numeric) || glued_before;
+            if !input_numbers || !(digit || has_cardinal(&ma[i].text) && has_cardinal_or_ordinal(&mb[j].text)) {
+                return unexplained(format!("number words {:?} became {:?}", ma[i].text, mb[j].text));
+            }
+            changed_numbers.insert(i);
+            kinds.insert(Kind::Numbers);
+        }
     }
-    for (ra, rb) in hunks(&ma, &mb) {
+    for (ra, rb) in alignment.hunks {
         let (theirs, mine) = (&ma[ra.clone()], &mb[rb.clone()]);
         let show = |side: &[Masked]| side.iter().map(|m| m.text.as_str()).collect::<Vec<_>>().join(" ");
-        // The words the two symbol passes write for `#`: "number" in the reference, "hashtag" or
-        // "sharp" here.
+        let what = || format!("reference {:?}, ours {:?}", show(theirs), show(mine));
+        // A symbol the reference left in the text, or read as "number" where this reads "hashtag"
+        // or "sharp": the reference's other words must all still be there.
         let symbol_word = |m: &Masked| matches!(m.token, "number" | "hashtag" | "sharp");
-        if theirs.iter().any(|m| m.text.chars().any(is_symbol))
-            || (!theirs.is_empty() && theirs.iter().chain(mine).all(symbol_word))
+        if input_symbols
+            && (theirs.iter().any(|m| m.text.chars().any(is_symbol))
+                || (!theirs.is_empty() && theirs.iter().chain(mine).all(symbol_word)))
         {
-            kinds.insert(Kind::Symbols);
-            continue;
+            let kept = theirs
+                .iter()
+                .filter(|m| m.class() == Class::Other && !m.text.chars().any(is_symbol) && !symbol_word(m));
+            if kept.clone().all(|m| mine.iter().any(|x| x.text == m.text)) {
+                kinds.insert(Kind::Symbols);
+                continue;
+            }
+            return unexplained(what());
         }
-        // Words other than numbers must be letters a number was glued to.
+        if !input_numbers {
+            return unexplained(what());
+        }
+        // Words other than numbers must be letters a number was glued to, and number runs must
+        // hold a number.
         let other_ok = |side: &[Masked], across: &[Masked]| {
             side.iter()
                 .filter(|m| m.class() == Class::Other)
                 .all(|m| across.iter().any(|x| glued(&m.text, &x.text) || glued(&x.text, &m.text)))
         };
-        let near_number = |range: &std::ops::Range<usize>, side: &[Masked]| {
-            let before = range.start.checked_sub(1).and_then(|i| side.get(i));
-            [before, side.get(range.end)].into_iter().flatten().any(|m| m.token == "<n>")
-        };
-        let has_number = theirs.iter().chain(mine).any(|m| m.token == "<n>");
+        let numbers_ok =
+            theirs.iter().chain(mine).filter(|m| m.token == "<n>").all(|m| has_cardinal_or_ordinal(&m.text));
+        let number = |side: &[Masked]| side.iter().any(|m| m.token == "<n>");
+        let has_number = number(theirs) && number(mine);
+        // Connectives or punctuation alone changed next to a number that was read differently
+        // ("1939–1945": "-" against "to").
+        let near_changed =
+            ra.start.checked_sub(1).is_some_and(|i| changed_numbers.contains(&i)) || changed_numbers.contains(&ra.end);
         if squeezed(theirs) == squeezed(mine)
-            || (other_ok(theirs, mine)
-                && other_ok(mine, theirs)
-                && (has_number || near_number(&ra, &ma) || near_number(&rb, &mb)))
+            || (other_ok(theirs, mine) && other_ok(mine, theirs) && numbers_ok && (has_number || near_changed))
         {
             kinds.insert(Kind::Numbers);
         } else {
-            return Err(format!("reference {:?}, ours {:?}", show(theirs), show(mine)));
+            return unexplained(what());
         }
     }
     if a != b && kinds.is_empty() {
-        // Only the spacing around a number changed.
-        kinds.insert(Kind::Numbers);
+        if !input_numbers && !input_symbols {
+            return unexplained("spacing changed".into());
+        }
+        // Only the spacing around a number or symbol changed.
+        kinds.insert(if input_numbers { Kind::Numbers } else { Kind::Symbols });
     }
     Ok(kinds)
 }
@@ -501,23 +628,41 @@ mod tests {
 
     #[test]
     fn explains_number_and_symbol_changes_only() {
-        let ok = |a: &str, b: &str| explain(a, b).unwrap();
+        let ok = |input: &str, a: &str, b: &str| explain(input, a, b).unwrap();
         let numbers = BTreeSet::from([Kind::Numbers]);
-        assert_eq!(ok("It costs one dollars.", "It costs one dollar."), numbers);
-        assert_eq!(ok("one thousand, two hundred and five", "one thousand two hundred and five"), numbers);
+        assert_eq!(ok("It costs $1.", "It costs one dollars.", "It costs one dollar."), numbers);
+        assert_eq!(ok("1205", "one thousand, two hundred and five", "one thousand two hundred and five"), numbers);
         assert_eq!(
-            ok("In the 1990s, then ∑ x", "In the nineteen nineties, then sum x"),
+            ok("In the 1990s, then ∑ x", "In the 1990s, then ∑ x", "In the nineteen nineties, then sum x"),
             BTreeSet::from([Kind::Numbers, Kind::Symbols])
         );
         assert_eq!(
-            ok("issn twenty-three to thirty-nine nineteen.", "issn zero zero two three, three nine one nine."),
+            ok(
+                "ISSN 0023-3919.",
+                "issn twenty-three to thirty-nine nineteen.",
+                "issn zero zero two three, three nine one nine."
+            ),
             numbers
         );
-        assert_eq!(ok("USten and vtwo", "US ten and v-two"), numbers);
-        assert_eq!(ok("ten km slash h,", "ten kilometers per hour,"), numbers);
-        assert_eq!(ok("same", "same"), BTreeSet::new());
-        assert!(explain("They're here at five.", "They are here at five.").is_err());
-        assert!(explain("nineteen zero apples", "nineteen hundred pears").is_err());
-        assert!(explain("the cat", "a cat").is_err());
+        assert_eq!(ok("US$10 and v2", "USten and vtwo", "US ten and v-two"), numbers);
+        assert_eq!(ok("10 km/h,", "ten km slash h,", "ten kilometers per hour,"), numbers);
+        assert_eq!(
+            ok("1939–1945", "nineteen thirty-nine- nineteen forty-five", "nineteen thirty-nine to nineteen forty-five"),
+            numbers
+        );
+        assert_eq!(ok("same", "same", "same"), BTreeSet::new());
+        let err = |input: &str, a: &str, b: &str| assert!(explain(input, a, b).is_err(), "{a:?} -> {b:?}");
+        err("They're here at 5.", "They're here at five.", "They are here at five.");
+        err("1900 apples", "nineteen zero apples", "nineteen hundred pears");
+        err("the cat", "the cat", "a cat");
+        // The review's examples of unrelated changes: none may pass for a number or symbol.
+        err("He came 1st and left at 5.", "He came first and left at five.", "He came second and left at five.");
+        err("the hour is 5", "the hour is five", "the hours is five");
+        err("the s is 5", "the s is five", "the m is five");
+        err("I have 1 cat.", "I have one cat.", "I have a cat.");
+        err("at 5 the cat", "at five the cat", "at five a cat");
+        err("5! Run", "five! Run", "five? Run");
+        err("Tom © Jerry Smith", "Tom © Jerry Smith", "Tom copyright Gerry Smyth");
+        err("no numbers here", "nineteen zero", "nineteen hundred");
     }
 }

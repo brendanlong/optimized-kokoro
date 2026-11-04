@@ -481,11 +481,33 @@ impl Scanner<'_> {
         let mut j = self.digits_end(i);
         let mut int = self.ascii(i..j);
         let mut commas = false;
-        if (1..=3).contains(&(j - i)) {
-            while self.get(j) == Some(',') && self.digits_end(j + 1) == j + 4 {
-                int.push_str(&self.ascii(j + 1..j + 4));
+        // Thousands ("1,234,567"), or Indian grouping ("1,00,000", "12,34,56,789"): only from a
+        // first group without a leading zero, and the groups must end the number.
+        if (1..=3).contains(&(j - i)) && !int.starts_with('0') {
+            let group = |at: usize, n: usize| self.get(at) == Some(',') && self.digits_end(at + 1) == at + 1 + n;
+            let mut k = j;
+            while group(k, 3) {
+                k += 4;
+            }
+            if k == j && j - i <= 2 {
+                let mut m = j;
+                // At most eight pairs (past a quadrillion), so a run of "1,11,11,…" stays linear.
+                while group(m, 2) && m - j < 3 * 8 {
+                    m += 3;
+                }
+                if m > j && group(m, 3) {
+                    k = m + 4;
+                }
+            }
+            if k > j {
+                int.extend(
+                    self.t[j..k]
+                        .iter()
+                        .filter(|&&c| c != ',')
+                        .map(|&c| char::from(b'0' + digit_value(c).expect("a digit") as u8)),
+                );
                 commas = true;
-                j += 4;
+                j = k;
             }
         }
         let mut frac = None;
@@ -646,7 +668,9 @@ impl Scanner<'_> {
                 }
             }
             _ if currency(c).is_some() && self.number_at(i + 1) => self.money(i),
-            _ if self.digit(i) || c == '.' && self.digit(i + 1) && free => self.number(i, free),
+            _ if self.digit(i) || c == '.' && self.digit(i + 1) && free && (i == 0 || self.t[i - 1] != '.') => {
+                self.number(i, free)
+            }
             _ => None,
         }
     }
@@ -679,7 +703,7 @@ impl Scanner<'_> {
             't' if money => "trillion",
             _ => return None,
         };
-        self.free_at(i + 1).then(|| (word.to_owned(), i + 1))
+        (self.free_at(i + 1) && self.get(i + 1) != Some('/')).then(|| (word.to_owned(), i + 1))
     }
 
     /// Money: a currency symbol and a number, and whether a range's "to" ends it ("$5-10").
@@ -1089,6 +1113,12 @@ mod tests {
             ("the '80s", "the eighties"),
             ("50¢ and 1¢", "fifty cents and one cent"),
             ("the 1500s", "the fifteen hundreds"),
+            (
+                "1,00,000 rupees and 12,34,56,789",
+                "one hundred thousand rupees and one hundred and twenty-three million four hundred and fifty-six thousand seven hundred and eighty-nine",
+            ),
+            ("0,000 and 10m/s and 5m", "zero, zero zero zero and ten meters per second and five million"),
+            ("Wait...5 more", "Wait...five more"),
             ("他于1934年去世 and Б6", "他于 nineteen thirty-four 年去世 and Б six"),
             ("in seven oh nine.30", "in seven oh nine point three zero"),
             ("£A10,000", "£A-ten thousand"),

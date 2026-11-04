@@ -93,6 +93,20 @@ fn uses_new_script(text: &str) -> bool {
     })
 }
 
+/// The character fuzz of `request_cases.py`: letters of several scripts with digits or symbols
+/// glued to them, which the word-by-word check of `kokoro_reference::divergence` can't line up.
+/// There, a digit or symbol in the text is counted as the explanation, apart.
+fn fuzz(text: &str) -> bool {
+    let symbol = |c: char| !c.is_alphanumeric() && !c.is_whitespace() && !".,;:!?'\"()[]{}-—–…“”‘’«»`".contains(c);
+    let other_script = |c: char| c.is_alphabetic() && !c.is_ascii() && !matches!(c as u32, 0xC0..=0x24F);
+    text.chars().any(other_script) && text.chars().any(|c| c.is_numeric() || symbol(c))
+}
+
+/// A symbol or emoji (not a letter, digit, space or plain punctuation).
+fn in_symbols(c: char) -> bool {
+    !c.is_alphanumeric() && !c.is_whitespace() && !".,;:!?'\"()[]{}-—–…“”‘’«»`".contains(c)
+}
+
 #[test]
 fn requests_match_the_reference() {
     let pipelines: Vec<Pipeline> = Lang::ALL.into_iter().map(|l| Pipeline::new(l).unwrap()).collect();
@@ -172,9 +186,10 @@ fn requests_match_the_reference() {
             let (theirs, ours) = (texts(&mut expected.iter().copied()).join(" "), texts(&mut actual.iter()).join(" "));
             if theirs != ours {
                 // The text differs by its numbers or symbols, not by where it was chunked.
-                match kokoro_reference::divergence::explain(&theirs, &ours) {
+                match kokoro_reference::divergence::explain(&case.text, &theirs, &ours) {
                     Ok(_) => numbers += 1,
-                    Err(_) => fuzzed += 1,
+                    Err(_) if fuzz(&case.text) => fuzzed += 1,
+                    Err(why) => failures.push(format!("{}: {why}", case.id)),
                 }
                 continue;
             }
@@ -206,16 +221,16 @@ fn requests_match_the_reference() {
             // chunks' text differs only by them, the request is counted apart.
             let joined = |chunks: &mut dyn Iterator<Item = &Expected>| texts(chunks).join(" ");
             let (theirs, ours) = (joined(&mut expected.iter().copied()), joined(&mut actual.iter()));
-            if theirs != ours && kokoro_reference::divergence::explain(&theirs, &ours).is_ok() {
+            if theirs != ours && kokoro_reference::divergence::explain(&case.text, &theirs, &ours).is_ok() {
                 numbers += 1;
                 continue;
             }
             // The character fuzz glues digits and symbols to letters of many scripts in ways the
             // word-by-word check can't line up: there a digit or symbol in the text is counted as
             // the explanation, apart.
-            let symbol =
-                |c: char| !c.is_alphanumeric() && !c.is_whitespace() && !".,;:!?'\"()[]{}-—–…“”‘’«»`".contains(c);
-            if theirs != ours && case.text.chars().any(|c| c.is_numeric() || symbol(c)) {
+            // The reference said nothing where the port reads a symbol's name ("[😀").
+            let silent_symbols = theirs.is_empty() && case.text.chars().any(|c| !c.is_ascii() && in_symbols(c));
+            if theirs != ours && (fuzz(&case.text) || silent_symbols) {
                 fuzzed += 1;
                 continue;
             }

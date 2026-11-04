@@ -91,7 +91,7 @@ fn reference_dumps() {
         if actual != record.normalized {
             // Numbers and symbols are read differently on purpose (docs/divergences.md); every
             // other difference fails. Such records' chunks and calls follow from the new text.
-            match kokoro_reference::divergence::explain(&record.normalized, &actual) {
+            match kokoro_reference::divergence::explain(&record.text, &record.normalized, &actual) {
                 Ok(_) => changed += 1,
                 Err(why) => normalized.check(&record.id, &record.normalized, &format!("{actual} ({why})")),
             }
