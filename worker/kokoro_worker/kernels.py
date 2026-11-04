@@ -33,12 +33,16 @@ _CONFIGS = [
 
 
 # Keyed on the layer, not the length: tuned on the first call of each layer configuration (the
-# worker's warmup), then reused for every length.
-@triton.autotune(configs=_CONFIGS, key=["C", "O", "K", "DIL", "STRIDE"])
-# Triton compiles a variant per integer argument divisible by 16 (or equal to 1); for the lengths
-# and the strides that scale with them, that is a 2 s compile the first time a length lands on a
-# new combination. Pass them as plain integers.
-@triton.jit(do_not_specialize=["T_in", "T_out", "sxb", "sxc", "syb", "syo"])
+# worker's warmup), then reused for every length. The timings go to the Triton cache, which the
+# compile-cache seed copies, so a seeded start doesn't tune again.
+@triton.autotune(configs=_CONFIGS, key=["C", "O", "K", "DIL", "STRIDE"], cache_results=True)
+# Triton compiles a variant per integer argument divisible by 16 (or equal to 1), and per pointer
+# aligned to 16 bytes or not. For the lengths and the strides that scale with them, and for an input
+# that may be a view at an odd offset, that is a 2 s compile the first time a request lands on a new
+# combination. Pass them unspecialized. (The weights, bias and output are always our own aligned
+# allocations.)
+@triton.jit(do_not_specialize=["T_in", "T_out", "sxb", "sxc", "syb", "syo"],
+            do_not_specialize_on_alignment=["x_ptr"])
 def _conv1d_kernel(x_ptr, w_ptr, b_ptr, y_ptr, T_in, T_out,
                    sxb, sxc, sxt, syb, syo, syt,
                    C: tl.constexpr, O: tl.constexpr, K: tl.constexpr, DIL: tl.constexpr,
@@ -84,6 +88,8 @@ def conv1d(x: torch.Tensor, w_koc: torch.Tensor, bias: torch.Tensor | None, k: i
     o = w_koc.shape[1]
     t_out = _t_out(t_in, k, stride, padding, dilation)
     y = torch.empty(bsz, o, t_out, device=x.device, dtype=x.dtype)
+    # The kernel's offsets are int32. The chunk cap keeps the largest activation near 2^28 elements.
+    assert x.numel() < 2**31 and y.numel() < 2**31, "conv1d: tensor too large for int32 offsets"
 
     def grid(meta):
         return triton.cdiv(t_out, meta["BLOCK_T"]), triton.cdiv(o, meta["BLOCK_O"]), bsz
@@ -121,20 +127,30 @@ def _overlap_add(z, stride: int):
     return out.transpose(2, 3).reshape(bsz, c, (t + r - 1) * s)
 
 
-def conv_transpose1d(x, w, b, stride: int, padding: int, output_padding: int, groups: int):
-    """F.conv_transpose1d (dilation 1) for groups == 1 or depthwise."""
+def transpose_weight(w, stride: int, groups: int):
+    """ConvTranspose1d weight [C_in, O / groups, K] -> what conv_transpose1d multiplies by: the
+    kernel zero-padded to a multiple of the stride, as [O * Kp, C_in] (groups == 1) or [C, Kp]
+    (depthwise)."""
     in_c, out_per_group, k = w.shape
     r = math.ceil(k / stride)
-    w = F.pad(w.to(x.dtype), (0, r * stride - k))
+    w = F.pad(w, (0, r * stride - k))
+    if groups == 1:
+        return w.permute(1, 2, 0).reshape(out_per_group * r * stride, in_c).contiguous()
+    assert groups == in_c and out_per_group == 1, "only depthwise grouped transposed convs"
+    return w[:, 0, :].contiguous()
+
+
+def conv_transpose1d(x, wt, b, k: int, stride: int, padding: int, output_padding: int, groups: int):
+    """F.conv_transpose1d (dilation 1) for groups == 1 or depthwise; wt from transpose_weight."""
+    r = math.ceil(k / stride)
+    wt = wt.to(x.dtype)
     t = x.shape[-1]
     if groups == 1:
-        out_c = out_per_group
-        # [O * Kp, C] @ [B, C, T] -> [B, O * Kp, T]
-        z = torch.matmul(w.permute(1, 2, 0).reshape(out_c * r * stride, in_c), x)
+        out_c = wt.shape[0] // (r * stride)
+        z = torch.matmul(wt, x)  # [O * Kp, C] @ [B, C, T] -> [B, O * Kp, T]
     else:
-        assert groups == in_c and out_per_group == 1, "only depthwise grouped transposed convs"
-        out_c = in_c
-        z = x[:, :, None, :] * w[:, 0, :, None]  # [B, C, Kp, T]
+        out_c = x.shape[1]
+        z = x[:, :, None, :] * wt[:, :, None]  # [B, C, Kp, T]
     z = z.reshape(x.shape[0], out_c, r, stride, t)
     y = _overlap_add(z, stride)
     length = (t - 1) * stride - 2 * padding + k + output_padding
@@ -147,10 +163,12 @@ def conv_transpose1d(x, w, b, stride: int, padding: int, output_padding: int, gr
 
 
 class MatmulConvTranspose1d(torch.nn.ConvTranspose1d):
+    """ConvTranspose1d as a matmul plus overlap-add; `_wt` is set by apply()."""
+
     def forward(self, x, output_size=None):
         assert output_size is None and self.dilation[0] == 1
-        return conv_transpose1d(x, self.weight, self.bias, self.stride[0], self.padding[0], self.output_padding[0],
-                                self.groups)
+        return conv_transpose1d(x, self._wt, self.bias, self.kernel_size[0], self.stride[0], self.padding[0],
+                                self.output_padding[0], self.groups)
 
 
 class MatmulSTFT(torch.nn.Module):
@@ -224,6 +242,8 @@ def apply(model: torch.nn.Module) -> None:
                     m.weight = torch.nn.Parameter(m._w_koc.permute(1, 2, 0), requires_grad=False)
             m.__class__ = TritonConv1d
         elif type(m) is torch.nn.ConvTranspose1d:
+            with torch.no_grad():
+                m._wt = transpose_weight(m.weight.detach(), m.stride[0], m.groups)
             m.__class__ = MatmulConvTranspose1d
     g = model.decoder.generator
     g.stft = MatmulSTFT(g.post_n_fft, g.stft.hop_length).to(next(model.parameters()).device)

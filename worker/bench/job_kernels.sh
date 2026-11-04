@@ -7,9 +7,12 @@
 #   serve   the main worker (MAIN_WORKER, a copy of main's worker/) and this one, at batch 1 and 8:
 #           startup, GPU and host memory, first-time vs repeated latency over the socket and through
 #           the HTTP server (KOKORO_SERVER_BIN, if set), throughput (bench/load.py)
-#   seed    startup from a seeded compile cache, main and this
+#   seed    startup from a seeded compile cache, main and this (SEED_WHICH)
 #   ab      throughput A/B: main and this worker up at once, load alternating between them
-# STEPS="tests layers first equiv serve seed ab" (default all).
+#   correct the Triton conv1d against F.conv1d at edge lengths, every layer and tile configuration
+#   memory  peak GPU memory of the longest chunks, one row and two (bench/chunk_memory.py)
+#   recompile  new kernel variants or recompiles over 300 random requests after warmup
+# STEPS="tests layers first equiv serve seed ab correct memory recompile" (default all).
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit
 mkdir -p results
@@ -18,7 +21,7 @@ MODELS=${GPUC_DATA_DIR:-$HOME/.cache}/kokoro-worker-models
 if [ ! -f "$MODELS/voices.safetensors" ]; then
     uv run --no-sync python -m kokoro_worker.convert "$MODELS" || exit 1
 fi
-STEPS=${STEPS:-tests layers first equiv serve seed ab}
+STEPS=${STEPS:-tests layers first equiv serve seed ab correct memory recompile}
 MAIN_WORKER=${MAIN_WORKER:-$PWD/bench/bin/main}
 uname -r | tee results/uname.txt
 nvidia-smi --query-gpu=name,driver_version,memory.used,utilization.gpu --format=csv | tee results/gpu.txt
@@ -129,7 +132,7 @@ kernels-b8 . --max-batch 8
 fi
 
 if [[ " $STEPS " == *" seed "* ]]; then
-    for which in main kernels; do
+    for which in ${SEED_WHICH:-main kernels}; do
         if [ "$which" = main ]; then dir=$MAIN_WORKER; else dir=$PWD; fi
         echo "== seeded startup, $which"
         fresh_cache
@@ -169,6 +172,28 @@ print(sys.argv[2], sys.argv[3], ' '.join(f\"c{r['concurrency']}: {r['x_realtime'
     done
     kill "$main_pid" "$WORKER_PID"
     wait
+fi
+if [[ " $STEPS " == *" correct "* ]]; then
+    echo "== conv1d correctness"
+    fresh_cache
+    "$PY" bench/kernels_correct.py "$MODELS" 2>&1 | grep -E "^(BAD|worst|noncontig|[0-9]+ distinct)" | tee results/correct.txt
+fi
+
+if [[ " $STEPS " == *" memory "* ]]; then
+    echo "== chunk memory"
+    fresh_cache
+    "$PY" bench/chunk_memory.py "$MODELS" 1 2400 4800 7200 9600 12000 14400 19200 2>&1 | grep -E "^rows|Error" \
+        | tee results/memory.txt
+    "$PY" bench/chunk_memory.py "$MODELS" 2 2400 4800 8192 2>&1 | grep -E "^rows|Error" | tee -a results/memory.txt
+fi
+
+if [[ " $STEPS " == *" recompile "* ]]; then
+    for b in 1 8; do
+        echo "== recompiles, max batch $b"
+        fresh_cache
+        "$PY" bench/recompile.py "$MODELS" "$b" 300 2>&1 | grep -E "^(warmup|after|req|n=|final|peak|aligned|misaligned|errors)" \
+            | tee "results/recompile-$b.txt"
+    done
 fi
 echo "host load: $(cat /proc/loadavg)"
 echo "done"

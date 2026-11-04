@@ -30,7 +30,7 @@ import torch.nn.functional as F
 from safetensors.torch import load_file
 
 from . import kernels, masked
-from .protocol import chunk_cap, max_duration
+from .protocol import MIN_SPEED, chunk_cap, max_duration
 
 SAMPLES_PER_FRAME = 600  # 2x upsample in the decoder, then 10 * 6 in the generator, then hop 5
 VOICE_NAME = re.compile(r"[a-z0-9_]{1,64}")
@@ -138,8 +138,8 @@ class Synth:
         device: str = "cuda",
         half: bool = True,
         compile: bool = True,
-        max_chunk_samples: int = 2_880_000,
-        frame_budget: int = 16384,
+        max_chunk_samples: int = 1_440_000,
+        frame_budget: int | None = None,
         pad_slack: float = 0.25,
         exact: bool = True,
     ):
@@ -151,7 +151,9 @@ class Synth:
         self.device = torch.device(device)
         self.half = half and self.device.type == "cuda"
         self.max_chunk_samples = max_chunk_samples
-        self.frame_budget = frame_budget
+        # A decoder group holds at most as many padded frames as the longest single chunk may have
+        # (the cap at the slowest speed), so a batch never needs more memory than one request can.
+        self.frame_budget = frame_budget or chunk_cap(max_chunk_samples, MIN_SPEED) // SAMPLES_PER_FRAME
         self.pad_slack = pad_slack
         self.exact = exact
 
