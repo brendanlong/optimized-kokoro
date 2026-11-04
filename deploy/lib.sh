@@ -7,7 +7,8 @@
 #   unidic/SHA256.dic       UniDic for Japanese, named by its checksum (fetch_unidic.sh's OUT_SHA256);
 #                           each release's .env names the one it uses, so a new dictionary never
 #                           replaces the one a running server maps
-#   secrets/                0700; server.toml (with the API keys), demo.key and, with the tunnel,
+#   secrets/                0700; keys (named client keys, root 0600, see keys.sh), demo.key,
+#                           server.toml made from them, and, with the tunnel,
 #                           cloudflared.token (put there by the admin), root:65534 0640
 #   resolv.conf             for cloudflared (Docker's DNS doesn't work under runsc)
 #   releases/REL/           compose.yaml, .env and the compile-cache seed made with REL's worker image
@@ -52,7 +53,7 @@ require_root() {
 take_lock() {
     install -d -m 0755 "$root"
     exec 9> "$root/.lock"
-    flock -n 9 || die "another install.sh or update.sh is running"
+    flock -n 9 || die "another install.sh, update.sh or keys.sh is running"
 }
 
 # nvproxy supports exact driver versions only.
@@ -432,14 +433,16 @@ ensure_models() {
     mv "$root/models.new" "$root/models"
 }
 
-# secrets/server.toml (the clients' API keys, imported from $1 or one new one, plus the demo's) and
-# secrets/demo.key. Written once; root:65534 0640, so the containers (nobody) read them and no
-# other host user does. The demo's key may use 4 streams at most, which keeps capacity for clients.
+# secrets/keys (the clients' named API keys, imported from $1 as imported-N or one new one named
+# default; root 0600, edited with deploy/keys.sh), secrets/demo.key, and secrets/server.toml made
+# from them. Written once; demo.key and server.toml are root:65534 0640, so the containers (nobody)
+# read them and no other host user does. The demo's key may use 4 streams at most, which keeps capacity for clients.
 # $1 holds either a KOKORO_API_KEYS=a,b line or one key per line (# comments allowed; other NAME=...
 # lines are refused, since they're config, not keys). Keys have at least 16 characters.
 ensure_secrets() {
     local from=${1:-} dir=$root/secrets rt line k keys=() demo
     if [ -f "$dir/server.toml" ] && [ -f "$dir/demo.key" ]; then
+        ensure_keys_file
         [ -z "$from" ] || echo "keeping the keys already in $dir (not importing $from)"
         return
     fi
@@ -468,27 +471,84 @@ ensure_secrets() {
         echo "imported ${#keys[@]} key(s) from $from"
     else
         keys=("$(new_key)")
-        echo "made a new API key for clients: sudo cat $dir/server.toml"
+        echo "made a new API key for clients, named default (sudo deploy/keys.sh list)"
     fi
     demo=$(new_key)
     (
         umask 077
+        local i=0 name
+        for k in "${keys[@]}"; do
+            i=$((i + 1))
+            name=default
+            [ -z "$from" ] || name=imported-$i
+            printf '%s\t%s\t-\n' "$name" "$k"
+        done > "$dir/keys.new"
+        echo "$demo" > "$dir/demo.key.new"
+    )
+    chgrp "$nobody" "$dir/demo.key.new"
+    chmod 0640 "$dir/demo.key.new"
+    mv "$dir/keys.new" "$dir/keys"
+    mv "$dir/demo.key.new" "$dir/demo.key"
+    render_server_toml
+    mv "$dir/server.toml.new" "$dir/server.toml"
+}
+
+# Makes secrets/keys for an install from before it existed: each plain key in server.toml becomes
+# imported-N (the demo's key is the table entry, and stays in demo.key).
+ensure_keys_file() {
+    local dir=$root/secrets i=0 k other
+    if [ -f "$dir/keys" ]; then
+        [ -s "$dir/keys" ] || die "$dir/keys is empty"
+        return 0
+    fi
+    # Only what install.sh ever wrote, which render_server_toml makes again; anything else (a hand
+    # edit) would be lost.
+    other=$(grep -vE '^(#.*|listen = "0\.0\.0\.0:8880"|worker_socket = "/run/kokoro/worker\.sock"|api_keys = \[|    "[^"]*",|    # .*|    \{ key = "[^"]*", max_streams = 4 \},|\])$' "$dir/server.toml" || true)
+    [ -z "$other" ] || die "$dir/server.toml has lines install.sh didn't write, which keys.sh would drop:
+$other
+Move them out (or into secrets/keys by hand: NAME<tab>KEY<tab>MAX_STREAMS or -) first."
+    (
+        umask 077
+        while IFS= read -r k; do
+            i=$((i + 1))
+            printf 'imported-%s\t%s\t-\n' "$i" "$k"
+        done < <(sed -n 's/^    "\([^"]*\)",$/\1/p' "$dir/server.toml") > "$dir/keys.new"
+    )
+    [ -s "$dir/keys.new" ] || die "found no client keys in $dir/server.toml"
+    mv "$dir/keys.new" "$dir/keys"
+    echo "named the existing client keys imported-1.. in $dir/keys (deploy/keys.sh rename renames them)"
+}
+
+# Writes secrets/server.toml.new from a keys file ($1, default secrets/keys) and secrets/demo.key,
+# root:65534 0640; the caller renames it into place.
+render_server_toml() {
+    local dir=$root/secrets name key streams keys=${1:-$root/secrets/keys}
+    (
+        umask 077
         {
-            echo '# Written by deploy/install.sh. listen and worker_socket match deploy/compose.yaml.'
+            echo '# Written by deploy/install.sh and deploy/keys.sh from keys and demo.key; edit those instead.'
+            echo '# listen and worker_socket match deploy/compose.yaml.'
             echo 'listen = "0.0.0.0:8880"'
             echo 'worker_socket = "/run/kokoro/worker.sock"'
             echo 'api_keys = ['
-            for k in "${keys[@]}"; do echo "    \"$k\","; done
-            echo "    # The demo page (demo.key)."
-            echo "    { key = \"$demo\", max_streams = 4 },"
+            while IFS=$'\t' read -r name key streams || [ -n "$name" ]; do
+                # Whatever edited the file, nothing but these may reach the TOML.
+                [[ $name =~ ^[a-z0-9][a-z0-9-]{0,31}$ && $key =~ ^[A-Za-z0-9._~+/=-]{16,}$ && $streams =~ ^(-|[1-9][0-9]{0,3})$ ]] ||
+                    die "$keys has a line that isn't NAME<tab>KEY<tab>MAX_STREAMS (or -): $name"
+                echo "    # $name"
+                if [ "$streams" = - ]; then
+                    echo "    \"$key\","
+                else
+                    echo "    { key = \"$key\", max_streams = $streams },"
+                fi
+            done < "$keys"
+            echo "    # demo (demo.key)"
+            echo "    { key = \"$(cat "$dir/demo.key")\", max_streams = 4 },"
             echo ']'
         } > "$dir/server.toml.new"
-        echo "$demo" > "$dir/demo.key.new"
     )
-    chgrp "$nobody" "$dir/server.toml.new" "$dir/demo.key.new"
-    chmod 0640 "$dir/server.toml.new" "$dir/demo.key.new"
-    mv "$dir/demo.key.new" "$dir/demo.key"
-    mv "$dir/server.toml.new" "$dir/server.toml"
+    chgrp "$nobody" "$dir/server.toml.new"
+    chmod 0640 "$dir/server.toml.new"
 }
 
 # Builds the images and the compile cache for a new release, while whatever runs keeps running.

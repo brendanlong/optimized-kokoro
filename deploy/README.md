@@ -109,6 +109,19 @@ sudo docker compose -f /srv/optimized-kokoro/current/compose.yaml up -d
 
 To change a setting, edit `/srv/optimized-kokoro/settings.env` and run `update.sh`. A new port must be free; a port the running release holds is fine (for example 127.0.0.1:8880 to 0.0.0.0:8880).
 
+## API keys
+
+Clients' keys are named, in `/srv/optimized-kokoro/secrets/keys` (root only); `server.toml` is generated from it. Give each client its own key, so one can't use up another's capacity:
+
+```sh
+sudo deploy/keys.sh list                              # names and limits, never the keys
+sudo deploy/keys.sh add lion-reader --max-streams 8   # prints the new key once
+sudo deploy/keys.sh rename imported-1 clawed-abode
+sudo deploy/keys.sh remove old-client
+```
+
+`--max-streams` caps the speech requests a key may have in progress (default: the server's `max_streams_per_key`). `add` and `remove` recreate only the server container (a second or two; the worker keeps running) and put the old keys back if it doesn't come up healthy. Keys imported by `install.sh --keys-from` are named `imported-1`, `imported-2`, …; a new install's key is `default`. An install from before `keys` existed gets its keys named that way on the first `keys.sh` run.
+
 ## Cloudflare Tunnel (optional)
 
 A `cloudflared` container can publish the server through a [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/), with no port open on the host. It runs like the others: gVisor, nobody, read-only, no capabilities. It shares the compose network with the server and demo, and needs outbound internet access to reach Cloudflare. `install.sh` and `update.sh` wait for it to register with Cloudflare, and roll back if it doesn't within 2 minutes.
