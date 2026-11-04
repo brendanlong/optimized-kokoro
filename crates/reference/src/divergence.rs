@@ -333,7 +333,7 @@ fn tokens(text: &str) -> Vec<&str> {
         let mut previous: Option<char> = None;
         for (i, c) in core.char_indices() {
             let at = start + i;
-            if matches!(c, '-' | ',' | '.' | ':' | '/') || is_symbol(c) {
+            if c == '/' || is_symbol(c) || (is_plain_punctuation(c) && !matches!(c, '\'' | '’')) {
                 if piece < at {
                     out.push(&word[piece..at]);
                 }

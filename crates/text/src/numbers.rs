@@ -947,16 +947,21 @@ fn glues(c: char) -> bool {
 }
 
 /// Pushes `words` onto `out`, kept apart by a space from a letter or digit on either side. A
-/// number inside a word ("A4", "BA123") is joined to its letters by hyphens ("A-four"), which
-/// misaki reads as one word, so a lone letter stays a letter name rather than the article "a".
-fn push_words(out: &mut String, words: &str, next: Option<char>, in_word: bool) {
-    let join = |c: char| if in_word && glues(c) { '-' } else { ' ' };
-    if let Some(c) = out.chars().next_back().filter(|&c| is_alnum(c)) {
-        out.push(join(c));
+/// number inside a word next to a single letter ("A4", "B2B", "H2O") is joined to it by a hyphen
+/// ("A-four"), which misaki reads as one word, so the letter stays a letter name rather than the
+/// article "a"; next to longer runs of letters ("BA123", "MP3") it is a word of its own.
+/// `after` is the text after the number.
+fn push_words(out: &mut String, words: &str, after: &[char], in_word: bool) {
+    let single = |run: &mut dyn Iterator<Item = &char>| run.take_while(|c| c.is_alphabetic()).take(2).count() == 1;
+    let before: Vec<char> = out.chars().rev().take(2).collect();
+    if let Some(&c) = before.first().filter(|&&c| is_alnum(c)) {
+        let hyphen = in_word && glues(c) && single(&mut before.iter());
+        out.push(if hyphen { '-' } else { ' ' });
     }
     out.push_str(words);
-    if let Some(c) = next.filter(|&c| is_alnum(c)) {
-        out.push(if c.is_alphabetic() { join(c) } else { ' ' });
+    if let Some(&c) = after.first().filter(|&&c| is_alnum(c)) {
+        let hyphen = in_word && glues(c) && c.is_alphabetic() && single(&mut after.iter());
+        out.push(if hyphen { '-' } else { ' ' });
     }
 }
 
@@ -980,7 +985,7 @@ pub fn numbers(text: &str) -> String {
                 out.pop();
                 out.push(' ');
             }
-            push_words(&mut out, &words, t.get(end).copied(), in_word);
+            push_words(&mut out, &words, &t[end..], in_word);
             if operator {
                 // An operator was read ("to", "by", "times"): the next number stands on its own.
                 if !out.ends_with(' ') {
@@ -1101,8 +1106,8 @@ mod tests {
             ("5 Ω", "five ohms"),
             ("version 2.0.1", "version two point zero point one"),
             ("v1.2", "v-one point two"),
-            ("BA123 and A4", "BA-one twenty-three and A-four"),
-            ("item #1, MP3s and H2O", "item number one, MP-three-s and H-two-O"),
+            ("BA123 and A4", "BA one twenty-three and A-four"),
+            ("item #1, MP3s and H2O", "item number one, MP three-s and H-two-O"),
             ("B2B", "B-to-B"),
             ("1080p", "ten eighty p"),
             ("3:1", "three to one"),
