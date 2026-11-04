@@ -127,6 +127,18 @@ fn espeak_reference_records() {
             }
             continue;
         }
+        if actual != expected
+            && actual.len() == expected.len()
+            && actual
+                .iter()
+                .zip(&expected)
+                .all(|(a, e)| a == e || (a.0 == e.0 && kokoro_g2p_en::has_name_compound(&a.0)))
+        {
+            // A Latin run with a compound of names or acronyms ("UK-wide"), read with a word
+            // boundary at its hyphens (docs/divergences.md, issue #35).
+            count.skipped.entry("hyphenated name compound").or_default().push(record.id.clone());
+            continue;
+        }
         count.compared += 1;
         if actual == expected {
             count.matched += 1;

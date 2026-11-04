@@ -283,7 +283,8 @@ fn resolve_tokens(tokens: &mut [MToken]) {
             2
         }] = true;
     }
-    let prespace = text.contains(' ') || text.contains('/') || kinds.iter().filter(|&&k| k).count() > 1;
+    let prespace =
+        text.contains(' ') || text.contains('/') || kinds.iter().filter(|&&k| k).count() > 1 || hyphen_boundary(&text);
     let n = tokens.len();
     for (i, tk) in tokens.iter_mut().enumerate() {
         if tk.phonemes.is_none() {
@@ -324,6 +325,30 @@ fn resolve_tokens(tokens: &mut [MToken]) {
     for &(_, _, i) in &indices[..half] {
         demote(&mut tokens[i]);
     }
+}
+
+/// Whether a hyphenated run gets a word boundary at its hyphens: compounds of names or acronyms
+/// ("US-China", "Paris-Berlin", "Smith-Jones", "NATO-EU", "US-based"), which read rushed as one
+/// word. Every part has two letters or more, and all are capitalised or one is an acronym; other
+/// compounds ("well-crafted", "X-ray", "T-shirt") stay one word, as in misaki (docs/divergences.md).
+pub fn hyphen_boundary(text: &str) -> bool {
+    if !text.contains('-') {
+        return false;
+    }
+    let parts: Vec<&str> = text.split('-').collect();
+    let word = |p: &&str| p.chars().count() >= 2 && p.chars().all(text::is_alpha);
+    let capitalised = |p: &&str| p.chars().next().is_some_and(char::is_uppercase);
+    let acronym = |p: &&str| p.chars().all(char::is_uppercase);
+    parts.iter().all(word) && (parts.iter().all(capitalised) || parts.iter().any(acronym))
+}
+
+/// Whether a text has a hyphenated compound that [`hyphen_boundary`] gives a word boundary, for
+/// the parity tests to tell those readings apart.
+pub fn has_name_compound(text: &str) -> bool {
+    let latin = |c: char| c.is_alphanumeric() && (c.is_ascii() || (c as u32) < 0x250);
+    text.split(|c: char| !latin(c) && c != '-' && c != '\'')
+        .map(|w| w.replace('\'', ""))
+        .any(|w| w.trim_matches('-').contains('-') && hyphen_boundary(w.trim_matches('-')))
 }
 
 /// The most subtokens of a run without whitespace looked up together. misaki tries every span of the

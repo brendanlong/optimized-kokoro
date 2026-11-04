@@ -17,6 +17,8 @@ use std::collections::BTreeSet;
 pub enum Kind {
     Numbers,
     Symbols,
+    /// A spaced hyphen read as a dash, an en dash inside a word read as a hyphen (issue #35).
+    Dashes,
 }
 
 /// Punctuation both normalizers leave as it is.
@@ -570,6 +572,15 @@ pub fn explain(input: &str, reference: &str, ours: &str) -> Result<BTreeSet<Kind
         let (theirs, mine) = (&ma[ra.clone()], &mb[rb.clone()]);
         let show = |side: &[Masked]| side.iter().map(|m| m.text.as_str()).collect::<Vec<_>>().join(" ");
         let what = || format!("reference {:?}, ours {:?}", show(theirs), show(mine));
+        // Dashes: the same text but for hyphens, en dashes, em dashes and spaces ("of - a" against
+        // "of — a", "US- China" against "US-China").
+        let dashless = |side: &[Masked]| -> String {
+            side.iter().flat_map(|m| m.text.chars()).filter(|c| !"-–— ".contains(*c)).collect()
+        };
+        if input.contains(['-', '–']) && dashless(theirs) == dashless(mine) {
+            kinds.insert(Kind::Dashes);
+            continue;
+        }
         // A symbol the reference left in the text, or read as "number" where this reads "hashtag"
         // or "sharp": the reference's other words must all still be there.
         let symbol_word = |m: &Masked| matches!(m.token, "number" | "hashtag" | "sharp");
@@ -664,5 +675,10 @@ mod tests {
         err("5! Run", "five! Run", "five? Run");
         err("Tom © Jerry Smith", "Tom © Jerry Smith", "Tom copyright Gerry Smyth");
         err("no numbers here", "nineteen zero", "nineteen hundred");
+        assert_eq!(
+            ok("think of - a, US–China", "think of - a, US- China", "think of — a, US-China"),
+            BTreeSet::from([Kind::Dashes])
+        );
+        err("think of a", "think of a", "think of — a");
     }
 }

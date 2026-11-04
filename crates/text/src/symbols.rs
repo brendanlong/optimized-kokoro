@@ -390,6 +390,9 @@ pub fn symbols(text: &str) -> String {
                         " number "
                     }
                 }
+                // A hyphen standing alone between spaces is a dash, a pause, whatever spaCy
+                // would tag it (misaki only pauses for one tagged `:`).
+                '-' if i > 0 && t[i - 1] == ' ' && next == Some(' ') => "—",
                 '-' if next == Some('>') => {
                     out.say("to", t.get(i + 2).copied());
                     i += 2;
@@ -554,6 +557,7 @@ mod tests {
             ("3 < 5", "3 less than 5"),
             ("<html>", "<html>"),
             ("a -> b", "a to b"),
+            ("think of - a well-made A - B", "think of — a well-made A — B"),
             ("★★★☆", ""),
             ("ℇ and ℏ", "Euler's constant and h bar"),
             ("Ω and \u{2126}", "Ω and ohm"),

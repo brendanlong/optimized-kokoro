@@ -36,3 +36,15 @@ fn unknown_words_without_fallback_have_no_phonemes() {
     assert_eq!(ps, "?");
     assert_eq!(tokens[0].phonemes, None);
 }
+
+/// Compounds of names or acronyms get a word boundary at their hyphens; other compounds don't.
+#[test]
+fn hyphen_boundaries() {
+    use kokoro_g2p_en::hyphen_boundary;
+    for yes in ["US-China", "Paris-Berlin", "Smith-Jones", "NATO-EU", "nato-EU", "US-based", "Austro-Hungarian"] {
+        assert!(hyphen_boundary(yes), "{yes}");
+    }
+    for no in ["well-crafted", "X-ray", "T-shirt", "A-list", "co-founder", "state-of-the-art", "US"] {
+        assert!(!hyphen_boundary(no), "{no}");
+    }
+}

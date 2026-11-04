@@ -171,7 +171,7 @@ fn reference_records() {
     let (mut cjk, mut cjk_matched, mut cjk_skipped, mut new_script, mut flagged) = (0, 0, 0, Vec::new(), Vec::new());
     let (mut zh, mut zh_matched, mut failing, mut failing_matched, mut unreadable) = (0, 0, 0, 0, Vec::new());
     let mut mismatches = Vec::new();
-    let (mut changed, mut numbers, mut symbols, mut unchanged_chunks) = (0, 0, 0, 0);
+    let (mut changed, mut numbers, mut symbols, mut unchanged_chunks, mut compounds, mut dashes) = (0, 0, 0, 0, 0, 0);
     let start = Instant::now();
     for record in &records {
         let chinese_with_japanese = record.lang == "z" && uses_cjk(record);
@@ -219,6 +219,7 @@ fn reference_records() {
                     for (text, phonemes) in actual.iter().filter(|_| !placeholders) {
                         if let Some(&expected) = reference.get(text.as_str())
                             && expected != phonemes
+                            && !kokoro_g2p_en::has_name_compound(text)
                         {
                             mismatches.push(format!(
                                 "{}: unchanged chunk {text:?} read differently\n  expected: {expected}\n  actual:   {phonemes}",
@@ -229,6 +230,7 @@ fn reference_records() {
                     }
                     numbers += usize::from(kinds.contains(&Kind::Numbers));
                     symbols += usize::from(kinds.contains(&Kind::Symbols));
+                    dashes += usize::from(kinds.contains(&Kind::Dashes));
                     changed += 1;
                     // `PARITY_CHANGED=FILE` writes each such record, to review the differences.
                     if let Ok(path) = std::env::var("PARITY_CHANGED") {
@@ -271,6 +273,16 @@ fn reference_records() {
                 zh_matched += usize::from(record.lang == "z");
                 failing_matched += usize::from(record.error.is_some());
             }
+        } else if error.is_some() == record.error.is_some()
+            && actual.len() == expected.len()
+            && actual
+                .iter()
+                .zip(&expected)
+                .all(|(a, e)| a == e || (a.0 == e.0 && kokoro_g2p_en::has_name_compound(&a.0)))
+        {
+            // Only chunks with a compound of names or acronyms ("US-China") read differently:
+            // a word boundary at its hyphens (docs/divergences.md, issue #35).
+            compounds += 1;
         } else {
             let first =
                 expected.iter().zip(&actual).position(|(e, a)| e != a).unwrap_or(expected.len().min(actual.len()));
@@ -302,8 +314,9 @@ fn reference_records() {
         unreadable.len()
     );
     println!(
-        "normalized differently, by the number reader and symbol pass: {changed} records ({numbers} with numbers, {symbols} with symbols), whose {unchanged_chunks} chunks with unchanged text match"
+        "normalized differently, by the number reader and symbol pass: {changed} records ({numbers} with numbers, {symbols} with symbols, {dashes} with dashes), whose {unchanged_chunks} chunks with unchanged text match"
     );
+    println!("{compounds} records read differently only in chunks with a hyphenated compound of names or acronyms");
     println!("{} records, {chars} characters in {:.2?}", records.len(), elapsed);
     for m in mismatches.iter().take(show) {
         println!("{m}");
