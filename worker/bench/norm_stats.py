@@ -1,5 +1,5 @@
 """How much Kokoro's instance-norm statistics vary between sentences, and how the audio changes when
-they are frozen (the average per voice, or over all voices) instead of taken from each sentence.
+they are frozen (each voice's average) instead of taken from each sentence.
 
     uv run python bench/norm_stats.py MODELS [--per-voice 40] [--test 16] [--clips DIR] [--json out.json]
 
@@ -8,8 +8,8 @@ each channel by the sentence's own mean and standard deviation over time. For ea
 how much the mean moves between sentences, relative to the standard deviation (a mean shift of 0.1
 standard deviations is small), and how much the standard deviation itself moves (its coefficient of
 variation), within one voice and over all of them. Then it renders held-out sentences with the
-frozen statistics and compares their spectrograms with the normal render (same seed), next to the
-seed-to-seed noise floor.
+frozen statistics, in all norms or only the later ones, and compares their spectrograms with the
+normal render (same seed), next to the seed-to-seed noise floor.
 """
 
 import argparse
@@ -49,7 +49,7 @@ class Norms:
             var = x32.var(-1, unbiased=False, keepdim=True)
             if self.mode == "record":
                 self.records[i].append((mean[0, :, 0].cpu(), var[0, :, 0].sqrt().cpu()))
-            elif self.mode == "frozen":
+            elif self.mode == "frozen" and self.frozen[i] is not None:
                 fm, fs = self.frozen[i]
                 mean, var = fm.to(x.device)[None, :, None], (fs.to(x.device) ** 2)[None, :, None]
             y = (x32 - mean) * torch.rsqrt(var + mod.eps)
@@ -114,30 +114,29 @@ def main():
         print(f"{r['norm']:3d} {r['channels']:5d}   {r['mean_shift_within_voice']:.3f} / {r['mean_shift_all']:.3f}"
               f"   {r['std_cv_within_voice']:.3f} / {r['std_cv_all']:.3f}")
 
-    # 2. Frozen statistics on held-out sentences.
+    # 2. Frozen statistics (each voice's average) on held-out sentences, for all norms and for the
+    # later ones only. Norms 0-11 are the F0/N predictor's, 12-20 the decoder's, 21-69 the generator's.
     frozen_voice = {n: [(m.mean(0), s.mean(0)) for m, s in per_voice[n]] for n in VOICES}
-    frozen_all = [(torch.cat([per_voice[n][i][0] for n in VOICES]).mean(0),
-                   torch.cat([per_voice[n][i][1] for n in VOICES]).mean(0)) for i in range(len(norms.mods))]
-    results = {"floor": [], "frozen_voice": [], "frozen_all": []}
+    subsets = {"all": 0, "decoder_and_generator": 12, "generator": 21}
+    results = {"floor": [], **{k: [] for k in subsets}}
     for v, name in zip(voices, VOICES):
         for k, ids in enumerate(test):
             req = Request(ids, synth.style(v, len(ids)), 100)
             norms.mode = "normal"
             normal, other_seed = render(synth, req, 1), render(synth, req, 2)
             results["floor"].append(spec_corr(normal, other_seed))
+            clips = {"normal": normal}
             norms.mode = "frozen"
-            for label, frozen in (("frozen_voice", frozen_voice[name]), ("frozen_all", frozen_all)):
-                norms.frozen = frozen
-                audio = render(synth, req, 1)
-                results[label].append(spec_corr(normal, audio))
-                if args.clips and k < 3:
-                    os.makedirs(args.clips, exist_ok=True)
-                    write_wav(os.path.join(args.clips, f"{name}-{k}-{label}.wav"),
-                              (np.clip(audio, -1, 1) * 32767).astype("<i2").tobytes())
+            for label, first in subsets.items():
+                norms.frozen = [f if i >= first else None for i, f in enumerate(frozen_voice[name])]
+                clips[label] = render(synth, req, 1)
+                results[label].append(spec_corr(normal, clips[label]))
             norms.mode = "normal"
             if args.clips and k < 3:
-                write_wav(os.path.join(args.clips, f"{name}-{k}-normal.wav"),
-                          (np.clip(normal, -1, 1) * 32767).astype("<i2").tobytes())
+                os.makedirs(args.clips, exist_ok=True)
+                for label, audio in clips.items():
+                    write_wav(os.path.join(args.clips, f"{name}-{k}-{label}.wav"),
+                              (np.clip(audio, -1, 1) * 32767).astype("<i2").tobytes())
     for label, corrs in results.items():
         print(f"{label}: spectrogram corr vs normal mean {np.mean(corrs):.4f} min {np.min(corrs):.4f}", flush=True)
     if args.json:
