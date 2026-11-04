@@ -1,0 +1,15 @@
+# gpuc submit bench/job_conv_peak.yaml --runpod --gpu "H100 SXM" --max-price 4.10 --idle-min 5   (from worker/)
+name: kokoro-conv-peak
+setup: uvx uv@0.11.4 sync --frozen
+command: mkdir -p results && .venv/bin/python bench/conv_peak.py 1 8 64 2>&1 | grep -E "^B=|Error" | tee results/conv_peak.txt
+python: .venv/bin/python
+gpus: 1
+env:
+  REQUIRE_CUDA: "1"
+secrets: [AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY]
+outputs:
+  - path: results
+    s3: s3://brendanlong-experiments/optimized-kokoro/{job_id}/results
+priority: 40
+estimated_runtime_min: 5
+max_runtime_min: 30
