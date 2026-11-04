@@ -114,7 +114,6 @@ fn requests_match_the_reference() {
     let cases = cases();
     let mut failures = Vec::new();
     let (mut flagged, mut rechunked, mut new_script, mut stateful, mut numbers, mut fuzzed) = (0, 0, 0, 0, 0, 0);
-    let mut compounds = 0;
     for case in &cases {
         if uses_new_script(&case.text) {
             new_script += 1;
@@ -222,20 +221,6 @@ fn requests_match_the_reference() {
             // chunks' text differs only by them, the request is counted apart.
             let joined = |chunks: &mut dyn Iterator<Item = &Expected>| texts(chunks).join(" ");
             let (theirs, ours) = (joined(&mut expected.iter().copied()), joined(&mut actual.iter()));
-            let compound = |e: &&Expected, a: &Expected| match (e, a) {
-                (Expected::Speech { text, .. }, Expected::Speech { text: t, .. }) => {
-                    text == t && kokoro_g2p_en::has_name_compound(text)
-                }
-                _ => false,
-            };
-            if theirs == ours
-                && expected.len() == actual.len()
-                && expected.iter().zip(&actual).all(|(e, a)| same(e, a) || compound(e, a))
-            {
-                // Only chunks with a compound of names or acronyms differ (issue #35).
-                compounds += 1;
-                continue;
-            }
             if theirs != ours && kokoro_reference::divergence::explain(&case.text, &theirs, &ours).is_ok() {
                 numbers += 1;
                 continue;
@@ -260,12 +245,12 @@ fn requests_match_the_reference() {
             ));
         }
     }
-    let compared = cases.len() - new_script - rechunked - stateful - numbers - fuzzed - compounds;
+    let compared = cases.len() - new_script - rechunked - stateful - numbers - fuzzed;
     println!(
         "{} of {compared} requests match ({flagged} of them once espeak's language-switch flags are dropped from the reference's); \
          not compared: {rechunked} chunked differently without the flags, {new_script} with other scripts, \
          {stateful} where the reference's espeak read a word by an earlier call's state, \
-         {numbers} with numbers or symbols read differently, {fuzzed} more fuzzed ones with digits or symbols, {compounds} with hyphenated name compounds",
+         {numbers} with numbers or symbols read differently, {fuzzed} more fuzzed ones with digits or symbols",
         compared - failures.len(),
     );
     for f in failures.iter().take(10) {

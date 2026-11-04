@@ -283,8 +283,7 @@ fn resolve_tokens(tokens: &mut [MToken]) {
             2
         }] = true;
     }
-    let prespace =
-        text.contains(' ') || text.contains('/') || kinds.iter().filter(|&&k| k).count() > 1 || hyphen_boundary(&text);
+    let prespace = text.contains(' ') || text.contains('/') || kinds.iter().filter(|&&k| k).count() > 1;
     let n = tokens.len();
     for (i, tk) in tokens.iter_mut().enumerate() {
         if tk.phonemes.is_none() {
@@ -325,88 +324,6 @@ fn resolve_tokens(tokens: &mut [MToken]) {
     for &(_, _, i) in &indices[..half] {
         demote(&mut tokens[i]);
     }
-}
-
-/// Whether a hyphenated run gets a word boundary at its hyphens: compounds with an acronym
-/// ("US-China", "NATO-EU", "US-based", "EU-wide"), which read rushed as one word. Every part has
-/// two letters or more and one is an acronym (all capitals; a capitalised word alone doesn't
-/// count: "Spider-Man", "Mary-Jane" and "Paris-Berlin" stay one word). Not when the first part is
-/// a prefix ("Anti-American", "Non-EU", "Mid-July", "Co-Op"), a part is a function word
-/// ("The-End") or a number word ("COVID-nineteen", "UTF-eight": digits before normalization),
-/// or the parts repeat ("No-No"). Other compounds ("well-crafted", "X-ray", "T-shirt") stay one
-/// word, as in misaki (docs/divergences.md).
-pub fn hyphen_boundary(text: &str) -> bool {
-    if !text.contains('-') {
-        return false;
-    }
-    let parts: Vec<&str> = text.split('-').collect();
-    let lower: Vec<String> = parts.iter().map(|p| p.to_lowercase()).collect();
-    let word = |p: &&str| p.chars().count() >= 2 && p.chars().all(text::is_alpha);
-    let acronym = |p: &&str| p.chars().all(char::is_uppercase);
-    parts.iter().all(word)
-        && parts.iter().any(acronym)
-        && !PREFIXES.contains(&lower[0].as_str())
-        && !lower.iter().any(|w| FUNCTION_WORDS.contains(&w.as_str()) || NUMBER_WORDS.contains(&w.as_str()))
-        && !lower.windows(2).any(|w| w[0] == w[1])
-}
-
-/// Prefixes that make one word with what follows, in any case ("Anti-American", "non-EU").
-const PREFIXES: &[&str] = &[
-    "anti", "pre", "post", "mid", "non", "ex", "pro", "co", "sub", "super", "inter", "trans", "neo", "pan", "semi",
-    "ultra", "over", "under", "multi", "counter", "self", "all", "re", "de", "dis", "mis", "out", "pseudo", "quasi",
-    "proto", "micro", "macro", "mega", "mini", "auto", "bi", "tri", "uni", "intra", "extra", "hyper", "infra", "meta",
-    "para", "vice", "half", "well", "long", "short", "cross", "full", "part", "un", "in", "en",
-];
-
-const FUNCTION_WORDS: &[&str] =
-    &["the", "a", "an", "of", "and", "or", "to", "in", "on", "at", "by", "for", "with", "from", "as", "is", "it"];
-
-/// The words the number pass writes for digits: a compound with one was a number before
-/// normalization ("COVID-19", "UTF-8", "Windows-95", "MP3-player").
-const NUMBER_WORDS: &[&str] = &[
-    "zero",
-    "oh",
-    "one",
-    "two",
-    "three",
-    "four",
-    "five",
-    "six",
-    "seven",
-    "eight",
-    "nine",
-    "ten",
-    "eleven",
-    "twelve",
-    "thirteen",
-    "fourteen",
-    "fifteen",
-    "sixteen",
-    "seventeen",
-    "eighteen",
-    "nineteen",
-    "twenty",
-    "thirty",
-    "forty",
-    "fifty",
-    "sixty",
-    "seventy",
-    "eighty",
-    "ninety",
-    "hundred",
-    "thousand",
-    "million",
-    "billion",
-    "point",
-];
-
-/// Whether a text has a hyphenated compound that [`hyphen_boundary`] gives a word boundary, for
-/// the parity tests to tell those readings apart.
-pub fn has_name_compound(text: &str) -> bool {
-    let latin = |c: char| c.is_alphanumeric() && (c.is_ascii() || (c as u32) < 0x250);
-    text.split(|c: char| !latin(c) && c != '-' && c != '\'')
-        .map(|w| w.replace('\'', ""))
-        .any(|w| w.trim_matches('-').contains('-') && hyphen_boundary(w.trim_matches('-')))
 }
 
 /// The most subtokens of a run without whitespace looked up together. misaki tries every span of the

@@ -95,7 +95,6 @@ fn matches_reference() {
     let (mut calls, mut calls_ok, mut tokens, mut tokens_ok) = (0usize, 0usize, 0usize, 0usize);
     let mut shown = 0;
     let mut numbers = 0;
-    let mut compounds = 0;
     for record in records.iter().filter(|r| r.lang == "a" || r.lang == "b") {
         let g2p = if record.lang == "b" { &gb } else { &us };
         for call in &record.calls {
@@ -127,13 +126,6 @@ fn matches_reference() {
             tokens_ok += if same_tokens { token_matches } else { 0 };
             let ps = kokoro::tokens_to_ps(&got);
             let ok = problems.is_empty() && same_tokens && token_matches == expected.len() && ps == call.phonemes;
-            if !ok && problems.is_empty() && kokoro_g2p_en::has_name_compound(&call.input) {
-                // A compound of names or acronyms ("US-China") read with a word boundary at its
-                // hyphens (docs/divergences.md, issue #35).
-                compounds += 1;
-                calls -= 1;
-                continue;
-            }
             calls_ok += usize::from(ok);
             if !ok && shown < show_max {
                 shown += 1;
@@ -158,9 +150,7 @@ fn matches_reference() {
         }
     }
     let pct = |a: usize, b: usize| 100.0 * a as f64 / b.max(1) as f64;
-    println!(
-        "not compared: {numbers} calls with numbers, money or symbols misaki read, {compounds} with hyphenated name compounds read differently"
-    );
+    println!("not compared: {numbers} calls with numbers, money or symbols misaki read");
     println!(
         "calls: {calls_ok}/{calls} exact ({:.3}%); tokens: {tokens_ok}/{tokens} exact ({:.3}%)",
         pct(calls_ok, calls),
