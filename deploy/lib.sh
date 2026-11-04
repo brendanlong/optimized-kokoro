@@ -259,6 +259,9 @@ ensure_dirs() {
 #KOKORO_DEMO_LISTEN=127.0.0.1:25436
 # The worker's --max-batch (8 for many listeners: worker/README.md). The cache seed depends on it.
 #KOKORO_MAX_BATCH=1
+# 1 runs a Cloudflare Tunnel to the server, with the tunnel token in secrets/cloudflared.token
+# (deploy/README.md, "Cloudflare Tunnel").
+#KOKORO_CLOUDFLARED=0
 EOF
         chmod 0644 "$root/settings.env"
     fi
@@ -269,7 +272,7 @@ EOF
 # defaults); anything else in it is an error, not dropped.
 load_settings() {
     local line n=0 key value
-    KOKORO_GPU=0 KOKORO_LISTEN=127.0.0.1:8880 KOKORO_DEMO_LISTEN=127.0.0.1:25436 KOKORO_MAX_BATCH=1
+    KOKORO_GPU=0 KOKORO_LISTEN=127.0.0.1:8880 KOKORO_DEMO_LISTEN=127.0.0.1:25436 KOKORO_MAX_BATCH=1 KOKORO_CLOUDFLARED=0
     while IFS= read -r line || [ -n "$line" ]; do
         n=$((n + 1))
         [[ $line =~ ^[[:space:]]*(#.*)?$ ]] && continue
@@ -281,8 +284,9 @@ load_settings() {
         KOKORO_LISTEN | KOKORO_DEMO_LISTEN) valid_address "$value" ;;
         # The worker's own range.
         KOKORO_MAX_BATCH) [[ $value =~ ^[0-9]{1,2}$ ]] && ((10#$value >= 1 && 10#$value <= 64)) ;;
+        KOKORO_CLOUDFLARED) [[ $value =~ ^[01]$ ]] ;;
         *) false ;;
-        esac || die "$root/settings.env line $n isn't a valid KOKORO_GPU (a CDI GPU name, not all), KOKORO_LISTEN or KOKORO_DEMO_LISTEN (IPv4:port) or KOKORO_MAX_BATCH (1-64): $line"
+        esac || die "$root/settings.env line $n isn't a valid KOKORO_GPU (a CDI GPU name, not all), KOKORO_LISTEN or KOKORO_DEMO_LISTEN (IPv4:port) KOKORO_MAX_BATCH (1-64) or KOKORO_CLOUDFLARED (0 or 1): $line"
         printf -v "$key" %s "$value"
     done < "$root/settings.env"
     [ "$(port_of "$KOKORO_LISTEN")" != "$(port_of "$KOKORO_DEMO_LISTEN")" ] || die "KOKORO_LISTEN and KOKORO_DEMO_LISTEN use the same port"
@@ -305,6 +309,22 @@ settings_env() {
     echo "KOKORO_LISTEN=$KOKORO_LISTEN"
     echo "KOKORO_DEMO_LISTEN=$KOKORO_DEMO_LISTEN"
     echo "KOKORO_MAX_BATCH=$KOKORO_MAX_BATCH"
+    [ "$KOKORO_CLOUDFLARED" != 1 ] || echo "COMPOSE_PROFILES=cloudflared"
+}
+
+# With KOKORO_CLOUDFLARED=1: checks the tunnel token the admin put in secrets/, gives it the same
+# owner and mode as the other secrets (root:nobody 0640, bind-mounted as is), and writes the
+# resolv.conf cloudflared needs under runsc.
+prepare_cloudflared() {
+    local token=$root/secrets/cloudflared.token
+    [ "$KOKORO_CLOUDFLARED" = 1 ] || return 0
+    [ -f "$token" ] && [ ! -L "$token" ] && [ -s "$token" ] ||
+        die "KOKORO_CLOUDFLARED=1 needs the tunnel token in $token (a regular, non-empty file): see deploy/README.md"
+    chown root:"$nobody" "$token"
+    chmod 0640 "$token"
+    printf 'nameserver 1.1.1.1\nnameserver 1.0.0.1\n' > "$root/resolv.conf.new"
+    chmod 0644 "$root/resolv.conf.new"
+    mv "$root/resolv.conf.new" "$root/resolv.conf"
 }
 
 health_url() {
@@ -481,6 +501,7 @@ stage_release() {
     docker build -t "optimized-kokoro-server:$rel" -f "$repo/deploy/server.Containerfile" "$repo"
     docker build -t "optimized-kokoro-demo:$rel" -f "$repo/demo/Containerfile" "$repo/demo"
 
+    prepare_cloudflared
     echo "== stage $dir"
     install -d -m 0755 "$dir"
     install -m 0644 "$repo/deploy/compose.yaml" "$dir/compose.yaml"
@@ -531,6 +552,11 @@ start_current() {
     local r
     r=$(basename "$(readlink "$root/current")")
     KOKORO_LISTEN=$(release_setting "$r" LISTEN)
+    # --remove-orphans keeps containers of services that are only switched off by a profile, so a
+    # tunnel turned off in settings.env would keep running.
+    if ! grep -qx 'COMPOSE_PROFILES=cloudflared' "$root/current/.env"; then
+        compose rm -sf cloudflared > /dev/null
+    fi
     compose up -d --remove-orphans && wait_healthy
 }
 

@@ -109,6 +109,23 @@ sudo docker compose -f /srv/optimized-kokoro/current/compose.yaml up -d
 
 To change a setting, edit `/srv/optimized-kokoro/settings.env` and run `update.sh`. A new port must be free; a port the running release holds is fine (for example 127.0.0.1:8880 to 0.0.0.0:8880).
 
+## Cloudflare Tunnel (optional)
+
+A `cloudflared` container can publish the server through a [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/), with no port open on the host. It runs like the others: gVisor, nobody, read-only, no capabilities, on the internal network only.
+
+1. In Cloudflare Zero Trust, create a tunnel (Networks → Tunnels → cloudflared). Copy the token from the install command it shows (the long string after `--token`).
+2. Add a public hostname to the tunnel, e.g. `tts.example.com`, with service type HTTP and URL `172.30.88.2:8880` (the server's address on the compose network; service names don't resolve under gVisor).
+3. Protect the hostname with Cloudflare Access: add a self-hosted application for it with a policy whose action is **Service Auth**, allowing a service token you create. Clients send that token's `CF-Access-Client-Id` and `CF-Access-Client-Secret` headers as well as the server's API key. The server assumes unauthenticated traffic is filtered before it (`crates/server/src/config.rs`), so don't skip this.
+4. On the host:
+   ```sh
+   sudo install -m 0640 -o root -g 65534 /dev/stdin /srv/optimized-kokoro/secrets/cloudflared.token <<< 'TOKEN'
+   echo KOKORO_CLOUDFLARED=1 | sudo tee -a /srv/optimized-kokoro/settings.env
+   sudo deploy/update.sh
+   ```
+5. Check: `sudo docker compose -f /srv/optimized-kokoro/current/compose.yaml logs cloudflared` shows "Registered tunnel connection", and `curl -s -o /dev/null -w '%{http_code}\n' https://tts.example.com/health` prints 403 without the Access headers and 200 with them.
+
+Cloudflare terminates TLS, so it sees the request text. `KOKORO_CLOUDFLARED=0` and `update.sh` turn the tunnel off again.
+
 ## Uninstall
 
 ```sh

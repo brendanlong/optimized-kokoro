@@ -102,23 +102,29 @@ services:
     memswap_limit: 512m
     pids_limit: 128
 
-  # For later: a Cloudflare tunnel to the server. Cloudflare Access (or the relay in docs/plan.md) must
-  # filter unauthenticated traffic first (crates/server/src/config.rs).
-  # cloudflared:
-  #   <<: *hardening
-  #   image: cloudflare/cloudflared:VERSION@sha256:DIGEST
-  #   runtime: runsc-kokoro
-  #   command: ["tunnel", "--no-autoupdate", "run"]
-  #   environment:
-  #     TUNNEL_TOKEN_FILE: /run/secrets/cloudflared.token
-  #   secrets:
-  #     - {source: cloudflared_token, target: cloudflared.token}
-  #   networks:
-  #     kokoro: {ipv4_address: 172.30.88.4}
-  #   # Ingress to http://172.30.88.2:8880 (configured on the tunnel). cloudflared needs DNS, which
-  #   # Docker's embedded resolver doesn't give runsc: mount a resolv.conf.
-  #   volumes:
-  #     - {type: bind, source: "${KOKORO_ROOT:?}/resolv.conf", target: /etc/resolv.conf, read_only: true}
+  # A Cloudflare Tunnel to the server, off unless settings.env has KOKORO_CLOUDFLARED=1 (which puts
+  # COMPOSE_PROFILES=cloudflared in the release's .env). The tunnel's public hostname must point at
+  # http://172.30.88.2:8880: Docker's embedded DNS doesn't resolve service names under runsc, which
+  # is also why cloudflared gets a resolv.conf. Put Cloudflare Access (a service token) in front of
+  # the hostname, so unauthenticated traffic never reaches the server (crates/server/src/config.rs).
+  cloudflared:
+    <<: *hardening
+    profiles: [cloudflared]
+    image: cloudflare/cloudflared:2026.10.7@sha256:4955524aeaa379e154023d5a027c250f7b35041a2e7e950cf13f144bc9b9c5ba
+    runtime: runsc-kokoro
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN_FILE: /run/secrets/cloudflared.token
+    secrets:
+      - {source: cloudflared_token, target: cloudflared.token}
+    networks:
+      kokoro: {ipv4_address: 172.30.88.4}
+    volumes:
+      - {type: bind, source: "${KOKORO_ROOT:?}/resolv.conf", target: /etc/resolv.conf, read_only: true}
+    mem_limit: 256m
+    cpus: 1
+    pids_limit: 256
+    depends_on: [server]
 
 volumes:
   # A tmpfs owned by nobody, mounted on the host while either container uses it; it only ever holds
@@ -142,5 +148,5 @@ secrets:
     file: ${KOKORO_ROOT:?}/secrets/server.toml
   demo_key:
     file: ${KOKORO_ROOT:?}/secrets/demo.key
-  # cloudflared_token:
-  #   file: ${KOKORO_ROOT:?}/secrets/cloudflared.token
+  cloudflared_token:
+    file: ${KOKORO_ROOT:?}/secrets/cloudflared.token
