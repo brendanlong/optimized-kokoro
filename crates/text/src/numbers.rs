@@ -1152,6 +1152,10 @@ mod tests {
             ("1000050", "one million and fifty"),
             ("2000100", "two million, one hundred"),
             ("1234567", "one million, two hundred and thirty-four thousand, five hundred and sixty-seven"),
+            ("1000000", "one million"),
+            ("2000500", "two million, five hundred"),
+            ("10000001", "ten million and one"),
+            ("3450000", "three million, four hundred and fifty thousand"),
         ] {
             assert_eq!(cardinal(n), w, "{n}");
         }
@@ -1229,6 +1233,14 @@ mod tests {
             ),
             ("0,000 and 10m/s and 5m", "zero, zero zero zero and ten meters per second and five million"),
             ("Wait...5 more", "Wait...five more"),
+            (
+                "It sold for $3,450,000 last year.",
+                "It sold for three million, four hundred and fifty thousand dollars last year.",
+            ),
+            (
+                "$1,250,000.75 and 3,000,000 km. Then 12,345,000.",
+                "one million, two hundred and fifty thousand dollars and seventy-five cents and three million kilometers. Then twelve million, three hundred and forty-five thousand.",
+            ),
             ("(x-1)³ and [n-2]² but (x-1) and 2-3", "(x minus one)³ and [n minus two]² but (x-one) and two to three"),
             ("It ended.[3] Then word[12] and see [4].", "It ended. Then word and see [four]."),
             (
