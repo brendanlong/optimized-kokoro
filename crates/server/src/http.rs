@@ -258,6 +258,7 @@ where
     let Some(connection) = state.worker.current() else {
         return unavailable("The model worker is not connected");
     };
+    state.load.set_max_batch(connection.max_batch());
     // Refused at once if over budget, before it can displace anything (`admit` decides for sure).
     if state.load.would_refuse(level) {
         return overloaded(StreamError::Shed(Shed { estimate: state.load.estimate(level) }).to_string());

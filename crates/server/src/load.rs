@@ -10,8 +10,8 @@
 //! instead. The estimated first-audio latency at level `q` is the time to render
 //! - every chunk at a level above `q`,
 //! - every waiting chunk at level `q` (prefetch at `q` comes after a new waiting chunk),
-//! - and half a typical chunk if the worker has other work, since it may be rendering some
-//!   (rendering isn't preempted),
+//! - and half of the other work the worker may be rendering already, at most one batch of
+//!   `max_batch` typical chunks (rendering isn't preempted),
 //!
 //! at a learned cost per id: an exponentially weighted ratio of the worker's busy time to the ids
 //! it rendered, from each Result (busy time since the previous Result, or since the worker was
@@ -145,6 +145,8 @@ struct Inner {
     live: Vec<Arc<Tracked>>,
     cost: Cost,
     log: crate::log::RateLimit,
+    /// The worker's largest batch, from its hello.
+    max_batch: u16,
 }
 
 /// The server's load: every live request, and the learned cost. One per server.
@@ -163,6 +165,7 @@ impl Load {
                 live: Vec::new(),
                 cost: Cost::default(),
                 log: crate::log::RateLimit::new(Duration::from_secs(10)),
+                max_batch: 1,
             }),
         })
     }
@@ -246,6 +249,11 @@ impl Load {
         Self::estimate_locked(&self.inner.lock().unwrap(), level)
     }
 
+    /// Notes the connected worker's `max_batch`, how much other work may be rendering at once.
+    pub fn set_max_batch(&self, max_batch: u16) {
+        self.inner.lock().unwrap().max_batch = max_batch.max(1);
+    }
+
     /// The learned render cost per phoneme id.
     pub fn secs_per_id(&self) -> f64 {
         self.inner.lock().unwrap().cost.secs_per_id()
@@ -253,8 +261,8 @@ impl Load {
 
     fn estimate_locked(inner: &Inner, level: u8) -> Duration {
         let mut ids = 0.0;
-        // Whether the worker has work that doesn't count here, which it may be rendering already.
-        let mut behind = false;
+        // Work that doesn't count here, which the worker may be rendering already.
+        let mut behind = 0.0;
         for t in &inner.live {
             let state = t.state();
             let (waiting, prefetch) =
@@ -264,24 +272,22 @@ impl Load {
                 continue;
             }
             if t.level < level {
-                behind |= waiting + prefetch > 0.0;
+                behind += waiting + prefetch;
                 continue;
             }
             ids += waiting;
             if t.level > level {
                 ids += prefetch;
             } else {
-                behind |= prefetch > 0.0;
+                behind += prefetch;
             }
             if state == QUEUED && !t.submitted.load(Ordering::SeqCst) {
                 ids += inner.cost.chunk_ids;
             }
         }
-        // A chunk that is already rendering finishes first, whatever its priority: on average,
-        // half a typical chunk is left of it.
-        if behind {
-            ids += inner.cost.chunk_ids / 2.0;
-        }
+        // A batch that is already rendering finishes first, whatever its priority: on average,
+        // half of it is left. It holds at most `max_batch` typical chunks of that other work.
+        ids += behind.min(f64::from(inner.max_batch) * inner.cost.chunk_ids) / 2.0;
         Duration::from_secs_f64(ids * inner.cost.secs_per_id())
     }
 
@@ -538,6 +544,21 @@ mod tests {
         assert!(load.displace(9, None));
         assert!(a.is_shed());
         assert!(!load.displace(9, None));
+    }
+
+    #[test]
+    fn what_may_be_rendering_counts_up_to_a_batch() {
+        let load = Load::new(None);
+        let low = load.admit(1, 0).unwrap();
+        let high = load.admit(5, 0).unwrap();
+        let _w = (low.work(true, 20 * PRIOR_CHUNK_IDS as usize), high.work(true, 1));
+        let chunk = load.inner.lock().unwrap().cost.chunk_ids;
+        let at_high = || load.estimate(5).as_secs_f64() / load.secs_per_id();
+        assert!((at_high() - 1.0 - chunk / 2.0).abs() < 1e-6, "one chunk at batch 1");
+        load.set_max_batch(8);
+        assert!((at_high() - 1.0 - 4.0 * chunk).abs() < 1e-6, "eight chunks at batch 8");
+        load.set_max_batch(64);
+        assert!((at_high() - 1.0 - 10.0 * PRIOR_CHUNK_IDS).abs() < 1e-6, "half of it, when that's less");
     }
 
     #[test]

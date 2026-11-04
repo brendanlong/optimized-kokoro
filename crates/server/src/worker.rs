@@ -216,6 +216,11 @@ impl Connection {
     }
 
     /// The slots the front uses on this connection.
+    /// The most requests the worker renders at once.
+    pub fn max_batch(&self) -> u16 {
+        self.hello.max_batch
+    }
+
     pub fn slots(&self) -> usize {
         self.state.lock().unwrap().slots.len()
     }
