@@ -111,12 +111,12 @@ To change a setting, edit `/srv/optimized-kokoro/settings.env` and run `update.s
 
 ## Cloudflare Tunnel (optional)
 
-A `cloudflared` container can publish the server through a [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/), with no port open on the host. It runs like the others: gVisor, nobody, read-only, no capabilities, on the internal network only.
+A `cloudflared` container can publish the server through a [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/), with no port open on the host. It runs like the others: gVisor, nobody, read-only, no capabilities. It shares the compose network with the server and demo, and needs outbound internet access to reach Cloudflare. `install.sh` and `update.sh` wait for it to register with Cloudflare, and roll back if it doesn't within 2 minutes.
 
 1. In Cloudflare Zero Trust, create a tunnel (Networks → Tunnels → cloudflared). Copy the token from the install command it shows (the long string after `--token`).
 2. Add a public hostname to the tunnel, e.g. `tts.example.com`, with service type HTTP and URL `172.30.88.2:8880` (the server's address on the compose network; service names don't resolve under gVisor).
 3. Protect the hostname with Cloudflare Access: add a self-hosted application for it with a policy whose action is **Service Auth**, allowing a service token you create. Clients send that token's `CF-Access-Client-Id` and `CF-Access-Client-Secret` headers as well as the server's API key. The server assumes unauthenticated traffic is filtered before it (`crates/server/src/config.rs`), so don't skip this.
-4. On the host:
+4. On the host, after `install.sh` (the token goes into its `secrets/` directory; the `<<<` form keeps it out of the process list, but it lands in your shell history unless you prefix the line with a space or clear it):
    ```sh
    sudo install -m 0640 -o root -g 65534 /dev/stdin /srv/optimized-kokoro/secrets/cloudflared.token <<< 'TOKEN'
    echo KOKORO_CLOUDFLARED=1 | sudo tee -a /srv/optimized-kokoro/settings.env
@@ -141,7 +141,8 @@ Then, if nothing else uses it, remove `runsc-kokoro` from `/etc/docker/daemon.js
 `/srv/optimized-kokoro`, all root-owned (see the top of `lib.sh`):
 - `settings.env`: the settings above. Any other line, apart from comments, is an error.
 - `models/` and `unidic/SHA256.dic`: world-readable data. The server memory-maps the dictionary, so a new one (a new checksum in `fetch_unidic.sh`) is a new file next to the old one. Each release's `.env` names its own (`KOKORO_UNIDIC_FILE`), so neither the running server nor a rollback sees it change. Dictionaries that no kept release names are deleted.
-- `secrets/`: `server.toml` (listen address, socket path and API keys) and `demo.key`.
+- `secrets/`: `server.toml` (listen address, socket path and API keys), `demo.key` and, with the tunnel, `cloudflared.token`.
+- `resolv.conf`: for cloudflared, written when the tunnel is on.
 - `releases/REL/`: `compose.yaml` (a copy of `deploy/compose.yaml`), `.env` (`KOKORO_ROOT`, `KOKORO_RELEASE`, `KOKORO_UNIDIC_FILE` and the settings) and `cache-seed/`. Images are `optimized-kokoro-{worker,server,demo}:REL`.
 - `current`: a symlink to the running release.
 - `.lock`: held while `install.sh` or `update.sh` runs.
@@ -152,4 +153,3 @@ The scripts ignore inherited `KOKORO_*`, `COMPOSE_*` and `DOCKER_*` variables (e
 
 - `worker/run.sh` (rootless podman) is still how to run the worker by hand, and how `worker/bench/` runs it.
 - The server image keeps the espeak-ng data at `/src/crates/espeak-ng/espeak-ng-data`, the path it was built at, because `kokoro-espeak-ng` finds it through `CARGO_MANIFEST_DIR` at run time.
-- `compose.yaml` has a commented-out `cloudflared` service for later.
