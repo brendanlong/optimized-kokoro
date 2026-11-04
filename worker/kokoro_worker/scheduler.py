@@ -1,13 +1,22 @@
-"""The request queue: slots, (priority, arrival) order, cancellation, and batch picking. No torch here."""
+"""The request queue: slots, priority order, cancellation, and batch picking. No torch here.
 
+Most urgent first: by priority (the request's level, 0..255, higher first), then a chunk a listener
+is waiting for before prefetch at the same level, then by arrival."""
+
+import heapq
+import itertools
 import threading
-from collections import deque
 
 from .protocol import Synthesize
 
 
 class Closed(Exception):
     pass
+
+
+def _urgency(request: Synthesize, arrival: int) -> tuple[int, int, int]:
+    """Sort key: smallest is most urgent."""
+    return (-request.priority, -request.waiting, arrival)
 
 
 class RequestQueue:
@@ -19,7 +28,8 @@ class RequestQueue:
 
     def __init__(self, slots: int):
         self._cond = threading.Condition()
-        self._queues = (deque(), deque())  # by priority
+        self._heap: list[tuple[tuple[int, int, int], Synthesize]] = []
+        self._arrivals = itertools.count()
         self._busy = [False] * slots
         self._closed = False
 
@@ -29,19 +39,20 @@ class RequestQueue:
             if self._busy[request.slot]:
                 return False
             self._busy[request.slot] = True
-            self._queues[request.priority].append(request)
+            heapq.heappush(self._heap, (_urgency(request, next(self._arrivals)), request))
             self._cond.notify()
             return True
 
     def cancel(self, slot: int) -> bool:
         """True if the slot's request was still queued; it is then dropped and the slot freed."""
         with self._cond:
-            for q in self._queues:
-                for request in q:
-                    if request.slot == slot:
-                        q.remove(request)
-                        self._busy[slot] = False
-                        return True
+            for i, (_, request) in enumerate(self._heap):
+                if request.slot == slot:
+                    self._heap[i] = self._heap[-1]
+                    self._heap.pop()
+                    heapq.heapify(self._heap)
+                    self._busy[slot] = False
+                    return True
             return False
 
     def take(self, max_batch: int) -> list[Synthesize]:
@@ -49,14 +60,13 @@ class RequestQueue:
 
         Never waits for more requests to arrive once one is there."""
         with self._cond:
-            while not self._closed and not any(self._queues):
+            while not self._closed and not self._heap:
                 self._cond.wait()
             if self._closed:
                 raise Closed
             batch = []
-            for q in self._queues:
-                while q and len(batch) < max_batch:
-                    batch.append(q.popleft())
+            while self._heap and len(batch) < max_batch:
+                batch.append(heapq.heappop(self._heap)[1])
             return batch
 
     def done(self, slot: int) -> None:
@@ -66,7 +76,6 @@ class RequestQueue:
     def close(self) -> None:
         with self._cond:
             self._closed = True
-            self._queues[0].clear()
-            self._queues[1].clear()
+            self._heap.clear()
             self._busy = [False] * len(self._busy)
             self._cond.notify_all()

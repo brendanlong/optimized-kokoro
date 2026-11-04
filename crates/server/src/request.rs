@@ -1,8 +1,9 @@
 //! `POST /v1/audio/speech`'s body, and its checks before any audio is made.
 //!
 //! Only what Lion Reader and clawed-abode send is accepted (Brendan's decision, 2026-11-03):
-//! `model` (ignored), `input`, `voice`, `speed`, `response_format: "pcm"` and `stream: true`.
-//! Any other field is refused, so a client never gets something other than it asked for.
+//! `model` (ignored), `input`, `voice`, `speed`, `response_format: "pcm"` and `stream: true`,
+//! plus our own extension `priority` (an integer 0..=255, higher more urgent; issue #26). Any
+//! other field is refused, so a client never gets something other than it asked for.
 
 use crate::config::Config;
 use crate::pipeline::{Lang, voice_lang};
@@ -25,6 +26,17 @@ pub struct SpeechRequest {
     response_format: Option<String>,
     /// Only `true` is accepted: the response is always streamed.
     stream: Option<bool>,
+    /// 0..=255, higher more urgent, at most the key's `max_priority` (above it is a 400). Absent:
+    /// the server's `default_priority`, capped at the key's maximum.
+    #[serde(default, deserialize_with = "priority")]
+    pub priority: Option<u8>,
+}
+
+/// An integer from 0 to 255, with an error that names the field (serde's for a `u8` doesn't).
+fn priority<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<u8>, D::Error> {
+    let value = serde_json::Value::deserialize(deserializer)?;
+    let priority = value.as_u64().and_then(|p| u8::try_from(p).ok());
+    priority.map(Some).ok_or_else(|| serde::de::Error::custom("priority must be an integer from 0 to 255"))
 }
 
 /// A request that passed every check.

@@ -38,7 +38,8 @@ def read_stream(data: bytes) -> None:
         if isinstance(msg, P.Cancel):
             queue.cancel(msg.slot)
             continue
-        assert 0 <= msg.priority <= 1 and P.MIN_SPEED <= msg.speed <= P.MAX_SPEED and msg.voice < VOICES
+        assert 0 <= msg.priority <= 255 and msg.waiting in (0, 1)
+        assert P.MIN_SPEED <= msg.speed <= P.MAX_SPEED and msg.voice < VOICES
         assert 1 <= len(msg.ids) <= MAX_PHONEMES and 1 <= msg.style_len <= MAX_PHONEMES
         assert min(msg.ids) >= 1 and max(msg.ids) < VOCAB
         if not queue.put(msg):

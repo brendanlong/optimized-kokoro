@@ -29,25 +29,29 @@ pub fn soft_open_file_limit(limits: &str) -> Option<u64> {
     }
 }
 
-/// An API key, and how many speech requests it may have in progress at once.
+/// An API key, how many speech requests it may have in progress at once, and the highest
+/// priority its requests may ask for.
 ///
-/// In the TOML file, either a string or a table: `api_keys = ["k1", { key = "k2", max_streams = 4 }]`.
+/// In the TOML file, either a string or a table:
+/// `api_keys = ["k1", { key = "k2", max_streams = 4, max_priority = 100 }]`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ApiKey {
     pub key: String,
     /// Overrides [`Config::max_streams_per_key`] for this key.
     pub max_streams: Option<usize>,
+    /// Overrides [`Config::max_priority_per_key`] for this key.
+    pub max_priority: Option<u8>,
 }
 
 impl From<&str> for ApiKey {
     fn from(key: &str) -> Self {
-        Self { key: key.into(), max_streams: None }
+        key.to_owned().into()
     }
 }
 
 impl From<String> for ApiKey {
     fn from(key: String) -> Self {
-        Self { key, max_streams: None }
+        Self { key, max_streams: None, max_priority: None }
     }
 }
 
@@ -58,6 +62,7 @@ impl<'de> Deserialize<'de> for ApiKey {
         struct Table {
             key: String,
             max_streams: Option<usize>,
+            max_priority: Option<u8>,
         }
         #[derive(Deserialize)]
         #[serde(untagged)]
@@ -67,7 +72,7 @@ impl<'de> Deserialize<'de> for ApiKey {
         }
         Ok(match Raw::deserialize(deserializer)? {
             Raw::Plain(key) => key.into(),
-            Raw::Table(Table { key, max_streams }) => Self { key, max_streams },
+            Raw::Table(Table { key, max_streams, max_priority }) => Self { key, max_streams, max_priority },
         })
     }
 }
@@ -98,6 +103,20 @@ pub struct Config {
     /// server, so this only keeps one client's bug from taking every stream. Lower it per key to
     /// reserve capacity for the other client.
     pub max_streams_per_key: usize,
+    /// The priority of a speech request that doesn't set `priority` (0..=255, higher more
+    /// urgent), or the key's maximum if that is lower. Default 128, the middle, so a client can
+    /// mark requests as more or less urgent than one that doesn't say.
+    pub default_priority: u8,
+    /// The highest `priority` one API key's requests may ask for, unless the key sets its own
+    /// `max_priority`; a request above it is refused with 400. The default, 255, lets our own
+    /// clients use every level; lower it per key to keep one client below another.
+    pub max_priority_per_key: u8,
+    /// Shed load when the estimated time to a new request's first audio is over this many
+    /// milliseconds: requests that haven't sent audio yet are refused (503 with `Retry-After`),
+    /// lowest priority first and newest first within a priority (`crate::load`). The default,
+    /// 800 ms, is under the ~1 s first-audio latency of the clients' fallback provider, so a
+    /// shed client still gets audio sooner elsewhere. 0 turns latency-based shedding off.
+    pub max_estimated_latency_ms: u64,
     /// Open client connections. Further connections wait in the listen backlog. An idle
     /// connection costs a file descriptor and a few KB, so the default is high (4096): a client
     /// holding connections open without sending a request (each for up to the header timeout,
@@ -159,6 +178,9 @@ impl Default for Config {
             max_body_bytes: None,
             max_concurrent_requests: 16,
             max_streams_per_key: 16,
+            default_priority: 128,
+            max_priority_per_key: 255,
+            max_estimated_latency_ms: 800,
             max_connections: 4096,
             max_requests_per_connection: 1000,
             header_read_timeout_ms: 5_000,
@@ -238,6 +260,21 @@ impl Config {
     /// Speech requests the `i`th API key may have in progress.
     pub fn max_streams(&self, i: usize) -> usize {
         self.api_keys[i].max_streams.unwrap_or(self.max_streams_per_key)
+    }
+
+    /// The highest priority the `i`th API key's requests may ask for.
+    pub fn max_priority(&self, i: usize) -> u8 {
+        self.api_keys[i].max_priority.unwrap_or(self.max_priority_per_key)
+    }
+
+    /// The priority of the `i`th API key's requests that don't set one.
+    pub fn default_priority(&self, i: usize) -> u8 {
+        self.default_priority.min(self.max_priority(i))
+    }
+
+    /// The latency budget that sheds load; `None` if shedding is off.
+    pub fn latency_budget(&self) -> Option<Duration> {
+        (self.max_estimated_latency_ms > 0).then(|| Duration::from_millis(self.max_estimated_latency_ms))
     }
 
     pub fn response_write_timeout(&self) -> Duration {
@@ -346,12 +383,30 @@ mod tests {
         let toml = "max_streams_per_key = 6\napi_keys = [\"plain\", { key = \"lion\", max_streams = 2 }]\n";
         std::fs::write(&path, toml).unwrap();
         let config = Config::load(Some(&path), Some("env")).unwrap();
-        assert_eq!(config.api_keys[1], ApiKey { key: "lion".into(), max_streams: Some(2) });
+        assert_eq!(config.api_keys[1], ApiKey { key: "lion".into(), max_streams: Some(2), max_priority: None });
         assert_eq!((0..3).map(|i| config.max_streams(i)).collect::<Vec<_>>(), [6, 2, 6]);
-        for bad in ["api_keys = [{ key = \"k\", max_streams = 0 }]", "api_keys = [{ key = \"k\", streams = 1 }]"] {
+        for bad in [
+            "api_keys = [{ key = \"k\", max_streams = 0 }]",
+            "api_keys = [{ key = \"k\", streams = 1 }]",
+            "api_keys = [{ key = \"k\", max_priority = 256 }]",
+            "api_keys = [{ key = \"k\", max_priority = -1 }]",
+        ] {
             std::fs::write(&path, bad).unwrap();
             assert!(Config::load(Some(&path), None).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn keys_may_cap_their_priority() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("server.toml");
+        let toml = "max_priority_per_key = 200\napi_keys = [\"plain\", { key = \"demo\", max_streams = 4, max_priority = 64 }, { key = \"top\", max_priority = 255 }]\n";
+        std::fs::write(&path, toml).unwrap();
+        let config = Config::load(Some(&path), None).unwrap();
+        assert_eq!((0..3).map(|i| config.max_priority(i)).collect::<Vec<_>>(), [200, 64, 255]);
+        assert_eq!((0..3).map(|i| config.default_priority(i)).collect::<Vec<_>>(), [128, 64, 128]);
+        assert_eq!(Config::default().latency_budget(), Some(Duration::from_millis(800)));
+        assert_eq!(Config { max_estimated_latency_ms: 0, ..Config::default() }.latency_budget(), None);
     }
 
     #[test]

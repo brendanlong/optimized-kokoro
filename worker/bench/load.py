@@ -1,5 +1,5 @@
 """Closed-loop load against a running worker: C streams, each reading the corpus in order and
-sending its next chunk as soon as the previous one's audio arrives (priority 0).
+sending its next chunk as soon as the previous one's audio arrives (waiting, at the default priority).
 
     python bench/load.py SOCKET CONFIG_JSON --concurrency 4 --requests 400 [--json out.json]
 

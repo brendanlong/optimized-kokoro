@@ -1,6 +1,6 @@
 """Hostile front for the worker: malformed and extreme frames, slot misuse, cancellation, slow and
 stalled frames, and 300 mutations. Usage: python tools/hostile.py SOCKET WORKER_PID (from the PR #11
-review; updated for protocol v2's slots)."""
+review; updated for protocol v3: slots, and the priority and waiting bytes)."""
 import os, random, socket, struct, sys, time
 
 SOCK, PID = sys.argv[1], int(sys.argv[2])
@@ -27,7 +27,7 @@ def connect():
     s.settimeout(20)
     s.connect(SOCK)
     hello = read_frame(s)
-    assert hello[0] == 1 and struct.unpack_from("<H", hello, 5)[0] == 2, hello[:7]
+    assert hello[0] == 1 and struct.unpack_from("<H", hello, 5)[0] == 3, hello[:7]
     global VOICE_COUNT, SLOTS
     SLOTS = struct.unpack_from("<H", hello, 13)[0]
     VOICE_COUNT = struct.unpack_from("<H", hello, 23)[0]
@@ -53,8 +53,8 @@ def fr(body):
     return struct.pack("<I", len(body)) + body
 
 
-def synth(slot, ids, voice=0, speed=100, prio=0, style_len=None, n_ids=None):
-    body = struct.pack("<BHBHHHH", 0x10, slot, prio, speed, voice, len(ids) if n_ids is None else n_ids,
+def synth(slot, ids, voice=0, speed=100, prio=0, waiting=1, style_len=None, n_ids=None):
+    body = struct.pack("<BHBBHHHH", 0x10, slot, prio, waiting, speed, voice, len(ids) if n_ids is None else n_ids,
                        len(ids) if style_len is None else style_len)
     return fr(body + bytes(ids))
 
@@ -106,7 +106,7 @@ connect().close()
 print("hello: slots", SLOTS, "voices", VOICE_COUNT)
 # length prefix
 run("len 0", struct.pack("<I", 0))
-run("len 523 (one over Synthesize's largest)", struct.pack("<I", 523) + b"\x10" * 523)
+run("len 524 (one over Synthesize's largest)", struct.pack("<I", 524) + b"\x10" * 524)
 run("len 65536 of junk", struct.pack("<I", 65536) + bytes(65536))
 run("len 0xffffffff", struct.pack("<I", 0xFFFFFFFF))
 run("truncated body then EOF", struct.pack("<I", 100) + b"\x10" * 50)
@@ -117,7 +117,7 @@ run("cancel short", fr(b"\x11" + bytes(1)))
 run("cancel long", fr(b"\x11" + bytes(3)))
 run("cancel slot = slots", cancel(SLOTS))
 run("cancel slot 65535", cancel(65535))
-run("synth header short", fr(b"\x10" + bytes(10)))
+run("synth header short", fr(b"\x10" + bytes(11)))
 run("synth trailing byte", fr(synth(1, ok_ids)[4:] + b"\x01"))
 run("synth n_ids says more than present", synth(1, ok_ids, n_ids=10))
 run("synth n_ids 0", synth(1, [], n_ids=0))
@@ -127,8 +127,8 @@ run("synth style_len 511", synth(1, ok_ids, style_len=511))
 run("synth id 0", synth(1, [16, 0, 16]))
 run("synth id 178", synth(1, [16, 178]))
 run("synth id 255", synth(1, [255]))
-run("priority 2", synth(1, ok_ids, prio=2))
-run("priority 255", synth(1, ok_ids, prio=255))
+run("waiting 2", synth(1, ok_ids, waiting=2))
+run("waiting 255", synth(1, ok_ids, waiting=255))
 for speed in [0, 24, 401, 65535]:
     run(f"speed {speed}", synth(1, ok_ids, speed=speed))
 run("voice index = n_voices", synth(1, ok_ids, voice=VOICE_COUNT))

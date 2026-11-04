@@ -47,6 +47,8 @@ curl -H "Authorization: Bearer $KEY" https://your-host/v1/audio/voices
 
 `speed` (0.25 to 4) is optional. The text may include `[pause:1.5s]` and pronunciation overrides like `[Kokoro](/kˈOkəɹO/)`. Only raw PCM is returned; clients encode it themselves (Lion Reader and the demo page use AAC or Opus in fragmented MP4).
 
+`priority` (an integer 0 to 255, higher more urgent, default 128) is optional too, up to the API key's maximum (above it is a 400). More urgent requests are always rendered first. When the server estimates a request would wait too long for its first audio (800 ms by default), it refuses it at once with `503` and `Retry-After: 1`, the least urgent and newest first, before any audio: send that request to another provider rather than retrying it here. A `429` means the key already has as many requests in progress as it may. A response that has started is never cut short by load.
+
 ## Hosting it
 
 You need Linux with an NVIDIA GPU, Docker with [gVisor](https://gvisor.dev/) (`runsc`), and the NVIDIA Container Toolkit with CDI. The server binary needs an x86-64 CPU from about 2013 or later (Intel Haswell or AMD Zen). Installing, updating, API keys, the Cloudflare Tunnel and a post-install checklist are in [`deploy/README.md`](deploy/README.md):

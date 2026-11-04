@@ -1,9 +1,9 @@
 //! One speech request from text to PCM: phonemize chunks in order on a blocking thread, keep a
 //! few of them on the worker, and send the audio back in order as soon as the next one is ready.
 //!
-//! The chunk the client is waiting for goes to the worker at priority 0, later ones at priority 1,
-//! and at most `lookahead` chunks are ahead of the client at a time, so one long request can't
-//! fill the worker's queue. Phonemizing stops when the window is full, and everything stops when
+//! Every chunk goes to the worker at the request's priority level. The chunk the client is
+//! waiting for is marked waiting, later ones prefetch, and at most `lookahead` chunks are ahead of
+//! the client at a time, so one long request can't fill the worker's queue. Phonemizing stops when the window is full, and everything stops when
 //! the client goes away: dropping a queued chunk's ticket cancels it on the worker.
 //!
 //! Both stages mark their end explicitly, so a stage that dies (a panic) fails the response
@@ -13,10 +13,14 @@
 //! and released only when both are done: a client that disconnects while a long sentence is being
 //! phonemized still counts against the limits until that work stops. A request may send at most
 //! [`Limits::max_ids`] phoneme ids to the worker in all.
+//!
+//! Until its first audio, a request may be shed (`crate::load`): the stream then fails with
+//! [`StreamError::Shed`] and its queued chunks are cancelled. Once the first audio is handed out
+//! it never is.
 
 use crate::audio::{silence, trim_range};
+use crate::load::{Admission, Shed};
 use crate::pipeline::{Chunk, Pipeline, PipelineError};
-use crate::protocol::Priority;
 use crate::request::Speech;
 use crate::stitch::{self, STITCH_ABOVE, Stitcher};
 use crate::worker::{Connection, HeldAudio, SynthError, SynthRequest, Synthesized};
@@ -39,6 +43,8 @@ pub enum StreamError {
     },
     /// A stage stopped without finishing or reporting an error.
     Aborted,
+    /// Shed before any audio, to keep first-audio latency within budget.
+    Shed(Shed),
 }
 
 impl fmt::Display for StreamError {
@@ -50,6 +56,14 @@ impl fmt::Display for StreamError {
                 write!(f, "the input makes more than {max_ids} phonemes of speech; send it as several requests")
             }
             Self::Aborted => f.write_str("speech generation stopped unexpectedly"),
+            Self::Shed(shed) if shed.estimate.is_zero() => f.write_str(
+                "the server is at its request limit and a more urgent request took this one's place; use another provider for this request",
+            ),
+            Self::Shed(shed) => write!(
+                f,
+                "the server is overloaded: estimated time to first audio {} ms; use another provider for this request",
+                shed.estimate.as_millis()
+            ),
         }
     }
 }
@@ -186,20 +200,40 @@ fn pcm_bytes(samples: &[i16], held: HeldAudio) -> Bytes {
 pub struct AudioStream {
     rx: mpsc::Receiver<Output>,
     over: bool,
+    /// Whether audio has been handed out, after which the request can't be shed.
+    started: bool,
+    admission: Arc<Admission>,
     _permits: Arc<dyn Send + Sync>,
 }
 
 impl AudioStream {
     /// The next piece of audio; `None` once the request is complete. After an error, nothing more.
+    /// Before the first audio, a shed request gets [`StreamError::Shed`] at once.
     pub async fn next(&mut self) -> Option<Result<Bytes, StreamError>> {
         if self.over {
             return None;
         }
-        let item = match self.rx.recv().await {
-            Some(Output::Audio(bytes)) => return Some(Ok(bytes)),
+        let received = if self.started {
+            self.rx.recv().await
+        } else {
+            tokio::select! {
+                biased;
+                received = self.rx.recv() => received,
+                () = self.admission.shed() => None,
+            }
+        };
+        let item = match received {
+            Some(Output::Audio(bytes)) if self.started || self.admission.start() => {
+                self.started = true;
+                return Some(Ok(bytes));
+            }
+            _ if !self.started && self.admission.is_shed() => {
+                Some(Err(StreamError::Shed(Shed { estimate: self.admission.shed_estimate() })))
+            }
             Some(Output::End) => None,
             Some(Output::Failed(e)) => Some(Err(e)),
-            None => Some(Err(StreamError::Aborted)),
+            // Audio here would mean `start` failed without the request being shed, which it can't.
+            Some(Output::Audio(_)) | None => Some(Err(StreamError::Aborted)),
         };
         self.over = true;
         item
@@ -223,12 +257,13 @@ pub struct Limits {
 }
 
 /// Starts producing a request's audio. `permits` are held until both the returned stream and the
-/// phonemizing thread are done.
+/// phonemizing thread are done; `admission` places the request's chunks in the latency estimate.
 pub fn start(
     speech: Speech,
     connection: Arc<Connection>,
     pipeline: Arc<dyn Pipeline>,
     limits: Limits,
+    admission: Arc<Admission>,
     permits: impl Send + Sync + 'static,
 ) -> AudioStream {
     let (out_tx, out_rx) = mpsc::channel(1);
@@ -239,11 +274,12 @@ pub fn start(
         produce(pipeline.as_ref(), &speech, limits.max_ids, &unit_tx);
         drop(producer_permits);
     });
+    let drive_admission = admission.clone();
     tokio::spawn(async move {
-        let result = drive(connection, unit_rx, &out_tx, limits.lookahead).await;
+        let result = drive(connection, &drive_admission, unit_rx, &out_tx, limits.lookahead).await;
         let _ = out_tx.send(result.map_or_else(Output::Failed, |()| Output::End)).await;
     });
-    AudioStream { rx: out_rx, over: false, _permits: permits }
+    AudioStream { rx: out_rx, over: false, started: false, admission, _permits: permits }
 }
 
 /// The client went away; stop quietly.
@@ -259,6 +295,7 @@ async fn unless_gone<T>(out: &mpsc::Sender<Output>, work: impl Future<Output = T
 
 async fn drive(
     connection: Arc<Connection>,
+    admission: &Admission,
     mut units: mpsc::Receiver<Produced>,
     out: &mpsc::Sender<Output>,
     lookahead: usize,
@@ -306,8 +343,8 @@ async fn drive(
                         Ok(())
                     }
                     Produced::Unit(Unit::Speech(request, finish)) => {
-                        let priority = if speech_in_window == 0 { Priority::Waiting } else { Priority::Prefetch };
-                        match unless_gone(out, connection.submit(priority, &request)).await {
+                        let work = admission.work(speech_in_window == 0, request.ids.len());
+                        match unless_gone(out, connection.submit(&request, work)).await {
                             Ok(ticket) => {
                                 let mut ticket = ticket.map_err(StreamError::Synth)?;
                                 speech_in_window += 1;

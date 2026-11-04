@@ -115,7 +115,7 @@ async fn a_client_that_stops_reading_is_disconnected() {
 #[tokio::test]
 async fn keys_can_have_their_own_stream_limits() {
     let server = start(
-        |c| c.api_keys = vec![ApiKey { key: KEY.into(), max_streams: Some(1) }, "other-key".into()],
+        |c| c.api_keys = vec![ApiKey { key: KEY.into(), max_streams: Some(1), max_priority: None }, "other-key".into()],
         Arc::new(StubPipeline),
     )
     .await;

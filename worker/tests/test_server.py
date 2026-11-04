@@ -131,7 +131,7 @@ def test_batches_queued_requests(worker):
     while not synth.batches:
         pass
     for slot in range(1, SLOTS):
-        client.send(P.synthesize(slot, [1], 0, priority=slot % 2))
+        client.send(P.synthesize(slot, [1], 0, priority=slot % 3, waiting=slot % 2))
     synth.gate.set()
     seen = set()
     while len(seen) < SLOTS:

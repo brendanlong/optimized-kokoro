@@ -8,7 +8,7 @@ use hyper::body::Incoming;
 use hyper::{Request, Response};
 use kokoro_server::pipeline::{Chunk, Lang, Pipeline, PipelineError};
 use kokoro_server::protocol::worker_side::{self, FrontFrame, read_front};
-use kokoro_server::protocol::{FailCode, Hello};
+use kokoro_server::protocol::{FailCode, Hello, Priority};
 use kokoro_server::{Config, StubPipeline, Worker, http, serve};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -158,12 +158,13 @@ impl ScriptedWorker {
     }
 
     /// The next Synthesize: `(slot, priority, speed in hundredths, voice, ids)`.
-    pub async fn synthesize(&mut self) -> (u16, u8, u16, u16, Vec<u8>) {
+    pub async fn synthesize(&mut self) -> (u16, Priority, u16, u16, Vec<u8>) {
         loop {
             match self.next().await {
-                Event::Frame(FrontFrame::Synthesize { slot, priority, speed, voice, ids, style_len }) => {
+                Event::Frame(FrontFrame::Synthesize { slot, priority, waiting, speed, voice, ids, style_len }) => {
+                    assert!(waiting <= 1, "waiting is a flag");
                     self.style_lens.push(style_len);
-                    return (slot, priority, speed, voice, ids);
+                    return (slot, Priority { level: priority, waiting: waiting == 1 }, speed, voice, ids);
                 }
                 Event::Connected => continue,
                 other => panic!("expected a Synthesize frame, got {other:?}"),
@@ -177,8 +178,8 @@ impl ScriptedWorker {
     }
 }
 
-/// A worker that renders one request at a time, highest priority first, then oldest, and logs
-/// what it rendered.
+/// A worker that renders one request at a time, most urgent first (by level, then waiting before
+/// prefetch), then oldest, and logs what it rendered.
 pub struct AutoWorker {
     pub log: Arc<Mutex<Vec<Rendered>>>,
     pub most_queued: Arc<AtomicUsize>,
@@ -187,7 +188,7 @@ pub struct AutoWorker {
 #[derive(Debug, Clone)]
 pub struct Rendered {
     pub slot: u16,
-    pub priority: u8,
+    pub priority: Priority,
     pub first_id: u8,
     /// Other requests rendered between this one's arrival and its own rendering.
     pub waited: usize,
@@ -195,6 +196,11 @@ pub struct Rendered {
 
 impl AutoWorker {
     pub fn listen(path: &Path, render_time: Duration) -> Self {
+        Self::listen_with(path, move |_| render_time)
+    }
+
+    /// Like [`Self::listen`], taking `render_time(ids)` to render each request.
+    pub fn listen_with(path: &Path, render_time: impl Fn(&[u8]) -> Duration + Send + 'static) -> Self {
         let listener = UnixListener::bind(path).unwrap();
         let log = Arc::new(Mutex::new(Vec::new()));
         let most_queued = Arc::new(AtomicUsize::new(0));
@@ -204,7 +210,7 @@ impl AutoWorker {
             let (mut reader, mut writer) = stream.into_split();
             writer.write_all(&worker_side::hello(&hello())).await.unwrap();
             // (priority, arrival order, slot, ids, requests rendered before it arrived)
-            let queue = Arc::new(Mutex::new(Vec::<(u8, u64, u16, Vec<u8>, usize)>::new()));
+            let queue = Arc::new(Mutex::new(Vec::<(Priority, u64, u16, Vec<u8>, usize)>::new()));
             let wake = Arc::new(tokio::sync::Notify::new());
             let (q2, w2) = (queue.clone(), wake.clone());
             let (cancel_tx, mut cancel_rx) = mpsc::unbounded_channel::<u16>();
@@ -212,9 +218,10 @@ impl AutoWorker {
                 let mut arrivals = 0;
                 while let Ok(frame) = read_front(&mut reader).await {
                     match frame {
-                        FrontFrame::Synthesize { slot, priority, ids, .. } => {
+                        FrontFrame::Synthesize { slot, priority, waiting, ids, .. } => {
                             let rendered = log3.lock().unwrap().len();
                             let mut q = q2.lock().unwrap();
+                            let priority = Priority { level: priority, waiting: waiting == 1 };
                             q.push((priority, arrivals, slot, ids, rendered));
                             arrivals += 1;
                             most2.fetch_max(q.len(), Ordering::SeqCst);
@@ -240,14 +247,18 @@ impl AutoWorker {
                 }
                 let next = {
                     let mut q = queue.lock().unwrap();
-                    let best = q.iter().enumerate().min_by_key(|(_, (p, order, ..))| (*p, *order)).map(|(i, _)| i);
+                    let best = q
+                        .iter()
+                        .enumerate()
+                        .min_by_key(|(_, (p, order, ..))| (std::cmp::Reverse(*p), *order))
+                        .map(|(i, _)| i);
                     best.map(|i| q.remove(i))
                 };
                 let Some((priority, _, slot, ids, arrived)) = next else {
                     wake.notified().await;
                     continue;
                 };
-                tokio::time::sleep(render_time).await;
+                tokio::time::sleep(render_time(&ids)).await;
                 {
                     let mut log = log2.lock().unwrap();
                     let waited = log.len() - arrived;

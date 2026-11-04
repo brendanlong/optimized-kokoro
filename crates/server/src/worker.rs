@@ -15,12 +15,16 @@
 //! a violation), so memory is bounded by how many chunks can be in flight, which the request and
 //! lookahead limits fix. An [`AudioGauge`] counts what's held.
 //!
+//! Each slot also holds its chunk's [`Work`], which counts the chunk in its request's latency
+//! estimate until the reply arrives, and learns the cost per id from each Result
+//! (`crate::load`).
+//!
 //! A worker that doesn't say hello in time, makes no progress while it has work, or leaves any
 //! one slot outstanding for too long (while answering others), is disconnected.
 
+use crate::load::Work;
 use crate::protocol::{
-    self, Expected, FailCode, Hello, Priority, ReadError, Speed, Synthesize, WorkerFrame, encode_cancel,
-    encode_synthesize,
+    self, Expected, FailCode, Hello, ReadError, Speed, Synthesize, WorkerFrame, encode_cancel, encode_synthesize,
 };
 use std::collections::HashMap;
 use std::fmt;
@@ -117,6 +121,8 @@ struct Pending {
     reply: Option<Reply>,
     /// When the Synthesize was queued.
     submitted: Instant,
+    /// The chunk in its request's estimate.
+    work: Work,
 }
 
 struct State {
@@ -126,6 +132,9 @@ struct State {
     next_ticket: u64,
     /// When the worker last finished a frame, or was last given work while idle.
     last_progress: Instant,
+    /// When the worker last sent a Result, or was last given work while idle: a Result's busy
+    /// time is measured from here.
+    busy_since: Instant,
 }
 
 impl State {
@@ -177,6 +186,7 @@ impl Connection {
             free: (0..slots).rev().collect(),
             next_ticket: 0,
             last_progress: Instant::now(),
+            busy_since: Instant::now(),
         };
         Self {
             hello,
@@ -223,9 +233,9 @@ impl Connection {
             && usize::from(r.voice) < self.hello.voices.len()
     }
 
-    /// Queues a request on the worker, first waiting for a free slot. Dropping the future while
-    /// it waits takes no slot.
-    pub async fn submit(self: &Arc<Self>, priority: Priority, request: &SynthRequest) -> Result<Ticket, SynthError> {
+    /// Queues a request on the worker at `work`'s priority, first waiting for a free slot.
+    /// Dropping the future while it waits takes no slot. `work` stays counted until the reply.
+    pub async fn submit(self: &Arc<Self>, request: &SynthRequest, work: Work) -> Result<Ticket, SynthError> {
         if !self.valid(request) {
             return Err(SynthError::Unrenderable);
         }
@@ -238,7 +248,7 @@ impl Connection {
         let slot = state.free.pop().expect("a permit means a free slot");
         let frame = encode_synthesize(&Synthesize {
             slot,
-            priority,
+            priority: work.priority(),
             speed: request.speed,
             voice: request.voice,
             ids: &request.ids,
@@ -251,6 +261,7 @@ impl Connection {
         }
         if state.busy() == 1 {
             state.last_progress = Instant::now();
+            state.busy_since = Instant::now();
         }
         let ticket = state.next_ticket;
         state.next_ticket += 1;
@@ -259,7 +270,8 @@ impl Connection {
             speed: request.speed,
             max_chunk_samples: self.hello.max_chunk_samples,
         };
-        state.slots[usize::from(slot)] = Some(Pending { ticket, expected, reply: Some(tx), submitted: Instant::now() });
+        state.slots[usize::from(slot)] =
+            Some(Pending { ticket, expected, reply: Some(tx), submitted: Instant::now(), work });
         drop(state);
         Ok(Ticket { slot, ticket, connection: self.clone(), reply: rx, finished: false })
     }
@@ -301,7 +313,11 @@ impl Connection {
         match frame {
             WorkerFrame::Hello(_) => Err("second hello".into()),
             WorkerFrame::Result { slot, durations, pcm } => {
-                if let Some(reply) = self.finish(&mut state, slot)?.reply {
+                let pending = self.finish(&mut state, slot)?;
+                let now = Instant::now();
+                pending.work.rendered(now.saturating_duration_since(state.busy_since));
+                state.busy_since = now;
+                if let Some(reply) = pending.reply {
                     let held = self.gauge.hold(2 * pcm.len());
                     let _ = reply.send(Ok(Synthesized { pcm, durations, held }));
                 }
@@ -311,6 +327,11 @@ impl Connection {
                 let cancelled = state.pending(slot).is_some_and(|p| p.reply.is_none());
                 if code == FailCode::Cancelled && !cancelled {
                     return Err(format!("slot {slot} reported cancelled, but it wasn't"));
+                }
+                // A cancelled request never ran; one that failed did, for a time nobody should be
+                // charged for, so the next Result's busy time starts now.
+                if code != FailCode::Cancelled {
+                    state.busy_since = Instant::now();
                 }
                 if let Some(reply) = self.finish(&mut state, slot)?.reply {
                     let error = match code {

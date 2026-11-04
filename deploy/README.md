@@ -116,11 +116,12 @@ Clients' keys are named, in `/srv/optimized-kokoro/secrets/keys` (root only); `s
 ```sh
 sudo deploy/keys.sh list                              # names and limits, never the keys
 sudo deploy/keys.sh add lion-reader --max-streams 8   # prints the new key once
+sudo deploy/keys.sh add batch-jobs --max-priority 50   # its requests can only go below the default (128)
 sudo deploy/keys.sh rename imported-1 clawed-abode
 sudo deploy/keys.sh remove old-client
 ```
 
-`--max-streams` caps the speech requests a key may have in progress (default: the server's `max_streams_per_key`). `add` and `remove` recreate only the server container (a second or two; the worker keeps running) and put the old keys back if it doesn't come up healthy. Keys imported by `install.sh --keys-from` are named `imported-1`, `imported-2`, …; a new install's key is `default`. An install from before `keys` existed gets its keys named that way on the first `keys.sh` run.
+`--max-streams` caps the speech requests a key may have in progress (default: the server's `max_streams_per_key`, 16). `--max-priority` (0-255) is the highest `priority` the key's requests may ask for; a request above it gets a 400, and a request without one runs at the lower of 128 and this (default: the server's `max_priority_per_key`, 255). The demo page's key is fixed at 4 streams and priority 64, below the clients' default (an existing install's `server.toml` gets the priority cap at its next `keys.sh` change). In `secrets/keys` each line is `NAME<tab>KEY<tab>MAX_STREAMS<tab>MAX_PRIORITY`, `-` for a default; lines written before `MAX_PRIORITY` existed have three fields and keep working, with the default. `add` and `remove` recreate only the server container (a second or two; the worker keeps running) and put the old keys back if it doesn't come up healthy. Keys imported by `install.sh --keys-from` are named `imported-1`, `imported-2`, …; a new install's key is `default`. An install from before `keys` existed gets its keys named that way on the first `keys.sh` run.
 
 ## Cloudflare Tunnel (optional)
 

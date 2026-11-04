@@ -5,8 +5,11 @@ mod common;
 
 use common::*;
 use kokoro_server::StubPipeline;
+use kokoro_server::load::Work;
 use kokoro_server::protocol::worker_side::{self, FrontFrame};
 use kokoro_server::protocol::{self, FailCode, Priority, Speed};
+
+const WAITING: Priority = Priority { level: 128, waiting: true };
 use kokoro_server::worker::SynthRequest;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -167,12 +170,12 @@ async fn a_slot_is_reused_only_after_its_reply() {
     let mut worker = ScriptedWorker::listen(&server.socket, worker_side::hello(&hello()));
     let connection = server.worker.connected().await;
     let request = SynthRequest { speed: Speed::NORMAL, voice: 0, ids: vec![43, 44], style_len: 2 };
-    let first = connection.submit(Priority::Waiting, &request).await.unwrap();
+    let first = connection.submit(&request, Work::untracked(WAITING, request.ids.len())).await.unwrap();
     let (slot, ..) = worker.synthesize().await;
     let waiting = tokio::spawn({
         let connection = connection.clone();
         let request = request.clone();
-        async move { connection.submit(Priority::Waiting, &request).await }
+        async move { connection.submit(&request, Work::untracked(WAITING, request.ids.len())).await }
     });
     assert_eq!(worker.quiet(Duration::from_millis(200)).await, None, "a second request while the slot is busy");
     worker.send(respond(slot, &request.ids));
@@ -392,7 +395,7 @@ async fn maximal_audio_at_the_chunk_cap_is_accepted() {
     let mut worker = ScriptedWorker::listen(&server.socket, worker_side::hello(&hello()));
     let connection = server.worker.connected().await;
     let request = SynthRequest { speed: Speed::MIN, voice: 0, ids: vec![43; 510], style_len: 510 };
-    let mut ticket = connection.submit(Priority::Waiting, &request).await.unwrap();
+    let mut ticket = connection.submit(&request, Work::untracked(WAITING, request.ids.len())).await.unwrap();
     let (slot, ..) = worker.synthesize().await;
     let cap = Speed::MIN.chunk_cap(hello().max_chunk_samples);
     let durations = durations_for(510, cap, Speed::MIN.max_duration());
