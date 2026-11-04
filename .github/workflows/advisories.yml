@@ -1,0 +1,33 @@
+name: Advisories
+
+# RustSec advisories for the Cargo.lock on main: on every push to main and daily, since a new
+# advisory can appear without any change here. Not on other PRs (ci.yml checks the rest of deny.toml
+# there), so an advisory fails main's status and this workflow's runs, not unrelated PRs.
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+  # And on PRs that change this workflow, to test them.
+  pull_request:
+    paths: ['.github/workflows/advisories.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  advisories:
+    name: cargo deny (advisories)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Rust is only needed for `cargo metadata`; the runner's preinstalled toolchain does.
+      - uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 # v2.90.0
+        with:
+          tool: cargo-deny@0.20.2
+      - name: cargo deny check advisories
+        run: cargo deny --locked check -D warnings advisories

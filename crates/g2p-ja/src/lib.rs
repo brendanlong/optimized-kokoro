@@ -55,6 +55,16 @@ pub fn default_dictionary() -> Result<Arc<Dictionary>, dict::Error> {
     .map_err(dict::Error::Format)
 }
 
+/// For tests that need UniDic: prints why they skip, or panics with it when `KOKORO_REQUIRE_UNIDIC`
+/// is `1` (CI sets it), so a missing or broken dictionary can't pass as a skip.
+#[doc(hidden)]
+pub fn skip_without_dictionary(why: impl std::fmt::Display) {
+    if std::env::var_os("KOKORO_REQUIRE_UNIDIC").is_some_and(|v| v == "1") {
+        panic!("KOKORO_REQUIRE_UNIDIC=1, but {why}");
+    }
+    eprintln!("skipping: {why}");
+}
+
 static WORDS: LazyLock<cutlet::Words> = LazyLock::new(cutlet::Words::bundled);
 
 /// `JAG2P()`. It keeps no state between calls.

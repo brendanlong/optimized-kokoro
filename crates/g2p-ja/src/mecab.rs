@@ -278,7 +278,8 @@ pub fn analyze_observed<'a>(
         enext: NONE,
     };
     let observe = observe.map(std::cell::RefCell::new);
-    let mut lattice = Lattice { dict, observe, text: bytes, nodes: vec![bos], end_heads: vec![NONE; len + 1], made: Vec::new() };
+    let mut lattice =
+        Lattice { dict, observe, text: bytes, nodes: vec![bos], end_heads: vec![NONE; len + 1], made: Vec::new() };
     lattice.end_heads[0] = 0;
     for pos in 0..len {
         if lattice.end_heads[pos] != NONE {

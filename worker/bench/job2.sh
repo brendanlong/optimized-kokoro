@@ -1,7 +1,7 @@
 #!/bin/bash
 # gpuc job: padding-policy sweep (host, faster to compile), then gVisor cache seeding.
 set -uo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit
 STEPS=bench CONFIGS="
 host-b8-s025 host --max-batch 8 --pad-slack 0.25
 host-b8-s1 host --max-batch 8 --pad-slack 1

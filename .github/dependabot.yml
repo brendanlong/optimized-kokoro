@@ -1,0 +1,80 @@
+# https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+#
+# Weekly, one grouped PR per ecosystem, each version at least 7 days old (time for others to find
+# security problems: https://daniakash.com/posts/simplest-supply-chain-defense/).
+
+version: 2
+updates:
+  - package-ecosystem: 'cargo'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+    cooldown:
+      default-days: 7
+    groups:
+      cargo-dependencies:
+        patterns: ['*']
+      cargo-security:
+        applies-to: security-updates
+        patterns: ['*']
+
+  # The worker pins torch, triton and transformers to the deployed Kokoro-FastAPI image's versions
+  # (worker/pyproject.toml), so its PRs need a look at speed and numerics before merging.
+  - package-ecosystem: 'uv'
+    directory: '/worker'
+    schedule:
+      interval: 'weekly'
+    cooldown:
+      default-days: 7
+    groups:
+      uv-dependencies:
+        patterns: ['*']
+      uv-security:
+        applies-to: security-updates
+        patterns: ['*']
+
+  - package-ecosystem: 'npm'
+    directory: '/demo'
+    schedule:
+      interval: 'weekly'
+    cooldown:
+      default-days: 7
+    groups:
+      npm-dependencies:
+        patterns: ['*']
+      npm-security:
+        applies-to: security-updates
+        patterns: ['*']
+
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns: ['*']
+
+  # Base images in the Containerfiles' FROM lines (tag and digest). A new Rust image needs
+  # RUST_TOOLCHAIN in .github/workflows/ci.yml bumped with it.
+  - package-ecosystem: 'docker'
+    directories: ['/deploy', '/demo', '/worker']
+    schedule:
+      interval: 'weekly'
+    cooldown:
+      default-days: 7
+    groups:
+      docker:
+        patterns: ['*']
+
+  # The cloudflared image in deploy/compose.yaml.
+  - package-ecosystem: 'docker-compose'
+    directory: '/deploy'
+    schedule:
+      interval: 'weekly'
+    cooldown:
+      default-days: 7
+    groups:
+      docker-compose:
+        patterns: ['*']

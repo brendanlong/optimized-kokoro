@@ -2,8 +2,8 @@
 
 pub const VALID_TLDS: &[&str] = &[
     "com", "org", "net", "edu", "gov", "mil", "int", "biz", "info", "name", "pro", "coop", "museum", "travel", "jobs",
-    "mobi", "tel", "asia", "cat", "xxx", "aero", "arpa", "bg", "br", "ca", "cn", "de", "es", "eu", "fr", "in", "it", "jp",
-    "mx", "nl", "ru", "uk", "us", "io", "co",
+    "mobi", "tel", "asia", "cat", "xxx", "aero", "arpa", "bg", "br", "ca", "cn", "de", "es", "eu", "fr", "in", "it",
+    "jp", "mx", "nl", "ru", "uk", "us", "io", "co",
 ];
 
 pub const VALID_UNITS: &[(&str, &str)] = &[
@@ -96,7 +96,8 @@ pub const SYMBOL_REPLACEMENTS: &[(&str, &str)] = &[
     ("+", " plus "),
 ];
 
-pub const MONEY_UNITS: &[(char, &str, &str)] = &[('$', "dollar", "cent"), ('£', "pound", "pence"), ('€', "euro", "cent")];
+pub const MONEY_UNITS: &[(char, &str, &str)] =
+    &[('$', "dollar", "cent"), ('£', "pound", "pence"), ('€', "euro", "cent")];
 
 pub fn unit(key: &str) -> Option<&'static str> {
     VALID_UNITS.iter().find(|(k, _)| *k == key).map(|(_, v)| *v)

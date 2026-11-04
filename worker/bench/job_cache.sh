@@ -2,7 +2,7 @@
 # gpuc job: export a compile cache in its own run, then start gVisor workers seeded from it and not,
 # under run.sh's default resource limits, each followed by a short load run.
 set -uo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit
 mkdir -p results
 MODELS=${GPUC_DATA_DIR:-$HOME/.cache}/kokoro-worker-models
 FLAGS=${FLAGS:---max-batch 8}
@@ -25,6 +25,7 @@ start() {  # label, extra env...
         > "results/$label.worker.log" 2>&1 &
     uv run --no-sync python bench/load.py "results/sock-$label/worker.sock" "$MODELS/config.json" \
         --concurrency 1 16 --requests 200 --json "results/$label.json" 2>&1 | tee "results/$label.load.txt"
+    # shellcheck disable=SC2012  # the first match of a glob of cgroup scope names, which are plain
     f=$(ls -d /sys/fs/cgroup/user.slice/user-"$(id -u)".slice/user@"$(id -u)".service/app.slice/kw-"$label"-*.scope 2> /dev/null | head -1)
     [ -n "$f" ] && echo "kw-$label memory.peak $(($(cat "$f/memory.peak") >> 20)) MiB" | tee -a "results/$label.load.txt"
     podman stop -t 5 "kw-$label" > /dev/null 2>&1
@@ -34,4 +35,4 @@ start() {  # label, extra env...
 
 start cache-seeded KOKORO_CACHE_SEED="$seed"
 rm -rf "$seed"
-echo done
+echo "done"

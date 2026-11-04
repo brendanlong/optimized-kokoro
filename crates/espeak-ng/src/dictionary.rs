@@ -50,15 +50,8 @@ static IPA1: [u16; 96] = [
     0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77, 0x78, 0x79, 0x7a, 0x7b, 0x7c, 0x7d, 0x303, 0x7f,
 ];
 
-pub(crate) const STRESS_PHONEMES: [u8; 7] = [
-    PHON_STRESS_D,
-    PHON_STRESS_U,
-    PHON_STRESS_2,
-    PHON_STRESS_3,
-    PHON_STRESS_P,
-    PHON_STRESS_P2,
-    PHON_STRESS_TONIC,
-];
+pub(crate) const STRESS_PHONEMES: [u8; 7] =
+    [PHON_STRESS_D, PHON_STRESS_U, PHON_STRESS_2, PHON_STRESS_3, PHON_STRESS_P, PHON_STRESS_P2, PHON_STRESS_TONIC];
 
 /// `MatchRecord`. `phonemes` is an offset into the dictionary, `None` for `""`.
 #[derive(Clone, Copy, Default)]
@@ -208,7 +201,14 @@ impl Espeak {
     }
 
     /// `WritePhMnemonic`, appending to `out`. `plist` selects `phoneme_list[ix]`.
-    pub(crate) fn write_ph_mnemonic(&mut self, out: &mut Vec<u8>, ph: &PhonemeTab, plist: Option<usize>, use_ipa: bool, flags: Option<&mut i32>) {
+    pub(crate) fn write_ph_mnemonic(
+        &mut self,
+        out: &mut Vec<u8>,
+        ph: &PhonemeTab,
+        plist: Option<usize>,
+        use_ipa: bool,
+        flags: Option<&mut i32>,
+    ) {
         if ph.code == PHON_END_WORD {
             return;
         }
@@ -294,7 +294,9 @@ impl Espeak {
             let ph = plist.ph.unwrap_or_default();
             let mut flags = 0;
             self.write_ph_mnemonic(&mut phon_buf2, &ph, Some(ix), use_ipa, Some(&mut flags));
-            if plist.newword & PHLIST_START_OF_WORD != 0 && plist.newword & (PHLIST_START_OF_SENTENCE | PHLIST_START_OF_CLAUSE) == 0 {
+            if plist.newword & PHLIST_START_OF_WORD != 0
+                && plist.newword & (PHLIST_START_OF_SENTENCE | PHLIST_START_OF_CLAUSE) == 0
+            {
                 buf.push(b' ');
             }
             if (plist.newword == 0 || separate_phonemes == b' ' as i32) && separate_phonemes != 0 && ix > 1 {
@@ -325,7 +327,12 @@ impl Espeak {
             while at(&phon_buf2, p) != 0 {
                 let (c, n) = utf8_in(&phon_buf2, p);
                 p += n;
-                if use_tie != 0 && count > 0 && (flags & (1 << (count - 1))) == 0 && !(0x2b0..=0x36f).contains(&c) && ucd::isalpha(c) {
+                if use_tie != 0
+                    && count > 0
+                    && (flags & (1 << (count - 1))) == 0
+                    && !(0x2b0..=0x36f).contains(&c)
+                    && ucd::isalpha(c)
+                {
                     push_utf8(&mut buf, use_tie);
                 }
                 push_utf8(&mut buf, c);
@@ -436,7 +443,15 @@ impl Espeak {
     }
 
     /// `GetVowelStress`. `phonemes` is rewritten in place without its stress marks.
-    pub(crate) fn get_vowel_stress(&self, tr: Tr, phonemes: &mut [u8], vowel_stress: &mut [i8; N_WORD_PHONEMES / 2], vowel_count: &mut i32, stressed_syllable: &mut i32, control: i32) -> i32 {
+    pub(crate) fn get_vowel_stress(
+        &self,
+        tr: Tr,
+        phonemes: &mut [u8],
+        vowel_stress: &mut [i8; N_WORD_PHONEMES / 2],
+        vowel_count: &mut i32,
+        stressed_syllable: &mut i32,
+        control: i32,
+    ) -> i32 {
         let mut count: i32 = 1;
         let mut max_stress: i32 = -1;
         let mut stress: i32 = -1;
@@ -535,7 +550,15 @@ impl Espeak {
     }
 
     /// `SetWordStress`: guesses the word's stress pattern; `output` is input and output.
-    pub(crate) fn set_word_stress(&mut self, tr: Tr, output: &mut [u8], out_pos: isize, dictionary_flags: Option<[u32; 2]>, tonic: i32, control: i32) {
+    pub(crate) fn set_word_stress(
+        &mut self,
+        tr: Tr,
+        output: &mut [u8],
+        out_pos: isize,
+        dictionary_flags: Option<[u32; 2]>,
+        tonic: i32,
+        control: i32,
+    ) {
         const CONSONANT_TYPES: [u8; 16] = [0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0];
         let mut tonic = tonic;
         let mut vowel_stress = [0i8; N_WORD_PHONEMES / 2];
@@ -571,7 +594,8 @@ impl Espeak {
         }
 
         let mut vowel_count = 0;
-        let max_stress_input = self.get_vowel_stress(tr, &mut phonetic, &mut vowel_stress, &mut vowel_count, &mut stressed_syllable, 1);
+        let max_stress_input =
+            self.get_vowel_stress(tr, &mut phonetic, &mut vowel_stress, &mut vowel_count, &mut stressed_syllable, 1);
         let mut max_stress = max_stress_input;
         if max_stress < 0 && dictionary_flags.is_some() {
             max_stress = STRESS_IS_DIMINISHED;
@@ -661,7 +685,9 @@ impl Espeak {
                                 }
                             }
                         }
-                        if stressflags & S_FINAL_LONG != 0 && vs(&vowel_length, vowel_count - 1) > vs(&vowel_length, vowel_count - 2) {
+                        if stressflags & S_FINAL_LONG != 0
+                            && vs(&vowel_length, vowel_count - 1) > vs(&vowel_length, vowel_count - 2)
+                        {
                             stressed_syllable = vowel_count - 1;
                         }
                         let v = vs(&vowel_stress, stressed_syllable);
@@ -676,7 +702,8 @@ impl Espeak {
                         stressed_syllable = 1;
                     }
                     if vs(&vowel_stress, stressed_syllable) < 0
-                        && (vs(&vowel_stress, stressed_syllable - 1) < STRESS_IS_PRIMARY || vs(&vowel_stress, stressed_syllable + 1) < STRESS_IS_PRIMARY)
+                        && (vs(&vowel_stress, stressed_syllable - 1) < STRESS_IS_PRIMARY
+                            || vs(&vowel_stress, stressed_syllable + 1) < STRESS_IS_PRIMARY)
                     {
                         set(&mut vowel_stress, stressed_syllable, max_stress);
                     }
@@ -841,7 +868,11 @@ impl Espeak {
                     vowel_stress[1] = STRESS_IS_SECONDARY as i8;
                 }
             }
-            if stressflags & S_INITIAL_2 != 0 && (vowel_stress[1] as i32) < STRESS_IS_DIMINISHED && vowel_count > 3 && vowel_stress[2] as i32 >= STRESS_IS_PRIMARY {
+            if stressflags & S_INITIAL_2 != 0
+                && (vowel_stress[1] as i32) < STRESS_IS_DIMINISHED
+                && vowel_count > 3
+                && vowel_stress[2] as i32 >= STRESS_IS_PRIMARY
+            {
                 vowel_stress[1] = STRESS_IS_SECONDARY as i8;
             }
         }
@@ -856,7 +887,8 @@ impl Espeak {
                     done = true;
                     stress = STRESS_IS_SECONDARY;
                 } else if vs(&vowel_stress, v - 1) <= STRESS_IS_UNSTRESSED
-                    && (vs(&vowel_stress, v + 1) <= STRESS_IS_UNSTRESSED || (stress == STRESS_IS_PRIMARY && vs(&vowel_stress, v + 1) <= STRESS_IS_NOT_STRESSED))
+                    && (vs(&vowel_stress, v + 1) <= STRESS_IS_UNSTRESSED
+                        || (stress == STRESS_IS_PRIMARY && vs(&vowel_stress, v + 1) <= STRESS_IS_NOT_STRESSED))
                 {
                     if stress == STRESS_IS_SECONDARY && stressflags & S_NO_AUTO_2 != 0 {
                         continue;
@@ -867,7 +899,11 @@ impl Espeak {
                             continue;
                         }
                     }
-                    if v > 1 && stressflags & S_2_TO_HEAVY != 0 && syllable_weight[v as usize] == 0 && vs(&syllable_weight, v + 1) > 0 {
+                    if v > 1
+                        && stressflags & S_2_TO_HEAVY != 0
+                        && syllable_weight[v as usize] == 0
+                        && vs(&syllable_weight, v + 1) > 0
+                    {
                         continue;
                     }
                     set(&mut vowel_stress, v, stress);
@@ -885,7 +921,8 @@ impl Espeak {
         }
 
         if unstressed_word && tonic < 0 {
-            tonic = if vowel_count <= 2 { self.t(tr).langopts.unstressed_wd1 } else { self.t(tr).langopts.unstressed_wd2 };
+            tonic =
+                if vowel_count <= 2 { self.t(tr).langopts.unstressed_wd1 } else { self.t(tr).langopts.unstressed_wd2 };
         }
 
         max_stress = STRESS_IS_DIMINISHED;
@@ -964,7 +1001,8 @@ impl Espeak {
                     max_stress = vs(&vowel_stress, v);
                 }
                 if next == PHON_LENGTHEN && (opt_length & 1) != 0 {
-                    let shorten = if opt_length & 0x10 != 0 { v != max_stress_posn } else { v_stress < STRESS_IS_PRIMARY };
+                    let shorten =
+                        if opt_length & 0x10 != 0 { v != max_stress_posn } else { v_stress < STRESS_IS_PRIMARY };
                     if shorten {
                         p += 1;
                     }
@@ -1014,7 +1052,19 @@ impl Espeak {
 
     /// `MatchRule`: scores the rules of one group against the word at `w[*word]`.
     #[allow(clippy::too_many_arguments)]
-    fn match_rule(&mut self, tr: Tr, dict: &Dict, w: &mut [u8], word: &mut isize, word_start: isize, group_length: i32, rule: Option<usize>, match_out: &mut MatchRecord, word_flags: u32, dict_flags: u32) {
+    fn match_rule(
+        &mut self,
+        tr: Tr,
+        dict: &Dict,
+        w: &mut [u8],
+        word: &mut isize,
+        word_start: isize,
+        group_length: i32,
+        rule: Option<usize>,
+        match_out: &mut MatchRecord,
+        word_flags: u32,
+        dict_flags: u32,
+    ) {
         let d = &dict.data;
         let Some(rule0) = rule else {
             match_out.points = 0;
@@ -1163,7 +1213,9 @@ impl Espeak {
                                     }
                                 }
                                 RULE_NOTVOWEL => {
-                                    if self.is_letter(tr, letter_w, 0) || (letter_w == b' ' as i32 && word_flags & FLAG_SUFFIX_VOWEL != 0) {
+                                    if self.is_letter(tr, letter_w, 0)
+                                        || (letter_w == b' ' as i32 && word_flags & FLAG_SUFFIX_VOWEL != 0)
+                                    {
                                         failed = 1;
                                     } else {
                                         add_points = 20 - distance_right;
@@ -1216,7 +1268,17 @@ impl Espeak {
                                             failed = 1;
                                         }
                                     } else if (command & 0xf0) == 0x20 || command == DOLLAR_LIST {
-                                        self.dollar_rule(tr, w, *word, word_start, consumed, group_length, command, &mut failed, &mut add_points);
+                                        self.dollar_rule(
+                                            tr,
+                                            w,
+                                            *word,
+                                            word_start,
+                                            consumed,
+                                            group_length,
+                                            command,
+                                            &mut failed,
+                                            &mut add_points,
+                                        );
                                     }
                                 }
                                 b'-' => {
@@ -1285,7 +1347,13 @@ impl Espeak {
                                     let mut lw = letter_w;
                                     while lw != rule_w && lw != RULE_SPACE as i32 && lw != 0 && g_bytes == -1 {
                                         if rule_w == RULE_LETTERGP2 as i32 {
-                                            g_bytes = self.is_letter_group(dict, w, p, letter_group_no(at(d, rule + 1)), false);
+                                            g_bytes = self.is_letter_group(
+                                                dict,
+                                                w,
+                                                p,
+                                                letter_group_no(at(d, rule + 1)),
+                                                false,
+                                            );
                                         }
                                         p2 = p;
                                         let (c, n) = utf8_in(w, p);
@@ -1316,9 +1384,14 @@ impl Espeak {
                                     }
                                 }
                                 RULE_ENDING => {
-                                    let end_type = ((at(d, rule) as u32) << 16) + (((at(d, rule + 1) & 0x7f) as u32) << 8) + (at(d, rule + 2) & 0x7f) as u32;
+                                    let end_type = ((at(d, rule) as u32) << 16)
+                                        + (((at(d, rule + 1) & 0x7f) as u32) << 8)
+                                        + (at(d, rule + 2) & 0x7f) as u32;
                                     let t = self.t(tr);
-                                    if t.word_vowel_count == 0 && (end_type & SUFX_P) == 0 && (t.langopts.param[LOPT_SUFFIX] & 1) != 0 {
+                                    if t.word_vowel_count == 0
+                                        && (end_type & SUFX_P) == 0
+                                        && (t.langopts.param[LOPT_SUFFIX] & 1) != 0
+                                    {
                                         failed = 1;
                                     } else {
                                         m.end_type = end_type;
@@ -1419,7 +1492,17 @@ impl Espeak {
                                     let command = at(d, rule);
                                     rule += 1;
                                     if command == DOLLAR_LIST || (command & 0xf0) == 0x20 {
-                                        self.dollar_rule(tr, w, *word, word_start, consumed, group_length, command, &mut failed, &mut add_points);
+                                        self.dollar_rule(
+                                            tr,
+                                            w,
+                                            *word,
+                                            word_start,
+                                            consumed,
+                                            group_length,
+                                            command,
+                                            &mut failed,
+                                            &mut add_points,
+                                        );
                                     }
                                 }
                                 RULE_SYLLABLE => {
@@ -1510,7 +1593,13 @@ impl Espeak {
                                         p2 = p;
                                         p -= 1;
                                         if r == RULE_LETTERGP2 {
-                                            g_bytes = self.is_letter_group(dict, w, p2, letter_group_no(at(d, rule + 1)), true);
+                                            g_bytes = self.is_letter_group(
+                                                dict,
+                                                w,
+                                                p2,
+                                                letter_group_no(at(d, rule + 1)),
+                                                true,
+                                            );
                                         }
                                     }
                                     if at(w, p) == r {
@@ -1569,7 +1658,17 @@ impl Espeak {
     /// `TranslateRules`: spelling-to-sound rules for the word at `w[p_start]`, appended to
     /// `phonemes`; any standard prefix or suffix goes to `end_phonemes`.
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn translate_rules(&mut self, tr: Tr, w: &mut [u8], p_start: isize, phonemes: &mut [u8], ph_size: usize, mut end_phonemes: Option<&mut [u8]>, word_flags: u32, mut dict_flags: Option<&mut [u32; 2]>) -> u32 {
+    pub(crate) fn translate_rules(
+        &mut self,
+        tr: Tr,
+        w: &mut [u8],
+        p_start: isize,
+        phonemes: &mut [u8],
+        ph_size: usize,
+        mut end_phonemes: Option<&mut [u8]>,
+        word_flags: u32,
+        mut dict_flags: Option<&mut [u32; 2]>,
+    ) -> u32 {
         let Some(dict) = self.t(tr).dict.clone() else { return 0 };
         let d = &dict.data;
         let mut any_alpha = 0;
@@ -1636,7 +1735,18 @@ impl Espeak {
             let offset_ix = wc - self.t(tr).letter_bits_offset;
             if (0..128).contains(&offset_ix) {
                 if let Some(g3) = dict.groups3[offset_ix as usize] {
-                    self.match_rule(tr, &dict, w, &mut p, p_start, wc_bytes as i32, Some(g3), &mut match1, word_flags, dict_flags0);
+                    self.match_rule(
+                        tr,
+                        &dict,
+                        w,
+                        &mut p,
+                        p_start,
+                        wc_bytes as i32,
+                        Some(g3),
+                        &mut match1,
+                        word_flags,
+                        dict_flags0,
+                    );
                     found = true;
                 }
             }
@@ -1649,11 +1759,33 @@ impl Espeak {
                     if dict.groups2_name.get(g) == Some(&c12) {
                         found = true;
                         let mut p2 = p;
-                        self.match_rule(tr, &dict, w, &mut p2, p_start, 2, dict.groups2.get(g).copied(), &mut match2, word_flags, dict_flags0);
+                        self.match_rule(
+                            tr,
+                            &dict,
+                            w,
+                            &mut p2,
+                            p_start,
+                            2,
+                            dict.groups2.get(g).copied(),
+                            &mut match2,
+                            word_flags,
+                            dict_flags0,
+                        );
                         if match2.points > 0 {
                             match2.points += 35;
                         }
-                        self.match_rule(tr, &dict, w, &mut p, p_start, 1, dict.groups1[c as usize], &mut match1, word_flags, dict_flags0);
+                        self.match_rule(
+                            tr,
+                            &dict,
+                            w,
+                            &mut p,
+                            p_start,
+                            1,
+                            dict.groups1[c as usize],
+                            &mut match1,
+                            word_flags,
+                            dict_flags0,
+                        );
                         if match2.points >= match1.points {
                             match1 = match2;
                             p = p2;
@@ -1664,9 +1796,31 @@ impl Espeak {
 
             if !found {
                 if dict.groups1[c as usize].is_some() {
-                    self.match_rule(tr, &dict, w, &mut p, p_start, 1, dict.groups1[c as usize], &mut match1, word_flags, dict_flags0);
+                    self.match_rule(
+                        tr,
+                        &dict,
+                        w,
+                        &mut p,
+                        p_start,
+                        1,
+                        dict.groups1[c as usize],
+                        &mut match1,
+                        word_flags,
+                        dict_flags0,
+                    );
                 } else {
-                    self.match_rule(tr, &dict, w, &mut p, p_start, 0, dict.groups1[0], &mut match1, word_flags, dict_flags0);
+                    self.match_rule(
+                        tr,
+                        &dict,
+                        w,
+                        &mut p,
+                        p_start,
+                        0,
+                        dict.groups1[0],
+                        &mut match1,
+                        word_flags,
+                        dict_flags0,
+                    );
                     if match1.points == 0 && (self.option_sayas & 0x10) == 0 {
                         let (letter, nb) = utf8_in(w, p - 1);
                         n = (nb - 1) as usize;
@@ -1707,7 +1861,9 @@ impl Espeak {
                                 if restarts > N_WORD_BYTES * 4 {
                                     break;
                                 }
-                                if self.t(tr).langopts.param[LOPT_DIERESES] != 0 && lookupwchar(&DIERESES_LIST, letter) > 0 {
+                                if self.t(tr).langopts.param[LOPT_DIERESES] != 0
+                                    && lookupwchar(&DIERESES_LIST, letter) > 0
+                                {
                                     p = p2;
                                     continue;
                                 }
@@ -1888,7 +2044,18 @@ impl Espeak {
     /// following words, for multi-word entries), in buffer `src`. Returns where the matched
     /// text ends in `src`.
     #[allow(clippy::too_many_arguments)]
-    fn lookup_dict2(&mut self, tr: Tr, word: &[u8], src: &[u8], word2: isize, in_clause: bool, phonetic: &mut [u8], flags: &mut [u32; 2], end_flags: u32, wtab: Option<&[WordTab]>) -> Found {
+    fn lookup_dict2(
+        &mut self,
+        tr: Tr,
+        word: &[u8],
+        src: &[u8],
+        word2: isize,
+        in_clause: bool,
+        phonetic: &mut [u8],
+        flags: &mut [u32; 2],
+        end_flags: u32,
+        wtab: Option<&[WordTab]>,
+    ) -> Found {
         let dict = self.t(tr).dict.clone()?;
         let d = &dict.data;
         let wflags = wtab.and_then(|w| w.first()).map_or(0, |w| w.flags);
@@ -1909,7 +2076,9 @@ impl Espeak {
 
         while at(d, p) != 0 {
             let next = p + at(d, p) as isize;
-            if (at(d, p + 1) & 0x7f) as usize != wlen || (0..(wlen & 0x3f) as isize).any(|k| at(word, k) != at(d, p + 2 + k)) {
+            if (at(d, p + 1) & 0x7f) as usize != wlen
+                || (0..(wlen & 0x3f) as isize).any(|k| at(word, k) != at(d, p + 2 + k))
+            {
                 p = next;
                 continue;
             }
@@ -2019,19 +2188,27 @@ impl Espeak {
             if (dictionary_flags & FLAG_NEEDS_DOT) != 0 && (wflags & FLAG_HAS_DOT) == 0 {
                 continue;
             }
-            if (dictionary_flags2 & FLAG_ATEND) != 0 && lookup_symbol == 0 && self.before_clause_end(in_clause, word_end) {
+            if (dictionary_flags2 & FLAG_ATEND) != 0
+                && lookup_symbol == 0
+                && self.before_clause_end(in_clause, word_end)
+            {
                 continue;
             }
             if (dictionary_flags2 & FLAG_ATSTART) != 0 && (wflags & FLAG_FIRST_WORD) == 0 {
                 continue;
             }
-            if (dictionary_flags2 & FLAG_SENTENCE) != 0 && (self.t(Tr::Main).clause_terminator & CLAUSE_TYPE_SENTENCE) == 0 {
+            if (dictionary_flags2 & FLAG_SENTENCE) != 0
+                && (self.t(Tr::Main).clause_terminator & CLAUSE_TYPE_SENTENCE) == 0
+            {
                 continue;
             }
             if dictionary_flags2 & FLAG_VERB != 0 {
                 let t = self.t(tr);
                 if t.expect_verb != 0 || (t.expect_verb_s != 0 && (end_flags & FLAG_SUFX_S) != 0) {
-                    if t.translator_name == l2(b'e', b'n') && (t.prev_dict_flags[0] & FLAG_ALT7_TRANS) != 0 && (end_flags & FLAG_SUFX_S) != 0 {
+                    if t.translator_name == l2(b'e', b'n')
+                        && (t.prev_dict_flags[0] & FLAG_ALT7_TRANS) != 0
+                        && (end_flags & FLAG_SUFX_S) != 0
+                    {
                         continue;
                     }
                 } else {
@@ -2047,7 +2224,10 @@ impl Espeak {
             if (dictionary_flags2 & FLAG_NATIVE) != 0 && tr != Tr::Main {
                 continue;
             }
-            if (dictionary_flags & FLAG_ALT2_TRANS) != 0 && self.t(tr).translator_name == l2(b'h', b'u') && (self.t(tr).prev_dict_flags[0] & FLAG_ALT_TRANS) == 0 {
+            if (dictionary_flags & FLAG_ALT2_TRANS) != 0
+                && self.t(tr).translator_name == l2(b'h', b'u')
+                && (self.t(tr).prev_dict_flags[0] & FLAG_ALT_TRANS) == 0
+            {
                 continue;
             }
 
@@ -2081,7 +2261,18 @@ impl Espeak {
     /// abbreviation, a removed `e` and an undoubled final letter. If the entry is replacement
     /// text, `*replacement` receives it (C points `*wordptr` at a static buffer).
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn lookup_dict_list(&mut self, tr: Tr, w: &[u8], wordptr: isize, in_clause: bool, ph_out: &mut [u8], flags: &mut [u32; 2], end_flags: u32, wtab: Option<&[WordTab]>, replacement: Option<&mut Vec<u8>>) -> bool {
+    pub(crate) fn lookup_dict_list(
+        &mut self,
+        tr: Tr,
+        w: &[u8],
+        wordptr: isize,
+        in_clause: bool,
+        ph_out: &mut [u8],
+        flags: &mut [u32; 2],
+        end_flags: u32,
+        wtab: Option<&[WordTab]>,
+        replacement: Option<&mut Vec<u8>>,
+    ) -> bool {
         let mut word = [0u8; N_WORD_BYTES];
         let mut length = 0usize;
         let mut word1 = wordptr;
@@ -2229,7 +2420,21 @@ impl Espeak {
     pub(crate) fn lookup(&mut self, tr: Tr, word: &[u8], ph_out: &mut [u8]) -> u32 {
         let mut flags = [0u32, FLAG_LOOKUP_SYMBOL];
         let mut replacement = Vec::new();
-        let mut flags0 = if self.lookup_dict_list(tr, word, 0, false, ph_out, &mut flags, FLAG_ALLOW_TEXTMODE, None, Some(&mut replacement)) { flags[0] } else { 0 };
+        let mut flags0 = if self.lookup_dict_list(
+            tr,
+            word,
+            0,
+            false,
+            ph_out,
+            &mut flags,
+            FLAG_ALLOW_TEXTMODE,
+            None,
+            Some(&mut replacement),
+        ) {
+            flags[0]
+        } else {
+            0
+        };
         if flags[0] & FLAG_TEXTMODE != 0 {
             let say_as = self.option_sayas;
             self.option_sayas = 0;
@@ -2256,9 +2461,17 @@ impl Espeak {
 
     /// `RemoveEnding`: removes the suffix found by the rules from the word at `w[word]`,
     /// optionally saving the whole word in `word_copy`.
-    pub(crate) fn remove_ending(&mut self, tr: Tr, w: &mut [u8], word: isize, end_type: u32, word_copy: Option<&mut [u8]>) -> u32 {
+    pub(crate) fn remove_ending(
+        &mut self,
+        tr: Tr,
+        w: &mut [u8],
+        word: isize,
+        end_type: u32,
+        word_copy: Option<&mut [u8]>,
+    ) -> u32 {
         const ADD_E_EXCEPTIONS: [&[u8]; 1] = [b"ion"];
-        const ADD_E_ADDITIONS: [&[u8]; 10] = [b"c", b"rs", b"ir", b"ur", b"ath", b"ns", b"u", b"spong", b"rang", b"larg"];
+        const ADD_E_ADDITIONS: [&[u8]; 10] =
+            [b"c", b"rs", b"ir", b"ur", b"ath", b"ns", b"u", b"spong", b"rang", b"larg"];
         let mut ending = [0u8; 50];
 
         let mut word_end = word;
@@ -2321,8 +2534,10 @@ impl Espeak {
                     put(w, word_end + 2, b' ');
                 }
             } else if name == l2(b'e', b'n') {
-                let ends_with = |s: &[u8]| (0..s.len()).all(|k| at(w, word_end + 1 - s.len() as isize + k as isize) == s[k]);
-                if self.is_letter(tr, sat(w, word_end - 1), LETTERGP_VOWEL2) && self.is_letter(tr, sat(w, word_end), 1) {
+                let ends_with =
+                    |s: &[u8]| (0..s.len()).all(|k| at(w, word_end + 1 - s.len() as isize + k as isize) == s[k]);
+                if self.is_letter(tr, sat(w, word_end - 1), LETTERGP_VOWEL2) && self.is_letter(tr, sat(w, word_end), 1)
+                {
                     if !ADD_E_EXCEPTIONS.iter().any(|s| ends_with(s)) {
                         end_flags |= FLAG_SUFX_E_ADDED;
                     }
@@ -2354,7 +2569,18 @@ impl Espeak {
 
     /// `DollarRule`: `$list` and `$p_alt` conditions look up the word so far.
     #[allow(clippy::too_many_arguments)]
-    fn dollar_rule(&mut self, tr: Tr, w: &[u8], word: isize, word_start: isize, consumed: i32, group_length: i32, command: u8, failed: &mut i32, add_points: &mut i32) {
+    fn dollar_rule(
+        &mut self,
+        tr: Tr,
+        w: &[u8],
+        word: isize,
+        word_start: isize,
+        consumed: i32,
+        group_length: i32,
+        command: u8,
+        failed: &mut i32,
+        add_points: &mut i32,
+    ) {
         let ix = (word - word_start + consumed as isize + group_length as isize + 1).max(0) as usize;
         let mut word_buf = vec![0u8; ix + 2];
         for k in 0..ix {

@@ -2,7 +2,7 @@
 # gpuc job: GPU equivalence checks, listening pairs, and worker benchmarks in and out of gVisor.
 #   STEPS="equiv pairs bench" (default all); CONFIGS overrides the benchmark list.
 set -uo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit
 mkdir -p results
 export PYTHONUNBUFFERED=1
 
@@ -55,6 +55,7 @@ bench_one() {
             > "results/$label.worker.log" 2>&1 &
         pid=$!
     fi
+    # shellcheck disable=SC2086  # LOAD_ARGS is a list of flags, split on purpose
     uv run --no-sync python bench/load.py "$sock/worker.sock" "$MODELS/config.json" --json "results/$label.json" ${LOAD_ARGS:-} \
         2>&1 | tee "results/$label.load.txt"
     nvidia-smi --query-gpu=memory.used --format=csv,noheader >> "results/$label.load.txt"
@@ -74,4 +75,4 @@ if [[ " $STEPS " == *" bench "* ]]; then
         bench_one "$label" "$where" $flags
     done <<< "$CONFIGS"
 fi
-echo done
+echo "done"

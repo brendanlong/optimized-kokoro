@@ -6,7 +6,8 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
 
-const USAGE: &str = "usage: kokoro-server [--config <file.toml>]\n\nAPI keys may also be given as KOKORO_API_KEYS (comma-separated).";
+const USAGE: &str =
+    "usage: kokoro-server [--config <file.toml>]\n\nAPI keys may also be given as KOKORO_API_KEYS (comma-separated).";
 
 fn config_path() -> Result<Option<PathBuf>, String> {
     let mut args = std::env::args_os().skip(1);
@@ -36,7 +37,11 @@ async fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    match std::fs::read_to_string("/proc/self/limits").ok().as_deref().and_then(kokoro_server::config::soft_open_file_limit) {
+    match std::fs::read_to_string("/proc/self/limits")
+        .ok()
+        .as_deref()
+        .and_then(kokoro_server::config::soft_open_file_limit)
+    {
         Some(soft) => {
             if let Err(e) = config.check_fd_limit(soft) {
                 eprintln!("{e}");

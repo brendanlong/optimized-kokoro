@@ -31,8 +31,7 @@ fn japanese_reference_records() {
     let pipeline = Pipeline::new(Lang::Japanese).unwrap();
     let options = NormalizationOptions::default();
     if let Some(Err(e)) = pipeline.chunks("日本", &options).next() {
-        eprintln!("skipping: {e}");
-        return;
+        return kokoro_pipeline::skip_without_dictionary(e);
     }
     let show: usize = std::env::var("PARITY_SHOW").ok().and_then(|s| s.parse().ok()).unwrap_or(20);
     let (mut matched, mut compared, mut fixed, mut skipped, mut chars, mut chunks) = (0, 0, 0, 0, 0, 0);
@@ -48,7 +47,8 @@ fn japanese_reference_records() {
             })
             .collect();
         chunks += actual.len();
-        let expected: Vec<(String, String)> = record.chunks.iter().map(|c| (c.text.clone(), c.phonemes.clone())).collect();
+        let expected: Vec<(String, String)> =
+            record.chunks.iter().map(|c| (c.text.clone(), c.phonemes.clone())).collect();
         if uses_new_script(&record.text) {
             skipped += 1;
             if actual != expected && std::env::var_os("SHOW_SKIPPED").is_some() {
@@ -67,7 +67,8 @@ fn japanese_reference_records() {
         if ok {
             matched += 1;
         } else {
-            let first = expected.iter().zip(&actual).position(|(e, a)| e != a).unwrap_or(expected.len().min(actual.len()));
+            let first =
+                expected.iter().zip(&actual).position(|(e, a)| e != a).unwrap_or(expected.len().min(actual.len()));
             mismatches.push(format!(
                 "{} ({} vs {} chunks, first difference at {first})\n  expected: {:?}\n  actual:   {:?}",
                 record.id,

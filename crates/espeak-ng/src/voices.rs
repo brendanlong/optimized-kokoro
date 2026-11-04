@@ -2,7 +2,7 @@
 //! translator and loading its dictionary.
 
 use crate::common::*;
-use crate::data::{parse_c_int, split_key, strip_line, Error, Result};
+use crate::data::{Error, Result, parse_c_int, split_key, strip_line};
 use crate::defs::*;
 use crate::engine::{Espeak, ReplacePhonemes};
 use crate::tr_languages::{process_language_options, select_translator};
@@ -132,7 +132,8 @@ impl Espeak {
                     tr.langopts.vowel_pause = x;
                 }
             }
-            "apostrophe" | "brackets" | "bracketsAnnounced" | "l_dieresis" | "l_prefix" | "l_regressive_v" | "l_unpronouncable" | "l_sonorant_min" => {
+            "apostrophe" | "brackets" | "bracketsAnnounced" | "l_dieresis" | "l_prefix" | "l_regressive_v"
+            | "l_unpronouncable" | "l_sonorant_min" => {
                 let ix = match key {
                     "apostrophe" => LOPT_APOSTROPHE,
                     "brackets" => LOPT_BRACKET_PAUSE,
@@ -284,7 +285,8 @@ impl Espeak {
             buf.truncate(p);
         }
         let lower = buf.to_ascii_lowercase();
-        let rel = ["voices/", "lang/"].iter().map(|d| format!("{d}{lower}")).find(|r| self.data.voice_file(r).is_some());
+        let rel =
+            ["voices/", "lang/"].iter().map(|d| format!("{d}{lower}")).find(|r| self.data.voice_file(r).is_some());
         if let Some(rel) = rel {
             if self.load_voice(&lower, Some(&rel)) {
                 self.voice_loaded = true;
@@ -293,7 +295,8 @@ impl Espeak {
         }
         let identifier = self.select_voice_by_name(&lower);
         if let Some(id) = identifier {
-            let rel = ["voices/", "lang/"].iter().map(|d| format!("{d}{id}")).find(|r| self.data.voice_file(r).is_some());
+            let rel =
+                ["voices/", "lang/"].iter().map(|d| format!("{d}{id}")).find(|r| self.data.voice_file(r).is_some());
             if self.load_voice(&id, rel.as_deref()) {
                 self.voice_loaded = true;
                 return Ok(());

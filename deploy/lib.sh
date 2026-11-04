@@ -522,7 +522,7 @@ Move them out (or into secrets/keys by hand: NAME<tab>KEY<tab>MAX_STREAMS or -) 
 # Writes secrets/server.toml.new from a keys file ($1, default secrets/keys) and secrets/demo.key,
 # root:65534 0640; the caller renames it into place.
 render_server_toml() {
-    local dir=$root/secrets name key streams keys=${1:-$root/secrets/keys}
+    local dir=$root/secrets name key streams keys_file=${1:-$root/secrets/keys}
     (
         umask 077
         {
@@ -534,14 +534,14 @@ render_server_toml() {
             while IFS=$'\t' read -r name key streams || [ -n "$name" ]; do
                 # Whatever edited the file, nothing but these may reach the TOML.
                 [[ $name =~ ^[a-z0-9][a-z0-9-]{0,31}$ && $key =~ ^[A-Za-z0-9._~+/=-]{16,}$ && $streams =~ ^(-|[1-9][0-9]{0,3})$ ]] ||
-                    die "$keys has a line that isn't NAME<tab>KEY<tab>MAX_STREAMS (or -): $name"
+                    die "$keys_file has a line that isn't NAME<tab>KEY<tab>MAX_STREAMS (or -): $name"
                 echo "    # $name"
                 if [ "$streams" = - ]; then
                     echo "    \"$key\","
                 else
                     echo "    { key = \"$key\", max_streams = $streams },"
                 fi
-            done < "$keys"
+            done < "$keys_file"
             echo "    # demo (demo.key)"
             echo "    { key = \"$(cat "$dir/demo.key")\", max_streams = 4 },"
             echo ']'

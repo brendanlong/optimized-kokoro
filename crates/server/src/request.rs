@@ -49,7 +49,11 @@ pub fn check_fields(request: &SpeechRequest, config: &Config) -> Result<(), Stri
     }
     match request.response_format.as_deref() {
         Some("pcm") => {}
-        Some(other) => return invalid(format!("response_format {other:?} is not supported: only \"pcm\" (16-bit mono 24 kHz) is")),
+        Some(other) => {
+            return invalid(format!(
+                "response_format {other:?} is not supported: only \"pcm\" (16-bit mono 24 kHz) is"
+            ));
+        }
         None => return invalid("response_format is required, and must be \"pcm\" (16-bit mono 24 kHz)"),
     }
     if request.stream == Some(false) {

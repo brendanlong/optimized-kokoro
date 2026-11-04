@@ -161,7 +161,11 @@ pub fn number_words(digits: &[u8]) -> Vec<String> {
 fn units(digits: &[u8]) -> String {
     let n = digits.len();
     let mut out = String::new();
-    let groups = [(n.saturating_sub(16), n.saturating_sub(12), "ちょう"), (n.saturating_sub(12), n - 8, "おく"), (n - 8, n - 4, "まん")];
+    let groups = [
+        (n.saturating_sub(16), n.saturating_sub(12), "ちょう"),
+        (n.saturating_sub(12), n - 8, "おく"),
+        (n - 8, n - 4, "まん"),
+    ];
     for (start, end, unit) in groups {
         let group = &digits[start..end];
         if group.is_empty() || group.iter().all(|&d| d == b'0') {
@@ -211,7 +215,10 @@ mod tests {
             ("1000000000000", "いっちょう"),
             ("8000000000000", "はっちょう"),
             ("10000000000000", "じゅっちょう"),
-            ("1234567890123456", "いっせんにひゃくさんじゅうよんちょうごせんろっぴゃくななじゅうはちおくきゅうせんじゅうにまんさんぜんよんひゃくごじゅうろく"),
+            (
+                "1234567890123456",
+                "いっせんにひゃくさんじゅうよんちょうごせんろっぴゃくななじゅうはちおくきゅうせんじゅうにまんさんぜんよんひゃくごじゅうろく",
+            ),
             ("0012345678", "ゼロ ゼロ いち に さん よん ご ろく なな はち"),
             ("12345678901234567", "いち に さん よん ご ろく なな はち きゅう ゼロ いち に さん よん ご ろく なな"),
             ("٣", "さん"),

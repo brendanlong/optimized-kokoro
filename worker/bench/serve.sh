@@ -4,7 +4,7 @@
 #   KOKORO_SERVER_BIN=... KOKORO_LISTEN=0.0.0.0:PORT KOKORO_API_KEY_FILE=... bash bench/serve.sh
 set -uo pipefail
 : "${KOKORO_LISTEN:?}" "${KOKORO_API_KEY_FILE:?}" "${KOKORO_SERVER_BIN:?}"
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit
 mkdir -p results
 MODELS=${GPUC_DATA_DIR:-$HOME/.cache}/kokoro-worker-models
 if [ ! -f "$MODELS/voices.safetensors" ]; then

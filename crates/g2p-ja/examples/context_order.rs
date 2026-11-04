@@ -13,7 +13,13 @@ use std::collections::HashSet;
 fn texts(paths: &[String]) -> Vec<String> {
     paths
         .iter()
-        .flat_map(|p| std::fs::read_to_string(p).unwrap_or_else(|e| panic!("{p}: {e}")).lines().map(str::to_owned).collect::<Vec<_>>())
+        .flat_map(|p| {
+            std::fs::read_to_string(p)
+                .unwrap_or_else(|e| panic!("{p}: {e}"))
+                .lines()
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        })
         .filter_map(|l| serde_json::from_str::<serde_json::Value>(&l).ok()?["text"].as_str().map(str::to_owned))
         .collect()
 }
@@ -39,7 +45,10 @@ fn main() {
                     left[l as usize] += 1;
                 });
             }
-            println!("# Context ids by how often analysis of {} texts looked them up (examples/context_order.rs).", texts.len());
+            println!(
+                "# Context ids by how often analysis of {} texts looked them up (examples/context_order.rs).",
+                texts.len()
+            );
             for (name, counts) in [("right", right), ("left", left)] {
                 let mut ids: Vec<u16> = (1..=u16::MAX).filter(|&i| counts[i as usize] > 0).collect();
                 ids.sort_by_key(|&i| (std::cmp::Reverse(counts[i as usize]), i));

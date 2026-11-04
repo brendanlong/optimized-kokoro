@@ -24,7 +24,8 @@ static CLAUSE: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r"([,
 /// `join_lines`: blank lines end a sentence (adding a period if it has no final punctuation),
 /// single newlines are hard wraps.
 pub fn join_lines(text: &str) -> String {
-    let paragraphs: Vec<String> = PARAGRAPH.split(text)
+    let paragraphs: Vec<String> = PARAGRAPH
+        .split(text)
         .into_iter()
         .flatten()
         .map(|p| py::strip(&LINE.sub_str(p, " ")).to_owned())
@@ -128,7 +129,11 @@ fn phonemize<P, E, F: FnMut(&str) -> Result<P, E>>(g2p: &mut F, text: &str) -> R
 
 /// `sentence_chunks`: the sentence whole, or cut at clause punctuation and repacked when its
 /// phonemes are longer than `max_tokens`.
-pub fn sentence_chunks<P: Phonemes, F: FnMut(&str) -> P>(sentence: &str, max_tokens: usize, g2p: &mut F) -> Vec<Piece<P>> {
+pub fn sentence_chunks<P: Phonemes, F: FnMut(&str) -> P>(
+    sentence: &str,
+    max_tokens: usize,
+    g2p: &mut F,
+) -> Vec<Piece<P>> {
     let Ok(pieces) = try_sentence_chunks(sentence, max_tokens, &mut |text: &str| Ok::<_, Infallible>(g2p(text)));
     pieces
 }
@@ -200,10 +205,11 @@ pub fn smart_split<'a, P: Phonemes, F: FnMut(&str) -> P>(
     max_tokens: usize,
     mut g2p: F,
 ) -> impl Iterator<Item = Chunk<P>> + use<'a, P, F> {
-    try_smart_split(text, lang_code, options, limits, max_tokens, move |t: &str| Ok::<_, Infallible>(g2p(t)))
-        .map(|chunk| match chunk {
+    try_smart_split(text, lang_code, options, limits, max_tokens, move |t: &str| Ok::<_, Infallible>(g2p(t))).map(
+        |chunk| match chunk {
             Ok(chunk) => chunk,
-        })
+        },
+    )
 }
 
 /// [`smart_split`] with a G2P that can fail. An error takes the place of the chunks of the
@@ -268,9 +274,8 @@ impl<P: Phonemes, E, F: FnMut(&str) -> Result<P, E>> Iterator for SmartSplit<'_,
                         Ok(pieces) => pieces,
                         Err(e) => return Some(Err(e)),
                     };
-                    self.ready.extend(
-                        pieces.into_iter().filter(|p| !p.phonemes.phonemes().is_empty()).map(Chunk::Speech),
-                    );
+                    self.ready
+                        .extend(pieces.into_iter().filter(|p| !p.phonemes.phonemes().is_empty()).map(Chunk::Speech));
                 }
                 continue;
             }
@@ -337,10 +342,12 @@ mod tests {
         let g2p = |t: &str| if t.contains('!') { Err(t.to_owned()) } else { Ok("x".repeat(t.len())) };
         let chunks: Vec<_> =
             try_smart_split("aaaa, bb!, cccc. Next.", "z", &Options::default(), &Limits::default(), 12, g2p)
-                .map(|c| c.map(|c| match c {
-                    Chunk::Speech(p) => p.text,
-                    Chunk::Pause(s) => format!("<{s}>"),
-                }))
+                .map(|c| {
+                    c.map(|c| match c {
+                        Chunk::Speech(p) => p.text,
+                        Chunk::Pause(s) => format!("<{s}>"),
+                    })
+                })
                 .collect();
         assert_eq!(chunks, [Err("aaaa, bb!, cccc.".to_owned()), Ok("Next.".to_owned())]);
     }

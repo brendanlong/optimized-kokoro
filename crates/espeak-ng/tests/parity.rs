@@ -9,7 +9,7 @@
 //! `ESPEAK_NG_CALLS` adds more call files (separated by `:`), read with the data in
 //! `ESPEAK_NG_DATA` when set, e.g. the full espeak-ng-data that `reference/` installs.
 
-use kokoro_espeak_ng::{default_data_dir, Espeak, EspeakData, PHONEMES_IPA_TIE};
+use kokoro_espeak_ng::{Espeak, EspeakData, PHONEMES_IPA_TIE, default_data_dir};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::Path;
@@ -114,7 +114,8 @@ fn engines_share_data_across_threads() {
 fn earlier_text_does_not_change_number_reading() {
     let data = EspeakData::load(default_data_dir()).unwrap();
     let earlier = "6_970_053_455_318_812_34675\u{2009}060\u{2009}553\u{2009}8906811777883416022637791712286849618916638673633541247516847\u{2009}398\u{2009}090\u{2009}888\u{2009}190\u{439}";
-    let later = "1247328568694660478413776674155675977384639814658857044049129367935696294763049432641823903136079361-10127";
+    let later =
+        "1247328568694660478413776674155675977384639814658857044049129367935696294763049432641823903136079361-10127";
     let run = |texts: &[&str]| {
         let mut e = Espeak::new(data.clone());
         e.set_voice_by_name("roa/fr").unwrap();

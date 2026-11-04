@@ -20,8 +20,7 @@ struct Case {
 
 fn cases() -> Vec<Case> {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let out = std::env::var_os("KOKORO_REFERENCE_OUT")
-        .map_or_else(|| root.join("../../reference/out"), PathBuf::from);
+    let out = std::env::var_os("KOKORO_REFERENCE_OUT").map_or_else(|| root.join("../../reference/out"), PathBuf::from);
     let mut paths = vec![root.join("tests/espeak.jsonl")];
     if let Ok(entries) = std::fs::read_dir(out) {
         let mut extra: Vec<_> = entries
@@ -81,7 +80,7 @@ impl Wrapper {
         }
     }
 
-    fn run(&self, text: &str, espeak: Option<&mut dyn FnMut(&str) -> kokoro_espeak::Result<String>>) -> Option<String> {
+    fn run(&self, text: &str, espeak: Option<&mut EspeakFn>) -> Option<String> {
         match (self, espeak) {
             (Wrapper::Fallback(w), Some(e)) => w.phonemize_with(text, e).unwrap(),
             (Wrapper::Fallback(w), None) => w.phonemize(text).unwrap(),
@@ -90,6 +89,8 @@ impl Wrapper {
         }
     }
 }
+
+type EspeakFn<'a> = dyn FnMut(&str) -> kokoro_espeak::Result<String> + 'a;
 
 #[derive(Default)]
 struct Tally {
@@ -124,9 +125,8 @@ fn wrappers_match_misaki_given_c_espeak() {
     let mut wrappers = HashMap::new();
     let mut failures = Vec::new();
     for case in cases() {
-        let wrapper = wrappers
-            .entry((case.wrapper.clone(), case.language.clone()))
-            .or_insert_with(|| Wrapper::new(&case));
+        let wrapper =
+            wrappers.entry((case.wrapper.clone(), case.language.clone())).or_insert_with(|| Wrapper::new(&case));
         let mut calls = case.espeak.iter();
         let mut asked = Vec::new();
         let mut espeak = |chunk: &str| {

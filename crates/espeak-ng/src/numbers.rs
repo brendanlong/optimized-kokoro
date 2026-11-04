@@ -80,7 +80,8 @@ const L_GLOTTAL: u16 = 71;
 const L_RTAP: u16 = 72;
 const L_RLONG: u16 = 73;
 
-const NON_ASCII_TAB: [i32; 15] = [0, 0x3b1, 0x259, 0x25b, 0x3b3, 0x3b9, 0x153, 0x3c9, 0x3c6, 0x283, 0x3c5, 0x292, 0x294, 0x27e, 0x27c];
+const NON_ASCII_TAB: [i32; 15] =
+    [0, 0x3b1, 0x259, 0x25b, 0x3b3, 0x3b9, 0x153, 0x3c9, 0x3c6, 0x283, 0x3c5, 0x292, 0x294, 0x27e, 0x27c];
 
 const fn c(ch: u8) -> u16 {
     ch as u16
@@ -269,7 +270,10 @@ impl Espeak {
             cat(&[&ph_accent1, &[PHON_PAUSE_VSHORT, 0], &ph_letter1, &[PHON_STRESS_P, 0], &ph_letter2, &ph_accent2])
         } else if accent1 == 0 {
             cat(&[&ph_letter1])
-        } else if (self.t(tr).langopts.accents & 1) != 0 || (flags1 & FLAG_ACCENT_BEFORE) != 0 || (ACCENTS_TAB[accent1].1 & 1) != 0 {
+        } else if (self.t(tr).langopts.accents & 1) != 0
+            || (flags1 & FLAG_ACCENT_BEFORE) != 0
+            || (ACCENTS_TAB[accent1].1 & 1) != 0
+        {
             cat(&[&ph_accent1, &[PHON_PAUSE_VSHORT, PHON_STRESS_P, 0], &ph_letter1])
         } else {
             cat(&[&[PHON_STRESS_2, 0], &ph_letter1, &[PHON_PAUSE_VSHORT, 0], &ph_accent1, &[PHON_PAUSE_VSHORT, 0]])
@@ -279,7 +283,15 @@ impl Espeak {
 
     /// `LookupLetter`: the name of a letter, into `ph_buf1[pos..]`. `next_byte` is -1 when
     /// reading normal text rather than spelling.
-    pub(crate) fn lookup_letter(&mut self, tr: Tr, letter: i32, next_byte: i32, ph_buf1: &mut [u8], pos: usize, control: i32) {
+    pub(crate) fn lookup_letter(
+        &mut self,
+        tr: Tr,
+        letter: i32,
+        next_byte: i32,
+        ph_buf1: &mut [u8],
+        pos: usize,
+        control: i32,
+    ) {
         let mut single_letter = [0u8; 10];
         let mut ph_buf3 = [0u8; PH_BUF];
         put(ph_buf1, pos as isize, 0);
@@ -385,7 +397,16 @@ impl Espeak {
         cstrcpy(phonemes, 0, &out);
     }
 
-    fn check_dot_ordinal(&mut self, tr: Tr, w: &mut [u8], word: isize, word_end: isize, wtab: &[WordTab], roman: bool, in_clause: bool) -> i32 {
+    fn check_dot_ordinal(
+        &mut self,
+        tr: Tr,
+        w: &mut [u8],
+        word: isize,
+        word_end: isize,
+        wtab: &[WordTab],
+        roman: bool,
+        in_clause: bool,
+    ) -> i32 {
         let mut ordinal = 0;
         let wt = |k: usize| wtab.get(k).copied().unwrap_or_default();
         if (self.t(tr).langopts.numbers & NUM_ORDINAL_DOT) != 0
@@ -394,7 +415,10 @@ impl Espeak {
             && (roman || (wt(1).flags & FLAG_FIRST_UPPER) == 0)
         {
             let c2 = if at(w, word_end) == b'.' { utf8_in(w, word_end + 2).0 } else { utf8_in(w, word_end).0 };
-            if at(w, word_end) != 0 && at(w, word_end + 1) != 0 && (c2 == 0 || (wt(0).flags & FLAG_COMMA_AFTER) != 0 || is_alpha(c2)) {
+            if at(w, word_end) != 0
+                && at(w, word_end + 1) != 0
+                && (c2 == 0 || (wt(0).flags & FLAG_COMMA_AFTER) != 0 || is_alpha(c2))
+            {
                 ordinal = 2;
                 if at(w, word_end) == b'.' {
                     put(w, word_end, b' ');
@@ -404,7 +428,9 @@ impl Espeak {
                     if is_alpha(c2) {
                         nextflags = self.translate_word(tr, w, word_end + 2, None, in_clause, None);
                     }
-                    if (self.t(tr).prev_dict_flags[0] & FLAG_ALT_TRANS) != 0 && (c2 == 0 || (wt(0).flags & FLAG_COMMA_AFTER) != 0 || ucd::isdigit(c2)) {
+                    if (self.t(tr).prev_dict_flags[0] & FLAG_ALT_TRANS) != 0
+                        && (c2 == 0 || (wt(0).flags & FLAG_COMMA_AFTER) != 0 || ucd::isdigit(c2))
+                    {
                         ordinal = 0;
                     }
                     if nextflags & FLAG_ALT_TRANS != 0 {
@@ -440,7 +466,14 @@ impl Espeak {
     }
 
     /// `TranslateRoman`.
-    pub(crate) fn translate_roman(&mut self, tr: Tr, w: &mut [u8], word: isize, ph_out: &mut [u8], wtab: &mut [WordTab]) -> bool {
+    pub(crate) fn translate_roman(
+        &mut self,
+        tr: Tr,
+        w: &mut [u8],
+        word: isize,
+        ph_out: &mut [u8],
+        wtab: &mut [WordTab],
+    ) -> bool {
         const ROMAN_NUMBERS: &[u8] = b"ixcmvld";
         const ROMAN_VALUES: [i32; 7] = [1, 10, 100, 1000, 5, 50, 500];
         let mut acc = 0;
@@ -457,7 +490,10 @@ impl Espeak {
         if ((numbers & NUM_ROMAN_CAPITALS) != 0 && (w0flags & FLAG_ALL_UPPER) == 0) || is_digit09(sat(w, word - 2)) {
             return false;
         }
-        if at(w, word + 1) == b' ' && !((numbers & (NUM_ROMAN_CAPITALS | NUM_ROMAN_ORDINAL | NUM_ORDINAL_DOT)) != 0 && (w0flags & FLAG_HAS_DOT) != 0) {
+        if at(w, word + 1) == b' '
+            && !((numbers & (NUM_ROMAN_CAPITALS | NUM_ROMAN_ORDINAL | NUM_ORDINAL_DOT)) != 0
+                && (w0flags & FLAG_HAS_DOT) != 0)
+        {
             return false;
         }
         let word_start = word;
@@ -597,7 +633,14 @@ impl Espeak {
         self.lookup(tr, &b, out)
     }
 
-    fn lookup_thousands(&mut self, tr: Tr, value: i32, thousandplex: i32, thousands_exact: i32, ph_out: &mut [u8]) -> bool {
+    fn lookup_thousands(
+        &mut self,
+        tr: Tr,
+        value: i32,
+        thousandplex: i32,
+        thousands_exact: i32,
+        ph_out: &mut [u8],
+    ) -> bool {
         let mut found_value = 0u32;
         let mut ph_of = [0u8; PH_BUF];
         let mut ph_thousands = [0u8; PH_BUF];
@@ -710,7 +753,11 @@ impl Espeak {
                             found = self.lookup_s(tr, format!("_{value}e"), &mut ph_digits);
                         }
                     } else {
-                        let s = if (numbers2 & NUM2_ORDINAL_AND_THOUSANDS) != 0 && thousandplex <= 1 { format!("_{value}o") } else { format!("_{value}a") };
+                        let s = if (numbers2 & NUM2_ORDINAL_AND_THOUSANDS) != 0 && thousandplex <= 1 {
+                            format!("_{value}o")
+                        } else {
+                            format!("_{value}a")
+                        };
                         found = self.lookup_s(tr, s, &mut ph_digits);
                     }
                     if found == 0 && !(is_ordinal && (numbers2 & NUM2_NO_TEEN_ORDINALS) != 0) {
@@ -761,7 +808,11 @@ impl Espeak {
                             if (self.number_control & 1) != 0 && (control & 2) != 0 {
                                 found = self.lookup_s(tr, format!("_{units}e"), &mut ph_digits);
                             } else if (control & 2) == 0 || (numbers & NUM_SWAP_TENS) != 0 {
-                                let s = if (numbers2 & NUM2_ORDINAL_AND_THOUSANDS) != 0 && thousandplex <= 1 { format!("_{units}o") } else { format!("_{units}a") };
+                                let s = if (numbers2 & NUM2_ORDINAL_AND_THOUSANDS) != 0 && thousandplex <= 1 {
+                                    format!("_{units}o")
+                                } else {
+                                    format!("_{units}a")
+                                };
                                 found = self.lookup_s(tr, s, &mut ph_digits);
                             }
                         }
@@ -848,7 +899,15 @@ impl Espeak {
         used_and
     }
 
-    fn lookup_num3(&mut self, tr: Tr, value: i32, ph_out: &mut [u8], mut suppress_null: bool, thousandplex: i32, mut control: i32) {
+    fn lookup_num3(
+        &mut self,
+        tr: Tr,
+        value: i32,
+        ph_out: &mut [u8],
+        mut suppress_null: bool,
+        thousandplex: i32,
+        mut control: i32,
+    ) {
         let ordinal = control & 0x22;
         let mut hundreds = value / 100;
         let tensunits = value % 100;
@@ -992,7 +1051,9 @@ impl Espeak {
             if (numbers2 & NUM2_ZERO_TENS) != 0 && ((control & 1) != 0 || hundreds > 0) {
                 x |= 0x10;
             }
-            if self.lookup_num2(tr, tensunits, thousandplex, x | (control & 0x100), &mut buf2) && (numbers & NUM_SINGLE_AND) != 0 {
+            if self.lookup_num2(tr, tensunits, thousandplex, x | (control & 0x100), &mut buf2)
+                && (numbers & NUM_SINGLE_AND) != 0
+            {
                 ph_hundred_and[0] = 0;
             }
         } else if self.ph_ordinal[0] != 0 {
@@ -1017,7 +1078,17 @@ impl Espeak {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn translate_number_1(&mut self, tr: Tr, w: &mut [u8], word: isize, ph_out: &mut [u8], flags: &mut [u32; 2], wtab: &mut [WordTab], control: i32, in_clause: bool) -> bool {
+    fn translate_number_1(
+        &mut self,
+        tr: Tr,
+        w: &mut [u8],
+        word: isize,
+        ph_out: &mut [u8],
+        flags: &mut [u32; 2],
+        wtab: &mut [WordTab],
+        control: i32,
+        in_clause: bool,
+    ) -> bool {
         let mut suppress_null = false;
         let mut decimal_point = 0;
         let mut thousandplex: i32 = 0;
@@ -1106,7 +1177,11 @@ impl Espeak {
             ordinal = self.check_dot_ordinal(tr, w, word, word + ix, wtab, false, in_clause);
         }
 
-        if at(w, word + ix) == b'.' && !is_digit09(at(w, word + ix + 1) as i32) && !is_digit09(at(w, word + ix + 2) as i32) && (wt(wtab, 1).flags & FLAG_NOSPACE) == 0 {
+        if at(w, word + ix) == b'.'
+            && !is_digit09(at(w, word + ix + 1) as i32)
+            && !is_digit09(at(w, word + ix + 2) as i32)
+            && (wt(wtab, 1).flags & FLAG_NOSPACE) == 0
+        {
             put(w, word + ix, 0);
         }
 
@@ -1160,8 +1235,16 @@ impl Espeak {
 
         ph_append[0] = 0;
 
-        if at(w, word) == b'0' && prev_thousands == 0 && at(w, word + 1) != b' ' && at(w, word + 1) as i32 != decimal_sep {
-            if n_digits == 2 && at(w, word + 3) == b':' && is_digit09(at(w, word + 5) as i32) && c_isspace(sat(w, word + 7)) {
+        if at(w, word) == b'0'
+            && prev_thousands == 0
+            && at(w, word + 1) != b' '
+            && at(w, word + 1) as i32 != decimal_sep
+        {
+            if n_digits == 2
+                && at(w, word + 3) == b':'
+                && is_digit09(at(w, word + 5) as i32)
+                && c_isspace(sat(w, word + 7))
+            {
             } else {
                 if n_digits > 3 {
                     flags[0] &= !FLAG_SKIPWORDS;
@@ -1186,7 +1269,9 @@ impl Espeak {
         let mut suffix_ix = n_digits + 2;
         if thousands_inc > 0 {
             let mut digix = n_digits + thousands_inc;
-            while (wt(wtab, thousandplex as usize + 1).flags & FLAG_MULTIPLE_SPACES) == 0 && Self::check_thousands_group(w, word + digix, group_len) {
+            while (wt(wtab, thousandplex as usize + 1).flags & FLAG_MULTIPLE_SPACES) == 0
+                && Self::check_thousands_group(w, word + digix, group_len)
+            {
                 for k in 0..group_len {
                     if at(w, word + digix + k) != b'0' {
                         thousands_exact = 0;
@@ -1195,7 +1280,9 @@ impl Espeak {
                 }
                 thousandplex += 1;
                 digix += group_len;
-                if sat(w, word + digix) == thousands_sep || ((numbers & NUM_ALLOW_SPACE) != 0 && at(w, word + digix) == b' ') {
+                if sat(w, word + digix) == thousands_sep
+                    || ((numbers & NUM_ALLOW_SPACE) != 0 && at(w, word + digix) == b' ')
+                {
                     suffix_ix = digix + 2;
                     digix += thousands_inc;
                 } else {
@@ -1221,11 +1308,16 @@ impl Espeak {
             self.lookup(tr, b"_dpt\0", &mut ph_append);
             decimal_point = 0x100;
         } else if !suppress_null {
-            if thousands_inc > 0 && thousandplex > 0 && self.lookup_thousands(tr, value, thousandplex, thousands_exact, &mut ph_append) {
+            if thousands_inc > 0
+                && thousandplex > 0
+                && self.lookup_thousands(tr, value, thousandplex, thousands_exact, &mut ph_append)
+            {
                 value = 0;
                 suppress_null = true;
             }
-        } else if self.speak_missing_thousands == 1 && self.lookup_s(tr, format!("_0M{}", thousandplex + 1), &mut buf1) == 0 {
+        } else if self.speak_missing_thousands == 1
+            && self.lookup_s(tr, format!("_0M{}", thousandplex + 1), &mut buf1) == 0
+        {
             self.lookup_s(tr, format!("_0M{thousandplex}"), &mut ph_append);
         }
 
@@ -1241,14 +1333,34 @@ impl Espeak {
             }
             if is_digit09(at(w, p - 1) as i32) {
                 let mut f = *flags;
-                if self.lookup_dict_list(tr, w, p - 1, in_clause, &mut buf_digit_lookup, &mut f, FLAG_SUFX, Some(wtab), None) {
+                if self.lookup_dict_list(
+                    tr,
+                    w,
+                    p - 1,
+                    in_clause,
+                    &mut buf_digit_lookup,
+                    &mut f,
+                    FLAG_SUFX,
+                    Some(wtab),
+                    None,
+                ) {
                     self.n_digit_lookup = 2;
                 }
                 *flags = f;
             }
             if buf_digit_lookup[0] == 0 && at(w, p) != b'0' {
                 let mut f = *flags;
-                if self.lookup_dict_list(tr, w, p, in_clause, &mut buf_digit_lookup, &mut f, FLAG_SUFX, Some(wtab), None) {
+                if self.lookup_dict_list(
+                    tr,
+                    w,
+                    p,
+                    in_clause,
+                    &mut buf_digit_lookup,
+                    &mut f,
+                    FLAG_SUFX,
+                    Some(wtab),
+                    None,
+                ) {
                     self.n_digit_lookup = 1;
                 }
                 *flags = f;
@@ -1395,7 +1507,17 @@ impl Espeak {
 
     /// `TranslateNumber`.
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn translate_number(&mut self, tr: Tr, w: &mut [u8], word: isize, ph_out: &mut [u8], flags: &mut [u32; 2], wtab: &mut [WordTab], control: i32, in_clause: bool) -> bool {
+    pub(crate) fn translate_number(
+        &mut self,
+        tr: Tr,
+        w: &mut [u8],
+        word: isize,
+        ph_out: &mut [u8],
+        flags: &mut [u32; 2],
+        wtab: &mut [WordTab],
+        control: i32,
+        in_clause: bool,
+    ) -> bool {
         if self.option_sayas == SAYAS_DIGITS1 || (wtab.first().map_or(0, |w| w.flags) & FLAG_INDIVIDUAL_DIGITS) != 0 {
             return false;
         }

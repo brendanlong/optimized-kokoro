@@ -10,7 +10,8 @@ use crate::ucd;
 
 const HEX_LETTERS: [&[u8]; 6] = [b"'e:j\0", b"b'i:\0", b"s'i:\0", b"d'i:\0", b"'i:\0", b"'ef\0"];
 const MODIFIERS: [Option<&[u8]>; 4] = [None, Some(b"_sub\0"), Some(b"_sup\0"), None];
-const NUMBER_RANGES: [i32; 16] = [0x660, 0x6f0, 0x966, 0x9e6, 0xa66, 0xae6, 0xb66, 0xbe6, 0xc66, 0xce6, 0xd66, 0xe50, 0xed0, 0xf20, 0x1040, 0x1090];
+const NUMBER_RANGES: [i32; 16] =
+    [0x660, 0x6f0, 0x966, 0x9e6, 0xa66, 0xae6, 0xb66, 0xbe6, 0xc66, 0xce6, 0xd66, 0xe50, 0xed0, 0xf20, 0x1040, 0x1090];
 
 fn same_alphabet(a: Option<&'static Alphabet>, b: Option<&'static Alphabet>) -> bool {
     match (a, b) {
@@ -44,7 +45,15 @@ fn concat3(out: &mut [u8; N_WORD_PHONEMES], a: &[u8], b: &[u8], c: &[u8]) {
 impl Espeak {
     /// `TranslateWord3`. The word starts at `w[word_start]` and ends at a space.
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn translate_word3(&mut self, tr: Tr, w: &mut [u8], word_start: isize, wtab: &mut [WordTab], word_out: Option<&mut Vec<u8>>, in_clause: bool) -> u32 {
+    pub(crate) fn translate_word3(
+        &mut self,
+        tr: Tr,
+        w: &mut [u8],
+        word_start: isize,
+        wtab: &mut [WordTab],
+        word_out: Option<&mut Vec<u8>>,
+        in_clause: bool,
+    ) -> u32 {
         let mut dictionary_flags = [0u32; 2];
         let mut dictionary_flags2 = [0u32; 2];
         let mut end_type: u32;
@@ -109,7 +118,17 @@ impl Espeak {
             } else {
                 word1 -= 1;
                 put(w, word1, b'_');
-                found = self.lookup_dict_list(tr, w, word1, in_clause, &mut phonemes, &mut dictionary_flags, 0, Some(wtab), None);
+                found = self.lookup_dict_list(
+                    tr,
+                    w,
+                    word1,
+                    in_clause,
+                    &mut phonemes,
+                    &mut dictionary_flags,
+                    0,
+                    Some(wtab),
+                    None,
+                );
             }
         }
 
@@ -118,7 +137,17 @@ impl Espeak {
         } else {
             let mut replacement = Vec::new();
             if !found {
-                found = self.lookup_dict_list(tr, w, word1, in_clause, &mut phonemes, &mut dictionary_flags, FLAG_ALLOW_TEXTMODE, Some(wtab), Some(&mut replacement));
+                found = self.lookup_dict_list(
+                    tr,
+                    w,
+                    word1,
+                    in_clause,
+                    &mut phonemes,
+                    &mut dictionary_flags,
+                    FLAG_ALLOW_TEXTMODE,
+                    Some(wtab),
+                    Some(&mut replacement),
+                );
             }
             if (dictionary_flags[0] & (FLAG_ALLOW_DOT | FLAG_NEEDS_DOT)) != 0 && at(w, wordx + 1) == b'.' {
                 put(w, wordx + 1, b' ');
@@ -133,7 +162,8 @@ impl Espeak {
                     }
                 }
                 return dictionary_flags[0];
-            } else if !found && (dictionary_flags[0] & FLAG_SKIPWORDS) != 0 && (dictionary_flags[0] & FLAG_ABBREV) == 0 {
+            } else if !found && (dictionary_flags[0] & FLAG_SKIPWORDS) != 0 && (dictionary_flags[0] & FLAG_ABBREV) == 0
+            {
                 wordx = word1;
                 let mut ix = 0;
                 while ix < self.dictionary_skipwords {
@@ -172,7 +202,9 @@ impl Espeak {
                 if self.word_phonemes[0] == PHON_SWITCH {
                     return 0;
                 }
-                if (self.t(tr).langopts.numbers2 & NUM2_ENGLISH_NUMERALS) != 0 && (wt(wtab, 0).flags & FLAG_CHAR_REPLACED) == 0 {
+                if (self.t(tr).langopts.numbers2 & NUM2_ENGLISH_NUMERALS) != 0
+                    && (wt(wtab, 0).flags & FLAG_CHAR_REPLACED) == 0
+                {
                     self.word_phonemes[0] = PHON_SWITCH;
                     self.word_phonemes[1] = 0;
                     return 0;
@@ -182,7 +214,8 @@ impl Espeak {
 
             if !found && (wflags & FLAG_UPPERS) != FLAG_FIRST_UPPER {
                 let numbers = self.t(tr).langopts.numbers;
-                if ((numbers & NUM_ROMAN) != 0 || ((numbers & NUM_ROMAN_CAPITALS) != 0 && (wflags & FLAG_ALL_UPPER) != 0))
+                if ((numbers & NUM_ROMAN) != 0
+                    || ((numbers & NUM_ROMAN_CAPITALS) != 0 && (wflags & FLAG_ALL_UPPER) != 0))
                     && ((wflags & FLAG_LAST_WORD) != 0 || (wt(wtab, 1).flags & FLAG_NOSPACE) == 0)
                 {
                     found = self.translate_roman(tr, w, word1, &mut phonemes, wtab);
@@ -194,9 +227,15 @@ impl Espeak {
 
             if (wflags & FLAG_ALL_UPPER) != 0 && word_length > 1 && ucd::isalpha(first_char) {
                 let t = self.t(tr);
-                if (self.option_tone_flags & OPTION_EMPHASIZE_ALLCAPS) != 0 && (dictionary_flags[0] & FLAG_ABBREV) == 0 {
+                if (self.option_tone_flags & OPTION_EMPHASIZE_ALLCAPS) != 0 && (dictionary_flags[0] & FLAG_ABBREV) == 0
+                {
                     emphasize_allcaps = FLAG_EMPHASIZED;
-                } else if !found && (dictionary_flags[0] & FLAG_SKIPWORDS) == 0 && word_length < 4 && t.clause_lower_count > 3 && t.clause_upper_count <= t.clause_lower_count {
+                } else if !found
+                    && (dictionary_flags[0] & FLAG_SKIPWORDS) == 0
+                    && word_length < 4
+                    && t.clause_lower_count > 3
+                    && t.clause_upper_count <= t.clause_lower_count
+                {
                     spell_word = 1;
                 }
             }
@@ -251,7 +290,16 @@ impl Espeak {
                     put(w, wordx - 1, b' ');
                 }
 
-                end_type = self.translate_rules(tr, w, wordx, &mut phonemes, N_WORD_PHONEMES, Some(&mut end_phonemes), wflags, Some(&mut dictionary_flags));
+                end_type = self.translate_rules(
+                    tr,
+                    w,
+                    wordx,
+                    &mut phonemes,
+                    N_WORD_PHONEMES,
+                    Some(&mut end_phonemes),
+                    wflags,
+                    Some(&mut dictionary_flags),
+                );
 
                 if phonemes[0] == PHON_SWITCH {
                     self.set_word_phonemes(&phonemes);
@@ -278,10 +326,28 @@ impl Espeak {
                     if confirm_prefix && (end_type & SUFX_B) == 0 {
                         let mut end_phonemes2b = [0u8; N_WORD_PHONEMES];
                         phonemes2[0] = 0;
-                        let end2 = self.translate_rules(tr, w, wordx, &mut phonemes2, N_WORD_PHONEMES, Some(&mut end_phonemes2b), wflags | FLAG_NO_PREFIX | FLAG_NO_TRACE, Some(&mut dictionary_flags));
+                        let end2 = self.translate_rules(
+                            tr,
+                            w,
+                            wordx,
+                            &mut phonemes2,
+                            N_WORD_PHONEMES,
+                            Some(&mut end_phonemes2b),
+                            wflags | FLAG_NO_PREFIX | FLAG_NO_TRACE,
+                            Some(&mut dictionary_flags),
+                        );
                         if end2 != 0 {
                             self.remove_ending(tr, w, wordx, end2, Some(&mut word_copy));
-                            end_type = self.translate_rules(tr, w, wordx, &mut phonemes, N_WORD_PHONEMES, Some(&mut end_phonemes), wflags | FLAG_NO_TRACE, Some(&mut dictionary_flags));
+                            end_type = self.translate_rules(
+                                tr,
+                                w,
+                                wordx,
+                                &mut phonemes,
+                                N_WORD_PHONEMES,
+                                Some(&mut end_phonemes),
+                                wflags | FLAG_NO_TRACE,
+                                Some(&mut dictionary_flags),
+                            );
                             let n = cstrlen(&word_copy, 0);
                             memcpy(w, wordx, &word_copy, 0, n);
                             if (end_type & SUFX_P) == 0 {
@@ -330,7 +396,17 @@ impl Espeak {
                         let mut prefix_phonemes2 = [0u8; 12];
                         strncpy0(&mut prefix_phonemes2, &end_phonemes, 12);
                         prefix_phonemes = phonemes;
-                        found = self.lookup_dict_list(tr, &prefix_chars, 1, false, &mut phonemes, &mut dictionary_flags, 0, Some(wtab), None);
+                        found = self.lookup_dict_list(
+                            tr,
+                            &prefix_chars,
+                            1,
+                            false,
+                            &mut phonemes,
+                            &mut dictionary_flags,
+                            0,
+                            Some(wtab),
+                            None,
+                        );
                         if found {
                             prefix_phonemes = phonemes;
                         }
@@ -345,14 +421,33 @@ impl Espeak {
                     end_phonemes[0] = 0;
 
                     end_type = 0;
-                    found = self.lookup_dict_list(tr, w, wordx, in_clause, &mut phonemes, &mut dictionary_flags2, SUFX_P, Some(wtab), None);
+                    found = self.lookup_dict_list(
+                        tr,
+                        w,
+                        wordx,
+                        in_clause,
+                        &mut phonemes,
+                        &mut dictionary_flags2,
+                        SUFX_P,
+                        Some(wtab),
+                        None,
+                    );
                     if dictionary_flags[0] == 0 {
                         dictionary_flags = dictionary_flags2;
                     } else {
                         prefix_flags = 1;
                     }
                     if !found {
-                        end_type = self.translate_rules(tr, w, wordx, &mut phonemes, N_WORD_PHONEMES, Some(&mut end_phonemes), wflags & (FLAG_HYPHEN_AFTER | FLAG_PREFIX_REMOVED), Some(&mut dictionary_flags));
+                        end_type = self.translate_rules(
+                            tr,
+                            w,
+                            wordx,
+                            &mut phonemes,
+                            N_WORD_PHONEMES,
+                            Some(&mut end_phonemes),
+                            wflags & (FLAG_HYPHEN_AFTER | FLAG_PREFIX_REMOVED),
+                            Some(&mut dictionary_flags),
+                        );
                         if phonemes[0] == PHON_SWITCH {
                             put(w, wordx - 1, c_temp);
                             self.set_word_phonemes(&phonemes);
@@ -375,7 +470,17 @@ impl Espeak {
                         phonemes[0] = 0;
                         if prefix_phonemes[0] != 0 {
                             put(w, wordx - 1, c_temp);
-                            found = self.lookup_dict_list(tr, w, word1, in_clause, &mut phonemes, &mut dictionary_flags2, end_flags, Some(wtab), None);
+                            found = self.lookup_dict_list(
+                                tr,
+                                w,
+                                word1,
+                                in_clause,
+                                &mut phonemes,
+                                &mut dictionary_flags2,
+                                end_flags,
+                                Some(wtab),
+                                None,
+                            );
                             put(w, wordx - 1, b' ');
                             if phonemes[0] == PHON_SWITCH {
                                 let n = cstrlen(&word_copy, 0);
@@ -394,7 +499,17 @@ impl Espeak {
                             }
                         }
                         if !found {
-                            found = self.lookup_dict_list(tr, w, wordx, in_clause, &mut phonemes, &mut dictionary_flags2, end_flags, Some(wtab), None);
+                            found = self.lookup_dict_list(
+                                tr,
+                                w,
+                                wordx,
+                                in_clause,
+                                &mut phonemes,
+                                &mut dictionary_flags2,
+                                end_flags,
+                                Some(wtab),
+                                None,
+                            );
                             if phonemes[0] == PHON_SWITCH {
                                 let n = cstrlen(&word_copy, 0);
                                 memcpy(w, wordx, &word_copy, 0, n);
@@ -417,14 +532,32 @@ impl Espeak {
                                 }
                                 if end_type & SUFX_M != 0 {
                                     let end_phonemes2 = end_phonemes;
-                                    end_type = self.translate_rules(tr, w, wordx, &mut phonemes, N_WORD_PHONEMES, Some(&mut end_phonemes), wflags, Some(&mut dictionary_flags));
+                                    end_type = self.translate_rules(
+                                        tr,
+                                        w,
+                                        wordx,
+                                        &mut phonemes,
+                                        N_WORD_PHONEMES,
+                                        Some(&mut end_phonemes),
+                                        wflags,
+                                        Some(&mut dictionary_flags),
+                                    );
                                     cstrcat(&mut end_phonemes, cstr(&end_phonemes2, 0));
                                     if end_type != 0 && (end_type & SUFX_P) == 0 {
                                         end_flags = self.remove_ending(tr, w, wordx, end_type, None);
                                         more_suffixes = true;
                                     }
                                 } else {
-                                    self.translate_rules(tr, w, wordx, &mut phonemes, N_WORD_PHONEMES, None, wflags, Some(&mut dictionary_flags));
+                                    self.translate_rules(
+                                        tr,
+                                        w,
+                                        wordx,
+                                        &mut phonemes,
+                                        N_WORD_PHONEMES,
+                                        None,
+                                        wflags,
+                                        Some(&mut dictionary_flags),
+                                    );
                                     end_type = 0;
                                 }
                                 if phonemes[0] == PHON_SWITCH {
@@ -567,11 +700,17 @@ impl Espeak {
             }
         }
 
-        if word_length == 1 && self.t(tr).translator_name == l2(b'e', b'n') && ucd::isalpha(first_char) && first_char != b'i' as i32 {
+        if word_length == 1
+            && self.t(tr).translator_name == l2(b'e', b'n')
+            && ucd::isalpha(first_char)
+            && first_char != b'i' as i32
+        {
             dictionary_flags[0] |= FLAG_ALLOW_DOT;
         }
 
-        if (self.t(tr).langopts.param[LOPT_ALT] & 2) != 0 && (dictionary_flags[0] & (FLAG_ALT_TRANS | FLAG_ALT2_TRANS)) != 0 {
+        if (self.t(tr).langopts.param[LOPT_ALT] & 2) != 0
+            && (dictionary_flags[0] & (FLAG_ALT_TRANS | FLAG_ALT2_TRANS)) != 0
+        {
             self.apply_special_attribute2(tr, dictionary_flags[0]);
         }
 
@@ -620,7 +759,8 @@ impl Espeak {
         let mut vowel_count = 0;
         let mut stressed_syllable = 0;
         cstrcpy(&mut phonetic, 0, cstr(&self.word_phonemes, 0));
-        let max_stress = self.get_vowel_stress(tr, &mut phonetic, &mut vowel_stress, &mut vowel_count, &mut stressed_syllable, 0);
+        let max_stress =
+            self.get_vowel_stress(tr, &mut phonetic, &mut vowel_stress, &mut vowel_count, &mut stressed_syllable, 0);
 
         if new_stress >= STRESS_IS_PRIMARY {
             for ix in 1..vowel_count.min(100) as usize {
@@ -655,7 +795,14 @@ impl Espeak {
 
     /// `SpeakIndividualLetters`: appends the names of the letters at `w[word..]` to `phonemes`.
     /// Returns the position after the word, or `None` when a letter needs another language.
-    pub(crate) fn speak_individual_letters(&mut self, tr: Tr, w: &mut [u8], mut word: isize, phonemes: &mut [u8], spell_word: i32) -> Option<isize> {
+    pub(crate) fn speak_individual_letters(
+        &mut self,
+        tr: Tr,
+        w: &mut [u8],
+        mut word: isize,
+        phonemes: &mut [u8],
+        spell_word: i32,
+    ) -> Option<isize> {
         let mut posn = 0;
         let mut capitals = 0;
         let mut non_initial = 0;
@@ -684,7 +831,14 @@ impl Espeak {
 
     /// `TranslateLetter`: appends the name of the letter at `w[word]` to `phonemes`.
     /// Returns the number of bytes in the letter.
-    pub(crate) fn translate_letter(&mut self, tr: Tr, w: &[u8], word: isize, phonemes: &mut [u8], control: i32) -> isize {
+    pub(crate) fn translate_letter(
+        &mut self,
+        tr: Tr,
+        w: &[u8],
+        word: isize,
+        phonemes: &mut [u8],
+        control: i32,
+    ) -> isize {
         let mut capital = [0u8; PH_BUF];
         let mut ph_buf = [0u8; PH_BUF];
         let mut ph_buf2 = [0u8; PH_BUF];
@@ -756,7 +910,10 @@ impl Espeak {
         if let Some(a) = alphabet {
             if (al_flags & AL_DONT_NAME) == 0 && al_offset != self.t(Tr::Main).letter_bits_offset {
                 let main = self.t(Tr::Main);
-                if (al_flags & AL_DONT_NAME) != 0 || al_offset == main.langopts.alt_alphabet || al_offset == main.langopts.our_alphabet {
+                if (al_flags & AL_DONT_NAME) != 0
+                    || al_offset == main.langopts.alt_alphabet
+                    || al_offset == main.langopts.our_alphabet
+                {
                 } else {
                     ph_buf2[0] = 0;
                     let mut name = a.name.to_vec();

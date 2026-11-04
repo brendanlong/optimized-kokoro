@@ -1,0 +1,226 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+# Caches are saved only from main, so a PR can't fill the cache quota or seed what main restores;
+# PRs restore main's.
+#
+# A new push to a PR cancels its older runs; pushes to main all run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  # Don't set RUSTFLAGS: it would replace .cargo/config.toml's target-cpu=x86-64-v3.
+  # The toolchain deploy/server.Containerfile builds with; bump them together. Pinned so a new
+  # stable's clippy lints don't fail unrelated PRs.
+  RUST_TOOLCHAIN: 1.97.1
+
+jobs:
+  rust-lint:
+    name: Rust (fmt, clippy, build)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component rustfmt,clippy
+          rustup default "$RUST_TOOLCHAIN"
+      - name: cargo fmt --check
+        run: cargo fmt --all --check
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: cargo build
+        run: cargo build --workspace --locked
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+  rust-test:
+    name: Rust (test --release)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
+          rustup default "$RUST_TOOLCHAIN"
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # UniDic (516 MB) for the Japanese tests. Keyed on the converted dictionary's checksum in
+      # fetch_unidic.sh, so a new dictionary or converter output gets a new cache entry.
+      - name: UniDic checksum
+        id: unidic
+        run: echo "sha256=$(sed -n 's/^OUT_SHA256=//p' crates/g2p-ja/tools/fetch_unidic.sh)" >> "$GITHUB_OUTPUT"
+      - name: Restore UniDic
+        id: unidic-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            crates/g2p-ja/data/unidic.dic
+            crates/g2p-ja/data/unidic.dic.LICENSE
+          key: unidic-${{ steps.unidic.outputs.sha256 }}
+      - name: Fetch UniDic
+        if: steps.unidic-cache.outputs.cache-hit != 'true'
+        run: crates/g2p-ja/tools/fetch_unidic.sh
+      - name: Check UniDic
+        env:
+          UNIDIC_SHA256: ${{ steps.unidic.outputs.sha256 }}
+        run: echo "$UNIDIC_SHA256  crates/g2p-ja/data/unidic.dic" | sha256sum -c -
+      - name: Save UniDic
+        if: github.ref == 'refs/heads/main' && steps.unidic-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            crates/g2p-ja/data/unidic.dic
+            crates/g2p-ja/data/unidic.dic.LICENSE
+          key: unidic-${{ steps.unidic.outputs.sha256 }}
+      - name: Build tests
+        run: cargo test --release --workspace --locked --no-run
+      # The Japanese tests skip themselves without UniDic; here a skip is a failure.
+      - name: cargo test --release
+        env:
+          KOKORO_REQUIRE_UNIDIC: 1
+        run: cargo test --release --workspace --locked
+
+  # Advisories run in advisories.yml (main and daily), so a new advisory can't fail unrelated PRs.
+  cargo-deny:
+    name: cargo deny (licenses, bans, sources)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 # v2.90.0
+        with:
+          tool: cargo-deny@0.20.2
+      - name: cargo deny check
+        run: cargo deny --locked check -D warnings licenses bans sources
+
+  worker:
+    name: Worker (pytest, CPU)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The cache keeps only what uv built itself (prune-cache): torch's CUDA wheels come from the
+      # PyTorch index each run, which is about as fast as restoring them.
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.11.4"
+          enable-cache: true
+          save-cache: ${{ github.ref == 'refs/heads/main' }}
+          cache-dependency-glob: uv.lock
+          cache-python: true
+          working-directory: worker
+      - name: uv sync --frozen
+        run: uv sync --frozen
+      - name: pytest
+        run: uv run --frozen pytest
+
+  demo:
+    name: Demo (typecheck, build)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: demo
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Same pnpm and Node major as demo/Containerfile.
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          version: 11.28.6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      # setup-node's pnpm cache always saves, so the store is cached by hand (saved from main only).
+      - name: pnpm store path
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - name: Restore pnpm store
+        id: pnpm-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('demo/pnpm-lock.yaml') }}
+      # esbuild works without its install script (as in demo/Containerfile).
+      - name: pnpm install
+        run: pnpm install --frozen-lockfile --config.strict-dep-builds=false
+      - name: Save pnpm store
+        if: github.ref == 'refs/heads/main' && steps.pnpm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('demo/pnpm-lock.yaml') }}
+      - name: Typecheck
+        run: pnpm run typecheck
+      - name: Build
+        run: pnpm run build
+
+  deploy:
+    name: Deploy (shellcheck, compose, hadolint)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: shellcheck
+        run: >-
+          docker run --rm -v "$PWD:/mnt:ro" -w /mnt
+          koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d
+          -x deploy/*.sh worker/run.sh worker/bench/*.sh crates/g2p-ja/tools/fetch_unidic.sh
+          reference/setup.sh tools/security/*.sh
+      - name: docker compose config
+        run: |
+          # The variables deploy/lib.sh writes into a release's .env, with placeholder values.
+          cat > "$RUNNER_TEMP/ci.env" <<'EOF'
+          KOKORO_ROOT=/srv/optimized-kokoro
+          KOKORO_RELEASE=ci
+          KOKORO_UNIDIC_FILE=ci.dic
+          KOKORO_GPU=0
+          KOKORO_LISTEN=127.0.0.1:8880
+          KOKORO_DEMO_LISTEN=127.0.0.1:25436
+          KOKORO_MAX_BATCH=1
+          EOF
+          docker compose -f deploy/compose.yaml --env-file "$RUNNER_TEMP/ci.env" config --quiet
+          COMPOSE_PROFILES=cloudflared docker compose -f deploy/compose.yaml --env-file "$RUNNER_TEMP/ci.env" config --quiet
+      - name: hadolint
+        if: ${{ !cancelled() }}
+        run: |
+          for f in deploy/server.Containerfile worker/Containerfile demo/Containerfile; do
+            echo "== $f"
+            docker run --rm -i hadolint/hadolint:v2.15.1@sha256:32dac94127fd60b7b7e3fbfc65e1383b9b5e25c9bfd7b8536de7a539fe68a12d \
+              hadolint --failure-threshold warning - < "$f"
+          done
+      # A tag can be moved to other code; a commit SHA can't. Dependabot keeps the pins current.
+      - name: Actions are pinned to commit SHAs
+        if: ${{ !cancelled() }}
+        run: |
+          if grep -nE '^\s*(-\s+)?uses:\s*[^.][^@]*@' .github/workflows/*.y*ml | grep -vE '@[0-9a-f]{40}(\s|$)'; then
+            echo "::error::Pin these actions to a full commit SHA with a '# vX.Y.Z' comment."
+            exit 1
+          fi

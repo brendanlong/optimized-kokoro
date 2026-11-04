@@ -5,7 +5,7 @@
 # against the same worker.
 #   KOKORO_SERVER_BIN=/abs/path/kokoro-server [KOKORO_WORKER_IMAGE=...] bash bench/e2e.sh
 set -uo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit
 mkdir -p results
 MODELS=${GPUC_DATA_DIR:-$HOME/.cache}/kokoro-worker-models
 if [ ! -f "$MODELS/voices.safetensors" ]; then
@@ -78,4 +78,4 @@ podman stop -t 5 kw-e2e > /dev/null
 wait $worker
 grep -cE "protocol violation|stalled|connection error|connection failed" results/e2e.worker.log
 grep -E "Traceback|CRITICAL" results/e2e.worker.log | head -5
-echo done
+echo "done"

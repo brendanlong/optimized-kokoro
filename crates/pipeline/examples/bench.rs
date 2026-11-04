@@ -25,12 +25,9 @@ fn main() {
             std::io::stdin().read_to_string(&mut s).unwrap();
             vec![s]
         }
-        Some("--dump") => args[1..]
-            .iter()
-            .flat_map(kokoro_reference::read)
-            .filter(|r| r.lang == code)
-            .map(|r| r.text)
-            .collect(),
+        Some("--dump") => {
+            args[1..].iter().flat_map(kokoro_reference::read).filter(|r| r.lang == code).map(|r| r.text).collect()
+        }
         Some(path) => vec![std::fs::read_to_string(path).unwrap()],
         None => kokoro_reference::all().into_iter().filter(|r| r.lang == code).map(|r| r.text).collect(),
     };

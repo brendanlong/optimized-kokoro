@@ -995,6 +995,4 @@ pub const EMOJI_START: &[(char, char)] = &[
 ];
 
 /// `regex` `\p{Emoji_Modifier}`.
-pub const EMOJI_MODIFIER: &[(char, char)] = &[
-    ('\u{1f3fb}', '\u{1f3ff}'),
-];
+pub const EMOJI_MODIFIER: &[(char, char)] = &[('\u{1f3fb}', '\u{1f3ff}')];

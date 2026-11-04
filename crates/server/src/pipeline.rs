@@ -81,9 +81,13 @@ impl Pipeline for StubPipeline {
                     let ids = phonemes.chars().map(stub_id).collect();
                     Chunk { text, phonemes, ids, pause: None, unread: 0 }
                 }
-                kokoro_text::Chunk::Pause(seconds) => {
-                    Chunk { text: String::new(), phonemes: String::new(), ids: Vec::new(), pause: Some(seconds), unread: 0 }
-                }
+                kokoro_text::Chunk::Pause(seconds) => Chunk {
+                    text: String::new(),
+                    phonemes: String::new(),
+                    ids: Vec::new(),
+                    pause: Some(seconds),
+                    unread: 0,
+                },
             })
         }))
     }

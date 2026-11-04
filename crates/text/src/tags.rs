@@ -50,7 +50,6 @@ pub fn strip_emoji(text: &str) -> String {
     EMOJI.replace_all(text, " ").into_owned()
 }
 
-
 /// A request the reference server refuses before streaming.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Rejected {
@@ -80,9 +79,7 @@ pub fn check_speakable(text: &str, options: &Options) -> Result<(), Rejected> {
 
 /// `check_pause_budget`: refuses a request whose pauses, each capped, add up past the limit.
 pub fn check_pause_budget(text: &str, limits: &Limits) -> Result<(), Rejected> {
-    let pauses = PAUSE_TAG
-        .captures_iter(text)
-        .map(|c| parse_float(&c[1]).min(limits.max_pause_duration_s));
+    let pauses = PAUSE_TAG.captures_iter(text).map(|c| parse_float(&c[1]).min(limits.max_pause_duration_s));
     let total_s = fsum(pauses);
     if total_s > limits.max_total_pause_s {
         return Err(Rejected::TooMuchSilence { total_s, limit_s: limits.max_total_pause_s });
@@ -144,7 +141,6 @@ mod tests {
         assert_eq!(fsum([1e100, 1.0, -1e100, 1e-100]), 1.0);
         assert_eq!(fsum([]), 0.0);
     }
-
 
     #[test]
     fn pause_budget() {

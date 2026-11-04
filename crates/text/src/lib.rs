@@ -9,15 +9,17 @@
 #![forbid(unsafe_code)]
 
 mod english_data;
-mod scan;
 pub mod inflect;
 pub mod normalize;
 pub mod py;
 pub mod pyre;
+mod scan;
 pub mod split;
 mod tables;
 pub mod tags;
 
 pub use normalize::{Normalizer, Options};
-pub use split::{Chunk, DEFAULT_MAX_TOKENS, Phonemes, Piece, SmartSplit, join_lines, sentences, smart_split, try_smart_split};
+pub use split::{
+    Chunk, DEFAULT_MAX_TOKENS, Phonemes, Piece, SmartSplit, join_lines, sentences, smart_split, try_smart_split,
+};
 pub use tags::{Limits, Rejected, check_pause_budget, check_speakable, strip_emoji};

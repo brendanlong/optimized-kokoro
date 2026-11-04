@@ -15,12 +15,15 @@ fn main() {
     let order = match args.get(3).map(String::as_str) {
         Some("none") => ContextOrder::default(),
         path => {
-            let path = path.map_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("data/context_order.txt"), Into::into);
+            let path =
+                path.map_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("data/context_order.txt"), Into::into);
             let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
             ContextOrder::parse(&text).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
         }
     };
-    if let Err(e) = kokoro_g2p_ja::dict::build(Path::new(&args[1]), kokoro_g2p_ja::UNIDIC_VERSION, &order, Path::new(&args[2])) {
+    if let Err(e) =
+        kokoro_g2p_ja::dict::build(Path::new(&args[1]), kokoro_g2p_ja::UNIDIC_VERSION, &order, Path::new(&args[2]))
+    {
         eprintln!("{e}");
         std::process::exit(1);
     }

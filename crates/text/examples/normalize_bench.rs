@@ -24,5 +24,9 @@ fn main() {
         std::hint::black_box(split::normalize(&join_lines(text), "a", &options));
     }
     let elapsed = start.elapsed();
-    println!("{} texts, {chars} chars in {elapsed:?} ({:.1} MB/s)", texts.len(), chars as f64 / elapsed.as_secs_f64() / 1e6);
+    println!(
+        "{} texts, {chars} chars in {elapsed:?} ({:.1} MB/s)",
+        texts.len(),
+        chars as f64 / elapsed.as_secs_f64() / 1e6
+    );
 }

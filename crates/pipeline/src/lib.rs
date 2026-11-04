@@ -33,6 +33,8 @@ use std::ops::Range;
 use std::sync::{Arc, OnceLock};
 
 pub use kokoro_g2p_en::Token;
+#[doc(hidden)]
+pub use kokoro_g2p_ja::skip_without_dictionary;
 pub use kokoro_text::{DEFAULT_MAX_TOKENS, Limits, Options as NormalizationOptions};
 pub use vocab::id;
 
@@ -497,7 +499,11 @@ impl Tagger for Spacy<'_> {
         self.0
             .process(text)
             .into_iter()
-            .map(|t| TaggedToken { text: t.text.to_owned(), tag: t.tag.to_owned(), whitespace: t.whitespace.to_owned() })
+            .map(|t| TaggedToken {
+                text: t.text.to_owned(),
+                tag: t.tag.to_owned(),
+                whitespace: t.whitespace.to_owned(),
+            })
             .collect()
     }
 }
@@ -568,8 +574,8 @@ impl<'p> Request<'p> {
             let run = if self.reads(language) {
                 let ps = self.foreign(segment, language)?;
                 let words: Vec<&str> = ps.split(kokoro_text::py::is_space).filter(|w| !w.is_empty()).collect();
-                let reference =
-                    language == Language::Japanese || matches!(language, Language::Script(s) if foreign::in_foreign_py(s));
+                let reference = language == Language::Japanese
+                    || matches!(language, Language::Script(s) if foreign::in_foreign_py(s));
                 if !words.is_empty() || reference {
                     tokens.extend(words.iter().enumerate().map(|(i, w)| Token {
                         text: if i == 0 { segment.to_owned() } else { String::new() },
@@ -613,7 +619,9 @@ impl<'p> Request<'p> {
     fn japanese(&mut self, text: &str) -> Result<Phonemes, Error> {
         let g2p = self.pipeline.foreign.get(&Language::Japanese).expect("every pipeline has a Japanese G2P");
         if !g2p.available() {
-            return Err(Error::Dictionary(kokoro_g2p_ja::default_dictionary().err().map_or_else(String::new, |e| e.to_string())));
+            return Err(Error::Dictionary(
+                kokoro_g2p_ja::default_dictionary().err().map_or_else(String::new, |e| e.to_string()),
+            ));
         }
         self.g2p_phonemes(text)
     }
@@ -706,7 +714,8 @@ impl<'p> Request<'p> {
     fn english_string(&mut self, segment: &str) -> Result<String, Error> {
         let pipeline = self.pipeline;
         let mut tagger = Spacy(pipeline.nlp);
-        let mut fallback = LazyFallback { data: &pipeline.espeak, british: false, engine: &mut self.fallback, error: None };
+        let mut fallback =
+            LazyFallback { data: &pipeline.espeak, british: false, engine: &mut self.fallback, error: None };
         let (ps, _) = pipeline.g2p.phonemize(segment, &mut tagger, Some(&mut fallback))?;
         match fallback.error {
             Some(e) => Err(e.into()),

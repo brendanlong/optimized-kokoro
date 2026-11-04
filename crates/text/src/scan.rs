@@ -140,7 +140,6 @@ fn email_domain_end(t: &Chars, start: usize, domain: impl Fn(char) -> bool) -> O
     })
 }
 
-
 /// One `UNIT_PATTERN` match: the whole span, the signed number with its decimals (group 1), and
 /// the unit (group 6).
 pub struct UnitMatch {
@@ -209,7 +208,11 @@ pub fn units(text: &str, units: &[&str]) -> Vec<UnitMatch> {
         });
         match found.flatten() {
             Some((number_end, unit_start, end)) => {
-                out.push(UnitMatch { range: t.span(s..end), number: t.span(s..number_end), unit: t.span(unit_start..end) });
+                out.push(UnitMatch {
+                    range: t.span(s..end),
+                    number: t.span(s..number_end),
+                    unit: t.span(unit_start..end),
+                });
                 s = end;
             }
             None => s += 1,
@@ -234,7 +237,9 @@ pub fn times(text: &str) -> Vec<TimeMatch> {
     // ` ?: ?[0-9]{2}` from i, trying the optional spaces first.
     let colon_pair = |i: usize| {
         space_options(i).into_iter().find_map(|j| {
-            (t.get(j) == Some(':')).then(|| space_options(j + 1).into_iter().find(|&k| d(k) && d(k + 1)).map(|k| k + 2)).flatten()
+            (t.get(j) == Some(':'))
+                .then(|| space_options(j + 1).into_iter().find(|&k| d(k) && d(k + 1)).map(|k| k + 2))
+                .flatten()
         })
     };
     let mut out = Vec::new();
@@ -282,10 +287,8 @@ pub(crate) mod tests {
     type Groups = Vec<Vec<Option<Range<usize>>>>;
 
     fn assert_same(reference: &impl Fn(&str) -> Groups, text: &str, actual: Groups, groups: &[usize]) {
-        let expected: Groups = reference(text)
-            .into_iter()
-            .map(|m| groups.iter().map(|&g| m[g].clone()).collect())
-            .collect();
+        let expected: Groups =
+            reference(text).into_iter().map(|m| groups.iter().map(|&g| m[g].clone()).collect()).collect();
         assert_eq!(actual, expected, "{text:?}");
     }
 
@@ -315,10 +318,15 @@ pub(crate) mod tests {
         let re = compile_i(&format!(
             r"((?<!\w)(?<!\w[.,])([+-]?)(\d{{1,3}}(,\d{{3}})*|\d+,\d+|\d+)(\.\d+)?)\s*({}){{1}}(?=[^\w\d]{{1}}|\b)",
             keys.join("|")
-        )).reference();
-        let alphabet = ["1", "2", "٣", ",", ".", "+", "-", " ", "\t", "km", "m", "s", "K", "B", "°C", "µF", "μf", "mi/h", "Ω", "x", "ſ", "ı"];
+        ))
+        .reference();
+        let alphabet = [
+            "1", "2", "٣", ",", ".", "+", "-", " ", "\t", "km", "m", "s", "K", "B", "°C", "µF", "μf", "mi/h", "Ω", "x",
+            "ſ", "ı",
+        ];
         for text in random_texts(&alphabet, 30000, 3) {
-            let actual = units(&text, &keys).into_iter().map(|m| vec![Some(m.range), Some(m.number), Some(m.unit)]).collect();
+            let actual =
+                units(&text, &keys).into_iter().map(|m| vec![Some(m.range), Some(m.number), Some(m.unit)]).collect();
             assert_same(&re, &text, actual, &[0, 1, 6]);
         }
     }

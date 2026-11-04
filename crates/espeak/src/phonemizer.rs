@@ -1,7 +1,7 @@
 //! phonemizer-fork 3.3.2's espeak backend, as misaki configures it: `preserve_punctuation=True`,
 //! `with_stress=True`, `tie='^'`, the default separator (words end in a space) and `strip=False`.
 
-use kokoro_espeak_ng::{Espeak, EspeakData, Error, PHONEMES_IPA_TIE, Result};
+use kokoro_espeak_ng::{Error, Espeak, EspeakData, PHONEMES_IPA_TIE, Result};
 use std::sync::{Arc, Mutex};
 
 /// `phonemizer.punctuation._DEFAULT_MARKS`.
@@ -54,16 +54,10 @@ impl Backend {
     }
 
     /// [`phonemize`](Self::phonemize) with `espeak` standing in for [`espeak`](Self::espeak).
-    pub fn phonemize_with(
-        &self,
-        text: &str,
-        mut espeak: impl FnMut(&str) -> Result<String>,
-    ) -> Result<Vec<String>> {
+    pub fn phonemize_with(&self, text: &str, mut espeak: impl FnMut(&str) -> Result<String>) -> Result<Vec<String>> {
         let (chunks, marks) = preserve(text);
-        let phonemized = chunks
-            .iter()
-            .map(|chunk| Ok(self.postprocess_line(&espeak(chunk)?)))
-            .collect::<Result<Vec<_>>>()?;
+        let phonemized =
+            chunks.iter().map(|chunk| Ok(self.postprocess_line(&espeak(chunk)?))).collect::<Result<Vec<_>>>()?;
         Ok(restore(phonemized, &marks))
     }
 
@@ -132,10 +126,8 @@ fn mark_spans(line: &str) -> Vec<(usize, usize)> {
         if is_mark(c) || py_isspace(c) {
             let (start, has_mark) = run.unwrap_or((i, false));
             run = Some((start, has_mark || is_mark(c)));
-        } else if let Some((start, has_mark)) = run.take() {
-            if has_mark {
-                spans.push((start, i));
-            }
+        } else if let Some((start, true)) = run.take() {
+            spans.push((start, i));
         }
     }
     if let Some((start, true)) = run {
@@ -262,10 +254,10 @@ mod tests {
     fn preserve_splits_at_marks() {
         let (chunks, marks) = preserve("hello, my world!");
         assert_eq!(chunks, ["hello", "my world"]);
-        assert_eq!(marks.iter().map(|m| (m.text, m.position)).collect::<Vec<_>>(), [
-            (", ", Position::Inner),
-            ("!", Position::End)
-        ]);
+        assert_eq!(
+            marks.iter().map(|m| (m.text, m.position)).collect::<Vec<_>>(),
+            [(", ", Position::Inner), ("!", Position::End)]
+        );
     }
 
     #[test]

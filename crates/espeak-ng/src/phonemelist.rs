@@ -5,7 +5,16 @@ use crate::defs::*;
 use crate::engine::{Espeak, Tr};
 use crate::phoneme::pl;
 
-const PAUSE_PHONEMES: [u8; 8] = [0, PHON_PAUSE_VSHORT, PHON_PAUSE_SHORT, PHON_PAUSE, PHON_PAUSE_LONG, PHON_GLOTTALSTOP, PHON_PAUSE_LONG, PHON_PAUSE_LONG];
+const PAUSE_PHONEMES: [u8; 8] = [
+    0,
+    PHON_PAUSE_VSHORT,
+    PHON_PAUSE_SHORT,
+    PHON_PAUSE,
+    PHON_PAUSE_LONG,
+    PHON_GLOTTALSTOP,
+    PHON_PAUSE_LONG,
+    PHON_PAUSE_LONG,
+];
 
 /// Copies the `PHONEME_LIST2` part of an entry, leaving the rest as it was (C's `memcpy`).
 fn copy2(dst: &mut PhonemeList, src: &PhonemeList2) {
@@ -60,7 +69,8 @@ impl Espeak {
                             continue;
                         }
                         plist2.phcode = rp.new_ph;
-                        let unstressed = self.phoneme_tab[rp.new_ph as usize].is_some_and(|p| (p.phflags & PH_UNSTRESSED) != 0);
+                        let unstressed =
+                            self.phoneme_tab[rp.new_ph as usize].is_some_and(|p| (p.phflags & PH_UNSTRESSED) != 0);
                         let plist2 = &mut self.ph_list2[ix];
                         if plist2.stresslevel > 1 && unstressed {
                             plist2.stresslevel = 0;
@@ -154,7 +164,9 @@ impl Espeak {
                 let n1 = p2(&self.ph_list2, j as isize + 1);
                 let n2e = p2(&self.ph_list2, j as isize + 2);
                 if (e.synthflags & SFLAG_EMBEDDED) == 0
-                    && (e.tone_ph as i32 == current_phoneme_tab || n1.phcode == PHON_SWITCH || (n1.phcode == PHON_PAUSE && n2e.phcode == PHON_SWITCH))
+                    && (e.tone_ph as i32 == current_phoneme_tab
+                        || n1.phcode == PHON_SWITCH
+                        || (n1.phcode == PHON_PAUSE && n2e.phcode == PHON_SWITCH))
                 {
                     if deleted_sourceix == -1 && e.sourceix != 0 {
                         deleted_sourceix = e.sourceix as i32;
@@ -316,7 +328,9 @@ impl Espeak {
                             p += 1;
                         }
                     } else if unstress_count > 1 && (unstress_count & 1) == 0 {
-                        if (self.t(tr).langopts.stress_flags & S_NO_DIM) != 0 || (word_stress > 3 && list3[plist3 + 1].sourceix != 0) {
+                        if (self.t(tr).langopts.stress_flags & S_NO_DIM) != 0
+                            || (word_stress > 3 && list3[plist3 + 1].sourceix != 0)
+                        {
                             unstress_count = 1;
                         } else {
                             list3[plist3].stresslevel = 0;
@@ -509,7 +523,16 @@ impl Espeak {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn reinterpret_phoneme(&mut self, ph: &crate::data::PhonemeTab, ph2: &crate::data::PhonemeTab, list3: &mut [PhonemeList], plist3: usize, tr: Tr, phdata: &mut PhonemeData, worddata: &mut Option<PhonemeList>) {
+    fn reinterpret_phoneme(
+        &mut self,
+        ph: &crate::data::PhonemeTab,
+        ph2: &crate::data::PhonemeTab,
+        list3: &mut [PhonemeList],
+        plist3: usize,
+        tr: Tr,
+        phdata: &mut PhonemeData,
+        worddata: &mut Option<PhonemeList>,
+    ) {
         if ph.typ == PH_VOWEL {
             list3[plist3].synthflags |= SFLAG_SYLLABLE;
             if ph2.typ != PH_VOWEL {

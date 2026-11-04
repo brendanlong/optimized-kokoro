@@ -473,7 +473,10 @@ mod tests {
 
     #[test]
     fn short_greek_is_left_to_english() {
-        assert_eq!(shape("The β-catenin level rose by Δ, about π percent."), [("The β-catenin level rose by Δ, about π percent.", None)]);
+        assert_eq!(
+            shape("The β-catenin level rose by Δ, about π percent."),
+            [("The β-catenin level rose by Δ, about π percent.", None)]
+        );
         assert_eq!(shape("αβ T cells and ΔΔCt values."), [("αβ T cells and ΔΔCt values.", None)]);
         assert_eq!(shape("ΔΔ λόγος"), [("ΔΔ ", None), ("λόγος", Some("el"))]);
     }
@@ -502,7 +505,9 @@ mod tests {
         assert_eq!(shape("Ა გამარჯობა"), [("Ა გამარჯობა", Some("ka"))]);
         assert_eq!(shape("ⴂⴀⴋⴀ"), [("ⴂⴀⴋⴀ", Some("Georgian"))]);
         assert_eq!(shape("ﬓԲարեւ ﬔ"), [("ﬓ", Some("Armenian")), ("Բարեւ ", Some("hy")), ("ﬔ", Some("Armenian"))]);
-        for (text, script) in [("ꦗꦮ", "Javanese"), ("ꨌꩌ", "Cham"), ("ꮳꮃꭹ", "Cherokee"), ("ꯃꯤꯇꯩ", "Meetei Mayek"), ("ϢϤϦ", "Coptic")] {
+        for (text, script) in
+            [("ꦗꦮ", "Javanese"), ("ꨌꩌ", "Cham"), ("ꮳꮃꭹ", "Cherokee"), ("ꯃꯤꯇꯩ", "Meetei Mayek"), ("ϢϤϦ", "Coptic")]
+        {
             assert_eq!(shape(text), [(text, Some(script))]);
         }
     }
@@ -528,7 +533,10 @@ mod tests {
 
     #[test]
     fn cjk_runs_are_chinese_unless_they_have_kana() {
-        assert_eq!(shape("他说 我们走吧、明天见"), [("他说", Some("zh")), (" ", None), ("我们走吧、明天见", Some("zh"))]);
+        assert_eq!(
+            shape("他说 我们走吧、明天见"),
+            [("他说", Some("zh")), (" ", None), ("我们走吧、明天见", Some("zh"))]
+        );
         assert_eq!(shape("東京へ行く"), [("東京へ行く", Some("ja"))]);
         assert_eq!(shape("ーabc"), [("ーabc", None)]);
         assert_eq!(shape("我兙你"), [("我", Some("zh")), ("兙", Some("Han")), ("你", Some("zh"))]);
@@ -540,19 +548,39 @@ mod tests {
     #[test]
     fn espeak_languages_keep_their_own_script() {
         let shape = |text, script| -> Vec<(&str, Option<&str>)> {
-            split_in(text, Native::Espeak(script), |c| c != '兙').into_iter().map(|(s, l)| (s, l.map(Language::code))).collect()
+            split_in(text, Native::Espeak(script), |c| c != '兙')
+                .into_iter()
+                .map(|(s, l)| (s, l.map(Language::code)))
+                .collect()
         };
         assert_eq!(
             shape("Dijo नमस्ते y 北京 o 兙.", Script::Latin),
-            [("Dijo ", None), ("नमस्ते", Some("hi")), (" y ", None), ("北京", Some("zh")), (" o ", None), ("兙", Some("Han")), (".", None)]
+            [
+                ("Dijo ", None),
+                ("नमस्ते", Some("hi")),
+                (" y ", None),
+                ("北京", Some("zh")),
+                (" o ", None),
+                ("兙", Some("Han")),
+                (".", None)
+            ]
         );
-        assert_eq!(shape("वह New York गया", Script::Devanagari), [("वह ", None), ("New York", Some("en")), (" गया", None)]);
-        assert_eq!(shape("Привет मित्र カナ", Script::Devanagari), [("Привет", Some("ru")), (" मित्र ", None), ("カナ", Some("ja"))]);
+        assert_eq!(
+            shape("वह New York गया", Script::Devanagari),
+            [("वह ", None), ("New York", Some("en")), (" गया", None)]
+        );
+        assert_eq!(
+            shape("Привет मित्र カナ", Script::Devanagari),
+            [("Привет", Some("ru")), (" मित्र ", None), ("カナ", Some("ja"))]
+        );
     }
 
     #[test]
     fn links_are_the_english_g2ps() {
-        assert_eq!(shape("Go to [东京](/tˈOkjO/) or [Ελλάδα](/ɛlˈɑdə/) now."), [("Go to [东京](/tˈOkjO/) or [Ελλάδα](/ɛlˈɑdə/) now.", None)]);
+        assert_eq!(
+            shape("Go to [东京](/tˈOkjO/) or [Ελλάδα](/ɛlˈɑdə/) now."),
+            [("Go to [东京](/tˈOkjO/) or [Ελλάδα](/ɛlˈɑdə/) now.", None)]
+        );
         assert_eq!(shape("[a](/b/) Привет"), [("[a](/b/) ", None), ("Привет", Some("ru"))]);
     }
 

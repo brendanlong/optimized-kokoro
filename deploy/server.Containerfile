@@ -4,11 +4,10 @@
 #
 # Pinned: base images by digest, crates by Cargo.lock. The builder is Debian 12 like the runtime, so
 # the binary needs no newer glibc than it has. .cargo/config.toml builds for x86-64-v3.
+# Dependabot updates the FROM lines. Keep the Rust version and RUST_TOOLCHAIN in
+# .github/workflows/ci.yml the same.
 
-ARG RUST_IMAGE=docker.io/library/rust:1.97.1-bookworm@sha256:0e2bcaef56d041a486784e54104a81aebe0da44bd03019bd70bc0401e42e4a97
-ARG RUNTIME_IMAGE=gcr.io/distroless/cc-debian12@sha256:e5d81ddde149641e2a9ba55be4545bc125c67de07508b03ba4c22e6eb0ded5aa
-
-FROM ${RUST_IMAGE} AS builder
+FROM docker.io/library/rust:1.97.1-bookworm@sha256:0e2bcaef56d041a486784e54104a81aebe0da44bd03019bd70bc0401e42e4a97 AS builder
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
 COPY .cargo .cargo
@@ -19,7 +18,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     install -D -m 0755 target/release/kokoro-server /out/kokoro-server && \
     mkdir -p /out/run/kokoro /out/run/secrets /out/unidic
 
-FROM ${RUNTIME_IMAGE}
+FROM gcr.io/distroless/cc-debian12@sha256:e5d81ddde149641e2a9ba55be4545bc125c67de07508b03ba4c22e6eb0ded5aa
 COPY --from=builder /out/kokoro-server /usr/local/bin/kokoro-server
 # kokoro-espeak-ng reads its data at run time from the path it was built at (CARGO_MANIFEST_DIR).
 COPY --from=builder /src/crates/espeak-ng/espeak-ng-data /src/crates/espeak-ng/espeak-ng-data

@@ -331,7 +331,12 @@ impl Connection {
         if state.busy() > 0 && state.last_progress.elapsed() >= progress_timeout {
             return Some(format!("no progress for {progress_timeout:?} with work outstanding"));
         }
-        let oldest = state.slots.iter().enumerate().filter_map(|(i, p)| Some((i, p.as_ref()?.submitted))).min_by_key(|(_, t)| *t);
+        let oldest = state
+            .slots
+            .iter()
+            .enumerate()
+            .filter_map(|(i, p)| Some((i, p.as_ref()?.submitted)))
+            .min_by_key(|(_, t)| *t);
         match oldest {
             Some((slot, submitted)) if submitted.elapsed() >= slot_timeout => {
                 Some(format!("slot {slot} outstanding for {slot_timeout:?}"))

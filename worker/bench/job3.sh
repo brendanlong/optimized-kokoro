@@ -1,7 +1,7 @@
 #!/bin/bash
 # gpuc job: batch-of-one diagnosis, then the final gVisor benchmarks on the current code.
 set -uo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit
 mkdir -p results
 MODELS=${GPUC_DATA_DIR:-$HOME/.cache}/kokoro-worker-models
 echo "== diag_b1"

@@ -76,9 +76,8 @@ pub fn read(path: impl AsRef<Path>) -> Vec<Record> {
         .enumerate()
         .filter_map(|(n, line)| {
             let line = line.unwrap();
-            (!line.trim().is_empty()).then(|| {
-                serde_json::from_str(&line).unwrap_or_else(|e| panic!("{}:{}: {e}", path.display(), n + 1))
-            })
+            (!line.trim().is_empty())
+                .then(|| serde_json::from_str(&line).unwrap_or_else(|e| panic!("{}:{}: {e}", path.display(), n + 1)))
         })
         .collect()
 }
@@ -89,7 +88,11 @@ pub fn all() -> Vec<Record> {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../reference");
     let explicit = std::env::var_os("KOKORO_REFERENCE_OUT").map(PathBuf::from);
     let out = explicit.clone().unwrap_or_else(|| root.join("out"));
-    let mut paths = vec![root.join("fixtures/hard_cases.out.jsonl"), root.join("fixtures/zh_mixed.out.jsonl"), root.join("fixtures/kana_mixed.out.jsonl")];
+    let mut paths = vec![
+        root.join("fixtures/hard_cases.out.jsonl"),
+        root.join("fixtures/zh_mixed.out.jsonl"),
+        root.join("fixtures/kana_mixed.out.jsonl"),
+    ];
     let entries = match std::fs::read_dir(&out) {
         Err(e) if explicit.is_some() || e.kind() != std::io::ErrorKind::NotFound => {
             panic!("{}: {e}", out.display())
@@ -99,7 +102,9 @@ pub fn all() -> Vec<Record> {
     if let Some(entries) = entries {
         let mut extra: Vec<_> = entries
             .map(|e| e.unwrap_or_else(|e| panic!("{}: {e}", out.display())).path())
-            .filter(|p| p.extension().is_some_and(|x| x == "jsonl") && p.file_name().is_some_and(|n| n != "hard_cases.jsonl"))
+            .filter(|p| {
+                p.extension().is_some_and(|x| x == "jsonl") && p.file_name().is_some_and(|n| n != "hard_cases.jsonl")
+            })
             .collect();
         extra.sort();
         paths.extend(extra);

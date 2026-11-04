@@ -244,7 +244,13 @@ where
         (Ok(speech), permits) => (speech, permits),
         (Err(message), _) => return invalid(message),
     };
-    let mut audio = stream::start(speech, connection, state.pipeline.clone(), stream::Limits { lookahead: state.config.lookahead, max_ids: state.config.max_request_ids }, permits);
+    let mut audio = stream::start(
+        speech,
+        connection,
+        state.pipeline.clone(),
+        stream::Limits { lookahead: state.config.lookahead, max_ids: state.config.max_request_ids },
+        permits,
+    );
 
     // Headers wait for the first audio, so a request that fails before any is made gets a status.
     let first = match audio.next().await {

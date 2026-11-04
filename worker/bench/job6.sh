@@ -3,13 +3,14 @@
 # in its own run, serve seeded from it with load, then a batch-1 worker against the hostile front
 # and clients that hang up early. Reports the scopes' memory peaks.
 set -uo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit
 mkdir -p results
 MODELS=${GPUC_DATA_DIR:-$HOME/.cache}/kokoro-worker-models
 CG=/sys/fs/cgroup/user.slice/user-$(id -u).slice/user@$(id -u).service/app.slice
 
 peak() {  # container name -> memory.peak of its run.sh scope, while it runs
     local f
+    # shellcheck disable=SC2012  # the first match of a glob of cgroup scope names, which are plain
     f=$(ls -d "$CG/$1"-*.scope 2> /dev/null | head -1)
     [ -n "$f" ] && echo "$1 memory.peak $(($(cat "$f/memory.peak") >> 20)) MiB, max $(cat "$f/memory.max")"
 }
@@ -44,4 +45,4 @@ podman stop -t 5 kw-hostile > /dev/null
 wait
 grep -cE "protocol violation|stalled|connection error|connection failed" results/hostile.worker.log
 grep -E "Traceback|CRITICAL" results/hostile.worker.log | head -5
-echo done
+echo "done"
