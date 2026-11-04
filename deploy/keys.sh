@@ -90,6 +90,8 @@ add)
     fi
     ! has_name "$name" || die "there's already a key named $name"
     key=$(new_key)
+    # sed '$a\' ends the last line with a newline if it has none (not a quote escape).
+    # shellcheck disable=SC1003
     (umask 077 && { sed '$a\' "$dir/keys"; printf '%s\t%s\t%s\n' "$name" "$key" "$streams"; } > "$dir/keys.new")
     apply
     echo "added $name. Its key (shown only now):"
