@@ -80,7 +80,7 @@ impl Wrapper {
         }
     }
 
-    fn run(&self, text: &str, espeak: Option<&mut dyn FnMut(&str) -> kokoro_espeak::Result<String>>) -> Option<String> {
+    fn run(&self, text: &str, espeak: Option<&mut EspeakFn>) -> Option<String> {
         match (self, espeak) {
             (Wrapper::Fallback(w), Some(e)) => w.phonemize_with(text, e).unwrap(),
             (Wrapper::Fallback(w), None) => w.phonemize(text).unwrap(),
@@ -89,6 +89,8 @@ impl Wrapper {
         }
     }
 }
+
+type EspeakFn<'a> = dyn FnMut(&str) -> kokoro_espeak::Result<String> + 'a;
 
 #[derive(Default)]
 struct Tally {

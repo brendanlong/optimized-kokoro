@@ -126,10 +126,8 @@ fn mark_spans(line: &str) -> Vec<(usize, usize)> {
         if is_mark(c) || py_isspace(c) {
             let (start, has_mark) = run.unwrap_or((i, false));
             run = Some((start, has_mark || is_mark(c)));
-        } else if let Some((start, has_mark)) = run.take() {
-            if has_mark {
-                spans.push((start, i));
-            }
+        } else if let Some((start, true)) = run.take() {
+            spans.push((start, i));
         }
     }
     if let Some((start, true)) = run {
