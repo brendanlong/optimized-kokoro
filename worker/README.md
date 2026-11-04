@@ -13,7 +13,7 @@ uv run pytest                                             # protocol and connect
 ./run.sh probe /tmp/probe models/                         # what the sandbox can reach (tools/sandbox_probe.py)
 ```
 
-Startup compiles the model (torch.compile, Triton) into a tmpfs; the worker listens only once it's warm, so the front gets its Hello at once. In gVisor that takes about 2 minutes at `--max-batch 1` and 8 at `--max-batch 8`. To restart faster, seed the caches: `./run.sh export-cache DIR models/ [same flags]` warms up, writes the caches to DIR and exits without ever listening; then `KOKORO_CACHE_SEED=DIR ./run.sh serve ...` mounts them read-only and copies them in (8 minutes down to 1.5 with batching). The cache holds pickles and shared objects the worker loads, which is why only a run that never accepts a connection may write it. A seed is only valid for the same image, GPU and driver.
+Startup compiles the model (torch.compile, Triton) into a tmpfs; the worker listens only once it's warm, so the front gets its Hello at once. In gVisor that takes 4-6 minutes at `--max-batch 1` and about 10 at `--max-batch 8`, including compiling and autotuning the Triton kernels. To restart faster, seed the caches: `./run.sh export-cache DIR models/ [same flags]` warms up, writes the caches to DIR and exits without ever listening; then `KOKORO_CACHE_SEED=DIR ./run.sh serve ...` mounts them read-only and copies them in (about 75 s at batch 1). The cache holds pickles and shared objects the worker loads, which is why only a run that never accepts a connection may write it. A seed is only valid for the same image, GPU and driver.
 
 ## Sandbox
 
@@ -32,6 +32,7 @@ Startup compiles the model (torch.compile, Triton) into a tmpfs; the worker list
 - `kokoro_worker/server.py`: the socket, a reader thread per connection, and the GPU loop.
 - `kokoro_worker/model.py`: loads the weights and runs a batch. The modules are the kokoro fork's (`brendanlong/kokoro@66c8ed5`, imported without its G2P); the forward pass is ours.
 - `kokoro_worker/masked.py`: the decoder's forward pass with padding masked out.
+- `kokoro_worker/kernels.py`: the convolutions and STFT, without per-shape plans (see [Kernels](#kernels)).
 - `kokoro_worker/convert.py`, `kokoro_worker/client.py`: one-time converter and a test client.
 - `bench/`: equivalence checks, load generator, listening pairs, and the gpuc jobs that ran them; `e2e.sh` runs the Rust server against the sandboxed worker.
 - `tools/`: `hostile.py`, a hostile front (malformed, extreme and stalled frames, slot misuse, 300 mutations), and `sandbox_probe.py`, both from the PR #11 review; `fuzz_front.py`, coverage-guided fuzzing of the frame decoder and slot table with atheris (`uv run --with atheris python tools/fuzz_front.py CORPUS -max_total_time=600`).
@@ -39,10 +40,30 @@ Startup compiles the model (torch.compile, Triton) into a tmpfs; the worker list
 
 ## Batching
 
-`--max-batch` defaults to 1. On the RTX 3060 Ti with real sentences, `--max-batch 8` gives about +39% throughput at 16 concurrent requests (181x vs 130x), the same at 4, and slower single requests (60 vs 34 ms median); the last is a regression in the serving loop whose cause isn't found yet (the model path alone is as fast at batch 1). Use 8 when many listeners share the worker.
+`--max-batch` defaults to 1. On the RTX 3060 Ti with real sentences in gVisor, `--max-batch 8` gives 173x at 16 concurrent requests against 161x at batch 1, and about the same single-request latency (36 vs 34 ms median at 1 stream). Single requests used to be slower at batch 8 (44 vs 37 ms); that was first-time shapes (see [Kernels](#kernels)). Use 8 when many listeners share the worker.
 
 When the GPU is free the worker takes up to `--max-batch` queued requests, most urgent first, and never waits for more. The text side (ALBERT, text encoder, duration predictor) runs on the whole batch with attention masks, zeroed padding and packed LSTMs, so durations match a batch of one (exactly in fp32; in fp16 about one sentence in 16 gets one duration a frame off). Then the decoder runs in groups of similar output length (`--pad-slack`, default 25% padding at most), most urgent group first, and each group's audio goes out as soon as it's done.
 
 Padding used to change the audio (spectrogram correlation about 0.95 against a 0.996 noise floor): the instance norms took statistics over the padding, and padded frames leaked into real ones through the convolutions. `masked.py` takes the norm statistics over each row's real frames and zeroes padded frames before every convolution. Padded audio then correlates with unpadded at the noise floor (fp32). In fp16, any batch, padded or not, differs from batch 1 a little more than seed noise (0.99 vs 0.996), and about one sentence in 16 gets one duration a frame off; that's fp16 numerics depending on batch size. `--no-exact` turns the masks off, which is about 10% faster and changes the audio (heavily padded rows come out about twice as loud).
 
 Batch 1 and batches above 1 compile into separate graphs, because a graph compiled for a dynamic batch also accepts batch 1 (no measured speed difference either way).
+
+## Kernels
+
+cuDNN builds an execution plan the first time it sees each convolution shape (about 90 convolutions per request, ~200 µs each to plan), and cuFFT a plan per STFT size. Since a request's frame count depends on its predicted durations, most requests were the first of their size: 71 ms median to the result over the socket against 33 ms for the same request repeated. On a busy host, plan building, which is CPU work, made it worse. `kernels.py` replaces them:
+
+- Conv1d is a Triton implicit-GEMM kernel, compiled once per layer configuration with the length as a runtime argument. The tile is autotuned per layer, not per length, during warmup. Lengths and the strides that scale with them are passed unspecialized, because Triton otherwise compiles a variant per integer divisible by 16.
+- ConvTranspose1d is one cuBLAS matmul plus overlap-add.
+- The STFT and iSTFT are matmuls with a DFT matrix.
+
+Layer by layer, the Triton conv1d matches cuDNN's repeat time (4.1 ms summed over 12 decoder layers) and costs the same on a fresh length (cuDNN: 31 ms). Nothing in the model builds per-shape plans now: the profile shows no cuDNN convolution or FFT calls, and cuBLAS and the cuDNN LSTMs showed no first-time cost. Torch's own Triton convolution templates can't do this in torch 2.8: they have no conv1d, no dilation and no transposed convolutions. Doing the convolutions as cuBLAS GEMMs (im2col or shift-and-add) was 2-2.6x slower.
+
+Measured in gVisor (`bench/job_kernels.sh`), against main's worker in the same job:
+- Latency, 200 fresh real chunks each sent twice at batch 1: the first send went from 71 to 30 ms median, the repeat from 33 to 30 ms. Through the HTTP server, time to first byte went from 47 to 29 ms on first sends and from 34 to 29 ms on repeats.
+- Throughput at batch 1, with both workers up and load alternating between them over 3 rounds: 159-169x against 122-134x at 1 stream, and 156-161x against 122-129x at 16.
+- Audio over 650 sentences: durations identical. Spectrogram correlation with cuDNN is 0.993 mean, 0.985 min, against a seed-to-seed floor of 0.996 and 0.993. Whisper small.en on 200 sentences: 2.10% WER against 2.13%. Batched vs alone is as before (0.99, one sentence in 16 with a duration a frame off).
+- Memory: GPU reserved 590-594 MiB at batch 1 (cuDNN 468-552), about 765 MiB on the card with the CUDA context; RSS 6.2 GB (6.5-6.8 GB). Warmup peak is the same as steady state.
+- Startup: compiling and autotuning the Triton kernels adds to warmup. Cold, at batch 1, it takes 4-6 minutes against 3; at batch 8, 10 against 7. From a seeded cache it takes 73 s against 51 s, with the seed at 151 MB against 57 MB.
+
+`bench/reference.py` swaps cuDNN and cuFFT back in, for comparisons only.
+
