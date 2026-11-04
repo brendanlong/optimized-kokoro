@@ -45,7 +45,9 @@ check_cdi
 check_port_free "$KOKORO_LISTEN"
 check_port_free "$KOKORO_DEMO_LISTEN"
 ensure_runtime
-prune_releases # leftovers of a failed install
+# Leftovers of a failed install.
+sweep_projects
+prune_releases
 ensure_unidic "$unidic_from"
 ensure_models "$models_from"
 ensure_secrets "$keys_from"
@@ -54,8 +56,8 @@ stage_release
 # Takes a release that didn't come up (or was interrupted) down again; cleanup then removes it.
 take_down() {
     if [ -e "$root/current" ]; then
-        show_logs
-        compose down || true
+        show_logs "$rel"
+        compose down --volumes || true
     fi
     rm -f "$root/current"
 }

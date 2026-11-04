@@ -1,0 +1,14 @@
+#!/bin/bash
+# A fake curl for deploy/dry-run/test.sh: /health answers when exactly one project runs a server
+# and that project's worker. FAIL_HEALTH=new: never for the newest release (the one being staged).
+set -uo pipefail
+# shellcheck source=deploy/dry-run/bin/fake-lib.sh
+. "$(dirname "$0")/fake-lib.sh"
+log curl "$@"
+maybe_interrupt "curl $*"
+servers=$(compgen -G "$FAKE_STATE/*/svc/server")
+[ "$(wc -w <<< "$servers")" = 1 ] || exit 7
+p=$(basename "$(dirname "$(dirname "$servers")")")
+[ -e "$FAKE_STATE/$p/svc/worker" ] || exit 22
+if [ "${FAIL_HEALTH:-}" = new ] && [ "$p" = "$(newest_project)" ]; then exit 22; fi
+exit 0

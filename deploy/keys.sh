@@ -12,8 +12,9 @@
 # 255); its requests that don't set one run at the lower of 128 and this. Changes go to
 # /srv/optimized-kokoro/secrets/keys (NAME, KEY, MAX_STREAMS and MAX_PRIORITY, tab-separated, - for
 # the default; lines from before MAX_PRIORITY have three fields, which means its default),
-# server.toml is made from it, and only the server container is recreated (the worker keeps
-# running). If the server doesn't come back healthy, the old keys are put back (also on Ctrl-C).
+# server.toml is made from it, and only the server container of the current release (in its
+# Compose project) is recreated; the worker keeps running. If the server doesn't come back healthy,
+# the old keys are put back (also on Ctrl-C).
 set -euo pipefail
 # shellcheck source=deploy/lib.sh
 . "$(dirname "$0")/lib.sh"

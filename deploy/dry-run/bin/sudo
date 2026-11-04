@@ -1,0 +1,14 @@
+#!/bin/bash
+# sudo -u USER [-H] -- CMD: runs CMD as the caller.
+while [ $# -gt 0 ]; do
+    case $1 in
+    -u) shift 2 ;;
+    -H) shift ;;
+    --)
+        shift
+        break
+        ;;
+    *) break ;;
+    esac
+done
+exec "$@"

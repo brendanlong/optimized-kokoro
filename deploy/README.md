@@ -16,7 +16,7 @@ Three containers on the host's system Docker, defined by `compose.yaml`:
 
   The worker gets its GPU as a CDI device (`devices: nvidia.com/gpu=N`) with `NVIDIA_VISIBLE_DEVICES=void`, not with `--gpus`. With an image that sets `NVIDIA_VISIBLE_DEVICES=all` (every CUDA base image), `--gpus` takes the NVIDIA legacy hook path. Under runsc release-20261102.0 the sandbox then dies at boot with `Error reading mounts file: error unmarshaling mounts: unexpected end of JSON input`. CDI plus `void` works under `runsc-kokoro`: checked with `docker run --runtime=runsc-kokoro --device nvidia.com/gpu=0 -e NVIDIA_VISIBLE_DEVICES=void nvidia/cuda:12.6.3-base-ubuntu24.04 nvidia-smi`.
 - `jq`, `curl`, `flock`, `ss` and `sha256sum` on the host. For the converters (unless you import their output, below): uv for the models, and cargo for UniDic.
-- About 16 GB of disk for the images and data, and 12 GB of RAM for the worker.
+- About 16 GB of disk for the images and data, and 12 GB of RAM for the worker (twice that during the cache export and an update, when two workers run).
 
 ## Security model
 
@@ -32,7 +32,7 @@ Three containers on the host's system Docker, defined by `compose.yaml`:
 - The server reads UniDic and its config. It writes nothing. Its limits are 8192 open files (`max_connections` needs one per connection), 3 GB and 256 pids. The demo gets 512 MB.
 - The socket lives in a named volume: a tmpfs created as `uid=65534,gid=65534,mode=0700` and mounted with `nocopy`, so Docker never copies an image directory's ownership onto it. Only the worker and the server mount it, and the worker replaces a stale `worker.sock` when it starts.
 - The API keys are in `secrets/server.toml` and `secrets/demo.key`, each `root:65534` mode 0640, in a 0700 directory. Docker bind-mounts them as Compose secrets. Outside swarm, Compose can't change their owner or mode, so the files carry them. The keys never go through the environment.
-- The server and the demo share a bridge network, 172.30.88.0/24. The addresses are fixed because Docker's embedded DNS doesn't work under runsc. The network isn't `internal`, since published ports need a gateway, so both could make outbound connections; neither does. Ports are published only on the addresses in `settings.env`, `127.0.0.1` by default. Behind anything public, an edge must filter unauthenticated traffic first (see `crates/server/src/config.rs`).
+- The server and the demo share a bridge network, 172.30.88.0/24. The addresses are fixed because Docker's embedded DNS doesn't work under runsc. Each release has its own network with this subnet; only one exists at a time (see Update). The network isn't `internal`, since published ports need a gateway, so both could make outbound connections; neither does. Ports are published only on the addresses in `settings.env`, `127.0.0.1` by default. Behind anything public, an edge must filter unauthenticated traffic first (see `crates/server/src/config.rs`).
 - The scripts run as root from your checkout, and build images from it. So they refuse a checkout, or any directory above it, that anyone but you and root can change: by owner or by mode. Group write is allowed only for your private group, and sticky directories are allowed. ACLs aren't checked. This catches a misconfigured checkout, such as one another user can write. It can't detect a checkout that has already been tampered with, since the check itself runs from it.
 - The converters run as you, not as root. Root never opens a file inside a directory someone else owns. It reads each one with `sudo -u OWNER cat` into its own temporary directory, so a symlink can't make it copy something that user couldn't read. A root-owned import is read directly, but only through root-owned directories without symlinks.
 
@@ -83,7 +83,7 @@ With `c="sudo docker compose -f /srv/optimized-kokoro/current/compose.yaml"`:
 1. `$c ps` shows worker, server and demo up, and `curl -s -o /dev/null -w '%{http_code}\n' 127.0.0.1:8880/health` prints 200. It's 503 until the worker is ready, which takes about 3.5 minutes.
 2. `$c exec worker sh -c 'id; uname -r'` prints uid 65534 and gVisor's kernel version, not the host's. The server and demo images have no shell. `ps -eo user,args | grep runsc-sandbox` should show the sandboxes running as `nobody`, not root.
 3. `$c logs worker` shows `compile caches seeded`, the warmups and `listening on /run/kokoro/worker.sock`. There should be no CUDA errors, and no `Read-only file system` or `Permission denied` from Triton under `/tmp`.
-4. `sudo ls -l /var/lib/docker/volumes/optimized-kokoro_sock/_data` shows `srw-rw---- 65534 65534 worker.sock`.
+4. `sudo ls -l /var/lib/docker/volumes/PROJECT_sock/_data` shows `srw-rw---- 65534 65534 worker.sock`, where PROJECT is the release's Compose project (`COMPOSE_PROJECT_NAME` in `/srv/optimized-kokoro/current/.env`, see Layout).
 5. Speech in English and in Japanese (Japanese reads UniDic), with a key from `server.toml`:
    `curl -s -o /tmp/en.pcm -w '%{http_code} %{size_download}\n' -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' -d '{"model":"kokoro","input":"Hello there.","voice":"af_heart","response_format":"pcm"}' 127.0.0.1:8880/v1/audio/speech`. Then the same with `"input":"こんにちは、世界。","voice":"jf_alpha"`. Both should print 200 and a nonzero size.
 6. `sudo docker stats --no-stream` shows the limits: 12 GiB for the worker, 3 GiB for the server and 512 MiB for the demo.
@@ -98,14 +98,25 @@ With `c="sudo docker compose -f /srv/optimized-kokoro/current/compose.yaml"`:
 git pull && sudo deploy/update.sh
 ```
 
-It builds new images and exports a new compile cache into a new release directory while the running release keeps serving. Then it points `current` at the new release (by rename) and recreates the containers, so the service is down for the worker's startup, about 3.5 minutes.
+The service is down for seconds: the old server's shutdown (instant when idle, up to 10 s while requests finish) and the new one's start. Each release is its own Compose project (`optimized-kokoro-REL`, with its own socket volume and network), so the new worker warms up next to the running release.
 
-If they don't come up healthy, it points `current` back at the previous release, starts that again, and removes the failed release and its images. It does the same for a release whose build or cache export fails. It keeps the previous release (images, compose file, cache) for going back by hand:
+1. It builds new images and exports a new compile cache into a new release directory while the running release keeps serving.
+2. It starts the new release's worker next to the running one, and waits until it listens on its socket, which it does only after warming up (about as long as the export). The worker has no network, so it can start alongside the running release. For that time both workers are on the GPU. Before starting the new worker, `update.sh` checks that the GPU has as much free memory as the new worker's warmup took during the export, plus 256 MiB. Afterwards it prints the peak. A failed check throws away that build, so the retry builds again.
+3. The swap: it removes the old release's server, demo and tunnel, then their network, points `current` at the new release (by rename), and starts the new server, demo and tunnel. When `/health` answers (and the tunnel has connected), it removes the old worker. It prints the downtime: from stopping the old server to the new one answering `/health`. That's the old server's shutdown, which waits up to 10 s for requests in progress (`shutdown_grace_ms`), plus the new server's start. With the tunnel, Cloudflare can't reach the server until the new cloudflared registers, a few seconds more; it prints that too.
+
+Every release's network has the same subnet, 172.30.88.0/24, and the same addresses, so the tunnel's ingress stays `172.30.88.2:8880` and nothing changes in Cloudflare. Two networks can't share a subnet, so the old network goes before the new one is made, in step 3.
+
+If the new worker doesn't get ready (it exits, restarts, or doesn't listen within 10 minutes), or there isn't the GPU memory, the new release is removed and the running one isn't touched. If the new server isn't healthy, or the tunnel doesn't connect, it takes the new release down, points `current` back, and starts the previous server, demo and tunnel again. The previous worker kept running, so that takes about as long as the swap. Then it removes the failed release and its images. Ctrl-C does the same at any point until the new release is healthy, and a failed build or cache export only removes the new release. A second Ctrl-C while it undoes is ignored. An update that was killed outright (so it couldn't clean up) leaves a project behind. The next `update.sh` removes any `optimized-kokoro*` project other than the running one. If the kill came mid-swap, it also restarts the previous release's server, demo and tunnel next to its worker before building. Over ssh, run it in tmux or screen: a dropped session (SIGHUP) kills it without undoing anything.
+
+It keeps the previous release (images, compose file, cache) for going back by hand. That means a full worker startup, since the running release must go first (it holds the ports and the subnet):
 
 ```sh
+sudo docker compose -f /srv/optimized-kokoro/current/compose.yaml down --volumes
 sudo ln -sfn releases/PREVIOUS /srv/optimized-kokoro/current
 sudo docker compose -f /srv/optimized-kokoro/current/compose.yaml up -d
 ```
+
+Installs from before per-release projects run as the single project `optimized-kokoro`. The first `update.sh` moves off it like any other release: the new worker starts in its own project, and once the new release is healthy, the old project's worker and socket volume are removed. Its server, demo, tunnel and network go at the swap.
 
 To change a setting, edit `/srv/optimized-kokoro/settings.env` and run `update.sh`. A new port must be free; a port the running release holds is fine (for example 127.0.0.1:8880 to 0.0.0.0:8880).
 
@@ -121,14 +132,14 @@ sudo deploy/keys.sh rename imported-1 clawed-abode
 sudo deploy/keys.sh remove old-client
 ```
 
-`--max-streams` caps the speech requests a key may have in progress (default: the server's `max_streams_per_key`, 48). `--max-priority` (0-255) is the highest `priority` the key's requests may ask for; a request above it gets a 400, and a request without one runs at the lower of 128 and this (default: the server's `max_priority_per_key`, 255). The demo page's key is fixed at 4 streams and priority 64, below the clients' default (an existing install's `server.toml` gets the priority cap at its next `keys.sh` change). In `secrets/keys` each line is `NAME<tab>KEY<tab>MAX_STREAMS<tab>MAX_PRIORITY`, `-` for a default; lines written before `MAX_PRIORITY` existed have three fields and keep working, with the default. `add` and `remove` recreate only the server container (a second or two; the worker keeps running) and put the old keys back if it doesn't come up healthy. Keys imported by `install.sh --keys-from` are named `imported-1`, `imported-2`, …; a new install's key is `default`. An install from before `keys` existed gets its keys named that way on the first `keys.sh` run.
+`--max-streams` caps the speech requests a key may have in progress (default: the server's `max_streams_per_key`, 48). `--max-priority` (0-255) is the highest `priority` the key's requests may ask for; a request above it gets a 400, and a request without one runs at the lower of 128 and this (default: the server's `max_priority_per_key`, 255). The demo page's key is fixed at 4 streams and priority 64, below the clients' default (an existing install's `server.toml` gets the priority cap at its next `keys.sh` change). In `secrets/keys` each line is `NAME<tab>KEY<tab>MAX_STREAMS<tab>MAX_PRIORITY`, `-` for a default; lines written before `MAX_PRIORITY` existed have three fields and keep working, with the default. `add` and `remove` recreate only the server container, in the current release's project (a second or two; the worker keeps running) and put the old keys back if it doesn't come up healthy. Keys imported by `install.sh --keys-from` are named `imported-1`, `imported-2`, …; a new install's key is `default`. An install from before `keys` existed gets its keys named that way on the first `keys.sh` run.
 
 ## Cloudflare Tunnel (optional)
 
 A `cloudflared` container can publish the server through a [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/), with no port open on the host. It runs like the others: gVisor, nobody, read-only, no capabilities. It shares the compose network with the server and demo, and needs outbound internet access to reach Cloudflare. `install.sh` and `update.sh` wait for it to register with Cloudflare, and roll back if it doesn't within 2 minutes.
 
 1. In Cloudflare Zero Trust, create a tunnel (Networks → Tunnels → cloudflared). Copy the token from the install command it shows (the long string after `--token`).
-2. Add a public hostname to the tunnel, e.g. `tts.example.com`, with service type HTTP and URL `172.30.88.2:8880` (the server's address on the compose network; service names don't resolve under gVisor).
+2. Add a public hostname to the tunnel, e.g. `tts.example.com`, with service type HTTP and URL `172.30.88.2:8880` (the server's address on the compose network; service names don't resolve under gVisor). Every release's server gets this address, so updates don't change it.
 3. Protect the hostname with Cloudflare Access: add a self-hosted application for it with a policy whose action is **Service Auth**, allowing a service token you create. Clients send that token's `CF-Access-Client-Id` and `CF-Access-Client-Secret` headers as well as the server's API key. The server assumes unauthenticated traffic is filtered before it (`crates/server/src/config.rs`), so don't skip this.
 4. On the host, after `install.sh` (the token goes into its `secrets/` directory; the `<<<` form keeps it out of the process list, but it lands in your shell history unless you prefix the line with a space or clear it):
    ```sh
@@ -144,6 +155,10 @@ Cloudflare terminates TLS, so it sees the request text. `KOKORO_CLOUDFLARED=0` a
 
 ```sh
 sudo docker compose -f /srv/optimized-kokoro/current/compose.yaml down --volumes
+# Anything an interrupted update left: the Compose projects optimized-kokoro and optimized-kokoro-*.
+sudo docker ps -a --format '{{.ID}} {{.Label "com.docker.compose.project"}}' | awk '$2 ~ /^optimized-kokoro/ {print $1}' | xargs -r sudo docker rm -f
+sudo docker network ls --format '{{.Name}}' | grep '^optimized-kokoro' | xargs -r sudo docker network rm
+sudo docker volume ls --format '{{.Name}}' | grep '^optimized-kokoro' | xargs -r sudo docker volume rm
 sudo docker image ls --filter 'reference=optimized-kokoro-*' -q | sort -u | xargs -r sudo docker image rm -f
 sudo rm -rf /srv/optimized-kokoro
 ```
@@ -157,11 +172,13 @@ Then, if nothing else uses it, remove `runsc-kokoro` from `/etc/docker/daemon.js
 - `models/` and `unidic/SHA256.dic`: world-readable data. The server memory-maps the dictionary, so a new one (a new checksum in `fetch_unidic.sh`) is a new file next to the old one. Each release's `.env` names its own (`KOKORO_UNIDIC_FILE`), so neither the running server nor a rollback sees it change. Dictionaries that no kept release names are deleted.
 - `secrets/`: `server.toml` (listen address, socket path and API keys), `demo.key` and, with the tunnel, `cloudflared.token`.
 - `resolv.conf`: for cloudflared, written when the tunnel is on.
-- `releases/REL/`: `compose.yaml` (a copy of `deploy/compose.yaml`), `.env` (`KOKORO_ROOT`, `KOKORO_RELEASE`, `KOKORO_UNIDIC_FILE` and the settings) and `cache-seed/`. Images are `optimized-kokoro-{worker,server,demo}:REL`.
+- `releases/REL/`: `compose.yaml` (a copy of `deploy/compose.yaml`), `.env` (`KOKORO_ROOT`, `KOKORO_RELEASE`, `KOKORO_UNIDIC_FILE`, `COMPOSE_PROJECT_NAME` and the settings) and `cache-seed/`. Images are `optimized-kokoro-{worker,server,demo}:REL`. The release's Compose project is `optimized-kokoro-rel` (REL in lower case), with the volume `optimized-kokoro-rel_sock` and the network `optimized-kokoro-rel_kokoro`. A plain `docker compose -f releases/REL/compose.yaml` finds it in the `.env`.
 - `current`: a symlink to the running release.
-- `.lock`: held while `install.sh` or `update.sh` runs.
+- `.lock`: held while `install.sh`, `update.sh` or `keys.sh` runs.
 
 The scripts ignore inherited `KOKORO_*`, `COMPOSE_*` and `DOCKER_*` variables (except `KOKORO_BUILD_USER`), so `sudo -E` can't change what Compose sees. If either script is interrupted (Ctrl-C) or fails after swapping, it puts the previous release back, or takes a first install down again.
+
+`deploy/dry-run/test.sh` runs `install.sh`, `update.sh` and `keys.sh` as any user, without Docker or a GPU, against fakes (`deploy/dry-run/bin`), through success, failures, Ctrl-C at each step of an update, and the move off `optimized-kokoro`. CI runs it.
 
 ## Notes
 

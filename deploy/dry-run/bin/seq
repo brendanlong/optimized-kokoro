@@ -1,0 +1,4 @@
+#!/bin/bash
+# The scripts' polling loops (for _ in $(seq N)) give up after 20 tries, so a timeout comes quickly.
+[ $# = 1 ] && [ "$1" -gt 20 ] && set -- 20
+exec /usr/bin/seq "$@"

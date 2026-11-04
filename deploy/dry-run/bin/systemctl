@@ -1,0 +1,5 @@
+#!/bin/bash
+# Logs the call and does nothing (also chown and chgrp, which link here: the dry run isn't root).
+# shellcheck source=deploy/dry-run/bin/fake-lib.sh
+. "$(dirname "$0")/fake-lib.sh"
+log "$(basename "$0")" "$@"

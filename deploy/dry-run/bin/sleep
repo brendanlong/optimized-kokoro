@@ -1,0 +1,3 @@
+#!/bin/bash
+# The scripts' polling loops wait only a moment (the fakes use /usr/bin/sleep).
+exec /usr/bin/sleep 0.01

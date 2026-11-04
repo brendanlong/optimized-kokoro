@@ -1,0 +1,225 @@
+#!/bin/bash
+# A fake docker for deploy/dry-run/test.sh: keeps Compose projects (containers, network, volume) as
+# files under $FAKE_STATE/PROJECT, and behaves like Docker where the deploy scripts depend on it:
+# two networks can't share the subnet, two servers can't publish the port, and `up` keeps a
+# container whose service is already running. `compose config` runs the real docker compose.
+# Fault injection, from the environment:
+#   FAIL_BUILD=1         docker build fails
+#   FAKE_WORKER=never    a started worker runs but never logs that it listens
+#   FAKE_WORKER=crash    a started worker keeps restarting
+#   FAIL_TUNNEL=1        the newest release's cloudflared never registers
+#   INT_AT=PATTERN       the first docker or curl call whose arguments match PATTERN (a bash glob)
+#                        sends SIGINT to the process group, as Ctrl-C does (INT_COUNT=N: the first
+#                        N such calls)
+#   KILL_AT=PATTERN      SIGKILL instead, so nothing cleans up
+set -uo pipefail
+# shellcheck source=deploy/dry-run/bin/fake-lib.sh
+. "$(dirname "$0")/fake-lib.sh"
+log docker "$@"
+maybe_interrupt "docker $*"
+
+S=$FAKE_STATE
+args=("$@")
+
+new_id() {
+    local n
+    n=$(($(cat "$S/.counter" 2> /dev/null || echo 0) + 1))
+    echo "$n" > "$S/.counter"
+    echo "$1-$2-$n"
+}
+
+# The project of compose file $1, with Compose's precedence after -p: COMPOSE_PROJECT_NAME in the
+# .env next to it, then the file's name:, then its directory.
+project_of_file() {
+    local d p
+    d=$(dirname "$1")
+    p=$(sed -n 's/^COMPOSE_PROJECT_NAME=//p' "$d/.env" 2> /dev/null)
+    [ -n "$p" ] || p=$(sed -n 's/^name: *//p' "$1")
+    [ -n "$p" ] || p=$(basename "$d" | tr '[:upper:]' '[:lower:]')
+    echo "$p"
+}
+
+# The containers (id per line) of project $1, or of all projects.
+ids_of() {
+    if [ -n "${1:-}" ]; then cat "$S/$1"/svc/* 2> /dev/null; else cat "$S"/*/svc/* 2> /dev/null; fi
+}
+
+container_file() {
+    grep -lxF -- "$1" "$S"/*/svc/* 2> /dev/null | head -1
+}
+
+compose() {
+    local p='' f='' cmd P svc services=() flags=() a
+    while [ $# -gt 0 ]; do
+        case $1 in
+        -p) p=$2; shift 2 ;;
+        -f) f=$2; shift 2 ;;
+        *) break ;;
+        esac
+    done
+    cmd=$1
+    shift
+    if [ "$cmd" = version ]; then echo "Docker Compose version fake"; return 0; fi
+    if [ "$cmd" = config ]; then exec "$REAL_DOCKER" "${args[@]}"; fi
+    [ -n "$p" ] || p=$(project_of_file "$f")
+    P=$S/$p
+    for a in "$@"; do
+        case $a in
+        -*) flags+=("$a") ;;
+        *) services+=("$a") ;;
+        esac
+    done
+    case $cmd in
+    run)
+        # The cache export: writes a seed (with a setuid bit to be dropped) into the -v directory.
+        local i src='' rargs=("$@")
+        for ((i = 0; i < ${#rargs[@]}; i++)); do
+            [ "${rargs[i]}" != -v ] || src=${rargs[i + 1]}
+        done
+        src=${src%%:*}
+        mkdir -p "$src/inductor" "$src/triton" "$P"
+        echo x > "$src/triton/k.so"
+        chmod 4755 "$src/triton/k.so"
+        touch "$P/volume" "$S/.exporting"
+        /usr/bin/sleep 1.2
+        rm -f "$S/.exporting"
+        ;;
+    up)
+        if [ ${#services[@]} = 0 ]; then
+            services=(worker server demo)
+            ! grep -qx 'COMPOSE_PROFILES=cloudflared' "$(dirname "$f")/.env" || services+=(cloudflared)
+        fi
+        mkdir -p "$P/svc"
+        for svc in "${services[@]}"; do
+            case $svc in
+            server | demo | cloudflared)
+                if [ ! -e "$P/network" ]; then
+                    if compgen -G "$S/*/network" > /dev/null; then
+                        echo "Error response from daemon: invalid pool request: Pool overlaps with other one on this address space" >&2
+                        return 1
+                    fi
+                    touch "$P/network"
+                fi
+                ;;
+            esac
+            if [ "$svc" = server ] && [ ! -e "$P/svc/server" ] && compgen -G "$S/*/svc/server" > /dev/null; then
+                echo "Error response from daemon: Bind for 127.0.0.1:18880 failed: port is already allocated" >&2
+                return 1
+            fi
+            [ "$svc" != worker ] && [ "$svc" != server ] || touch "$P/volume"
+            if [ ! -e "$P/svc/$svc" ] || [[ " ${flags[*]} " == *" --force-recreate "* ]]; then
+                new_id "$p" "$svc" > "$P/svc/$svc"
+                # A starting worker, for long enough that the GPU sampler sees it.
+                [ "$svc" != worker ] || /usr/bin/sleep 0.6
+            fi
+        done
+        ;;
+    rm)
+        for svc in "${services[@]}"; do rm -f "$P/svc/$svc"; done
+        ;;
+    down)
+        rm -rf "$P/svc" "$P/network"
+        [[ " ${flags[*]} " != *" --volumes "* ]] || rm -f "$P/volume"
+        rmdir "$P" 2> /dev/null || true
+        ;;
+    ps)
+        if [[ " ${flags[*]} " == *" --services "* ]]; then
+            ls "$P/svc" 2> /dev/null
+        else
+            for svc in "${services[@]}"; do cat "$P/svc/$svc" 2> /dev/null; done
+        fi
+        ;;
+    logs)
+        svc=${services[0]:-}
+        case $svc in
+        worker)
+            [ -e "$P/svc/worker" ] || return 0
+            echo "compile caches seeded from /cache-seed"
+            [ "${FAKE_WORKER:-}" = never ] || [ "${FAKE_WORKER:-}" = crash ] || echo "listening on /run/kokoro/worker.sock"
+            ;;
+        cloudflared)
+            [ -e "$P/svc/cloudflared" ] || return 0
+            if [ -n "${FAIL_TUNNEL:-}" ] && [ "$p" = "$(newest_project)" ]; then
+                echo "ERR failed to register tunnel"
+            else
+                echo "INF Registered tunnel connection"
+            fi
+            ;;
+        *) echo "(the last log lines of $p)" ;;
+        esac
+        ;;
+    *) ;;
+    esac
+}
+
+# docker ps|network ls|volume ls with --filter label=com.docker.compose.project=P (-q) or a
+# --format of the project label.
+list() {
+    local kind=$1 p='' d
+    shift
+    for a in "$@"; do
+        case $a in label=com.docker.compose.project=*) p=${a#label=com.docker.compose.project=} ;; esac
+    done
+    for d in "$S"/*/; do
+        d=${d%/}
+        [ -d "$d" ] || continue
+        [ -z "$p" ] || [ "$(basename "$d")" = "$p" ] || continue
+        case $kind in
+        ps)
+            if [ -n "$p" ]; then ids_of "$(basename "$d")"; else ids_of "$(basename "$d")" | sed "s/.*/$(basename "$d")/"; fi
+            ;;
+        network) [ ! -e "$d/network" ] || echo "$(basename "$d")_kokoro" ;;
+        volume) [ ! -e "$d/volume" ] || echo "$(basename "$d")_sock" ;;
+        esac
+    done
+}
+
+case ${1:-} in
+compose)
+    shift
+    compose "$@"
+    ;;
+info)
+    case "$*" in
+    *CDISpecDirs*) echo '["/etc/cdi","/var/run/cdi"]' ;;
+    *) echo '{"runc":{},"runsc-kokoro":{}}' ;;
+    esac
+    ;;
+build) [ -z "${FAIL_BUILD:-}" ] || exit 1 ;;
+image) ;;
+ps) list ps "${@:2}" ;;
+rm | container)
+    [ "$1" = rm ] || shift
+    for a in "${@:2}"; do
+        [ "$a" = -f ] && continue
+        f=$(container_file "$a")
+        [ -n "$f" ] || { echo "Error: No such container: $a" >&2; exit 1; }
+        rm -f "$f"
+    done
+    ;;
+network | volume)
+    kind=$1
+    case $2 in
+    ls) list "$kind" "${@:3}" ;;
+    inspect) [ -e "$S/${3%_kokoro}/network" ] || exit 1 ;;
+    rm)
+        for a in "${@:3}"; do
+            [ "$a" != -f ] || continue
+            if [ "$kind" = network ]; then f=$S/${a%_kokoro}/network; else f=$S/${a%_sock}/volume; fi
+            [ -e "$f" ] || { echo "Error: No such $kind: $a" >&2; exit 1; }
+            if [ "$kind" = network ] && compgen -G "$(dirname "$f")/svc/[dcs]*" > /dev/null; then
+                echo "Error response from daemon: error while removing network: network $a has active endpoints" >&2
+                exit 1
+            fi
+            rm -f "$f"
+        done
+        ;;
+    esac
+    ;;
+inspect)
+    f=$(container_file "${!#}")
+    [ -n "$f" ] || exit 1
+    if [ "${FAKE_WORKER:-}" = crash ] && [ "$(basename "$f")" = worker ]; then echo "restarting 3"; else echo "running 0"; fi
+    ;;
+esac
+exit 0
