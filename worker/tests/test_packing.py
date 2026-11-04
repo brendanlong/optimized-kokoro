@@ -137,16 +137,28 @@ def test_harmonic_source_matches_each_sentence_alone(decoder):
 
 @torch.no_grad()
 def test_neighbours_dont_change_a_sentence(decoder):
-    # Against the same sentence packed into a row of its own: the gaps stand in for a row's reflect
-    # padding at the edges (an approximation the real model doesn't hear; bench/check_packing.py),
-    # but what's next to a sentence must not matter at all.
+    # Each sentence keeps its place in the row while everything else in the row changes: its audio
+    # must not change at all.
     asr, f0, energy, s = _inputs()
     pk = masked.Packing(FRAMES, "cpu", torch.float32)
-    packed = pk.unpack_audio(masked.decoder(decoder, pk.pack(asr, max(FRAMES)), _row(pk, f0), _row(pk, energy), s,
-                                            pk.tensors))
-    for i, f in enumerate(FRAMES):
-        one = masked.Packing([f], "cpu", torch.float32)
-        row = lambda x: F.pad(x[i : i + 1, : 2 * f], (0, 2 * masked.GAP))  # noqa: E731
-        alone = one.unpack_audio(masked.decoder(decoder, one.pack(asr[i : i + 1], max(FRAMES)), row(f0), row(energy),
-                                                s[i : i + 1], one.tensors))[0]
-        assert torch.allclose(packed[i], alone, atol=1e-5)
+
+    def run(asr, f0, energy, s):
+        audio = masked.decoder(decoder, pk.pack(asr, max(FRAMES)), _row(pk, f0), _row(pk, energy), s, pk.tensors)
+        return pk.unpack_audio(audio)
+
+    before = run(asr, f0, energy, s)
+    for i in range(len(FRAMES)):
+        others = torch.arange(len(FRAMES)) != i
+        a2, f2, e2, s2 = asr.clone(), f0.clone(), energy.clone(), s.clone()
+        a2[others] = a2[others].flip(-1).roll(1, -1) * 2
+        f2[others] = f2[others] * 1.5
+        e2[others] = -e2[others]
+        s2[others] = s2[others].flip(0) + 1
+        for j, f in enumerate(FRAMES):  # keep the padding of the padded inputs zero
+            a2[j, :, f:] = 0
+            f2[j, 2 * f :] = 0
+            e2[j, 2 * f :] = 0
+        after = run(a2, f2, e2, s2)
+        diff = float((before[i] - after[i]).abs().max())
+        assert diff < 1e-5, f"sentence {i}: max diff {diff:.3g} (peak {float(before[i].abs().max()):.3g})"
+        assert not torch.allclose(before[(i + 1) % len(FRAMES)], after[(i + 1) % len(FRAMES)], atol=1e-3)

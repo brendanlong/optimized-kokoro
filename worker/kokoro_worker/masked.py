@@ -92,8 +92,9 @@ def _segment_sum(pk, key, x):
     r = RATES[key][0]
     p = pk["frame_seg"].shape[0]
     per_frame = x[..., : r * p].reshape(x.shape[0], x.shape[1], p, r).sum(-1)
-    cs = F.pad(per_frame.cumsum(-1), (1, 0))
-    return cs[..., pk["seg_end"]] - cs[..., pk["seg_start"]]
+    # In float64, so the rounding of a segment's sum doesn't depend on the segments before it.
+    cs = F.pad(per_frame.double().cumsum(-1), (1, 0))
+    return (cs[..., pk["seg_end"]] - cs[..., pk["seg_start"]]).to(x.dtype)
 
 
 def _expand(pk, key, v):

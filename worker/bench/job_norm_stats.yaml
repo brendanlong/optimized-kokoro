@@ -1,0 +1,13 @@
+# gpuc submit bench/job_norm_stats.yaml --host local   (from worker/)
+name: kokoro-norm-stats
+setup: uv sync --frozen
+command: mkdir -p results && .venv/bin/python bench/norm_stats.py ${GPUC_DATA_DIR}/kokoro-worker-models --clips results/clips --json results/norm_stats.json 2>&1 | tee results/norm_stats.txt
+python: .venv/bin/python
+gpus: 1
+env:
+  REQUIRE_CUDA: "1"
+outputs:
+  - path: results
+priority: 40
+estimated_runtime_min: 30
+max_runtime_min: 120
