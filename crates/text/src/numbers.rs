@@ -667,7 +667,12 @@ impl Scanner<'_> {
                     None
                 }
             }
-            _ if currency(c).is_some() && self.number_at(i + 1) => self.money(i),
+            // "$5", and "£ 4" as old books write it.
+            _ if currency(c).is_some()
+                && (self.number_at(i + 1) || self.get(i + 1) == Some(' ') && self.digit(i + 2)) =>
+            {
+                self.money(i)
+            }
             _ if self.digit(i) || c == '.' && self.digit(i + 1) && free && (i == 0 || self.t[i - 1] != '.') => {
                 self.number(i, free)
             }
@@ -709,7 +714,8 @@ impl Scanner<'_> {
     /// Money: a currency symbol and a number, and whether a range's "to" ends it ("$5-10").
     fn money(&self, i: usize) -> Option<(usize, String, bool)> {
         let currency = currency(self.t[i])?;
-        let (body, end) = self.body(i + 1)?;
+        let start = if self.get(i + 1) == Some(' ') { i + 2 } else { i + 1 };
+        let (body, end) = self.body(start)?;
         if self.get(end) == Some('.') && self.digit(end + 1) {
             // "$1.2.3" isn't money: the symbol and the version are read apart.
             return None;
@@ -1079,6 +1085,7 @@ mod tests {
             ("It costs $5 million.", "It costs five million dollars."),
             ("It costs $2.5B.", "It costs two point five billion dollars."),
             ("£20 and €30 and ¥500", "twenty pounds and thirty euros and five hundred yen"),
+            ("The £ 4 a week", "The four pounds a week"),
             ("$0.00001 each", "zero point zero zero zero zero one dollars each"),
             ("fell -$5 today", "fell minus five dollars today"),
             ("in 1900.", "in nineteen hundred."),
