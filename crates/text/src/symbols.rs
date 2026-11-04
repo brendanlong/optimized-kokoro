@@ -212,7 +212,11 @@ fn bracketed_math(before: &[char]) -> bool {
         Some(']') => (']', '['),
         _ => return false,
     };
-    let Some(start) = before[..before.len() - 1].iter().rposition(|&c| c == open) else { return false };
+    // At most 64 characters back, so runs of "(x)²)²…" stay linear.
+    let from = before.len().saturating_sub(65);
+    let Some(start) = before[from..before.len() - 1].iter().rposition(|&c| c == open).map(|k| from + k) else {
+        return false;
+    };
     let inside = &before[start + 1..before.len() - 1];
     if inside.is_empty() || inside.contains(&close) {
         return false;
@@ -542,6 +546,7 @@ mod tests {
             ("m², x², km² and 3 m/s²", "m squared, x squared, km squared and 3 m slash s squared"),
             ("word², end.², Smith³ and [²] and x²³", "word, end., Smith and and x to the power of twenty-three"),
             ("(a+b)², (x-one)³ and [two n]²", "(a plus b) squared, (x-one) cubed and [two n] squared"),
+            ("(x minus one)³", "(x minus one) cubed"),
             ("(see Smith)² and (end.)²", "(see Smith) and (end.)"),
             ("① and ⑳", "one and twenty"),
             ("½ cup", "one half cup"),

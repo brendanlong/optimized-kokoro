@@ -1027,6 +1027,27 @@ fn arithmetic_minus(t: &[char]) -> Vec<bool> {
             }
         }
     }
+    // A bracket around math raised to a power ("(x-1)³", "[n-2]²"): its hyphens are minus signs
+    // too, as the symbol pass reads the superscript as a power.
+    for close in 0..t.len() {
+        let open = match t[close] {
+            ')' => '(',
+            ']' => '[',
+            _ => continue,
+        };
+        if !t.get(close + 1).is_some_and(|&c| superscript_digit(c).is_some()) {
+            continue;
+        }
+        // At most 64 characters back, so runs of "(x)²)²…" stay linear.
+        let from = close.saturating_sub(64);
+        let Some(start) = t[from..close].iter().rposition(|&c| c == open).map(|k| from + k) else { continue };
+        let inside = start + 1..close;
+        if !inside.is_empty() && inside.clone().all(&in_expression) {
+            for k in inside {
+                minus[k] |= matches!(t[k], '-' | '−');
+            }
+        }
+    }
     minus
 }
 
@@ -1208,6 +1229,7 @@ mod tests {
             ),
             ("0,000 and 10m/s and 5m", "zero, zero zero zero and ten meters per second and five million"),
             ("Wait...5 more", "Wait...five more"),
+            ("(x-1)³ and [n-2]² but (x-1) and 2-3", "(x minus one)³ and [n minus two]² but (x-one) and two to three"),
             ("It ended.[3] Then word[12] and see [4].", "It ended. Then word and see [four]."),
             (
                 "3-2=1, x - 3 = 7, 5 - 3 + 2 and 2−3",
