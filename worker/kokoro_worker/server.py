@@ -171,11 +171,27 @@ class Connection:
         except OSError as e:
             log.info("connection error: %s", e)
         finally:
-            log.info("connection done: %s", self.stats)
+            log.info("connection done: %s, %s", self.stats, memory_report())
             self.close()
             if reader is not None:
                 reader.join()
             self.conn.close()
+
+
+def memory_report() -> str:
+    """GPU memory the allocator holds (now and at most so far) and this process's resident memory."""
+    parts = []
+    torch = sys.modules.get("torch")
+    if torch is not None and torch.cuda.is_initialized():
+        parts.append(f"GPU reserved {torch.cuda.memory_reserved() >> 20} MiB "
+                     f"(peak {torch.cuda.max_memory_reserved() >> 20} MiB)")
+    try:
+        with open("/proc/self/status") as f:
+            rss = next(line.split()[1] for line in f if line.startswith("VmRSS:"))
+        parts.append(f"RSS {int(rss) >> 10} MiB")
+    except (OSError, StopIteration):
+        pass
+    return ", ".join(parts)
 
 
 def accept_loop(listener: socket.socket, synth, max_batch: int, frame_timeout: float = FRAME_TIMEOUT_S) -> None:
@@ -241,10 +257,13 @@ def main() -> None:
     parser.add_argument("--export-cache", metavar="DIR",
                         help="warm up, write the compile caches to DIR and exit without listening")
     parser.add_argument("--models", required=True, help="directory written by kokoro_worker.convert")
-    # 1 by default: on the 3060 Ti, batching 8 gives +39% throughput at 16 concurrent requests but
-    # nothing at 4 and slower single requests (60 vs 34 ms median), cause not found yet. See the PR.
+    # 1 by default. On the 3060 Ti, batching 8 gives more throughput at 16 concurrent requests (173x
+    # vs 161x in gVisor) and about the same at 1; see README.md.
     parser.add_argument("--max-batch", type=int, default=1)
-    parser.add_argument("--max-chunk-seconds", type=float, default=120.0,
+    # 60 s: real 510-phoneme chunks reach about 44 s at speed 1, and the slowest speed (0.25) then
+    # allows 240 s (9,600 frames), which peaks at 3.9 GB of GPU memory; 120 s (19,200 frames) ran
+    # out of memory on an 8 GB card. Decoder batches are held to the same frame count.
+    parser.add_argument("--max-chunk-seconds", type=float, default=60.0,
                         help="longest audio one request may produce at speed 1 (scaled by 1/speed); "
                              "real 510-phoneme chunks reach about 44 s")
     parser.add_argument("--pad-slack", type=float, default=0.25,
@@ -283,7 +302,7 @@ def main() -> None:
         copy_caches(None, args.export_cache)
         log.info("compile caches exported to %s in %.1f s; exiting", args.export_cache, time.monotonic() - t)
         return
-    log.info("ready in %.1f s", time.monotonic() - t)
+    log.info("ready in %.1f s, %s", time.monotonic() - t, memory_report())
 
     try:
         os.unlink(args.socket)

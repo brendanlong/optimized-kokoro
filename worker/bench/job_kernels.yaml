@@ -1,0 +1,18 @@
+# gpuc submit bench/job_kernels.yaml --host local   (from worker/). Untracked inputs it expects:
+# bench/bin/main/kokoro_worker (git archive origin/main kokoro_worker | tar -x -C bench/bin/main), and
+# for the HTTP measurement a kokoro-server binary and its espeak-ng-data in bench/bin/, with
+# ESPEAK_DATA_LINK set to the espeak-ng-data path the binary was built with.
+name: kokoro-worker-kernels
+setup: uv sync --frozen
+command: KOKORO_SERVER_BIN=$PWD/bench/bin/kokoro-server bash bench/job_kernels.sh
+python: .venv/bin/python
+gpus: 1
+env:
+  REQUIRE_CUDA: "1"
+  PYTHONUNBUFFERED: "1"
+  ESPEAK_DATA_LINK: /home/claude/worktrees/decf45d1-3ba3-4e7a-b872-21145ffc217e/optimized-kokoro/.claude/worktrees/agent-aabcf80fd0f330416/crates/espeak-ng/espeak-ng-data
+outputs:
+  - path: results
+priority: 40
+estimated_runtime_min: 150
+max_runtime_min: 360
