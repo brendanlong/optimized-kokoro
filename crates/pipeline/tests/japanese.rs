@@ -31,8 +31,7 @@ fn japanese_reference_records() {
     let pipeline = Pipeline::new(Lang::Japanese).unwrap();
     let options = NormalizationOptions::default();
     if let Some(Err(e)) = pipeline.chunks("日本", &options).next() {
-        eprintln!("skipping: {e}");
-        return;
+        return kokoro_pipeline::skip_without_dictionary(e);
     }
     let show: usize = std::env::var("PARITY_SHOW").ok().and_then(|s| s.parse().ok()).unwrap_or(20);
     let (mut matched, mut compared, mut fixed, mut skipped, mut chars, mut chunks) = (0, 0, 0, 0, 0, 0);

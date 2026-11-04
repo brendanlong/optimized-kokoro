@@ -37,7 +37,7 @@ fn check(g2p: &JaG2p, name: &str, make: &dyn Fn(usize) -> String) -> Option<Stri
 fn grows_linearly() {
     let g2p = match default_dictionary() {
         Ok(d) => JaG2p::new(d),
-        Err(e) => return eprintln!("skipping: {e}"),
+        Err(e) => return kokoro_g2p_ja::skip_without_dictionary(e),
     };
     type Shape = (&'static str, Box<dyn Fn(usize) -> String>);
     let shapes: Vec<Shape> = vec![

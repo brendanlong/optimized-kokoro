@@ -33,6 +33,8 @@ use std::ops::Range;
 use std::sync::{Arc, OnceLock};
 
 pub use kokoro_g2p_en::Token;
+#[doc(hidden)]
+pub use kokoro_g2p_ja::skip_without_dictionary;
 pub use kokoro_text::{DEFAULT_MAX_TOKENS, Limits, Options as NormalizationOptions};
 pub use vocab::id;
 

@@ -15,7 +15,7 @@ fn g2p() -> Option<JaG2p> {
     match default_dictionary() {
         Ok(d) => Some(JaG2p::new(d)),
         Err(e) => {
-            eprintln!("skipping: {e}");
+            kokoro_g2p_ja::skip_without_dictionary(e);
             None
         }
     }

@@ -31,7 +31,7 @@ fn pipeline() -> &'static Pipeline {
 #[test]
 fn japanese_runs_are_read_by_the_japanese_g2p() {
     if !kokoro_pipeline::japanese_available() {
-        return eprintln!("skipping: no UniDic at $KOKORO_UNIDIC");
+        return kokoro_pipeline::skip_without_dictionary("no UniDic at $KOKORO_UNIDIC");
     }
     let pipeline = Pipeline::new(Lang::AmericanEnglish).unwrap();
     for (text, expected) in [

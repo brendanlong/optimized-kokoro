@@ -62,7 +62,7 @@ mod tests {
     #[test]
     fn reads_japanese() {
         if !kokoro_pipeline::japanese_available() {
-            return eprintln!("skipping: no UniDic at $KOKORO_UNIDIC");
+            return kokoro_pipeline::skip_without_dictionary("no UniDic at $KOKORO_UNIDIC");
         }
         let pipelines = KokoroPipelines::load().unwrap();
         let chunk = pipelines.chunks(Lang::Japanese, "東京へ行きます。").next().unwrap().unwrap();

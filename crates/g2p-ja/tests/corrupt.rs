@@ -36,7 +36,7 @@ fn u32_at(b: &[u8], i: usize) -> usize {
 #[test]
 fn damaged_copies_of_the_real_dictionary_are_rejected() {
     let Some(path) = kokoro_g2p_ja::default_dictionary_path().filter(|p| p.exists()) else {
-        return eprintln!("skipping: no dictionary at $KOKORO_UNIDIC");
+        return kokoro_g2p_ja::skip_without_dictionary("no dictionary at $KOKORO_UNIDIC");
     };
     use std::io::Read;
     let mut head = vec![0; 64 << 20];
