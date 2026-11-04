@@ -174,7 +174,8 @@ fn cjk_punctuation(text: &str) -> String {
     let mut previous = None;
     while let Some(c) = chars.next() {
         let digit = |c: Option<char>| c.is_some_and(|c| py::digit_value(c).is_some());
-        if c == '–' && digit(previous) && digit(chars.peek().copied()) {
+        let money = |c: Option<char>| c.is_some_and(|c| "$£€¥₹₩₽₿₱₪₺".contains(c));
+        if c == '–' && digit(previous) && (digit(chars.peek().copied()) || money(chars.peek().copied())) {
             out.push('-');
             previous = Some(c);
             continue;

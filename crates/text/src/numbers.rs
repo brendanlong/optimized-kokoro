@@ -325,6 +325,28 @@ fn currency(c: char) -> Option<Currency> {
     Some(Currency { one, many, minor })
 }
 
+/// An amount of money in words: "one dollar", "ninety-nine cents", "one dollar and fifty cents",
+/// "one point nine nine nine dollars".
+fn money_words(currency: &Currency, body: &Body) -> String {
+    let whole = cardinal(&body.int);
+    let name = if body.int.trim_start_matches('0') == "1" { currency.one } else { currency.many };
+    let cents = body.frac.as_deref().filter(|f| f.bytes().any(|b| b != b'0'));
+    match (cents, currency.minor) {
+        (None, _) => format!("{whole} {name}"),
+        (Some(frac), Some((minor_one, minor_many))) if frac.len() <= 2 => {
+            let cents = format!("{frac:0<2}");
+            let minor = if cents == "01" { minor_one } else { minor_many };
+            let cents = cardinal(&cents);
+            if body.int.bytes().all(|b| b == b'0') {
+                format!("{cents} {minor}")
+            } else {
+                format!("{whole} {name} and {cents} {minor}")
+            }
+        }
+        (Some(_), _) => format!("{} {}", body.words_plain(), currency.many),
+    }
+}
+
 /// Units read after a number, written right after it or after one space. Only unambiguous ones:
 /// no single letters, nothing that is also a common word.
 const UNITS: &[(&str, &str, &str)] = &[
@@ -740,27 +762,29 @@ impl Scanner<'_> {
         if let Some((multiplier, m_end)) = self.multiplier(end, true) {
             return Some((m_end, format!("{} {multiplier} {}", body.words_plain(), currency.many), false));
         }
-        let whole = cardinal(&body.int);
-        let name = if body.int.trim_start_matches('0') == "1" { currency.one } else { currency.many };
-        let cents = body.frac.as_deref().filter(|f| f.bytes().any(|b| b != b'0'));
-        let mut words = match (cents, currency.minor) {
-            (None, _) => format!("{whole} {name}"),
-            (Some(frac), Some((minor_one, minor_many))) if frac.len() <= 2 => {
-                let cents = format!("{frac:0<2}");
-                let minor = if cents == "01" { minor_one } else { minor_many };
-                let cents = cardinal(&cents);
-                if body.int.bytes().all(|b| b == b'0') {
-                    format!("{cents} {minor}")
-                } else {
-                    format!("{whole} {name} and {cents} {minor}")
-                }
+        // A range ("$5-10", "$5-$10", "$1-2 million"): the unit once, at the end.
+        if self.get(end) == Some('-') && !self.minus[end] {
+            let second = if self.get(end + 1) == Some(self.t[i]) { end + 2 } else { end + 1 };
+            if self.number_at(second)
+                && let Some((to, to_end)) = self.body(second)
+                && !(self.get(to_end) == Some('.') && self.digit(to_end + 1))
+            {
+                let whole = |b: &Body| b.frac.as_deref().is_none_or(|f| f.bytes().all(|d| d == b'0'));
+                let words = match self.multiplier(to_end, true) {
+                    Some((multiplier, m_end)) => (
+                        m_end,
+                        format!("{} to {} {multiplier} {}", body.words_plain(), to.words_plain(), currency.many),
+                    ),
+                    None if whole(&body) && whole(&to) => {
+                        (to_end, format!("{} to {} {}", cardinal(&body.int), cardinal(&to.int), currency.many))
+                    }
+                    // With cents, each end in full: "one dollar and fifty cents to two dollars".
+                    None => (to_end, format!("{} to {}", money_words(&currency, &body), money_words(&currency, &to))),
+                };
+                return Some((words.0, words.1, false));
             }
-            (Some(_), _) => format!("{} {}", body.words_plain(), currency.many),
-        };
-        if self.get(end) == Some('-') && self.number_at(end + 1) && !self.minus[end] {
-            words.push_str(" to");
-            return Some((end + 1, words, true));
         }
+        let words = money_words(&currency, &body);
         Some((end, words, false))
     }
 
@@ -1223,7 +1247,16 @@ mod tests {
             ("1/2 cup", "one half cup"),
             ("3/4 and 9/11", "three quarters and nine/eleven"),
             ("1.5-2.5 kg", "one point five to two point five kilograms"),
-            ("$5-10", "five dollars to ten"),
+            ("$5-10", "five to ten dollars"),
+            (
+                "$5-$10, £5-10, €5-10 and $1-2 million",
+                "five to ten dollars, five to ten pounds, five to ten euros and one to two million dollars",
+            ),
+            (
+                "$1.50-2.00 and $1.50-$2.25",
+                "one dollar and fifty cents to two dollars and one dollar and fifty cents to two dollars and twenty-five cents",
+            ),
+            ("$5 to $10, 5-10% and 5-10 km", "five dollars to ten dollars, five to ten% and five to ten kilometers"),
             ("the '80s", "the eighties"),
             ("50¢ and 1¢", "fifty cents and one cent"),
             ("the 1500s", "the fifteen hundreds"),
