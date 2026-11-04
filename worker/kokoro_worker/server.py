@@ -207,8 +207,7 @@ def accept_loop(listener: socket.socket, synth, max_batch: int, frame_timeout: f
 
 
 def warmup(synth, max_batch: int) -> None:
-    """Compile before accepting connections: batch 1, batches > 1, and the masked path that a
-    decoder group with padding takes all have graphs of their own."""
+    """Compile before accepting connections: batch 1 and packed rows have graphs of their own."""
     from .model import Request
 
     ids = sorted(synth.vocab_ids)
@@ -216,7 +215,7 @@ def warmup(synth, max_batch: int) -> None:
     cap, synth.max_chunk_samples = synth.max_chunk_samples, 2**32 - 1
     shapes = []
     if max_batch >= 2:
-        shapes += [[50, 50], [40, 44], [100, 104, 110][:max_batch]]
+        shapes += [[40, 44], [100, 104, 110][:max_batch]]
     shapes += [[12], [60], [180], [400]]
     try:
         for lengths in shapes:

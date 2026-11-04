@@ -295,12 +295,24 @@ class Synth:
         cum = pred_dur.cumsum(1)
         for group in self._groups([frames[i] for i in ok]):
             idx = [ok[g] for g in group]
-            try:
-                yield self._decode(idx, [frames[i] for i in idx], durations, cum, d_t, t_en, ref)
-            except torch.OutOfMemoryError:
-                # Only this group fails; smaller groups after it may still fit.
-                torch.cuda.empty_cache()
-                yield [Result(i, None, None, "out_of_memory") for i in idx]
+            yield from self._decode_contained(idx, [frames[i] for i in idx], durations, cum, d_t, t_en, ref)
+
+    def _decode_contained(self, idx, frames, *args) -> Iterator[list[Result]]:
+        """A packed row couples its sentences: a non-finite value in one spreads to the others, and
+        an out-of-memory error fails them all. Then each is decoded alone, so only the one at fault
+        fails, and later rows may still fit."""
+        try:
+            results = self._decode(idx, frames, *args)
+            if len(idx) == 1 or all(r.pcm is not None for r in results):
+                yield results
+                return
+        except torch.OutOfMemoryError:
+            torch.cuda.empty_cache()
+            if len(idx) == 1:
+                yield [Result(idx[0], None, None, "out_of_memory")]
+                return
+        for i, f in zip(idx, frames):
+            yield from self._decode_contained([i], [f], *args)
 
     def _decode(self, idx, frames, durations, cum, d_t, t_en, ref) -> list[Result]:
         dev = self.device

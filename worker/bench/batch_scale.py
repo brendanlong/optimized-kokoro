@@ -118,7 +118,7 @@ def step_equal(synth, timed, corpus, args, out):
 
 
 def step_mixed(synth, timed, corpus, args, out):
-    print("== mixed: corpus chunks, grouped by length", flush=True)
+    print("== mixed: corpus chunks", flush=True)
     rng = random.Random(0)
     batches = {b: [rng.choice(corpus) for _ in range(b)] for b in batch_sizes(args.max_batch)}
     for b, chunks in batches.items():

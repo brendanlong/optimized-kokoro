@@ -7,12 +7,13 @@ of a sentence sees the zeros its own zero padding would supply if the sentence r
 isn't local is done per sentence:
 - instance norm statistics, and the style (AdaIN's gamma and beta), per segment;
 - the harmonic source's phase sum restarts at each segment, and its upsampling works in each
-  segment's own sample positions and clamps at its edges;
-- the harmonic STFT reflect-pads each segment, the generator's reflection pad is applied at each
-  segment's start, and the inverse STFT normalizes by the segment's own frames only.
-With the excitation noise off, each segment's audio is then its audio alone, up to float rounding.
+  segment's own sample positions and clamps at its edges.
+With the excitation noise off, each segment's audio is then its audio alone, up to float rounding,
+except within about 10 samples (0.4 ms) of its edges: there the harmonic STFT and the inverse STFT
+see the gap's zeros instead of the reflect padding and window normalization of a row's ends, and
+the generator's one-sample reflection pad is a zero. Edges are near-silent anyway.
 The generator magnifies rounding in the harmonic phase (a 1e-3 change in the source moves samples
-by about 0.1), so "up to float rounding" is judged on the spectrogram, not sample by sample.
+by about 0.06), so "up to float rounding" is judged on the spectrogram, not sample by sample.
 
 Rates, as samples per frame (and an extra sample per sentence); audio is 600 samples per frame:
     "f"   decoder frames             1
@@ -69,21 +70,9 @@ class Packing:
                 m = F.pad(m, (0, extra))
             t["m_" + key] = m[None, None, :].to(dtype)
             t["count_" + key] = t["count_base"] * r + extra
-        # Built on the device: these have one entry per sample.
-        start_h = torch.zeros(120 * total + 1, dtype=torch.bool, device=device)
-        start_h[t["seg_start"] * 120] = True
-        t["start_h"] = start_h
-        # Reflect-padding each segment's samples by n_fft // 2 = 10 for the harmonic STFT.
-        k = torch.arange(1, 11)
-        a, b = starts[1:] * 600, (starts + lengths) * 600 - 1
-        pos = torch.cat([(a[:, None] - k).flatten(), (b[:, None] + k).flatten()]).to(**dev)
-        val = torch.cat([(a[:, None] + k).flatten(), (b[:, None] - k).flatten()]).to(**dev)
-        idx = torch.arange(600 * total, device=device)
-        idx[pos] = val
-        keep = t["real"].repeat_interleave(600)
-        keep[pos] = True
-        t["reflect_idx"] = idx
-        t["reflect_keep"] = keep.float()
+        t["m_samples"] = t["real"].repeat_interleave(600).to(torch.float32)[None]
+        for unused in ("real", "first_gap", "count_base"):  # only for building the others
+            del t[unused]
         self.tensors = t
 
     def pack(self, x: torch.Tensor, width: int) -> torch.Tensor:
@@ -230,8 +219,7 @@ def _source(src, f0, pk):
 def _generator(g, x, s, f0, pk):
     mh = pk["m_h"]
     with torch.no_grad():
-        har_source = _source(g.m_source, f0, pk)
-        har_source = har_source[:, pk["reflect_idx"]] * pk["reflect_keep"]
+        har_source = _source(g.m_source, f0, pk) * pk["m_samples"]
         har_spec, har_phase = g.stft.transform(har_source)
         har = torch.cat([har_spec, har_phase], dim=1) * mh
     keys = ("20f", "h")
@@ -244,8 +232,6 @@ def _generator(g, x, s, f0, pk):
         x = g.ups[i](x)
         if i == g.num_upsamples - 1:
             x = g.reflection_pad(x)
-            # Each segment's first sample is its reflection pad: its own sample 1.
-            x = torch.where(pk["start_h"], F.pad(x[..., 2:], (0, 2)), x)
         x = x * m + x_source
         xs = None
         for j in range(g.num_kernels):
@@ -256,4 +242,4 @@ def _generator(g, x, s, f0, pk):
     x = g.conv_post(x)
     spec = torch.exp(x[:, : g.post_n_fft // 2 + 1, :]) * mh
     phase = torch.sin(x[:, g.post_n_fft // 2 + 1 :, :])
-    return g.stft.inverse(spec, phase, mh[0, 0])
+    return g.stft.inverse(spec, phase)
