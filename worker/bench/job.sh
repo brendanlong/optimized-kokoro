@@ -29,7 +29,6 @@ fi
 CONFIGS=${CONFIGS:-"
 sandbox-b1 sandbox --max-batch 1
 sandbox-b8 sandbox --max-batch 8
-sandbox-b8-plain sandbox --max-batch 8 --no-exact
 sandbox-b16 sandbox --max-batch 16
 host-b1 host --max-batch 1
 host-b8 host --max-batch 8

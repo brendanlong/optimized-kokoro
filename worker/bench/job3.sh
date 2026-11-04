@@ -9,7 +9,6 @@ uv run --no-sync python bench/diag_b1.py "$MODELS" 2>&1 | grep -E "ms/call|rror"
 STEPS=bench CONFIGS="
 final-sandbox-b1 sandbox --max-batch 1
 final-sandbox-b8 sandbox --max-batch 8
-final-sandbox-b8-plain sandbox --max-batch 8 --no-exact
 final-host-b1 host --max-batch 1
 final-host-b8 host --max-batch 8
 " bash bench/job.sh

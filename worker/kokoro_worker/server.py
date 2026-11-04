@@ -262,14 +262,10 @@ def main() -> None:
     parser.add_argument("--max-batch", type=int, default=1)
     # 60 s: real 510-phoneme chunks reach about 44 s at speed 1, and the slowest speed (0.25) then
     # allows 240 s (9,600 frames), which peaks at 3.9 GB of GPU memory; 120 s (19,200 frames) ran
-    # out of memory on an 8 GB card. Decoder batches are held to the same frame count.
+    # out of memory on an 8 GB card. A packed decoder row is held to the same frame count.
     parser.add_argument("--max-chunk-seconds", type=float, default=60.0,
                         help="longest audio one request may produce at speed 1 (scaled by 1/speed); "
                              "real 510-phoneme chunks reach about 44 s")
-    parser.add_argument("--pad-slack", type=float, default=0.25,
-                        help="decoder groups may hold this fraction of padding frames")
-    parser.add_argument("--no-exact", action="store_true",
-                        help="pad decoder groups without masking (faster, changes the audio slightly)")
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--fp32", action="store_true")
     parser.add_argument("--no-compile", action="store_true")
@@ -295,7 +291,7 @@ def main() -> None:
 
     t = time.monotonic()
     synth = Synth(args.models, device=args.device, half=not args.fp32, compile=not args.no_compile,
-                  max_chunk_samples=max_chunk_samples, pad_slack=args.pad_slack, exact=not args.no_exact)
+                  max_chunk_samples=max_chunk_samples)
     log.info("loaded in %.1f s: %d voices", time.monotonic() - t, len(synth.voice_names))
     warmup(synth, args.max_batch)
     if args.export_cache:

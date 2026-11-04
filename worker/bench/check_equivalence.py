@@ -3,7 +3,7 @@
     uv run python bench/check_equivalence.py MODELS [--device cuda] [--half] [--compile]
 
 1. Batch of one vs KModel, same RNG seed: should match to float precision.
-2. Batched with padding vs one at a time: durations must be identical; audio is compared by
+2. Batched (packed) vs one at a time: durations must be identical; audio is compared by
    log-spectrogram correlation, next to the seed-to-seed noise floor of unbatched audio.
 3. NaN/inf count over many lengths (the m_source compile issue).
 """
@@ -52,12 +52,10 @@ def main():
     ap.add_argument("--half", action="store_true")
     ap.add_argument("--compile", action="store_true")
     ap.add_argument("--n", type=int, default=16)
-    ap.add_argument("--inexact", action="store_true", help="plain padding, no masks in the decoder")
     ap.add_argument("--nan-lengths", type=int, default=0, help="check every length 1..N for NaN")
     args = ap.parse_args()
 
-    synth = Synth(args.models, device=args.device, half=args.half, compile=args.compile, pad_slack=10.0,
-                  frame_budget=8192, exact=not args.inexact)
+    synth = Synth(args.models, device=args.device, half=args.half, compile=args.compile, frame_budget=8192)
     vocab = json.load(open(os.path.join(args.models, "config.json")))["vocab"]
     chunks = sentences.load(vocab)
     rng = np.random.default_rng(0)
@@ -89,13 +87,13 @@ def main():
         dur_eq = sum(x.durations == y.durations for x, y in zip(alone, batched))
         corr = [spec_corr(pcm(x), pcm(y)) for x, y in zip(alone, batched)]
         floor = [spec_corr(pcm(x), pcm(y)) for x, y in zip(alone, alone_seed)]
-        print(f"B={b}: durations equal {dur_eq}/{len(reqs)}; spectrogram corr padded vs alone "
+        print(f"B={b}: durations equal {dur_eq}/{len(reqs)}; spectrogram corr batched vs alone "
               f"mean {np.mean(corr):.4f} min {np.min(corr):.4f}; seed noise floor mean {np.mean(floor):.4f} "
               f"min {np.min(floor):.4f}")
-    # Copies of one sentence: batched with no padding at all, to separate batch numerics from padding.
+    # Copies of one sentence, to separate the batch's numerics from its mixed lengths.
     copies = [run(synth, [r] * 4, 2)[0] for r in reqs]
     corr = [spec_corr(pcm(x), pcm(y)) for x, y in zip(alone, copies)]
-    print(f"B=4 copies (no padding): spectrogram corr vs alone mean {np.mean(corr):.4f} min {np.min(corr):.4f}")
+    print(f"B=4 copies: spectrogram corr vs alone mean {np.mean(corr):.4f} min {np.min(corr):.4f}")
 
     # 3. non-finite outputs
     if args.nan_lengths:

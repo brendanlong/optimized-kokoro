@@ -7,10 +7,10 @@ that a batch can hold sentences of different lengths:
   attention mask, padded positions are zeroed before every convolution (as the convolution's own
   zero padding would be), and the LSTMs run on packed sequences. Durations therefore match batch 1
   (exactly in fp32; fp16 numerics depend a little on batch size).
-- Frame side (F0/N predictor and decoder) runs in groups of similar frame count, padded to the
-  longest in the group. The shared LSTM is packed, and masked.py takes the instance norms'
-  statistics over real frames and zeroes padding before every convolution, so padding doesn't
-  change the audio (`exact=False` drops the masks). `max_batch=1` in the server turns batching off.
+- Frame side (F0/N predictor and decoder): the shared LSTM runs packed, then the batch's
+  sentences go end to end in one row with a gap of zeros between them (masked.py), so the
+  convolutions run once over the row whatever the lengths, and each sentence's audio is what it
+  would be alone. `max_batch=1` in the server turns batching off.
 - Convolutions and the STFT run through kernels.py (a Triton conv1d, matmul transposed convs and
   STFT) instead of cuDNN and cuFFT, which build a plan per shape: any length, first time or not,
   costs the same.
@@ -140,8 +140,6 @@ class Synth:
         compile: bool = True,
         max_chunk_samples: int = 1_440_000,
         frame_budget: int | None = None,
-        pad_slack: float = 0.25,
-        exact: bool = True,
     ):
         with open(os.path.join(model_dir, "config.json"), encoding="utf-8") as f:
             config = json.load(f)
@@ -151,11 +149,9 @@ class Synth:
         self.device = torch.device(device)
         self.half = half and self.device.type == "cuda"
         self.max_chunk_samples = max_chunk_samples
-        # A decoder group holds at most as many padded frames as the longest single chunk may have
-        # (the cap at the slowest speed), so a batch never needs more memory than one request can.
+        # A packed row holds at most as many frames as the longest single chunk may have (the cap at
+        # the slowest speed), so a batch never needs more memory than one request can.
         self.frame_budget = frame_budget or chunk_cap(max_chunk_samples, MIN_SPEED) // SAMPLES_PER_FRAME
-        self.pad_slack = pad_slack
-        self.exact = exact
 
         model = build_kmodel(config)
         model.load_state_dict(load_file(os.path.join(model_dir, "model.safetensors")), strict=True)
@@ -184,16 +180,19 @@ class Synth:
             "text_cnn": self._text_cnn_eager,
             "f0n": self._f0n_blocks_eager,
             "decoder": model.decoder,
-            "f0n_masked": lambda x, s, m: masked.f0n_blocks(model.predictor, x, s, m),
-            "decoder_masked": lambda asr, f0, n, s, m: masked.decoder(model.decoder, asr, f0, n, s, m),
+            "f0n_packed": lambda x, s, pk: masked.f0n_blocks(model.predictor, x, s, pk),
+            "decoder_packed": lambda asr, f0, n, s, pk: masked.decoder(model.decoder, asr, f0, n, s, pk),
         }
-        self._single = self._batched = eager
+        single = ("bert", "text_cnn", "f0n", "decoder")
+        batched = ("bert", "text_cnn", "f0n_packed", "decoder_packed")
+        self._single = {k: eager[k] for k in single}
+        self._batched = {k: eager[k] for k in batched}
         if compile:
             # Separate graphs for batch 1 and batches > 1: within one torch.compile'd function, the
             # dynamic-batch graph's guards also accept batch 1, so batches of one could run on it
             # instead of on the graph specialized for them.
-            self._single = {k: torch.compile(_fresh(f, "single"), dynamic=True) for k, f in eager.items()}
-            self._batched = {k: torch.compile(_fresh(f, "batched"), dynamic=True) for k, f in eager.items()}
+            self._single = {k: torch.compile(_fresh(eager[k], "single"), dynamic=True) for k in single}
+            self._batched = {k: torch.compile(_fresh(eager[k], "batched"), dynamic=True) for k in batched}
 
     def style(self, voice: int, style_len: int) -> torch.Tensor:
         """Voice pack `voice` at row style_len - 1 (KPipeline's pack[len(ps) - 1])."""
@@ -242,26 +241,18 @@ class Synth:
         pred_dur = torch.round(duration).long().clamp(min=1).minimum(max_dur).masked_fill(mask, 0)
         return pred_dur, d, t_en
 
-    def _groups(self, frames: list[int], order: list[int]) -> list[list[int]]:
-        """Split items into decoder batches of similar frame counts.
-
-        Greedy over items sorted by length: a group grows while its padded size stays within
-        pad_slack of its real size and within frame_budget. Groups run in the order of their
-        most urgent item (lowest position in `order`)."""
-        by_len = sorted(range(len(frames)), key=lambda i: frames[i])
-        groups, group = [], []
-        for i in by_len:
-            candidate = group + [i]
-            padded = len(candidate) * frames[i]
-            real = sum(frames[j] for j in candidate)
-            if group and (padded > (1 + self.pad_slack) * real or padded > self.frame_budget):
+    def _groups(self, frames: list[int]) -> list[list[int]]:
+        """Split items, most urgent first, into packed rows of at most frame_budget frames."""
+        groups, group, size = [], [], 0
+        for i, f in enumerate(frames):
+            if group and size + f + masked.GAP > self.frame_budget:
                 groups.append(group)
-                candidate = [i]
-            group = candidate
+                group, size = [], 0
+            group.append(i)
+            size += f + masked.GAP
         if group:
             groups.append(group)
-        rank = {item: r for r, item in enumerate(order)}
-        return sorted(groups, key=lambda g: min(rank[i] for i in g))
+        return groups
 
     @torch.inference_mode()
     def run(self, requests: list[Request]) -> Iterator[list[Result]]:
@@ -302,7 +293,7 @@ class Synth:
         d_t = F.pad(d.transpose(1, 2), (0, 1))  # [B, 640, T + 1]; column T is zeros, for padding
         t_en = F.pad(t_en, (0, 1))
         cum = pred_dur.cumsum(1)
-        for group in self._groups([frames[i] for i in ok], list(range(len(ok)))):
+        for group in self._groups([frames[i] for i in ok]):
             idx = [ok[g] for g in group]
             try:
                 yield self._decode(idx, [frames[i] for i in idx], durations, cum, d_t, t_en, ref)
@@ -321,25 +312,29 @@ class Synth:
         en = torch.gather(d_t[sel], 2, token[:, None, :].expand(-1, d_t.shape[1], -1))
         asr = torch.gather(t_en[sel], 2, token[:, None, :].expand(-1, t_en.shape[1], -1))
         s = ref[sel]
+        n = len(idx)
         with torch.autocast(dev.type, dtype=torch.float16, enabled=self.half):
             x = _packed_lstm(self.model.predictor.shared, en.transpose(1, 2), torch.tensor(frames))
-            fn = self._single if len(idx) == 1 else self._batched
-            if self.exact and min(frames) != width:
-                m = masked.masks_for(frames, width, dev, torch.float16 if self.half else torch.float32)
-                f0, n = fn["f0n_masked"](x.transpose(1, 2), s[:, 128:], m)
-                audio = fn["decoder_masked"](asr, f0, n, s[:, :128], m)
+            if n == 1:
+                fn = self._single
+                f0, nn = fn["f0n"](x.transpose(1, 2), s[:, 128:])
+                rows = [fn["decoder"](asr, f0, nn, s[:, :128]).reshape(-1)]
             else:
-                f0, n = fn["f0n"](x.transpose(1, 2), s[:, 128:])
-                audio = fn["decoder"](asr, f0, n, s[:, :128])
-        audio = audio.reshape(len(idx), -1).float()
-        finite = torch.isfinite(audio).all(1)
-        pcm = (audio * 32767).clamp(-32768, 32767).to(torch.int16).cpu()
-        finite = finite.cpu().tolist()
+                fn = self._batched
+                pk = masked.Packing(frames, dev, torch.float16 if self.half else torch.float32)
+                f0, nn = fn["f0n_packed"](pk.pack(x.transpose(1, 2), width), s[:, 128:], pk.tensors)
+                audio = fn["decoder_packed"](pk.pack(asr, width), f0, nn, s[:, :128], pk.tensors)
+                rows = pk.unpack_audio(audio)
+        audio = torch.cat(rows).float()
+        bounds = [0]
+        for f in frames:
+            bounds.append(bounds[-1] + f * SAMPLES_PER_FRAME)
+        finite = [bool(v) for v in torch.stack([r.isfinite().all() for r in rows]).cpu()]
+        pcm = (audio * 32767).clamp(-32768, 32767).to(torch.int16).cpu().numpy()
         results = []
         for row, i in enumerate(idx):
             if not finite[row]:
                 results.append(Result(i, None, None, "non_finite"))
                 continue
-            samples = pcm[row, : frames[row] * SAMPLES_PER_FRAME].numpy()
-            results.append(Result(i, samples.astype("<i2").tobytes(), durations[i]))
+            results.append(Result(i, pcm[bounds[row] : bounds[row + 1]].astype("<i2").tobytes(), durations[i]))
         return results

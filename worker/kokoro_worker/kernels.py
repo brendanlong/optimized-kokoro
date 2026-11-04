@@ -213,8 +213,11 @@ class MatmulSTFT(torch.nn.Module):
         return torch.sqrt(real * real + imag * imag), torch.atan2(imag, real)
 
     @torch.autocast("cuda", enabled=False)
-    def inverse(self, magnitude, phase):
-        """magnitude, phase [B, bins, frames] -> [B, 1, hop * (frames - 1)]."""
+    def inverse(self, magnitude, phase, frame_weight=None):
+        """magnitude, phase [B, bins, frames] -> [B, 1, hop * (frames - 1)].
+
+        frame_weight [frames], 1 or 0: frames that count in the window normalization. Each run of
+        1s is then normalized as if it were the whole input (0 where no frame counts)."""
         magnitude, phase = magnitude.float(), phase.float()
         spec = torch.cat([magnitude * torch.cos(phase), magnitude * torch.sin(phase)], dim=1)
         frames = torch.matmul(spec.transpose(1, 2), self.inv)  # [B, T, n_fft]
@@ -222,10 +225,15 @@ class MatmulSTFT(torch.nn.Module):
         r = self.n_fft // self.hop
         z = frames.transpose(1, 2).reshape(bsz, 1, r, self.hop, t)
         y = _overlap_add(z, self.hop)  # [B, 1, (t + r - 1) * hop]
-        env = _overlap_add(self.window_sq.reshape(1, 1, r, self.hop, 1).expand(1, 1, r, self.hop, t), self.hop)
+        w = self.window_sq.reshape(1, 1, r, self.hop, 1)
+        w = w.expand(1, 1, r, self.hop, t) if frame_weight is None else w * frame_weight.float().reshape(1, 1, 1, 1, t)
+        env = _overlap_add(w, self.hop)
         pad = self.n_fft // 2
         length = self.hop * (t - 1)
-        return y[..., pad : pad + length] / env[..., pad : pad + length]
+        y, env = y[..., pad : pad + length], env[..., pad : pad + length]
+        if frame_weight is None:
+            return y / env
+        return torch.where(env > 0, y / env.clamp_min(1e-12), 0.0)
 
 
 def apply(model: torch.nn.Module) -> None:
