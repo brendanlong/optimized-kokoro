@@ -4,10 +4,10 @@
 
 equal    B copies of one real chunk of about L phonemes: one decoder group, no padding, so this is
          the model's own batching curve.
-mixed    B chunks drawn from the corpus, grouped as the worker groups them (pad_slack, and a
-         frame budget of --frame-budget), with and without the padding masks.
+mixed    B chunks drawn from the corpus, grouped by length as the worker groups them (pad_slack),
+         with a frame budget of --frame-budget (the worker's is 9,600), with and without the padding masks.
 profile  torch.profiler at a few batch sizes: GPU time by kind of kernel, and GPU busy time as a
-         share of wall time (what is left is the GPU waiting on Python and launches).
+         share of unprofiled wall time (what is left is the GPU waiting on the host).
 
 Throughput is seconds of audio per wall second. Each point runs once to warm up, then REPS times.
 """
@@ -121,10 +121,10 @@ def step_equal(synth, timed, corpus, args, out):
 def step_mixed(synth, timed, corpus, args, out):
     print("== mixed: corpus chunks, grouped by length", flush=True)
     rng = random.Random(0)
+    batches = {b: [rng.choice(corpus) for _ in range(b)] for b in batch_sizes(args.max_batch)}
     for exact in (True, False):
         synth.exact = exact
-        for b in batch_sizes(args.max_batch):
-            chunks = [rng.choice(corpus) for _ in range(b)]
+        for b, chunks in batches.items():
             r = measure(synth, timed, requests_for(synth, chunks), args.reps)
             r.update(batch=b, exact=exact)
             out.append(r)
@@ -136,20 +136,21 @@ def step_mixed(synth, timed, corpus, args, out):
 
 def kind(name):
     n = name.lower()
-    if "conv1d" in n:
+    if n.startswith("_conv1d_kernel"):
         return "triton conv1d"
-    if "gemm" in n or "cutlass" in n or "sm90" in n or "sm80" in n or "cublas" in n or "matmul" in n:
+    if "softmax" in n or "attention" in n or "fmha" in n or "flash" in n:
+        return "attention"
+    if any(k in n for k in ("gemm", "cutlass", "nvjet", "sm90", "sm80", "cublas", "matmul")):
         return "matmul (cuBLAS)"
     if "lstm" in n or "rnn" in n:
         return "LSTM (cuDNN)"
+    # Inductor names fused kernels after the ops they absorbed, "conv1d" included.
     if n.startswith("triton_"):
         return "inductor fused elementwise/reduction"
     if "elementwise" in n or "vectorized" in n or "reduce" in n or "unrolled" in n:
         return "aten elementwise/reduction"
     if "memcpy" in n or "memset" in n:
         return "memcpy/memset"
-    if "softmax" in n or "attention" in n or "fmha" in n or "flash" in n:
-        return "attention"
     return "other"
 
 
@@ -164,7 +165,12 @@ def step_profile(synth, timed, corpus, args, out):
             for _ in synth.run(reqs):
                 pass
         torch.cuda.synchronize()
-        with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
+        t = time.perf_counter()
+        for _ in synth.run(reqs):
+            pass
+        torch.cuda.synchronize()
+        plain = time.perf_counter() - t
+        with profile(activities=[ProfilerActivity.CUDA]) as prof:
             t = time.perf_counter()
             for _ in synth.run(reqs):
                 pass
@@ -181,8 +187,10 @@ def step_profile(synth, timed, corpus, args, out):
             "batch": b,
             "wall_ms": round(1000 * wall, 1),
             "gpu_busy_ms": round(gpu_us / 1000, 1),
-            "gpu_busy_share": round(gpu_us / 1e6 / wall, 3),
-            "kernels": launches,
+            "unprofiled_wall_ms": round(1000 * plain, 1),
+            # Against the unprofiled wall time: the profiler itself slows the host down.
+            "gpu_busy_share": round(gpu_us / 1e6 / plain, 3),
+            "gpu_events": launches,
             "by_kind_ms": {k: round(v / 1000, 1) for k, v in by_kind.most_common()},
             "top": [[k[:90], round(v / 1000, 2)] for k, v in by_name.most_common(15)],
         }

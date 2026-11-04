@@ -63,15 +63,21 @@ Measured on an H100 SXM 80 GB (RunPod, no gVisor) with `bench/job_scale.sh`; the
 | Batch | 1 | 8 | 32 | 64 | 128 | 512 |
 |---|---|---|---|---|---|---|
 | B copies of a 100-phoneme chunk | 206x | 1,010x | 1,667x | 1,878x | 1,891x | 1,884x |
-| B corpus chunks, grouped by length | 205x | 603x | 937x | 1,120x | 1,257x | 1,342x |
+| B corpus chunks, grouped by length (frame budget 75,000) | 205x | 603x | 937x | 1,120x | 1,257x | 1,342x |
 | The worker over its socket, `--max-batch` B, 64-128 streams | | 450x | 730-770x | 970x | | |
 
-- The model's own ceiling is about 1,850-1,900x, about 6x the 3060 Ti's, reached by batch 64 at any chunk length (30, 100 or 250 phonemes). Batch 512 of 100-phoneme chunks peaks at 43 GB.
-- Below that, the GPU waits on the host. The profiler counts GPU busy time as 20% of wall time at batch 1, 50% at 8, 72% at 64 and 90% at 256. A decoder group is about 1,200 kernel launches whatever its size, and the text side takes 8-28 ms per batch, nearly independent of batch size (it rises to 35 ms at 64, 176 ms at 512).
-- Real queues have mixed lengths, so a batch splits into 4-6 decoder groups at 25% padding, each run in turn. That is what holds corpus chunks at 60% of the equal-length rate at batch 64. Dropping the masks (`--no-exact`) changes little at large batches (1,118x vs 1,120x at 64).
-- The worker over its socket gets less again (970x at `--max-batch 64`), since closed-loop streams fill batches only partly (25 requests on average at 64) and the text side of the next batch doesn't overlap the decoder of this one.
-- At saturation the Triton conv1d is 74% of GPU time. Summed over the decoder's layers at batch 64 it is 19% slower than cuDNN (25.8 vs 21.7 ms; `bench/conv_peak.py`): 3x slower on the two 1024-channel layers (111 vs 330-350 TFLOP/s), faster on the 128-channel layers at 48,000 steps. Either way the model runs near 100 TFLOP/s, about a tenth of the card's fp16 peak, because most of its convolutions have 128 or 256 channels.
-- One call is limited to 2^31 elements by the kernel's int32 offsets, about 75,000 frames in one group (B=256 of 250-phoneme chunks failed). The worker's own frame budget is 9,600.
+- **The model's ceiling is about 1,850-1,900x**, at least 6x the 3060 Ti's (300x at B=16, the largest tried there). It's reached by batch 64 for 100- and 250-phoneme chunks, and by 128 for 30-phoneme ones (1,834x). 512 copies of a 100-phoneme chunk peak at 43 GiB allocated.
+- **Below the ceiling, the GPU waits on the host.** In profiles of corpus batches, GPU busy time was 20% of wall time at batch 1, 50% at 8, 72% at 64 and 90% at 256. Those runs had CPU tracing on, which slows the host, so the shares are low by an unknown amount; the script now measures against unprofiled time. The text side takes 8-28 ms per batch for equal lengths, about the same at any batch size up to 128. For corpus batches it grows: 13 ms at 1, 35 ms at 64, 176 ms at 512.
+- **Mixed lengths cost the most in practice.** At 25% padding, a batch of corpus chunks splits into 4-6 decoder groups, which run one after another. That holds batch 64 to 60% of the equal-length rate. (The masked and unmasked runs here used different chunks, so this job doesn't measure what the masks cost; `batch_scale.py` now reuses the chunks.)
+- **The worker over its socket gets less again**, 970x at `--max-batch 64`. Not measured, but plausible causes:
+  - Closed-loop streams fill batches only partly.
+  - The worker's 9,600-frame group budget is smaller than the 75,000 used in process.
+  - The next batch's text side waits for this batch's decoder.
+- **The Triton conv1d (`_conv1d_kernel`) is about half of GPU time at large batches**: 48% at batch 64, 52% at 256.
+  - Against cuDNN at batch 64 (`bench/conv_peak.py`, one call of each decoder layer shape), it's 19% slower in total, 25.8 vs 21.7 ms. On the two 1024-channel layers it's 3x slower (111 vs 330-350 TFLOP/s). On the 128-channel k3 and k7 layers at 48,000 steps it's faster, but slower on k11.
+  - Even matching cuDNN everywhere would save at most about 8% at saturation.
+  - At 1,878x the model does about 100 TFLOP/s: 1,878 × 27.6 GMAC (the per-layer count of multiply-adds per second of audio) × 2 FLOP per multiply-add. That is about a tenth of the card's dense fp16 peak.
+- **One call is limited to 2^31 elements**, by the kernel's int32 offsets. That's about 75,000 frames in one group: 128 copies of a 250-phoneme chunk (74,880 frames) ran, 256 failed. The worker's own frame budget is 9,600.
 
 ## Kernels
 

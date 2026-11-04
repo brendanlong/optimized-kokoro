@@ -1,4 +1,6 @@
 # gpuc submit bench/job_scale.yaml --runpod --gpu "H100 SXM" --max-price 4.10 --idle-min 5   (from worker/)
+# The README's H100 numbers came from this, except the mixed and profile steps, which ran as a second
+# job with STEPS="scale" SCALE_ARGS="--steps mixed profile --profile-batches 1 8 64 256".
 name: kokoro-batch-scale
 setup: uvx uv@0.11.4 sync --frozen
 command: bash bench/job_scale.sh

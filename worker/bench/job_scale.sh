@@ -14,6 +14,7 @@ if [ ! -f "$MODELS/voices.safetensors" ]; then
 fi
 PY=$PWD/.venv/bin/python
 STEPS=${STEPS:-scale load}
+status=0
 nvidia-smi --query-gpu=name,driver_version,memory.total,clocks.max.sm --format=csv | tee results/gpu.txt
 nproc | tee results/nproc.txt
 
@@ -21,6 +22,7 @@ if [[ " $STEPS " == *" scale "* ]]; then
     # shellcheck disable=SC2086
     "$PY" bench/batch_scale.py "$MODELS" ${SCALE_ARGS:-} --json results/scale.json 2>&1 \
         | grep -vE "Warning|warn\(|recompile|diagnose|function:|last reason" | tee results/scale.txt
+    status=${PIPESTATUS[0]}
 fi
 
 if [[ " $STEPS " == *" load "* ]]; then
@@ -48,3 +50,4 @@ if [[ " $STEPS " == *" load "* ]]; then
     done
 fi
 echo "done"
+exit "$status"
