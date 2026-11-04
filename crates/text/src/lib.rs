@@ -9,12 +9,13 @@
 #![forbid(unsafe_code)]
 
 mod english_data;
-pub mod inflect;
 pub mod normalize;
+pub mod numbers;
 pub mod py;
 pub mod pyre;
 mod scan;
 pub mod split;
+mod symbols;
 mod tables;
 pub mod tags;
 

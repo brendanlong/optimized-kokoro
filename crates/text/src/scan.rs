@@ -2,7 +2,7 @@
 //! same matches as Python's `re` on the original pattern (the tests check them against the
 //! translated pattern on random text), in linear time.
 
-use crate::py::{fold, is_space, is_word};
+use crate::py::is_word;
 use std::ops::Range;
 
 /// The text as characters with their byte offsets, so matchers can index and look around freely.
@@ -140,87 +140,6 @@ fn email_domain_end(t: &Chars, start: usize, domain: impl Fn(char) -> bool) -> O
     })
 }
 
-/// One `UNIT_PATTERN` match: the whole span, the signed number with its decimals (group 1), and
-/// the unit (group 6).
-pub struct UnitMatch {
-    pub range: Range<usize>,
-    pub number: Range<usize>,
-    pub unit: Range<usize>,
-}
-
-/// `UNIT_PATTERN`: `((?<!\w)(?<!\w[.,])([+-]?)(\d{1,3}(,\d{3})*|\d+,\d+|\d+)(\.\d+)?)\s*`, one of
-/// `units` (in the pattern's order, matched as IGNORECASE literals), then `(?=[^\w\d]|\b)`.
-///
-/// The number's alternatives and lengths are tried in the regex's order. `\s*` needs no
-/// backtracking: every unit starts with a non-space, so only the whole whitespace run can work.
-/// Every unit ends in a word character, so the lookahead means a non-word character or the end.
-pub fn units(text: &str, units: &[&str]) -> Vec<UnitMatch> {
-    let t = Chars::new(text);
-    let units: Vec<Vec<char>> = units.iter().map(|u| u.chars().map(fold).collect()).collect();
-    let digit = |i: usize| t.is(i, |c| crate::py::digit_value(c).is_some());
-    let digits = |i: usize| t.run(i, usize::MAX, |c| crate::py::digit_value(c).is_some()) - i;
-    let firsts: Vec<char> = units.iter().map(|u| u[0]).collect();
-    let unit_at = |u: usize| {
-        if !t.get(u).is_some_and(|c| firsts.contains(&fold(c))) {
-            return None;
-        }
-        units.iter().find_map(|unit| {
-            let fits = unit.iter().enumerate().all(|(k, &c)| t.get(u + k).is_some_and(|x| fold(x) == c));
-            (fits && !t.is(u + unit.len(), is_word)).then_some(u + unit.len())
-        })
-    };
-    // After the integer part: optional decimals (longest first), whitespace, then a unit.
-    let rest = |q: usize| -> Option<(usize, usize, usize)> {
-        let mut ends = Vec::new();
-        if t.get(q) == Some('.') {
-            ends.extend((1..=digits(q + 1)).rev().map(|d| q + 1 + d));
-        }
-        ends.push(q);
-        ends.into_iter().find_map(|number_end| {
-            let u = t.run(number_end, usize::MAX, is_space);
-            unit_at(u).map(|end| (number_end, u, end))
-        })
-    };
-    let mut out = Vec::new();
-    let mut s = 0;
-    while s < t.len() {
-        let behind_ok = !t.word_before(s) && !(s >= 2 && t.is(s - 1, |c| c == '.' || c == ',') && t.word_before(s - 1));
-        let p = if t.is(s, |c| c == '+' || c == '-') { s + 1 } else { s };
-        let found = (behind_ok && digit(p)).then(|| {
-            let run = digits(p);
-            // \d{1,3}(,\d{3})*
-            let thousands = (1..=run.min(3)).rev().find_map(|a| {
-                let mut ends = vec![p + a];
-                while t.get(ends[ends.len() - 1]) == Some(',') && digits(ends[ends.len() - 1] + 1) >= 3 {
-                    ends.push(ends[ends.len() - 1] + 4);
-                }
-                ends.into_iter().rev().find_map(rest)
-            });
-            // \d+,\d+
-            let comma = || {
-                (t.get(p + run) == Some(',') && digit(p + run + 1))
-                    .then(|| (1..=digits(p + run + 1)).rev().find_map(|b| rest(p + run + 1 + b)))
-                    .flatten()
-            };
-            // \d+
-            let plain = || (1..=run).rev().find_map(|a| rest(p + a));
-            thousands.or_else(comma).or_else(plain)
-        });
-        match found.flatten() {
-            Some((number_end, unit_start, end)) => {
-                out.push(UnitMatch {
-                    range: t.span(s..end),
-                    number: t.span(s..number_end),
-                    unit: t.span(unit_start..end),
-                });
-                s = end;
-            }
-            None => s += 1,
-        }
-    }
-    out
-}
-
 /// One `TIME_PATTERN` match: the whole span, the time (group 1) and am/pm (group 4).
 pub struct TimeMatch {
     pub range: Range<usize>,
@@ -309,26 +228,6 @@ pub(crate) mod tests {
         }
         let long = format!("{}@b.cc", "a".repeat(70));
         assert_same(&re, &long, emails(&long).into_iter().map(|r| vec![Some(r)]).collect(), &[0]);
-    }
-
-    #[test]
-    fn units_match_the_regex() {
-        let mut keys: Vec<&str> = crate::english_data::VALID_UNITS.iter().map(|(k, _)| *k).collect();
-        keys.sort_unstable_by(|a, b| b.cmp(a));
-        let re = compile_i(&format!(
-            r"((?<!\w)(?<!\w[.,])([+-]?)(\d{{1,3}}(,\d{{3}})*|\d+,\d+|\d+)(\.\d+)?)\s*({}){{1}}(?=[^\w\d]{{1}}|\b)",
-            keys.join("|")
-        ))
-        .reference();
-        let alphabet = [
-            "1", "2", "٣", ",", ".", "+", "-", " ", "\t", "km", "m", "s", "K", "B", "°C", "µF", "μf", "mi/h", "Ω", "x",
-            "ſ", "ı",
-        ];
-        for text in random_texts(&alphabet, 30000, 3) {
-            let actual =
-                units(&text, &keys).into_iter().map(|m| vec![Some(m.range), Some(m.number), Some(m.unit)]).collect();
-            assert_same(&re, &text, actual, &[0, 1, 6]);
-        }
     }
 
     #[test]

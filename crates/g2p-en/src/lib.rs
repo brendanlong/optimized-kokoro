@@ -7,12 +7,11 @@
 mod align;
 pub mod kokoro;
 mod lexicon;
-pub mod num2words;
 mod subtokenize;
 mod text;
 mod unicode_tables;
 
-use lexicon::{LexToken, Lexicon, TokenContext, currency_units, is_consonant, is_vowel};
+use lexicon::{LexToken, Lexicon, TokenContext, is_consonant, is_vowel};
 use std::fmt;
 
 pub use subtokenize::subtokenize;
@@ -48,8 +47,6 @@ pub struct Token {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
-    /// A number misaki hands to num2words is too large (Python raises `OverflowError`).
-    Number(num2words::Error),
     /// The text's words and spaCy's tokens differ by more than whitespace (spaCy raises `ValueError`).
     Alignment,
     /// The tagger returned a token with no text (spaCy never does).
@@ -59,7 +56,6 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::Number(e) => e.fmt(f),
             Error::Alignment => f.write_str("text and tokens don't align"),
             Error::EmptyToken => f.write_str("the tagger returned an empty token"),
         }
@@ -68,19 +64,11 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
-impl From<num2words::Error> for Error {
-    fn from(e: num2words::Error) -> Self {
-        Error::Number(e)
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 enum Feature {
     Stress(f64),
     /// `/phonemes/`, kept with its leading slash as misaki does.
     Phonemes(String),
-    /// `#flags#`. misaki only ever asks whether the flags contain `&`, `a` or `n`, so only those are kept.
-    NumFlags(String),
 }
 
 /// `G2P.preprocess`: the text with `[text](feature)` links replaced by their text, its whitespace-separated
@@ -115,9 +103,6 @@ fn parse_feature(f: &str) -> Option<Feature> {
     let n = f.chars().count();
     if n > 1 && f.starts_with('/') && f.ends_with('/') {
         return Some(Feature::Phonemes(format!("/{}", f[1..].trim_end_matches('/'))));
-    }
-    if n > 1 && f.starts_with('#') && f.ends_with('#') {
-        return Some(Feature::NumFlags(['&', 'a', 'n'].into_iter().filter(|&c| f.contains(c)).collect()));
     }
     None
 }
@@ -158,21 +143,12 @@ struct MToken {
     is_head: bool,
     alias: Option<String>,
     stress: Option<f64>,
-    currency: Option<char>,
-    num_flags: String,
     prespace: bool,
 }
 
 impl MToken {
     fn lex(&self) -> LexToken<'_> {
-        LexToken {
-            text: self.alias.as_deref().unwrap_or(&self.text),
-            tag: &self.tag,
-            stress: self.stress,
-            currency: self.currency,
-            is_head: self.is_head,
-            num_flags: &self.num_flags,
-        }
+        LexToken { text: self.alias.as_deref().unwrap_or(&self.text), tag: &self.tag, stress: self.stress }
     }
 
     fn into_token(self) -> Token {
@@ -222,9 +198,6 @@ fn merge_tokens(tokens: &[MToken], unk: Option<&str>) -> MToken {
             tag_token = tk;
         }
     }
-    let mut flags: Vec<char> = tokens.iter().flat_map(|t| t.num_flags.chars()).collect();
-    flags.sort_unstable();
-    flags.dedup();
     MToken {
         text,
         tag: tag_token.tag.clone(),
@@ -233,8 +206,6 @@ fn merge_tokens(tokens: &[MToken], unk: Option<&str>) -> MToken {
         is_head: first.is_head,
         alias: None,
         stress: if stresses.len() == 1 { Some(stresses[0]) } else { None },
-        currency: tokens.iter().filter_map(|t| t.currency).max(),
-        num_flags: flags.into_iter().collect(),
         prespace: first.prespace,
     }
 }
@@ -406,7 +377,7 @@ impl G2p {
             match word {
                 Word::One(w) => {
                     if w.phonemes.is_none() {
-                        w.phonemes = self.lexicon.get(&w.lex(), &ctx)?;
+                        w.phonemes = self.lexicon.get(&w.lex(), &ctx);
                     }
                     if w.phonemes.is_none()
                         && let Some(fb) = fallback.as_deref_mut()
@@ -453,7 +424,7 @@ impl G2p {
                 None
             } else {
                 let tk = merge_tokens(span, None);
-                self.lexicon.get(&tk.lex(), ctx)?.map(|ps| (ps, tk))
+                self.lexicon.get(&tk.lex(), ctx).map(|ps| (ps, tk))
             };
             if let Some((ps, tk)) = found {
                 *ctx = token_context(ctx, Some(&ps), &tk);
@@ -503,8 +474,6 @@ impl G2p {
                 is_head: true,
                 alias: None,
                 stress: None,
-                currency: None,
-                num_flags: String::new(),
                 prespace: false,
             })
             .collect();
@@ -526,7 +495,6 @@ impl G2p {
                         tk.is_head = i == 0;
                         tk.phonemes = Some(if i == 0 { p.trim_start_matches('/').to_string() } else { String::new() });
                     }
-                    Feature::NumFlags(f) => tk.num_flags.clone_from(f),
                 }
             }
         }
@@ -539,13 +507,9 @@ impl G2p {
     fn fold_left(&self, tokens: Vec<MToken>) -> Vec<MToken> {
         let mut result: Vec<MToken> = Vec::with_capacity(tokens.len());
         let mut weight = 0;
-        let mut flags: Vec<char> = Vec::new();
         for tk in tokens {
             let Some(acc) = result.last_mut().filter(|_| !tk.is_head) else {
                 weight = tag_weight(&tk.text);
-                flags = tk.num_flags.chars().collect();
-                flags.sort_unstable();
-                flags.dedup();
                 result.push(tk);
                 continue;
             };
@@ -570,14 +534,7 @@ impl G2p {
                 (Some(a), Some(b)) if a != b => None,
                 (a, b) => a.or(b),
             };
-            acc.currency = acc.currency.max(tk.currency);
             acc.alias = None;
-            if !tk.num_flags.is_empty() {
-                flags.extend(tk.num_flags.chars());
-                flags.sort_unstable();
-                flags.dedup();
-            }
-            acc.num_flags = flags.iter().collect();
         }
         result
     }
@@ -585,11 +542,7 @@ impl G2p {
 
 fn retokenize(tokens: Vec<MToken>) -> Result<Vec<Word>, Error> {
     let mut words: Vec<Word> = Vec::with_capacity(tokens.len());
-    let mut currency: Option<char> = None;
-    let next_tags: Vec<bool> = tokens.iter().map(|t| t.tag == "CD").collect();
-    for (i, token) in tokens.into_iter().enumerate() {
-        let next_is_cd = next_tags.get(i + 1).copied().unwrap_or(false);
-        let is_last = i + 1 == next_tags.len();
+    for token in tokens {
         let mut tks: Vec<MToken> = if token.alias.is_none() && token.phonemes.is_none() {
             subtokenize(&token.text)
                 .into_iter()
@@ -601,8 +554,6 @@ fn retokenize(tokens: Vec<MToken>) -> Result<Vec<Word>, Error> {
                     is_head: true,
                     alias: None,
                     stress: token.stress,
-                    currency: None,
-                    num_flags: token.num_flags.clone(),
                     prespace: false,
                 })
                 .collect()
@@ -610,25 +561,8 @@ fn retokenize(tokens: Vec<MToken>) -> Result<Vec<Word>, Error> {
             vec![token.clone()]
         };
         tks.last_mut().ok_or(Error::EmptyToken)?.whitespace = token.whitespace;
-        let n = tks.len();
-        for j in 0..n {
-            let to_alias = {
-                let tk = &tks[j];
-                tk.alias.is_none() && tk.phonemes.is_none() && 0 < j && j + 1 < n && tk.text == "2" && {
-                    let mut s = String::new();
-                    s.extend(tks[j - 1].text.chars().next_back());
-                    s.extend(tks[j + 1].text.chars().next());
-                    text::str_is_alpha(&s)
-                }
-            };
-            let tk = &mut tks[j];
+        for tk in &mut tks {
             if tk.alias.is_some() || tk.phonemes.is_some() {
-            } else if tk.tag == "$"
-                && tk.text.chars().count() == 1
-                && currency_units(tk.text.chars().next().expect("one char")).is_some()
-            {
-                currency = tk.text.chars().next();
-                tk.phonemes = Some(String::new());
             } else if tk.tag == ":" && (tk.text == "-" || tk.text == "–") {
                 tk.phonemes = Some("—".to_string());
             } else if is_punct_tag(&tk.tag) && !all_ascii_letters(&tk.text) {
@@ -636,14 +570,6 @@ fn retokenize(tokens: Vec<MToken>) -> Result<Vec<Word>, Error> {
                     Some(p) => p.to_string(),
                     None => tk.text.chars().filter(|&c| is_punct(c)).collect(),
                 });
-            } else if let Some(symbol) = currency {
-                if tk.tag != "CD" {
-                    currency = None;
-                } else if j + 1 == n && (is_last || !next_is_cd) {
-                    tk.currency = Some(symbol);
-                }
-            } else if to_alias {
-                tk.alias = Some("to".to_string());
             }
         }
         for mut tk in tks {

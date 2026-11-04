@@ -8,13 +8,14 @@ impl Tagger for OneToken {
     }
 }
 
+/// misaki's number reading is gone (the text normalizer reads numbers): digits have no reading
+/// here, and no number is too large to read.
 #[test]
-fn numbers_num2words_cannot_name_are_errors() {
-    let g2p = G2p::new(false);
-    let huge = "9".repeat(400);
-    assert!(matches!(g2p.phonemize(&huge, &mut OneToken("CD"), None), Err(Error::Number(_))));
-    let (ps, _) = g2p.phonemize(&"9".repeat(306), &mut OneToken("CD"), None).unwrap();
-    assert!(!ps.is_empty());
+fn numbers_have_no_reading() {
+    let g2p = G2p::new(false).with_unk("?");
+    let (ps, tokens) = g2p.phonemize(&"9".repeat(400), &mut OneToken("CD"), None).unwrap();
+    assert_eq!(ps, "?");
+    assert_eq!(tokens[0].phonemes, None);
 }
 
 #[test]

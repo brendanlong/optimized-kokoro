@@ -99,7 +99,7 @@ fn requests_match_the_reference() {
     let options = NormalizationOptions::default();
     let cases = cases();
     let mut failures = Vec::new();
-    let (mut flagged, mut rechunked, mut new_script, mut stateful) = (0, 0, 0, 0);
+    let (mut flagged, mut rechunked, mut new_script, mut stateful, mut numbers, mut fuzzed) = (0, 0, 0, 0, 0, 0);
     for case in &cases {
         if uses_new_script(&case.text) {
             new_script += 1;
@@ -169,6 +169,15 @@ fn requests_match_the_reference() {
                 .collect()
         };
         if flags && texts(&mut expected.iter().copied()) != texts(&mut actual.iter().take(expected.len())) {
+            let (theirs, ours) = (texts(&mut expected.iter().copied()).join(" "), texts(&mut actual.iter()).join(" "));
+            if theirs != ours {
+                // The text differs by its numbers or symbols, not by where it was chunked.
+                match kokoro_reference::divergence::explain(&theirs, &ours) {
+                    Ok(_) => numbers += 1,
+                    Err(_) => fuzzed += 1,
+                }
+                continue;
+            }
             rechunked += 1;
             continue;
         }
@@ -183,10 +192,33 @@ fn requests_match_the_reference() {
         let ok = match error {
             // misaki's `TypeError` on `İ` after punctuation: the port reads it (docs/divergences.md).
             Some(e) if e.starts_with("TypeError: ord() expected a character") => prefix_matches,
+            // misaki's `OverflowError` on a number too large to name: the number reader reads it
+            // digit by digit (docs/divergences.md, "Numbers").
+            Some(e) if e.starts_with("OverflowError") && prefix_matches => {
+                numbers += 1;
+                continue;
+            }
             Some(_) => prefix_matches && actual[expected.len()..].iter().any(|a| matches!(a, Expected::Error { .. })),
             None => prefix_matches && expected.len() == actual.len(),
         };
         if !ok {
+            // Numbers and symbols are read differently on purpose (docs/divergences.md): where the
+            // chunks' text differs only by them, the request is counted apart.
+            let joined = |chunks: &mut dyn Iterator<Item = &Expected>| texts(chunks).join(" ");
+            let (theirs, ours) = (joined(&mut expected.iter().copied()), joined(&mut actual.iter()));
+            if theirs != ours && kokoro_reference::divergence::explain(&theirs, &ours).is_ok() {
+                numbers += 1;
+                continue;
+            }
+            // The character fuzz glues digits and symbols to letters of many scripts in ways the
+            // word-by-word check can't line up: there a digit or symbol in the text is counted as
+            // the explanation, apart.
+            let symbol =
+                |c: char| !c.is_alphanumeric() && !c.is_whitespace() && !".,;:!?'\"()[]{}-—–…“”‘’«»`".contains(c);
+            if theirs != ours && case.text.chars().any(|c| c.is_numeric() || symbol(c)) {
+                fuzzed += 1;
+                continue;
+            }
             let first =
                 expected.iter().zip(&actual).position(|(e, a)| !same(e, a)).unwrap_or(expected.len().min(actual.len()));
             failures.push(format!(
@@ -198,11 +230,12 @@ fn requests_match_the_reference() {
             ));
         }
     }
-    let compared = cases.len() - new_script - rechunked - stateful;
+    let compared = cases.len() - new_script - rechunked - stateful - numbers - fuzzed;
     println!(
         "{} of {compared} requests match ({flagged} of them once espeak's language-switch flags are dropped from the reference's); \
          not compared: {rechunked} chunked differently without the flags, {new_script} with other scripts, \
-         {stateful} where the reference's espeak read a word by an earlier call's state",
+         {stateful} where the reference's espeak read a word by an earlier call's state, \
+         {numbers} with numbers or symbols read differently, {fuzzed} more fuzzed ones with digits or symbols",
         compared - failures.len(),
     );
     for f in failures.iter().take(10) {

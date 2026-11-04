@@ -48,17 +48,22 @@ impl Backend {
         Ok(clauses.into_iter().filter(|c| !c.is_empty()).collect::<Vec<_>>().join(" "))
     }
 
-    /// `EspeakBackend.phonemize([text])`.
-    pub fn phonemize(&self, text: &str) -> Result<Vec<String>> {
+    /// `EspeakBackend.phonemize([text])`, as one string: `None` for empty text. phonemizer
+    /// returns a list, of which misaki keeps the first element; for one line of text it never
+    /// has more than one (`docs/divergences.md`), so this joins them instead.
+    pub fn phonemize(&self, text: &str) -> Result<Option<String>> {
         self.phonemize_with(text, |chunk| self.espeak(chunk))
     }
 
     /// [`phonemize`](Self::phonemize) with `espeak` standing in for [`espeak`](Self::espeak).
-    pub fn phonemize_with(&self, text: &str, mut espeak: impl FnMut(&str) -> Result<String>) -> Result<Vec<String>> {
+    pub fn phonemize_with(&self, text: &str, mut espeak: impl FnMut(&str) -> Result<String>) -> Result<Option<String>> {
         let (chunks, marks) = preserve(text);
+        if chunks.is_empty() && marks.is_empty() {
+            return Ok(None);
+        }
         let phonemized =
             chunks.iter().map(|chunk| Ok(self.postprocess_line(&espeak(chunk)?))).collect::<Result<Vec<_>>>()?;
-        Ok(restore(phonemized, &marks))
+        Ok(Some(restore(phonemized, &marks)))
     }
 
     /// `EspeakBackend._postprocess_line`, with `language_switch='remove-flags'`: espeak's
@@ -180,8 +185,9 @@ fn preserve(line: &str) -> (Vec<&str>, Vec<Mark<'_>>) {
     (chunks, marks)
 }
 
-/// `Punctuation.restore` with the default separator (word `' '`) and `strip=False`, for one input line.
-fn restore(mut text: Vec<String>, marks: &[Mark]) -> Vec<String> {
+/// `Punctuation.restore` with the default separator (word `' '`) and `strip=False`, for one input
+/// line, with its output lines joined.
+fn restore(mut text: Vec<String>, marks: &[Mark]) -> String {
     const SEP: &str = " ";
     let mut out = Vec::new();
     let mut marks = marks;
@@ -243,7 +249,7 @@ fn restore(mut text: Vec<String>, marks: &[Mark]) -> Vec<String> {
             out.push(text.pop().unwrap());
         }
     }
-    out
+    out.concat()
 }
 
 #[cfg(test)]
@@ -264,14 +270,14 @@ mod tests {
     fn restore_inverts_preserve() {
         let (_, marks) = preserve("“hello, my world!”");
         let restored = restore(vec!["h ".into(), "m w ".into()], &marks);
-        assert_eq!(restored, ["“h, m w!” "]);
+        assert_eq!(restored, "“h, m w!” ");
     }
 
     #[test]
     fn only_marks() {
         let (chunks, marks) = preserve(" … ");
         assert!(chunks.is_empty());
-        assert_eq!(restore(Vec::new(), &marks), [" … "]);
+        assert_eq!(restore(Vec::new(), &marks), " … ");
     }
 
     #[test]

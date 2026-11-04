@@ -2,7 +2,7 @@
 Python sees them (Rust's own tables follow a newer Unicode version).
 
 Run with the reference venv (reference/.cache/kfa/.venv/bin/python -I), which pins Python's unicodedata
-(for str.isalpha/isdigit) and the `regex` module (for \\p{L}, \\p{Lu}, \\p{Ll} and \\d in subtokenize).
+(for str.isalpha) and the `regex` module (for \\p{L}, \\p{Lu}, \\p{Ll} and \\d in subtokenize).
 """
 
 import os
@@ -33,20 +33,6 @@ def table(name, rs):
     return f"pub(crate) const {name}: &[(u32, u32)] = &[\n{body}];\n\n"
 
 
-def digit_runs():
-    out = []
-    for c in range(0x110000):
-        ch = CHARS[c]
-        if not ch.isdigit():
-            continue
-        v = int(unicodedata.numeric(ch))
-        if out and out[-1][1] == c - 1 and out[-1][2] + (c - out[-1][0]) == v:
-            out[-1][1] = c
-        else:
-            out.append([c, c, v])
-    return out
-
-
 def main(dst):
     lu, ll, l, d = (regex.compile(p) for p in (r"\p{Lu}", r"\p{Ll}", r"\p{L}", r"\d"))
     src = (
@@ -60,10 +46,6 @@ def main(dst):
         + table("RE_LU", ranges(lambda c: lu.match(c) is not None))
         + table("RE_LL", ranges(lambda c: ll.match(c) is not None))
         + table("RE_DIGIT", ranges(lambda c: d.match(c) is not None))
-        + "/// `(first, last, value of first)` for runs of `str.isdigit` characters with consecutive values.\n"
-        + "pub(crate) const PY_DIGIT: &[(u32, u32, u8)] = &[\n"
-        + "".join(f"    (0x{a:X}, 0x{b:X}, {v}),\n" for a, b, v in digit_runs())
-        + "];\n"
     )
     with open(dst, "w") as f:
         f.write(src)

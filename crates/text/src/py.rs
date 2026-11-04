@@ -1,4 +1,4 @@
-//! Python semantics the reference server relies on: `str` predicates, `float()` and `repr(float)`.
+//! Python semantics the reference server relies on: `str` predicates and `float()`.
 
 use crate::tables::{DIGIT, SPACE, WORD};
 
@@ -59,105 +59,9 @@ pub fn parse_float(s: &str) -> f64 {
     ascii.parse().unwrap_or_else(|_| panic!("not a decimal number: {s:?}"))
 }
 
-/// The shortest digits that read back as `x`, as Python picks them: of the shortest strings, the
-/// one nearest `x`, ties to an even last digit. Rust's shortest form breaks those ties the other
-/// way, and its fixed-precision form rounds the exact value ties-to-even, so this takes the length
-/// from the first and the digits from the second.
-fn shortest_sci(x: f64) -> String {
-    let shortest = format!("{x:e}");
-    let mantissa = shortest.split_once('e').unwrap().0;
-    let digits = mantissa.bytes().filter(u8::is_ascii_digit).count();
-    let nearest = format!("{:.*e}", digits - 1, x);
-    if nearest.parse::<f64>() == Ok(x) { nearest } else { shortest }
-}
-
-/// `repr(float)`: the shortest round-trip digits, in exponent form below 1e-4 or from 1e16.
-pub fn float_repr(x: f64) -> String {
-    if x.is_nan() {
-        return "nan".into();
-    }
-    if x.is_infinite() {
-        return if x > 0.0 { "inf" } else { "-inf" }.into();
-    }
-    let sci = shortest_sci(x);
-    let (mantissa, exp) = sci.split_once('e').unwrap();
-    let exp: i32 = exp.parse().unwrap();
-    let (sign, mantissa) = mantissa.strip_prefix('-').map_or(("", mantissa), |m| ("-", m));
-    let digits: String = mantissa.chars().filter(|c| *c != '.').collect();
-    if (-4..16).contains(&exp) {
-        let n = digits.len() as i32;
-        let body = if exp < 0 {
-            format!("0.{}{}", "0".repeat((-exp - 1) as usize), digits)
-        } else if exp + 1 >= n {
-            format!("{}{}.0", digits, "0".repeat((exp + 1 - n) as usize))
-        } else {
-            let (a, b) = digits.split_at((exp + 1) as usize);
-            format!("{a}.{b}")
-        };
-        format!("{sign}{body}")
-    } else {
-        let mantissa = if digits.len() == 1 { digits } else { format!("{}.{}", &digits[..1], &digits[1..]) };
-        format!("{sign}{mantissa}e{}{:02}", if exp < 0 { '-' } else { '+' }, exp.abs())
-    }
-}
-
-/// Errors Python raises converting a float to an int (`round`, `int`, `math.floor`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct NotFinite;
-
-/// `str(int(x))` for an integral float. Integers past `u128` are reported as `None` digits; every
-/// caller turns those into words and inflect rejects anything over 36 digits anyway.
-pub fn int_str(x: f64) -> Result<Option<String>, NotFinite> {
-    if !x.is_finite() {
-        return Err(NotFinite);
-    }
-    let magnitude = x.abs();
-    if magnitude >= 2f64.powi(128) {
-        return Ok(None);
-    }
-    let digits = (magnitude as u128).to_string();
-    Ok(Some(if x < 0.0 && digits != "0" { format!("-{digits}") } else { digits }))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn float_repr_matches_python() {
-        for (x, s) in [
-            (1.0, "1.0"),
-            (0.5, "0.5"),
-            (1e-5, "1e-05"),
-            (0.0001, "0.0001"),
-            (1e16, "1e+16"),
-            (1234567890123456.0, "1234567890123456.0"),
-            (1.5e300, "1.5e+300"),
-            (-3.25, "-3.25"),
-            (123.456, "123.456"),
-            (624802084152476.0 + 0.25, "624802084152476.2"),
-            (-0.0, "-0.0"),
-        ] {
-            assert_eq!(float_repr(x), s);
-        }
-    }
-
-    /// `reference/fixtures/float_repr.txt`, or `KOKORO_FLOAT_REPR` for a bigger run of the same script.
-    #[test]
-    fn float_repr_fixture() {
-        let path = std::env::var("KOKORO_FLOAT_REPR")
-            .unwrap_or_else(|_| concat!(env!("CARGO_MANIFEST_DIR"), "/../../reference/fixtures/float_repr.txt").into());
-        let text = std::fs::read_to_string(path).unwrap();
-        let mismatches: Vec<_> = text
-            .lines()
-            .filter_map(|line| {
-                let (bits, expected) = line.split_once(' ').unwrap();
-                let actual = float_repr(f64::from_bits(u64::from_str_radix(bits, 16).unwrap()));
-                (actual != expected).then(|| format!("{expected} != {actual}"))
-            })
-            .collect();
-        assert!(mismatches.is_empty(), "{} differ: {:?}", mismatches.len(), &mismatches[..mismatches.len().min(10)]);
-    }
 
     #[test]
     fn digits() {

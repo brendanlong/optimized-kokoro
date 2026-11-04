@@ -85,8 +85,18 @@ fn reference_dumps() {
     let mut chunk_stage = Stage::new("chunks");
     let mut call_stage = Stage::new("G2P calls");
     let options = Options::default();
+    let mut changed = 0;
     for record in &records {
         let actual = split::normalize(&join_lines(&record.text), &record.lang, &options);
+        if actual != record.normalized {
+            // Numbers and symbols are read differently on purpose (docs/divergences.md); every
+            // other difference fails. Such records' chunks and calls follow from the new text.
+            match kokoro_reference::divergence::explain(&record.normalized, &actual) {
+                Ok(_) => changed += 1,
+                Err(why) => normalized.check(&record.id, &record.normalized, &format!("{actual} ({why})")),
+            }
+            continue;
+        }
         normalized.check(&record.id, &record.normalized, &actual);
         let actual: Vec<String> = sentences(&record.normalized)
             .iter()
@@ -102,7 +112,7 @@ fn reference_dumps() {
         let expected: Vec<String> = record.calls.iter().map(|c| c.input.clone()).collect();
         call_stage.check(&record.id, &expected, &calls);
     }
-    println!("{} records", records.len());
+    println!("{} records; {changed} normalized differently by the number reader and symbol pass", records.len());
     let ok = [&normalized, &sentence_stage, &chunk_stage, &call_stage].map(Stage::report);
     assert!(ok.iter().all(|&ok| ok), "mismatches against the reference");
 }

@@ -85,10 +85,10 @@ impl EspeakFallback {
 
     /// [`phonemize`](Self::phonemize) with `espeak` standing in for the engine.
     pub fn phonemize_with(&self, word: &str, espeak: impl FnMut(&str) -> Result<String>) -> Result<Option<String>> {
-        let Some(first) = self.backend.phonemize_with(word, espeak)?.into_iter().next() else {
+        let Some(raw) = self.backend.phonemize_with(word, espeak)? else {
             return Ok(None);
         };
-        let mut ps = py_strip(&first).to_string();
+        let mut ps = py_strip(&raw).to_string();
         for (old, new) in &self.e2m {
             ps = ps.replace(old, new);
         }
@@ -160,16 +160,21 @@ impl EspeakG2P {
     }
 
     /// [`phonemize`](Self::phonemize) with `espeak` standing in for the engine.
+    ///
+    /// misaki swaps `()` for `«»` before phonemizer and back after, so that phonemizer's flag
+    /// removal can't take the text's parentheses for language-switch flags. Both are punctuation
+    /// phonemizer keeps out of what espeak reads and puts back as they were, so the swap changes
+    /// nothing but `«»` in the text, which come out as `“”`; that is all this does.
     pub fn phonemize_with(&self, text: &str, espeak: impl FnMut(&str) -> Result<String>) -> Result<String> {
-        let text = text.replace('«', "\u{201c}").replace('»', "\u{201d}").replace('(', "«").replace(')', "»");
-        let Some(first) = self.backend.phonemize_with(&text, espeak)?.into_iter().next() else {
+        let text = text.replace('«', "\u{201c}").replace('»', "\u{201d}");
+        let Some(raw) = self.backend.phonemize_with(&text, espeak)? else {
             return Ok(String::new());
         };
-        let mut ps = py_strip(&first).to_string();
+        let mut ps = py_strip(&raw).to_string();
         for (old, new) in &self.e2m {
             ps = ps.replace(old, new);
         }
-        Ok(ps.replace(['^', '-'], "").replace('«', "(").replace('»', ")"))
+        Ok(ps.replace(['^', '-'], ""))
     }
 }
 

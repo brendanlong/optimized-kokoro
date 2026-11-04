@@ -346,15 +346,17 @@ fn pauses_ids_and_words() {
     assert_eq!(russian.ids.len() + russian.dropped, russian.phonemes.chars().count());
 }
 
-/// The reference fails the whole request with `OverflowError` here, after "Hello there."
+/// The reference fails the whole request with `OverflowError` on a number of 400 digits, after
+/// "Hello there."; the number reader reads numbers past the decillions digit by digit.
 #[test]
-fn a_number_too_large_to_read_fails_only_its_sentence() {
+fn a_number_too_large_to_name_is_read_digit_by_digit() {
     let options = NormalizationOptions::default();
-    let text = format!("Hello there. I owe 1{} things. Bye now.", "0".repeat(400));
-    let chunks: Vec<_> = pipeline().chunks(&text, &options).collect();
-    assert!(matches!(chunks[1], Err(Error::G2p(_))), "{:?}", chunks[1]);
-    let texts: Vec<_> = chunks.iter().map(|c| c.as_ref().map(|c| c.text.as_str()).ok()).collect();
-    assert_eq!(texts, [Some("Hello there."), None, Some("Bye now.")]);
+    let text = format!("Hello there. I owe 1{} things. Bye now.", "0".repeat(59));
+    let texts: Vec<String> = pipeline().chunks(&text, &options).map(|c| c.unwrap().text).collect();
+    assert_eq!(
+        texts,
+        ["Hello there.".to_owned(), format!("I owe one{} things.", " zero".repeat(59)), "Bye now.".to_owned()]
+    );
 }
 
 /// A link with blank phonemes is stripped off the chunk's ends; its word has no span left and is

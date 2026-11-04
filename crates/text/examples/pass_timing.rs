@@ -9,7 +9,7 @@ use std::io::BufRead;
 use std::time::Instant;
 
 fn main() {
-    let options = Options { unit_normalization: true, remove_emoji: true, ..Options::default() };
+    let options = Options { remove_emoji: true, ..Options::default() };
     let passes = normalize::english_passes(&options);
     for line in std::io::stdin().lock().lines() {
         let line = line.unwrap();

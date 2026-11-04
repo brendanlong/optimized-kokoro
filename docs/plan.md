@@ -96,9 +96,9 @@ Proposed process (mine, not yet confirmed by Brendan):
 - **For ports not started yet (zh, ja)**, prefer the simplest implementation that gives the same phonemes, or better-sounding ones, over a line-by-line port. Only invest in exact parity where behaviour is subtle and we have no better idea.
 
 First candidates (my proposals, not decided):
-- **One number path.** The normalizer spells out most numbers, money and years before misaki sees them, so misaki's number and currency code (and our num2words port) mostly sees leftovers. Two implementations disagree in places: "$1" → "one dollars", "1900" → "nineteen zero", "5 Ω" drops the number. Keep one number reader, and delete the other.
+- **One number path.** The normalizer spells out most numbers, money and years before misaki sees them, so misaki's number and currency code (and our num2words port) mostly sees leftovers. Two implementations disagree in places: "$1" → "one dollars", "1900" → "nineteen zero", "5 Ω" drops the number. Keep one number reader, and delete the other. *Done (issue #15): the normalizer's reader, rewritten in `crates/text/src/numbers.rs`, is the only one; misaki's `get_number`, currency and symbol words and the num2words port are deleted. Symbols are read in one place too (`symbols.rs`). See `divergences.md`.*
 - **Crashes in the reference**: misaki Japanese asserts on digits in 49 of 1,581 Japanese Wikipedia paragraphs (reference dump `out/wiki-ja.jsonl`, see PR #2). Do whatever reads well instead. The misaki English crashes are already handled; see `divergences.md`.
-- **espeak wrapper simplifications** listed in PR #6: phonemizer's punctuation split and restore, misaki's `()`↔`«»` swap, keeping only the first output element, and the `(en)` flags.
+- **espeak wrapper simplifications** listed in PR #6: phonemizer's punctuation split and restore, misaki's `()`↔`«»` swap, keeping only the first output element, and the `(en)` flags. *Done where it simplified without changing output (issue #15): the swap and the first-element rule are gone, with no output change; the flags were already dropped. The punctuation split and restore stays: without it, punctuation that misaki leaves inside a fallback word (`says—"Hands`) and every mark in the espeak languages' text would be lost.*
 - **spaCy's full tagger** is only needed for the tag-dependent rules. If a smaller rule set gives the same audio, it could go, but the port is already exact and fast (0.35 ms per sentence), so this is low priority.
 
 ### Unsafe code, dependencies and the CPU target
@@ -130,7 +130,7 @@ To publish, we need one license for the combined work. Component licenses:
 |---|---|
 | misaki code and lexicons, Kokoro weights and voices | Apache-2.0 |
 | `kokoro-espeak-ng` (port of espeak-ng), `kokoro-espeak` (wrappers), espeak-ng data | GPL-3.0-or-later |
-| num2words (ported, so a derivative) | LGPL-2.1 |
+| num2words (ported, so a derivative) | LGPL-2.1; the port was deleted with misaki's number reading (PR for issue #15), so none is left |
 | spaCy `en_core_web_sm` weights | MIT (trained on OntoNotes; Explosion licenses it as MIT) |
 | pypinyin data, jieba / jieba-rs, cn2an, cutlet, lindera | MIT |
 | UniDic | BSD-3 / GPL / LGPL (pick one): we use BSD-3 |
@@ -138,7 +138,7 @@ To publish, we need one license for the combined work. Component licenses:
 All of these are compatible with **GPL-3.0-or-later**, and espeak forces it for anything that links our espeak port. **Decided (Brendan, 2026-11-02):** publish the combined program under GPL-3.0-or-later, and license everything else as permissively as its inputs allow. Concretely:
 - Each crate carries its own license.
 - Our own code and the crates that don't depend on espeak (the protocol, scheduler, worker, the misaki-English/zh/ja ports, segmentation) are Apache-2.0, matching the repo's current LICENSE.
-- The num2words port is LGPL-2.1 (or written from scratch from the spec to stay Apache).
+- The num2words port was LGPL-2.1; it is gone (the text crate's own number reader, written from scratch, replaced it).
 - Only `kokoro-espeak-ng`, `kokoro-espeak`, and what links them (the pipeline and server) are GPL-3.0-or-later.
 - `cargo deny` in CI checks that no permissive crate pulls in a GPL or LGPL dependency. The alternative is to drop espeak (losing es/fr/it/pt/hi/ru/el/ko/ar/he and English unknown words) and stay Apache. Not publishing removes the question entirely, since the GPL and LGPL only bind distribution.
 
