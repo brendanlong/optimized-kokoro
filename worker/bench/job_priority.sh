@@ -24,7 +24,8 @@ mkdir -p "$(dirname "$ESPEAK_DATA_LINK")"
 ln -sfn "$(dirname "$KOKORO_SERVER_BIN")/espeak-ng-data" "$ESPEAK_DATA_LINK"
 
 SECONDS_EACH=${SECONDS_EACH:-60}
-next_port=$((20000 + RANDOM % 20000))
+# Below the ephemeral range, which the load generator's many connections use up.
+next_port=$((12000 + RANDOM % 4000))
 WORKLOADS=${WORKLOADS:-"
 articles --low-streams 32 --low-chunks 4
 sentences --low-streams 64 --low-chunks 1
