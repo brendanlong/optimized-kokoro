@@ -1,17 +1,17 @@
 # optimized-kokoro
 
-A text-to-speech server for the [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) model, built to be safe to put on the internet, fast, and easy to host. It speaks the same OpenAI-style API as [Kokoro-FastAPI](https://github.com/remsky/Kokoro-FastAPI), so existing clients keep working.
+A text-to-speech server for the [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) model, built to be safe to put on the internet, fast, and easy to host. It speaks a small subset of the OpenAI-style speech API that [Kokoro-FastAPI](https://github.com/remsky/Kokoro-FastAPI) serves: streamed raw PCM, one voice per request.
 
 It's the TTS behind [Lion Reader](https://lionreader.com/) ([source](https://github.com/brendanlong/lion-reader)), and a project by [Brendan Long](https://www.brendanlong.com/pages/about-me.html).
 
 ## Goals
 
-- **Run Kokoro safely.** Kokoro's usual stack parses untrusted text in Python and C. Its text-to-phoneme step falls back to [espeak-ng](https://github.com/espeak-ng/espeak-ng), a C library with a history of memory-safety bugs found by fuzzing ([CVE-2023-49990](https://nvd.nist.gov/vuln/detail/CVE-2023-49990), [-49991](https://nvd.nist.gov/vuln/detail/CVE-2023-49991), [-49992](https://nvd.nist.gov/vuln/detail/CVE-2023-49992), [-49993](https://nvd.nist.gov/vuln/detail/CVE-2023-49993), [-49994](https://nvd.nist.gov/vuln/detail/CVE-2023-49994)). Those were fixed for 1.52.0, but that is still the latest release (December 2024), and later memory-safety fixes such as [espeak-ng#2428](https://github.com/espeak-ng/espeak-ng/pull/2428) are only on the main branch. Testing our port against 1.52.0 under AddressSanitizer and Valgrind still found out-of-bounds and uninitialised reads on generated input (including in `CountVowelPosition`, the function behind CVE-2023-49991). Here, every byte from the network is handled by memory-safe Rust, with no `unsafe` code in the text path. The neural network runs in a separate gVisor sandbox that only ever receives small, validated arrays of numbers.
-- **Improve performance.** No Python on the request path: text processing is about 7× faster than the Python pipeline, and the GPU worker stays busier because nothing else competes with it. The model runs compiled (`torch.compile`, fp16).
+- **Run Kokoro safely.** Kokoro's usual stack parses untrusted text in Python and C. Its text-to-phoneme step falls back to [espeak-ng](https://github.com/espeak-ng/espeak-ng), a C library in which fuzzing has found buffer overflows ([CVE-2023-49990](https://nvd.nist.gov/vuln/detail/CVE-2023-49990), [-49991](https://nvd.nist.gov/vuln/detail/CVE-2023-49991), [-49992](https://nvd.nist.gov/vuln/detail/CVE-2023-49992), [-49993](https://nvd.nist.gov/vuln/detail/CVE-2023-49993)). The latest release, 1.52.0, is from December 2024, and later memory-safety fixes such as [espeak-ng#2428](https://github.com/espeak-ng/espeak-ng/pull/2428) are only on its master branch. Testing our port against 1.52.0 under AddressSanitizer and Valgrind still found out-of-bounds and uninitialised reads on generated input (including in `CountVowelPosition`, the function behind CVE-2023-49991). Here, everything from the network is handled in Rust with no `unsafe` code of our own, apart from one audited read-only memory map of the Japanese dictionary file (which request text can't affect). The neural network runs in a separate gVisor sandbox that only ever receives small, validated arrays of numbers.
+- **Improve performance.** No Python on the request path: text processing (normalization, sentence splitting and phonemes) is about 7× faster than the Python pipeline it replaces (6.6–7.2× in our measurements). The model runs compiled (`torch.compile`, fp16).
 - **Best-effort multilingual support.** All 9 of Kokoro's languages: American and British English, Spanish, French, Hindi, Italian, Brazilian Portuguese, Mandarin Chinese and Japanese. Text in other scripts inside a sentence (a Russian or Georgian word in English, say) is read in its own language where espeak-ng can, and as "Thai text" and the like where nothing can, rather than letter by letter.
 - **Simplify.** Kokoro's upstream stack has many separate paths from text to phonemes. Here there's one pipeline per language, and features no client uses (SSML, voice blending, inline voice changes, formats other than PCM) are gone.
 - **Fix edge cases.** Crashes in the original pipeline (some Japanese numbers, odd Unicode) become sensible readings, and symbol and number handling is being improved (issue #15).
-- **Be easy to host despite the paranoia.** One install script sets up three containers on Docker: the GPU worker, the server and a demo page. Each runs in gVisor as `nobody`, with a read-only filesystem and no capabilities. An optional Cloudflare Tunnel publishes it with no open ports.
+- **Be easy to host despite the paranoia.** One install script sets up three containers on Docker: the GPU worker, the server and a demo page. Each runs in gVisor as `nobody`, with a read-only filesystem and no capabilities. By default it listens on localhost only, and an optional Cloudflare Tunnel publishes it without opening any port to the network.
 
 ## What it's based on
 
@@ -22,7 +22,7 @@ It's the TTS behind [Lion Reader](https://lionreader.com/) ([source](https://git
 - [Kokoro-FastAPI](https://github.com/remsky/Kokoro-FastAPI) (through [Brendan's fork](https://github.com/brendanlong/Kokoro-FastAPI)), whose API, text normalization, sentence chunking and audio post-processing this replaces.
 - Ideas from [Kokoros](https://github.com/lucasjinreal/Kokoros) and [Crane](https://github.com/lucasjinreal/Crane), Rust Kokoro implementations.
 
-Each port was checked against the original on large corpora (books and Wikipedia in each language) and matches its output exactly, except where we deliberately differ. Every difference is listed with its reason in [`docs/divergences.md`](docs/divergences.md). The design and its history are in [`docs/plan.md`](docs/plan.md).
+Each port was checked against the original on large corpora (English books, and Wikipedia plus generated and fuzzed text in each language) and matches its output exactly, except where we deliberately differ or the original crashes. Every difference is listed with its reason in [`docs/divergences.md`](docs/divergences.md). The design and its history are in [`docs/plan.md`](docs/plan.md).
 
 ## How it works
 
@@ -36,7 +36,7 @@ client ──HTTPS──▶ server (Rust) ──Unix socket──▶ worker (PyT
 
 ## Using it
 
-The API is the OpenAI-style one Kokoro-FastAPI clients already use:
+A subset of the OpenAI-style API Kokoro-FastAPI clients use, which is what Lion Reader sends. Other fields, formats and non-streaming requests get a 400:
 
 ```sh
 curl -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
@@ -58,4 +58,4 @@ sudo deploy/install.sh
 
 ## License
 
-The combined server is GPL-3.0-or-later, because it includes the port of espeak-ng. The crates that don't depend on espeak-ng (text normalization, the English, Chinese and Japanese text-to-phoneme ports, the spaCy port) are Apache-2.0, as is the rest of the repository; see each crate's `Cargo.toml` and license files. Kokoro's weights and voices are Apache-2.0. Bundled data keeps its own licenses (MIT, BSD, Unicode), noted in each crate's `PROVENANCE.md`.
+The combined server is GPL-3.0-or-later, because it includes the port of espeak-ng. The crates that don't depend on espeak-ng (text normalization, the English, Chinese and Japanese text-to-phoneme ports, the spaCy port) are Apache-2.0, as is the rest of the repository; see each crate's `Cargo.toml` and license files. Kokoro's weights and voices are Apache-2.0. Bundled data keeps its own licenses: the dictionaries and model data in the Apache crates are MIT, BSD or Unicode-licensed (each crate's `PROVENANCE.md`), and espeak-ng's data is GPL (`crates/espeak-ng/LICENSE` and `NOTICE`).
