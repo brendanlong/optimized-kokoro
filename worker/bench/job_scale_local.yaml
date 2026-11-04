@@ -1,0 +1,17 @@
+# gpuc submit bench/job_scale_local.yaml --host local   (from worker/): a short check of job_scale.sh.
+name: kokoro-batch-scale-check
+setup: uv sync --frozen
+command: bash bench/job_scale.sh
+python: .venv/bin/python
+gpus: 1
+env:
+  REQUIRE_CUDA: "1"
+  SCALE_ARGS: "--lengths 30 100 --max-batch 16 --max-frames 20000 --profile-batches 1 8 --reps 2"
+  LOAD_BATCHES: "8"
+  LOAD_CONCURRENCY: "16"
+  LOAD_REQUESTS: "300"
+outputs:
+  - path: results
+priority: 40
+estimated_runtime_min: 20
+max_runtime_min: 60
