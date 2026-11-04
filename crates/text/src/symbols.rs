@@ -204,6 +204,9 @@ fn curated(c: char) -> Option<Reading> {
     })
 }
 
+/// Units a superscript after which is a power ("km²", "s²").
+const POWER_UNITS: &[&str] = &["m", "cm", "mm", "km", "nm", "µm", "μm", "ft", "in", "yd", "mi", "s", "ms", "g", "kg"];
+
 /// The blocks whose characters this pass reads: punctuation and symbols outside ASCII. Letters
 /// and numbers in them (`ℂ`, `Ⅻ`) are left alone.
 fn in_symbol_block(c: char) -> bool {
@@ -327,6 +330,18 @@ pub fn symbols(text: &str) -> String {
     while i < t.len() {
         let c = t[i];
         let next = t.get(i + 1).copied();
+        // A bracketed footnote mark, "[²]": silent with its brackets.
+        if c == '[' && t.get(i + 1).copied().and_then(superscript_digit).is_some() {
+            let mut end = i + 1;
+            while t.get(end).copied().and_then(superscript_digit).is_some() {
+                end += 1;
+            }
+            if t.get(end) == Some(&']') {
+                out.silent(t.get(end + 1).copied());
+                i = end + 1;
+                continue;
+            }
+        }
         if c.is_ascii() {
             // The reference's replacements, with their spacing.
             let replacement = match c {
@@ -425,9 +440,23 @@ pub fn symbols(text: &str) -> String {
                 run.push(char::from(b'0' + d));
                 end += 1;
             }
-            // After a closing parenthesis or a word of one or two letters ("x²", "mc²"): a power.
-            let letters = t[..i].iter().rev().take_while(|c| c.is_alphabetic()).take(3).count();
-            let after_variable = i >= 1 && (t[i - 1] == ')' || (1..=2).contains(&letters));
+            // A power after a one-letter variable ("x²"), a unit ("km²", "m/s²") or a word right
+            // after `=` ("E=mc²"); a footnote mark after any other word ("Smith²") or after
+            // punctuation ("end.²", "[²]"). Powers after numbers ("10²") were read by the number
+            // pass.
+            let word: String = {
+                let mut start = i;
+                while start > 0 && t[start - 1].is_alphabetic() {
+                    start -= 1;
+                }
+                let after_equals = start > 0 && t[start - 1] == '=';
+                let word: String = t[start..i].iter().collect();
+                if after_equals { format!("={word}") } else { word }
+            };
+            let after_variable = word.chars().count() == 1
+                || POWER_UNITS.contains(&word.as_str())
+                || (word.starts_with('=') && word.len() > 1);
+
             if sub {
                 // "H₂O" as "H-two-O", one word, as the number pass joins numbers inside words.
                 if out.text.chars().next_back().is_some_and(char::is_alphanumeric) {
@@ -487,6 +516,8 @@ mod tests {
             ("Wait‼", "Wait!"),
             ("x² and H₂O and CO₂.", "x squared and H-two-O and CO-two."),
             ("Smith² said, E=mc²", "Smith said, E equals mc squared"),
+            ("m², x², km² and 3 m/s²", "m squared, x squared, km squared and 3 m slash s squared"),
+            ("word², end.², Smith³ and [²] and x²³", "word, end., Smith and and x to the power of twenty-three"),
             ("① and ⑳", "one and twenty"),
             ("½ cup", "one half cup"),
             ("C# and #hashtag and # 1", "C sharp and hashtag hashtag and number 1"),

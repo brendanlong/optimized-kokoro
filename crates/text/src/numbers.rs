@@ -423,6 +423,8 @@ impl Body {
 
 struct Scanner<'a> {
     t: &'a [char],
+    /// Hyphens inside arithmetic ([`arithmetic_minus`]): "minus", not a range's "to".
+    minus: Vec<bool>,
 }
 
 impl Scanner<'_> {
@@ -740,7 +742,7 @@ impl Scanner<'_> {
             }
             (Some(_), _) => format!("{} {}", body.words_plain(), currency.many),
         };
-        if self.get(end) == Some('-') && self.number_at(end + 1) {
+        if self.get(end) == Some('-') && self.number_at(end + 1) && !self.minus[end] {
             words.push_str(" to");
             return Some((end + 1, words, true));
         }
@@ -824,7 +826,7 @@ impl Scanner<'_> {
             }
             // Numbers joined by dashes: an ISO date, a code ("978-3-16-148410-0"), or a phone
             // number ("555-1234"); a range is below.
-            if !body.commas && self.get(end) == Some('-') && self.digit(end + 1) {
+            if !body.commas && self.get(end) == Some('-') && self.digit(end + 1) && !self.minus[end] {
                 let chain = self.dash_chain(i);
                 if chain.len() >= 3 {
                     let last = chain[chain.len() - 1].1;
@@ -844,8 +846,8 @@ impl Scanner<'_> {
                 return Some((end + 1, format!("{} to", body.words()), true));
             }
         }
-        // A range: "10-20", "1.5-2".
-        if self.get(end) == Some('-') && self.number_at(end + 1) {
+        // A range or a score: "10-20", "1.5-2", "21-14" (in arithmetic, "minus" below).
+        if self.get(end) == Some('-') && self.number_at(end + 1) && !self.minus[end] {
             return Some((end + 1, format!("{} to", body.words()), true));
         }
         // "3x faster", "1920x1080"
@@ -971,18 +973,69 @@ fn push_words(out: &mut String, words: &str, after: &[char], in_word: bool) {
     }
 }
 
+/// The hyphens (and minus signs) that are minus signs in arithmetic: in a stretch of numbers,
+/// one-letter variables, operators, brackets and spaces that has an `=` (or `<`, `>`, `≤`, `≥`,
+/// `≠`), or at least two operators with spaces around them ("5 - 3 + 2"). Elsewhere a hyphen
+/// between numbers is a range or score ("2-3" is "two to three"), and a spaced one a dash.
+fn arithmetic_minus(t: &[char]) -> Vec<bool> {
+    let mut minus = vec![false; t.len()];
+    let operator = |c: char| matches!(c, '+' | '-' | '−' | '×' | '*' | '/' | '÷');
+    let relation = |c: char| matches!(c, '=' | '<' | '>' | '≤' | '≥' | '≠');
+    let letter = |i: usize| t[i].is_ascii_alphabetic();
+    let in_expression = |i: usize| {
+        let c = t[i];
+        digit_value(c).is_some()
+            || operator(c)
+            || relation(c)
+            || matches!(c, ' ' | '.' | '(' | ')')
+            // A one-letter variable, not part of a word.
+            || (letter(i) && (i == 0 || !letter(i - 1)) && (i + 1 == t.len() || !letter(i + 1)))
+    };
+    let mut i = 0;
+    while i < t.len() {
+        if !in_expression(i) {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        while i < t.len() && in_expression(i) {
+            i += 1;
+        }
+        let span = start..i;
+        let spaced = |k: usize| k > 0 && k + 1 < t.len() && t[k - 1] == ' ' && t[k + 1] == ' ';
+        let has_digit = span.clone().any(|k| digit_value(t[k]).is_some());
+        let has_relation = span.clone().any(|k| relation(t[k]));
+        let spaced_operators = span.clone().filter(|&k| operator(t[k]) && spaced(k)).count();
+        if has_digit && (has_relation || spaced_operators >= 2) {
+            for k in span {
+                minus[k] = matches!(t[k], '-' | '−');
+            }
+        }
+    }
+    minus
+}
+
 /// The number pass: every number in the text as words.
 pub fn numbers(text: &str) -> String {
     if !text.chars().any(|c| digit_value(c).is_some()) {
         return text.to_owned();
     }
     let t: Vec<char> = text.chars().collect();
-    let scanner = Scanner { t: &t };
+    let scanner = Scanner { t: &t, minus: arithmetic_minus(&t) };
     let mut out = String::with_capacity(text.len() * 2);
     let mut i = 0;
     let mut plain_at = usize::MAX;
     while i < t.len() {
         let c = t[i];
+        if matches!(c, '-' | '−') && scanner.minus[i] {
+            // A minus sign in arithmetic ("3-2=1", "x - 3 = 7", "5 - 3 + 2").
+            push_words(&mut out, "minus", &t[i + 1..], false);
+            if scanner.digit(i + 1) || t.get(i + 1) == Some(&'.') {
+                plain_at = i + 1;
+            }
+            i += 1;
+            continue;
+        }
         let candidate = scanner.digit(i) || matches!(c, '~' | '±' | '-' | '−' | '.' | '#') || currency(c).is_some();
         if candidate && let Some((end, words, operator)) = scanner.expression(i, plain_at == i) {
             let in_word = scanner.digit(i) && plain_at != i && !scanner.free_before(i);
@@ -1001,6 +1054,14 @@ pub fn numbers(text: &str) -> String {
             }
             i = end;
             continue;
+        }
+        // A citation glued to the text before it, "text.[3]" or "word[12]": silent.
+        if c == '[' && i > 0 && !t[i - 1].is_whitespace() && scanner.digit(i + 1) {
+            let end = scanner.digits_end(i + 1);
+            if t.get(end) == Some(&']') {
+                i = end + 1;
+                continue;
+            }
         }
         // "'80s": the apostrophe of a decade goes.
         if matches!(c, '\'' | '’')
@@ -1131,6 +1192,15 @@ mod tests {
             ),
             ("0,000 and 10m/s and 5m", "zero, zero zero zero and ten meters per second and five million"),
             ("Wait...5 more", "Wait...five more"),
+            ("It ended.[3] Then word[12] and see [4].", "It ended. Then word and see [four]."),
+            (
+                "3-2=1, x - 3 = 7, 5 - 3 + 2 and 2−3",
+                "three minus two=one, x minus three = seven, five minus three + two and two−three",
+            ),
+            (
+                "2-3, 2 - 3, x-3, -3, 21-14 and 1990-1995",
+                "two to three, two - three, x-three, minus three, twenty-one to fourteen and nineteen ninety to nineteen ninety-five",
+            ),
             ("他于1934年去世 and Б6", "他于 nineteen thirty-four 年去世 and Б six"),
             ("in seven oh nine.30", "in seven oh nine point three zero"),
             ("£A10,000", "£A-ten thousand"),
