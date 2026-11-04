@@ -53,7 +53,7 @@ require_root() {
 take_lock() {
     install -d -m 0755 "$root"
     exec 9> "$root/.lock"
-    flock -n 9 || die "another install.sh or update.sh is running"
+    flock -n 9 || die "another install.sh, update.sh or keys.sh is running"
 }
 
 # nvproxy supports exact driver versions only.
@@ -496,8 +496,17 @@ ensure_secrets() {
 # Makes secrets/keys for an install from before it existed: each plain key in server.toml becomes
 # imported-N (the demo's key is the table entry, and stays in demo.key).
 ensure_keys_file() {
-    local dir=$root/secrets i=0 k
-    [ ! -f "$dir/keys" ] || return 0
+    local dir=$root/secrets i=0 k other
+    if [ -f "$dir/keys" ]; then
+        [ -s "$dir/keys" ] || die "$dir/keys is empty"
+        return 0
+    fi
+    # Only what install.sh ever wrote, which render_server_toml makes again; anything else (a hand
+    # edit) would be lost.
+    other=$(grep -vE '^(#.*|listen = "0\.0\.0\.0:8880"|worker_socket = "/run/kokoro/worker\.sock"|api_keys = \[|    "[^"]*",|    # .*|    \{ key = "[^"]*", max_streams = 4 \},|\])$' "$dir/server.toml" || true)
+    [ -z "$other" ] || die "$dir/server.toml has lines install.sh didn't write, which keys.sh would drop:
+$other
+Move them out (or into secrets/keys by hand: NAME<tab>KEY<tab>MAX_STREAMS or -) first."
     (
         umask 077
         while IFS= read -r k; do
@@ -522,7 +531,10 @@ render_server_toml() {
             echo 'listen = "0.0.0.0:8880"'
             echo 'worker_socket = "/run/kokoro/worker.sock"'
             echo 'api_keys = ['
-            while IFS=$'\t' read -r name key streams; do
+            while IFS=$'\t' read -r name key streams || [ -n "$name" ]; do
+                # Whatever edited the file, nothing but these may reach the TOML.
+                [[ $name =~ ^[a-z0-9][a-z0-9-]{0,31}$ && $key =~ ^[A-Za-z0-9._~+/=-]{16,}$ && $streams =~ ^(-|[1-9][0-9]{0,3})$ ]] ||
+                    die "$keys has a line that isn't NAME<tab>KEY<tab>MAX_STREAMS (or -): $name"
                 echo "    # $name"
                 if [ "$streams" = - ]; then
                     echo "    \"$key\","
