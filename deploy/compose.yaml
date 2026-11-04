@@ -7,7 +7,7 @@
 #   sudo docker compose -f /srv/optimized-kokoro/current/compose.yaml ps|logs -f|restart
 #
 # runsc-kokoro is a runtime install.sh adds to /etc/docker/daemon.json:
-#   /usr/bin/runsc --directfs=false --host-uds=all
+#   runsc --directfs=false --host-uds=all
 # --directfs=false: under rootful Docker the sandbox otherwise runs as root in the host's user
 #   namespace; with it, the sentry runs as nobody in an empty user namespace and all file access goes
 #   through the gofer.
@@ -35,7 +35,7 @@ services:
     runtime: runsc-kokoro
     network_mode: none
     # The same flags must go to the export run (lib.sh), or the cache seed won't match.
-    command: ["--max-batch", "${KOKORO_MAX_BATCH:-1}"]
+    command: ["--max-batch", "${KOKORO_MAX_BATCH:?}"]
     environment:
       KOKORO_CACHE_SEED: /cache-seed
     # Triton and Inductor write their caches there and dlopen the launcher they compile (exec).
@@ -56,7 +56,7 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              device_ids: ["${KOKORO_GPU:-0}"]
+              device_ids: ["${KOKORO_GPU:?}"]
               capabilities: [gpu]
 
   server:
@@ -75,8 +75,8 @@ services:
       - {type: bind, source: "${KOKORO_ROOT:?}/unidic", target: /unidic, read_only: true}
     networks:
       kokoro: {ipv4_address: 172.30.88.2}
-    # Exactly this address: Tailscale serve proxies svc:kokoro to http://127.0.0.1:8880.
-    ports: ["127.0.0.1:8880:8880"]
+    # KOKORO_LISTEN in settings.env (default 127.0.0.1:8880).
+    ports: ["${KOKORO_LISTEN:?}:8880"]
     # max_connections (default 4096) needs about one file descriptor per connection.
     ulimits:
       nofile: {soft: 8192, hard: 8192}
@@ -89,16 +89,15 @@ services:
   demo:
     <<: *hardening
     image: optimized-kokoro-demo:${KOKORO_RELEASE:?}
-    # No GPU and no socket: plain gVisor without host sockets.
-    runtime: runsc-gpuc
+    runtime: runsc-kokoro
     # An address, not a name: Docker's embedded DNS doesn't work under runsc.
     command: ["--listen", "0.0.0.0:25436", "--upstream", "http://172.30.88.2:8880", "--key-file", "/run/secrets/demo.key"]
     secrets:
       - {source: demo_key, target: demo.key}
     networks:
       kokoro: {ipv4_address: 172.30.88.3}
-    # Local only; expose it with Tailscale serve (deploy/README.md).
-    ports: ["127.0.0.1:${KOKORO_DEMO_PORT:-25436}:25436"]
+    # KOKORO_DEMO_LISTEN in settings.env (default 127.0.0.1:25436).
+    ports: ["${KOKORO_DEMO_LISTEN:?}:25436"]
     mem_limit: 512m
     memswap_limit: 512m
     pids_limit: 128
@@ -108,7 +107,7 @@ services:
   # cloudflared:
   #   <<: *hardening
   #   image: cloudflare/cloudflared:VERSION@sha256:DIGEST
-  #   runtime: runsc-gpuc
+  #   runtime: runsc-kokoro
   #   command: ["tunnel", "--no-autoupdate", "run"]
   #   environment:
   #     TUNNEL_TOKEN_FILE: /run/secrets/cloudflared.token

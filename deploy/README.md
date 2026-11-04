@@ -1,80 +1,94 @@
 # Deployment
 
-Three containers on the host's system Docker, defined by `compose.yaml`: `worker` (the GPU worker), `server` (the Rust front, on `127.0.0.1:8880`) and `demo` (the demo page and its proxy, on `127.0.0.1:25436`). **Decided (Brendan, 2026-11-03):** the services must not run as the `claude` user, because that account holds his credentials. They used to run as systemd user units under `claude`: the worker in rootless podman with `--userns=keep-id`, mapped to claude's uid, and the server as a bare process. Brendan installs the new deployment with sudo; `claude` isn't in the `docker` group and can't manage it.
+Three containers on the host's system Docker, defined by `compose.yaml`:
+- `worker`: the GPU worker.
+- `server`: the Rust front, on `127.0.0.1:8880` by default.
+- `demo`: the demo page and its proxy, on `127.0.0.1:25436` by default.
 
-Every container runs in gVisor, as nobody (65534:65534), with a read-only root, no capabilities and `no-new-privileges`:
+`install.sh` sets them up once and `update.sh` replaces them with a new build. Both run as root (with sudo), and nothing runs as the user who installs it.
 
-| | runtime | network | writable | reads |
-|---|---|---|---|---|
-| worker | `runsc-kokoro`, one GPU | none | `/tmp` (2 GB tmpfs, `exec` for Triton), the socket volume | models, its release's compile-cache seed |
-| server | `runsc-kokoro` | `127.0.0.1:8880` | nothing (connects to the socket) | UniDic, `server.toml` (secret) |
-| demo | `runsc-gpuc` | `127.0.0.1:25436` | nothing | `demo.key` (secret) |
+## Requirements
 
-The worker keeps run.sh's limits (12 GB RAM and no swap, 4 CPUs, 1024 pids); the server gets 8192 open files (`max_connections` needs one per connection), 3 GB and 256 pids, and the demo 512 MB.
+- Linux on x86-64-v3 (AVX2: Intel Haswell, AMD Zen or newer; `.cargo/config.toml`).
+- Docker Engine (rootful, the system daemon) with the Compose plugin.
+- gVisor's `runsc`, recent enough to support your NVIDIA driver: `runsc nvproxy list-supported-drivers` must list the version `nvidia-smi` reports. `install.sh` checks this. nvproxy supports exact driver versions only, so hold the driver and runsc together. Distribution packages of runsc are often too old; gVisor's own apt repository tracks its releases.
+- An NVIDIA GPU with its driver and the NVIDIA Container Toolkit, so that `docker run --gpus` works (gVisor uses its legacy hook mode). The model needs about 2 GB of GPU memory at `--max-batch 1`.
+- `jq`, `curl`, `flock`, `ss` and `sha256sum` on the host. For the converters (unless you import their output, below): uv for the models, and cargo for UniDic.
+- About 16 GB of disk for the images and data, and 12 GB of RAM for the worker.
 
-Tailscale serve already proxies `svc:kokoro` (https://kokoro.tail8de88a.ts.net) to `http://127.0.0.1:8880`, so the server must keep publishing exactly that address.
+## Security model
 
-## The runsc-kokoro runtime
+- Every container runs in gVisor, as nobody (65534:65534), with a read-only root, no capabilities and `no-new-privileges`. They all use a Docker runtime that `install.sh` adds to `/etc/docker/daemon.json` (backing it up to `daemon.json.bak-kokoro`). It then reloads Docker, which picks up new runtimes without restarting any container:
 
-`install.sh` adds a Docker runtime to `/etc/docker/daemon.json` (backing it up to `daemon.json.bak-kokoro`) and reloads Docker, which picks up new runtimes without restarting any container:
+  ```json
+  "runsc-kokoro": {"path": "/usr/bin/runsc", "runtimeArgs": ["--directfs=false", "--host-uds=all"]}
+  ```
 
-```json
-"runsc-kokoro": {"path": "/usr/bin/runsc", "runtimeArgs": ["--directfs=false", "--host-uds=all"]}
-```
+  - `--directfs=false`: under rootful Docker, runsc's default directfs mode runs the sandbox as root in the host's user namespace. With it off, the sentry runs as nobody in an empty user namespace, and all file access goes through the gofer. It costs metadata-heavy file I/O. That shows in the worker's startup: with the same image and cache seed, 205 s to ready with directfs off against 91 s with it on (measured with rootless podman). Serving isn't affected.
+  - `--host-uds=all`: each container is its own gVisor kernel. The worker's socket reaches the server only as a real host socket in their shared volume. The worker needs `create` and the server `open`.
+- The worker has no network, a 2 GB tmpfs at `/tmp` (mounted `exec` for Triton) and one GPU. It reads the models and its release's compile-cache seed, both read-only. Its limits are 12 GB of RAM and no swap, 4 CPUs and 1024 pids. GPU memory isn't limited.
+- The server reads UniDic and its config. It writes nothing. Its limits are 8192 open files (`max_connections` needs one per connection), 3 GB and 256 pids. The demo gets 512 MB.
+- The socket lives in a named volume: a tmpfs created as `uid=65534,gid=65534,mode=0700` and mounted with `nocopy`, so Docker never copies an image directory's ownership onto it. Only the worker and the server mount it, and the worker replaces a stale `worker.sock` when it starts.
+- The API keys are in `secrets/server.toml` and `secrets/demo.key`, each `root:65534` mode 0640, in a 0700 directory. Docker bind-mounts them as Compose secrets. Outside swarm, Compose can't change their owner or mode, so the files carry them. The keys never go through the environment.
+- The server and the demo share a bridge network, 172.30.88.0/24. The addresses are fixed because Docker's embedded DNS doesn't work under runsc. The network isn't `internal`, since published ports need a gateway, so both could make outbound connections; neither does. Ports are published only on the addresses in `settings.env`, `127.0.0.1` by default. Behind anything public, an edge must filter unauthenticated traffic first (see `crates/server/src/config.rs`).
+- The scripts run as root from your checkout, and build images from it. So they refuse a checkout, or any directory above it, that anyone but you and root can change: by owner or by mode. Group write is allowed only for your private group, and sticky directories are allowed. ACLs aren't checked.
+- The converters run as you, not as root. Root never opens a file inside a directory someone else owns. It reads each one with `sudo -u OWNER cat` into its own temporary directory, so a symlink can't make it copy something that user couldn't read. A root-owned import is read directly, but only through root-owned directories without symlinks.
 
-- `--directfs=false`: under rootful Docker, runsc's default directfs mode runs the sandbox as root in the host's user namespace. With it off, the sentry runs as nobody in an empty user namespace, and all file access goes through the gofer (the same as `runsc-gpuc`; see the gVisor nvproxy wiki page). It costs metadata-heavy file I/O, which shows in the worker's startup: with the same image and cache seed under rootless podman, 205 s to ready with directfs off against 91 s with it on (the first warmup compile, 165 s against 69 s). Serving isn't affected.
-- `--host-uds=all`: each container is its own gVisor kernel, so the worker's socket only reaches the server if it's a real host socket in the shared volume. The worker needs `create` and the server `open`. Checked with rootless podman and runsc release-20261102.0: without `open` the second sandbox gets `ECONNREFUSED`; with both, a socket bound by uid 65534 in one sandbox shows up on the host owned by that uid, mode 0660, and a uid-65534 client in another sandbox connects (uid 1000 gets `EACCES`).
+## Install
 
-The existing `runsc` runtime (`--nvproxy=true`, directfs on) isn't used. GPU support turns on by itself when Docker adds the NVIDIA devices (`--gpus`, gVisor's legacy hook mode); Brendan checked `docker run --runtime=runsc-gpuc --gpus all` on this host.
-
-The socket lives in a named volume that is a tmpfs created as `uid=65534,gid=65534,mode=0700` (mounted with `nocopy`, so Docker never copies an image directory's ownership onto it). Only the worker and the server mount it. The volume is mounted on the host while either container uses it, and the worker replaces a stale `worker.sock` when it starts.
-
-## Install (once)
-
-Run it as yourself (`sudo` from your own account, not `claude`) from your own checkout: the script runs as root and builds what's in the checkout. `install.sh` and `update.sh` refuse a checkout that `claude` can write (any file in it, or any parent directory), or that has files owned by anyone but you or root, or world-writable ones. The converters run as you (`SUDO_USER`, or `KOKORO_BUILD_USER`), never as `claude`. Root never opens files inside a directory you or `claude` own: it reads them out with `sudo -u OWNER cat` into its own temporary directory. Only one `install.sh` or `update.sh` runs at a time (`/srv/optimized-kokoro/.lock`).
+From your own checkout, with sudo from your own account:
 
 ```sh
-git clone https://github.com/brendanlong/optimized-kokoro ~/optimized-kokoro && cd ~/optimized-kokoro
+git clone https://github.com/brendanlong/optimized-kokoro && cd optimized-kokoro
 sudo deploy/install.sh
 ```
 
-What it does, in this order, while the old user units keep serving:
-1. Adds the `runsc-kokoro` runtime (above), and creates `/srv/optimized-kokoro` with `settings.env`.
-2. UniDic, as `unidic/SHA256.dic` (the checksum in `crates/g2p-ja/tools/fetch_unidic.sh`): copies the old `unidic.dic` (read as `claude`) if it matches, or fetches and converts it as you (this needs cargo). Checked again once root has the copy.
-3. Models: converts them as you with `uv run python -m kokoro_worker.convert` (a pinned Hugging Face revision; this needs uv). Only `config.json`, `model.safetensors` and `voices.safetensors` are taken. `KOKORO_MODELS_FROM=DIR` copies a converted directory instead, read as the directory's owner, for example `KOKORO_MODELS_FROM=~claude/.local/share/optimized-kokoro/models` (the conversion is deterministic: a fresh one matched the deployed files byte for byte).
-4. API keys: reuses the keys in `~claude/.local/share/optimized-kokoro/server.env` (read as `claude`), so clawed-abode needs no change, or makes a new one, and makes a separate key for the demo (limited to 4 streams, so it can't take all of clawed-abode's capacity). They go in `secrets/server.toml` and `secrets/demo.key`.
-5. Builds the three images and exports a compile cache: a one-off `docker compose run` of the new worker as nobody, which warms up, writes the caches into a directory only nobody can write, and exits without listening. Root then takes ownership (dropping any setuid bits), and the serving worker mounts it read-only.
-6. Stops the old units as `claude` (only now, to free port 8880), starts the containers and waits for `/health`. If they don't come up healthy, it shows their logs, removes them, starts the old units again, and removes the release.
-
-It removes nothing of the old setup. Once you've checked the new deployment (below), run
+It fails before building anything if the server's or the demo's port is already in use, naming what holds it. For other addresses or another GPU, create `/srv/optimized-kokoro/settings.env` first. Otherwise `install.sh` writes it with these defaults commented out:
 
 ```sh
-sudo deploy/install.sh --remove-old
+KOKORO_GPU=0                        # an index, a UUID or a MIG device from nvidia-smi -L
+KOKORO_LISTEN=127.0.0.1:8880        # the server (IPv4:port); 0.0.0.0 exposes it everywhere
+KOKORO_DEMO_LISTEN=127.0.0.1:25436  # the demo page
+KOKORO_MAX_BATCH=1                  # the worker's --max-batch (worker/README.md)
 ```
 
-which first checks that the old units are stopped and that the new server answers `/health`, then, as `claude`: `systemctl --user disable --now kokoro-worker kokoro-server`, deletes the two unit files and daemon-reloads, and deletes `~/.local/share/optimized-kokoro`. Until then the old units are still enabled, and after a reboot they'd race the containers for port 8880. It leaves claude's podman images (`podman rmi localhost/kokoro-worker:deploy localhost/kokoro-worker:deploy-new` as `claude`).
+What it does:
+1. Checks the checkout, the driver against runsc and the ports. Adds the runtime and creates `/srv/optimized-kokoro`.
+2. UniDic: fetches and converts it as you (`crates/g2p-ja/tools/fetch_unidic.sh`), and checks it against that script's checksum once root has the copy.
+3. Models: converts them as you with `uv run python -m kokoro_worker.convert`, from a pinned Hugging Face revision. The conversion is deterministic. Only `config.json`, `model.safetensors` and `voices.safetensors` are taken.
+4. API keys: makes one key for your clients, and a separate key for the demo page. The demo's key is limited to 4 streams, so it can't take all of the clients' capacity.
+5. Builds the three images and exports a compile cache. That's a one-off `docker compose run` of the worker as nobody, which warms up, writes the caches into a directory only nobody can write, and exits without listening. Root then takes ownership (dropping any setuid bits), and the serving worker mounts it read-only.
+6. Starts the containers and waits for `/health`. If they don't come up healthy, it shows their logs and removes them and the release.
 
-The demo page listens on `127.0.0.1` only. To reach it from the tailnet over HTTPS, which also lets browsers use WebCodecs instead of the WASM encoder (plain-HTTP pages aren't a secure context), define `svc:kokoro-demo` in the Tailscale admin console like `svc:kokoro`, then:
+Existing data can be imported instead. Each file is read as its owner:
 
 ```sh
-sudo tailscale serve --service=svc:kokoro-demo --https=443 http://127.0.0.1:25436
+sudo deploy/install.sh --keys-from FILE --models-from DIR --unidic-from FILE
 ```
 
-## Checks after the first install
+- `--keys-from FILE`: a `KOKORO_API_KEYS=a,b` line, or one key per line (with `#` comments).
+- `--models-from DIR`: what `kokoro_worker.convert` wrote.
+- `--unidic-from FILE`: a converted `unidic.dic` with its `unidic.dic.LICENSE` next to it. It must match the checksum.
 
-What couldn't be tested before the first install (no Docker access from `claude`): runsc and the GPU under Docker, the socket in a Docker volume, the limits, and the ports. With `c="sudo docker compose -f /srv/optimized-kokoro/current/compose.yaml"`:
+The clients' keys are then in `/srv/optimized-kokoro/secrets/server.toml` (`sudo cat` it). Clients send one as `Authorization: Bearer KEY`.
 
-1. `$c ps` shows worker, server and demo up; `curl -s 127.0.0.1:8880/health` prints 200.
-2. Sandboxed, as nobody: `$c exec worker sh -c 'id; uname -r'` prints uid 65534 and gVisor's kernel version, not the host's (the server and demo images have no shell). `ps -eo user,args | grep runsc-sandbox` should show the three sandboxes running as `nobody`, not root (directfs off).
-3. GPU: `$c logs worker` shows `compile caches seeded`, the warmups and `listening on /run/kokoro/worker.sock`, with no CUDA errors and no `Read-only file system` or `Permission denied` from Triton under `/tmp`.
-4. Socket: `sudo ls -l /var/lib/docker/volumes/optimized-kokoro_sock/_data` shows `srw-rw---- 65534 65534 worker.sock`, and `$c logs server` has no reconnect errors after the worker is up.
-5. Speech, English and Japanese (UniDic), with the clawed-abode key from `sudo cat /srv/optimized-kokoro/secrets/server.toml`:
-   `curl -s -o /tmp/en.pcm -w '%{http_code} %{size_download}\n' -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' -d '{"model":"kokoro","input":"Hello there.","voice":"af_heart","response_format":"pcm"}' 127.0.0.1:8880/v1/audio/speech`, then the same with `"input":"こんにちは、世界。","voice":"jf_alpha"`. Both 200 with audio. Then a clawed-abode TTS request, and Lion Reader if it uses this server.
-6. Limits: `sudo docker stats --no-stream` shows a 12 GiB limit on the worker (3 GiB server, 512 MiB demo).
-7. Ports: `ss -ltn | grep -E ':8880|:25436'` shows only `127.0.0.1`.
-8. Demo: after `tailscale serve`, the page at https://kokoro-demo.tail8de88a.ts.net plays (and from a plain-HTTP tunnel to 127.0.0.1:25436, with the WASM encoder).
-9. Recovery: `$c restart worker`; the server reconnects by itself (`/health` back to 200 after the worker's startup).
-10. Then `sudo deploy/install.sh --remove-old`, and after the next reboot, check 1 again (the containers start with Docker, and nothing else holds port 8880).
+The demo page needs HTTPS (a secure context) to use WebCodecs; over plain HTTP it falls back to a WASM encoder. Put it behind a TLS-terminating proxy on the host, pointing at `KOKORO_DEMO_LISTEN`.
+
+## Checks after installing
+
+With `c="sudo docker compose -f /srv/optimized-kokoro/current/compose.yaml"`:
+
+1. `$c ps` shows worker, server and demo up, and `curl -s 127.0.0.1:8880/health` prints 200. It's 503 until the worker is ready, which takes about 3.5 minutes.
+2. `$c exec worker sh -c 'id; uname -r'` prints uid 65534 and gVisor's kernel version, not the host's. The server and demo images have no shell. `ps -eo user,args | grep runsc-sandbox` should show the sandboxes running as `nobody`, not root.
+3. `$c logs worker` shows `compile caches seeded`, the warmups and `listening on /run/kokoro/worker.sock`. There should be no CUDA errors, and no `Read-only file system` or `Permission denied` from Triton under `/tmp`.
+4. `sudo ls -l /var/lib/docker/volumes/optimized-kokoro_sock/_data` shows `srw-rw---- 65534 65534 worker.sock`.
+5. Speech in English and in Japanese (Japanese reads UniDic), with a key from `server.toml`:
+   `curl -s -o /tmp/en.pcm -w '%{http_code} %{size_download}\n' -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' -d '{"model":"kokoro","input":"Hello there.","voice":"af_heart","response_format":"pcm"}' 127.0.0.1:8880/v1/audio/speech`. Then the same with `"input":"こんにちは、世界。","voice":"jf_alpha"`. Both should print 200 and a nonzero size.
+6. `sudo docker stats --no-stream` shows the limits: 12 GiB for the worker, 3 GiB for the server and 512 MiB for the demo.
+7. `ss -ltn` shows the two ports only on the addresses in `settings.env`.
+8. The demo page plays.
+9. `$c restart worker`: the server reconnects by itself, and `/health` returns 200 again after the worker's startup.
+10. After a reboot, check 1 again. The containers start with Docker (`restart: unless-stopped`).
 
 ## Update
 
@@ -82,35 +96,39 @@ What couldn't be tested before the first install (no Docker access from `claude`
 git pull && sudo deploy/update.sh
 ```
 
-It builds new images and exports a new compile cache into a new release directory while the running release keeps serving, then points `current` at it (by rename) and recreates the containers. If they don't come up healthy, it points `current` back at the previous release, starts that again, and removes the failed release and its images (as it does for a release whose build or cache export fails). It keeps the previous release (images, compose file, cache) for going back by hand:
+It builds new images and exports a new compile cache into a new release directory while the running release keeps serving. Then it points `current` at the new release (by rename) and recreates the containers, so the service is down for the worker's startup, about 3.5 minutes.
+
+If they don't come up healthy, it points `current` back at the previous release, starts that again, and removes the failed release and its images. It does the same for a release whose build or cache export fails. It keeps the previous release (images, compose file, cache) for going back by hand:
 
 ```sh
 sudo ln -sfn releases/PREVIOUS /srv/optimized-kokoro/current
 sudo docker compose -f /srv/optimized-kokoro/current/compose.yaml up -d
 ```
 
-To change the GPU, the demo port or the worker's `--max-batch` (the cache seed depends on it), edit `/srv/optimized-kokoro/settings.env` and run `update.sh`.
+To change a setting, edit `/srv/optimized-kokoro/settings.env` and run `update.sh`. A new address must be free.
 
-The worker's startup with a cache seed should take about 3.5 minutes with directfs off (above; 70-90 s under the old setup), and a cache export somewhat longer, so an update is down for about 3.5 minutes. `/health` answers 503 until the worker is connected.
+## Uninstall
 
 ```sh
-sudo docker compose -f /srv/optimized-kokoro/current/compose.yaml ps
-sudo docker compose -f /srv/optimized-kokoro/current/compose.yaml logs -f
+sudo docker compose -f /srv/optimized-kokoro/current/compose.yaml down --volumes
+sudo docker image ls --filter 'reference=optimized-kokoro-*' -q | sort -u | xargs -r sudo docker image rm -f
+sudo rm -rf /srv/optimized-kokoro
 ```
+
+Then, if nothing else uses it, remove `runsc-kokoro` from `/etc/docker/daemon.json` (the original is in `daemon.json.bak-kokoro`) and run `sudo systemctl reload docker`.
 
 ## Layout
 
 `/srv/optimized-kokoro`, all root-owned (see the top of `lib.sh`):
-- `settings.env`: `KOKORO_GPU` (an index, a UUID or a MIG device), `KOKORO_DEMO_PORT`, `KOKORO_MAX_BATCH`. Any other line, apart from comments, is an error.
-- `models/`, and `unidic/SHA256.dic`: world-readable data. The server memory-maps the dictionary, so a new one (a new checksum in `fetch_unidic.sh`) is a new file next to the old one. Each release's `.env` names its own (`KOKORO_UNIDIC_FILE`), so neither the running server nor a rollback ever sees the dictionary change. Dictionaries no kept release names are deleted.
-- `secrets/` (0700): `server.toml` (listen address, socket path and API keys) and `demo.key`, each `root:65534` mode 0640. Docker bind-mounts them as Compose secrets at `/run/secrets/` (outside swarm, Compose can't change their owner or mode, so the files carry them). The keys never go through the environment.
+- `settings.env`: the settings above. Any other line, apart from comments, is an error.
+- `models/` and `unidic/SHA256.dic`: world-readable data. The server memory-maps the dictionary, so a new one (a new checksum in `fetch_unidic.sh`) is a new file next to the old one. Each release's `.env` names its own (`KOKORO_UNIDIC_FILE`), so neither the running server nor a rollback sees it change. Dictionaries that no kept release names are deleted.
+- `secrets/`: `server.toml` (listen address, socket path and API keys) and `demo.key`.
 - `releases/REL/`: `compose.yaml` (a copy of `deploy/compose.yaml`), `.env` (`KOKORO_ROOT`, `KOKORO_RELEASE`, `KOKORO_UNIDIC_FILE` and the settings) and `cache-seed/`. Images are `optimized-kokoro-{worker,server,demo}:REL`.
 - `current`: a symlink to the running release.
+- `.lock`: held while `install.sh` or `update.sh` runs.
 
 ## Notes
 
-- The server and the demo share a bridge network (172.30.88.0/24, fixed addresses because Docker's embedded DNS doesn't work under runsc). It isn't `internal`, since published ports need a gateway, so both could make outbound connections; neither does.
-- `worker/run.sh` (rootless podman) is still how to run the worker by hand and in `worker/bench/`.
-- The server image keeps the espeak-ng data at `/src/crates/espeak-ng/espeak-ng-data`, the path it was built at: `kokoro-espeak-ng` finds it through `CARGO_MANIFEST_DIR` at run time.
-- `compose.yaml` has a commented-out `cloudflared` service for later. Cloudflare Access (or the relay in `docs/plan.md`) must filter unauthenticated traffic before it reaches the server.
-- The old Kokoro-FastAPI quadlet was disabled on 2026-11-03 by renaming `~claude/.config/containers/systemd/kokoro.container` to `kokoro.container.disabled`. It also uses port 8880.
+- `worker/run.sh` (rootless podman) is still how to run the worker by hand, and how `worker/bench/` runs it.
+- The server image keeps the espeak-ng data at `/src/crates/espeak-ng/espeak-ng-data`, the path it was built at, because `kokoro-espeak-ng` finds it through `CARGO_MANIFEST_DIR` at run time.
+- `compose.yaml` has a commented-out `cloudflared` service for later.

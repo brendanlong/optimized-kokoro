@@ -20,8 +20,12 @@ check_checkout
 [ -L "$root/current" ] || die "not installed; run deploy/install.sh first"
 [ -f "$root/secrets/server.toml" ] && [ -f "$root/secrets/demo.key" ] || die "$root/secrets is incomplete"
 prev=$(basename "$(readlink "$root/current")")
-ensure_runtime
+check_driver
 ensure_dirs
+# A changed address must be free; the current one is the running release's own.
+[ "$KOKORO_LISTEN" = "$(release_setting "$prev" LISTEN)" ] || check_port_free "$KOKORO_LISTEN"
+[ "$KOKORO_DEMO_LISTEN" = "$(release_setting "$prev" DEMO_LISTEN)" ] || check_port_free "$KOKORO_DEMO_LISTEN"
+ensure_runtime
 ensure_unidic
 ensure_models
 stage_release

@@ -2,7 +2,7 @@
 # Shared by install.sh and update.sh (sourced, not run). Runs as root.
 #
 # Layout of $root (/srv/optimized-kokoro, everything root-owned):
-#   settings.env            KOKORO_GPU, KOKORO_DEMO_PORT, KOKORO_MAX_BATCH (edit, then run update.sh)
+#   settings.env            KOKORO_GPU, KOKORO_LISTEN, KOKORO_DEMO_LISTEN, KOKORO_MAX_BATCH
 #   models/                 what kokoro_worker.convert wrote (0644)
 #   unidic/SHA256.dic       UniDic for Japanese, named by its checksum (fetch_unidic.sh's OUT_SHA256);
 #                           each release's .env names the one it uses, so a new dictionary never
@@ -16,11 +16,8 @@
 root=${DESTDIR:-}/srv/optimized-kokoro
 daemon_json=${DESTDIR:-}/etc/docker/daemon.json
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-health_url=http://127.0.0.1:8880/health
 nobody=65534
 images=(worker server demo)
-# The user whose old systemd user units and state install.sh replaces.
-old_user=${KOKORO_OLD_USER:-claude}
 # Owns the checkout, and builds and runs the converters (cargo, uv).
 build_user=${KOKORO_BUILD_USER:-${SUDO_USER:-}}
 
@@ -32,7 +29,7 @@ die() {
 require_root() {
     local c
     [ "$(id -u)" = 0 ] || [ -n "${DESTDIR:-}" ] || die "run this with sudo"
-    for c in docker jq curl flock sha256sum; do
+    for c in docker jq curl flock sha256sum ss runsc; do
         command -v "$c" > /dev/null || die "$c isn't installed"
     done
     docker compose version > /dev/null || die "the docker compose plugin isn't installed"
@@ -45,6 +42,15 @@ take_lock() {
     flock -n 9 || die "another install.sh or update.sh is running"
 }
 
+# nvproxy supports exact driver versions only.
+check_driver() {
+    local driver
+    command -v nvidia-smi > /dev/null || die "nvidia-smi isn't installed (the NVIDIA driver is required)"
+    driver=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -n 1)
+    runsc nvproxy list-supported-drivers | grep -qxF "$driver" ||
+        die "this runsc ($(runsc --version | head -n 1)) doesn't support NVIDIA driver $driver; see runsc nvproxy list-supported-drivers"
+}
+
 # Runs a command as the build user in a login shell (for cargo and uv on its PATH), in directory $1.
 as_build_user() {
     local dir=$1
@@ -55,37 +61,60 @@ as_build_user() {
 check_build_user() {
     [ -n "$build_user" ] || die "run with sudo from your own account, or set KOKORO_BUILD_USER"
     id "$build_user" > /dev/null 2>&1 || die "no user $build_user"
-    [ "$build_user" != "$old_user" ] || die "the build user can't be $old_user: run with sudo from your own account"
     if [ "$build_user" = root ] && [ "${KOKORO_BUILD_USER:-}" != root ]; then
-        die "SUDO_USER is root: set KOKORO_BUILD_USER to the user who runs cargo and uv (or to root)"
+        die "SUDO_USER is root: set KOKORO_BUILD_USER to the user who owns the checkout (or to root)"
     fi
+}
+
+# The group whose write bit is harmless: the build user's private group (its own name, no members).
+private_group() {
+    local g members
+    g=$(id -gn "$build_user")
+    members=$(getent group "$g" | cut -d: -f4)
+    if [ "$g" = "$build_user" ] && [ -z "$members" ]; then echo "$g"; fi
+}
+
+# Whether $1 is a sticky directory (others may write it, but not rename or delete what isn't theirs).
+sticky_dir() {
+    [ -d "$1" ] && [ -k "$1" ]
+}
+
+# Whether directory or file $1 can be changed only by the build user and root: owned by one of
+# them, and not writable by its group (unless that's the build user's private group) or by others,
+# unless it's a sticky directory.
+only_ours() {
+    local owner group mode m
+    read -r owner group mode < <(stat -c '%U %G %a' -- "$1")
+    m=$((8#$mode))
+    [ "$owner" = root ] || [ "$owner" = "$build_user" ] || return 1
+    sticky_dir "$1" && return 0
+    if ((m & 8#20)) && [ "$group" != "$(private_group)" ]; then return 1; fi
+    if ((m & 8#2)); then return 1; fi
+    return 0
 }
 
 # Root runs these scripts from the checkout and builds images from it, so no one but the build user
-# and root may be able to change any of it: not the old user (claude), and not through a parent.
-# Except worker/.venv/.lock, which uv makes 0666 and nothing reads.
+# and root may be able to change any of it, or any directory above it. (ACLs aren't checked.)
+# worker/.venv/.lock is the exception: uv makes it 0666, and nothing reads it.
 check_checkout() {
-    local d found
+    local d found pg gw
     check_build_user
-    if id "$old_user" > /dev/null 2>&1; then
-        d=$repo
-        while :; do
-            if sudo -u "$old_user" -- test -w "$d"; then
-                die "$old_user can write $d; run from a checkout only $build_user can change"
-            fi
-            [ "$d" = / ] && break
-            d=$(dirname "$d")
-        done
-        found=$(sudo -u "$old_user" -- find "$repo" -writable ! -path "*/.venv/.lock" -print -quit 2> /dev/null || true)
-        [ -z "$found" ] || die "$old_user can write $found; run from a checkout only $build_user can change"
-    fi
-    found=$(find "$repo" ! -type l ! -path "*/.venv/.lock" \( \( ! -user "$build_user" ! -user root \) -o -perm -o+w \) -print -quit)
-    [ -z "$found" ] || die "$found is owned by someone other than $build_user or root, or is world-writable"
+    d=$repo
+    while :; do
+        only_ours "$d" || die "$d can be changed by someone other than $build_user and root; run from a checkout only they can change"
+        [ "$d" = / ] && break
+        d=$(dirname "$d")
+    done
+    pg=$(private_group)
+    gw=(-perm -g+w)
+    [ -z "$pg" ] || gw=(-perm -g+w ! -group "$pg")
+    found=$(find "$repo" ! -type l ! -path '*/.venv/.lock' \
+        \( \( ! -user "$build_user" ! -user root \) -o -perm -o+w -o \( "${gw[@]}" \) \) -print -quit)
+    [ -z "$found" ] || die "$found can be changed by someone other than $build_user and root"
 }
 
 # Temporary directories, removed on exit. make_tmp VAR [OWNER] makes one (root's, mode 0700, unless
-# OWNER is given) and sets VAR to its path; it runs in the caller's shell, so the trap sees it. Root
-# never opens paths inside a directory another user owns: it reads files out with cat_as.
+# OWNER is given) and sets VAR to its path; it runs in the caller's shell, so the trap sees it.
 tmps=()
 # A release being staged; removed on exit unless the caller cleared this or current points at it.
 pending_release=
@@ -105,10 +134,37 @@ make_tmp() {
     printf -v "$1" %s "$t"
 }
 
-# Copies file $2, read as user $1, to $3 (written by root, deliberately: $3 is in root's directory).
+# Whether $1 is reached without symlinks, through directories (and to a file) owned by root and
+# writable by no one else (sticky directories allowed).
+root_path() {
+    local p d owner mode m
+    p=$(realpath -e -- "$1") && [ "$p" = "$(realpath -es -- "$1")" ] || return 1
+    d=$p
+    while :; do
+        read -r owner mode < <(stat -c '%U %a' -- "$d")
+        m=$((8#$mode))
+        [ "$owner" = root ] || return 1
+        if ! sticky_dir "$d" && ((m & 8#22)); then return 1; fi
+        [ "$d" = / ] && return 0
+        d=$(dirname "$d")
+    done
+}
+
+# Copies file $1 to $2 (in root's directory) as $1's owner sees it, so a symlink or a file in someone
+# else's directory can't make root copy something that user couldn't read. A root-owned file is
+# read directly, but only through root-owned directories (root_path).
 # shellcheck disable=SC2024
-cat_as() {
-    sudo -u "$1" -- cat -- "$2" > "$3"
+import_file() {
+    local src=$1 owner
+    [ -e "$src" ] || die "$src doesn't exist"
+    owner=$(stat -c %U -- "$src")
+    if [ "$owner" = root ]; then
+        root_path "$src" || die "$src is root's, but reached through a symlink or a directory others can change; copy it somewhere root-owned"
+        [ -f "$src" ] || die "$src isn't a regular file"
+        cat -- "$src" > "$2"
+    else
+        sudo -u "$owner" -- cat -- "$src" > "$2" || die "can't read $src as $owner"
+    fi
 }
 
 compose() {
@@ -123,12 +179,14 @@ new_key() {
 # Adds the runsc-kokoro runtime (gVisor with directfs off and host sockets, see compose.yaml) to
 # daemon.json and reloads Docker, which picks up runtimes without restarting any container.
 ensure_runtime() {
-    local want='{"path": "/usr/bin/runsc", "runtimeArgs": ["--directfs=false", "--host-uds=all"]}'
-    [ -f "$daemon_json" ] || die "$daemon_json is missing"
-    if jq -e --argjson want "$want" '.runtimes["runsc-kokoro"] == $want' "$daemon_json" > /dev/null; then
+    local runsc want
+    runsc=$(command -v runsc)
+    want=$(jq -cn --arg p "$runsc" '{path: $p, runtimeArgs: ["--directfs=false", "--host-uds=all"]}')
+    [ -f "$daemon_json" ] || echo '{}' > "$daemon_json"
+    # Any runsc path will do, as long as the flags match.
+    if jq -e --argjson want "$want" '.runtimes["runsc-kokoro"].runtimeArgs == $want.runtimeArgs' "$daemon_json" > /dev/null; then
         return
     fi
-    jq -e '.runtimes["runsc-gpuc"]' "$daemon_json" > /dev/null || die "$daemon_json has no runsc-gpuc runtime (the demo uses it)"
     if jq -e '.runtimes["runsc-kokoro"]' "$daemon_json" > /dev/null; then
         die "$daemon_json already has a different runsc-kokoro runtime; make it $want"
     fi
@@ -150,37 +208,69 @@ ensure_dirs() {
     install -d -m 0700 "$root/secrets"
     if [ ! -f "$root/settings.env" ]; then
         cat > "$root/settings.env" << 'EOF'
-# Copied into each release's .env by deploy/install.sh and deploy/update.sh; run update.sh after a change.
-# The GPU for the worker: an index or a UUID from nvidia-smi -L.
-KOKORO_GPU=0
-# The demo page listens on 127.0.0.1:KOKORO_DEMO_PORT.
-KOKORO_DEMO_PORT=25436
+# Settings for deploy/compose.yaml, copied into each release's .env by install.sh and update.sh.
+# Run update.sh after a change. Unset settings take the defaults shown.
+# The GPU for the worker: an index, a UUID or a MIG device from nvidia-smi -L.
+#KOKORO_GPU=0
+# Where the server listens (IPv4:port). 0.0.0.0 would expose it to every network the host is on.
+#KOKORO_LISTEN=127.0.0.1:8880
+# Where the demo page listens (IPv4:port).
+#KOKORO_DEMO_LISTEN=127.0.0.1:25436
 # The worker's --max-batch (8 for many listeners: worker/README.md). The cache seed depends on it.
-KOKORO_MAX_BATCH=1
+#KOKORO_MAX_BATCH=1
 EOF
         chmod 0644 "$root/settings.env"
     fi
-    settings > /dev/null # check them before building anything
+    load_settings
 }
 
-# The settings from settings.env, checked: anything else there is an error, not dropped.
-settings() {
-    local line n=0
+# Reads settings.env into KOKORO_GPU, KOKORO_LISTEN, KOKORO_DEMO_LISTEN and KOKORO_MAX_BATCH (with
+# defaults); anything else in it is an error, not dropped.
+load_settings() {
+    local line n=0 key value addr='^([0-9]{1,3}\.){3}[0-9]{1,3}:[0-9]{1,5}$'
+    KOKORO_GPU=0 KOKORO_LISTEN=127.0.0.1:8880 KOKORO_DEMO_LISTEN=127.0.0.1:25436 KOKORO_MAX_BATCH=1
     while IFS= read -r line || [ -n "$line" ]; do
         n=$((n + 1))
         [[ $line =~ ^[[:space:]]*(#.*)?$ ]] && continue
-        [[ $line =~ ^KOKORO_(GPU|DEMO_PORT|MAX_BATCH)=[A-Za-z0-9._:/-]+$ ]] ||
-            die "$root/settings.env line $n should be KOKORO_GPU, KOKORO_DEMO_PORT or KOKORO_MAX_BATCH=VALUE: $line"
-        echo "$line"
+        key=${line%%=*}
+        value=${line#*=}
+        case $key in
+        KOKORO_GPU) [[ $value =~ ^[A-Za-z0-9._:/-]+$ ]] ;;
+        KOKORO_LISTEN | KOKORO_DEMO_LISTEN) [[ $value =~ $addr ]] ;;
+        KOKORO_MAX_BATCH) [[ $value =~ ^[1-9][0-9]{0,2}$ ]] ;;
+        *) false ;;
+        esac || die "$root/settings.env line $n isn't a valid KOKORO_GPU, KOKORO_LISTEN, KOKORO_DEMO_LISTEN or KOKORO_MAX_BATCH: $line"
+        printf -v "$key" %s "$value"
     done < "$root/settings.env"
+    [ "$KOKORO_LISTEN" != "$KOKORO_DEMO_LISTEN" ] || die "KOKORO_LISTEN and KOKORO_DEMO_LISTEN are the same"
 }
 
-# The old state directory, if the old user has one.
-old_state() {
-    local home
-    home=$(getent passwd "$old_user" | cut -d: -f6) || return 0
-    [ -n "$home" ] && [ -d "$home/.local/share/optimized-kokoro" ] && echo "$home/.local/share/optimized-kokoro"
-    return 0
+settings_env() {
+    echo "KOKORO_GPU=$KOKORO_GPU"
+    echo "KOKORO_LISTEN=$KOKORO_LISTEN"
+    echo "KOKORO_DEMO_LISTEN=$KOKORO_DEMO_LISTEN"
+    echo "KOKORO_MAX_BATCH=$KOKORO_MAX_BATCH"
+}
+
+health_url() {
+    local host=${KOKORO_LISTEN%:*}
+    [ "$host" != 0.0.0.0 ] || host=127.0.0.1
+    echo "http://$host:${KOKORO_LISTEN##*:}/health"
+}
+
+# Fails if something already listens on the port of address $1 (any address on that port, which is
+# stricter than needed but never wrong), naming it.
+check_port_free() {
+    local port=${1##*:} lines
+    lines=$(ss -Hltnp "sport = :$port" 2> /dev/null || true)
+    [ -z "$lines" ] || die "$1: port $port is already in use, by:
+$lines
+Stop that first, or choose another address in $root/settings.env."
+}
+
+# The value of KOKORO_$2 in release $1's .env.
+release_setting() {
+    sed -n "s/^KOKORO_$2=//p" "$root/releases/$1/.env"
 }
 
 # The checksum of the UniDic this checkout wants (fetch_unidic.sh's OUT_SHA256).
@@ -195,26 +285,26 @@ unidic_ok() {
     [ -f "$1" ] && echo "$(unidic_sha)  $1" | sha256sum -c --status -
 }
 
-# UniDic, as unidic/SHA.dic: kept if it's there; otherwise copied from the old state (if that
-# matches) or fetched and converted by the build user, and checked once root has the copy.
+# UniDic, as unidic/SHA.dic: kept if it's there; otherwise imported from $1 (with $1.LICENSE next to
+# it) if given, or fetched and converted by the build user. Checked once root has the copy.
 ensure_unidic() {
-    local sha dest old rt bt
+    local from=${1:-} sha dest rt bt
     sha=$(unidic_sha)
     dest=$root/unidic/$sha.dic
     unidic_ok "$dest" && return
     echo "== UniDic"
-    old=$(old_state)
     make_tmp rt
-    if [ -n "$old" ] && cat_as "$old_user" "$old/unidic.dic" "$rt/unidic.dic" 2> /dev/null && unidic_ok "$rt/unidic.dic"; then
-        cat_as "$old_user" "$old/unidic.dic.LICENSE" "$rt/LICENSE"
-        echo "reusing $old/unidic.dic (checksum matches)"
+    if [ -n "$from" ]; then
+        import_file "$from" "$rt/unidic.dic"
+        import_file "$from.LICENSE" "$rt/LICENSE"
+        unidic_ok "$rt/unidic.dic" || die "$from isn't the UniDic this checkout wants (sha256 $sha)"
     else
         make_tmp bt "$build_user"
         as_build_user "$repo" crates/g2p-ja/tools/fetch_unidic.sh "$bt/unidic.dic"
-        cat_as "$build_user" "$bt/unidic.dic" "$rt/unidic.dic"
-        cat_as "$build_user" "$bt/unidic.dic.LICENSE" "$rt/LICENSE"
+        import_file "$bt/unidic.dic" "$rt/unidic.dic"
+        import_file "$bt/unidic.dic.LICENSE" "$rt/LICENSE"
+        unidic_ok "$rt/unidic.dic" || die "UniDic checksum mismatch"
     fi
-    unidic_ok "$rt/unidic.dic" || die "UniDic checksum mismatch"
     install -m 0644 "$rt/LICENSE" "$dest.LICENSE"
     install -m 0644 "$rt/unidic.dic" "$dest.new"
     mv -f "$dest.new" "$dest"
@@ -232,27 +322,22 @@ prune_unidic() {
     done
 }
 
-# Models: converted once by the build user (kokoro_worker.convert downloads a pinned revision), or
-# copied from KOKORO_MODELS_FROM, read as the owner of that directory. Only the three files the
-# converter writes are taken.
+# Models: imported from directory $1 if given, or converted once by the build user
+# (kokoro_worker.convert downloads a pinned revision). Only the three files the converter writes.
 ensure_models() {
-    local files=(config.json model.safetensors voices.safetensors) src user rt bt f
+    local from=${1:-} files=(config.json model.safetensors voices.safetensors) src rt bt f
     [ -f "$root/models/voices.safetensors" ] && return
     echo "== models"
-    if [ -n "${KOKORO_MODELS_FROM:-}" ]; then
-        src=$KOKORO_MODELS_FROM
-        user=$(stat -c %U -- "$src")
+    if [ -n "$from" ]; then
+        src=$from
     else
         make_tmp bt "$build_user"
         src=$bt/models
-        user=$build_user
         as_build_user "$repo/worker" uv sync --frozen
         as_build_user "$repo/worker" uv run --no-sync python -m kokoro_worker.convert "$src"
     fi
     make_tmp rt
-    for f in "${files[@]}"; do
-        cat_as "$user" "$src/$f" "$rt/$f" || die "can't read $src/$f as $user"
-    done
+    for f in "${files[@]}"; do import_file "$src/$f" "$rt/$f"; done
     rm -rf "$root/models.new"
     install -d -m 0755 "$root/models.new"
     for f in "${files[@]}"; do install -m 0644 "$rt/$f" "$root/models.new/$f"; done
@@ -260,30 +345,38 @@ ensure_models() {
     mv "$root/models.new" "$root/models"
 }
 
-# secrets/server.toml (the API keys: the old deploy's keys, so clawed-abode needs no change, or a new
-# one, plus the demo's) and secrets/demo.key. Written once; root:65534 0640, so the containers
-# (nobody) read them and no other host user does. The demo's key may use 4 streams at most, which
-# keeps capacity for clawed-abode.
+# secrets/server.toml (the clients' API keys, imported from $1 or one new one, plus the demo's) and
+# secrets/demo.key. Written once; root:65534 0640, so the containers (nobody) read them and no
+# other host user does. The demo's key may use 4 streams at most, which keeps capacity for clients.
+# $1 holds either a KOKORO_API_KEYS=a,b line or one key per line (# comments allowed).
 ensure_secrets() {
-    local dir=$root/secrets old line k keys=() demo
+    local from=${1:-} dir=$root/secrets rt line k keys=() demo
     if [ -f "$dir/server.toml" ] && [ -f "$dir/demo.key" ]; then
+        [ -z "$from" ] || echo "keeping the keys already in $dir (not importing $from)"
         return
     fi
     [ ! -e "$dir/server.toml" ] && [ ! -e "$dir/demo.key" ] || die "$dir has only one of server.toml and demo.key; remove it to start over"
     echo "== API keys"
-    old=$(old_state)
-    if [ -n "$old" ] && line=$(sudo -u "$old_user" -- cat -- "$old/server.env" 2> /dev/null); then
-        line=$(sed -n 's/^KOKORO_API_KEYS=//p' <<< "$line" | head -n 1)
-        IFS=, read -ra keys <<< "$line"
+    if [ -n "$from" ]; then
+        make_tmp rt
+        import_file "$from" "$rt/keys"
+        line=$(sed -n 's/^KOKORO_API_KEYS=//p' "$rt/keys" | head -n 1)
+        if [ -n "$line" ]; then
+            IFS=, read -ra keys <<< "$line"
+        else
+            while IFS= read -r line || [ -n "$line" ]; do
+                [[ $line =~ ^[[:space:]]*(#.*)?$ ]] || keys+=("$line")
+            done < "$rt/keys"
+        fi
         for k in "${keys[@]}"; do
             # Characters that are safe inside a TOML basic string: base64 keys (+ / =) included.
-            [[ $k =~ ^[A-Za-z0-9._~+/=-]+$ ]] || die "a key in $old/server.env has characters other than letters, digits and ._~+/=-"
+            [[ $k =~ ^[A-Za-z0-9._~+/=-]+$ ]] || die "a key in $from has characters other than letters, digits and ._~+/=-"
         done
-        echo "reusing ${#keys[@]} key(s) from $old/server.env"
-    fi
-    if [ ${#keys[@]} = 0 ]; then
+        [ ${#keys[@]} -gt 0 ] || die "no keys in $from"
+        echo "imported ${#keys[@]} key(s) from $from"
+    else
         keys=("$(new_key)")
-        echo "new API key for clients (clawed-abode, Lion Reader): sudo grep -A1 api_keys $dir/server.toml"
+        echo "made a new API key for clients: sudo cat $dir/server.toml"
     fi
     demo=$(new_key)
     (
@@ -326,7 +419,7 @@ stage_release() {
         echo "KOKORO_ROOT=$root"
         echo "KOKORO_RELEASE=$rel"
         echo "KOKORO_UNIDIC_FILE=$(unidic_sha).dic"
-        settings
+        settings_env
     } > "$dir/.env"
     chmod 0644 "$dir/.env"
     docker compose -f "$dir/compose.yaml" config --quiet
@@ -336,14 +429,9 @@ stage_release() {
     # read-only from then on. Same image and flags as the worker that will load it.
     install -d -m 0700 "$dir/cache-seed"
     chown "$nobody:$nobody" "$dir/cache-seed"
-    (
-        set -a
-        # shellcheck source=/dev/null
-        . "$dir/.env"
-        docker compose -f "$dir/compose.yaml" run --rm --no-deps -T -e KOKORO_CACHE_SEED= \
-            -v "$dir/cache-seed:/cache-export" worker \
-            --max-batch "${KOKORO_MAX_BATCH:-1}" --export-cache /cache-export
-    )
+    docker compose -f "$dir/compose.yaml" run --rm --no-deps -T -e KOKORO_CACHE_SEED= \
+        -v "$dir/cache-seed:/cache-export" worker \
+        --max-batch "$KOKORO_MAX_BATCH" --export-cache /cache-export
     chown -hR root:root "$dir/cache-seed"
     chmod -R u=rwX,go=rX "$dir/cache-seed"
     [ -n "$(ls -A "$dir/cache-seed")" ] || die "the compile cache is empty"
@@ -354,19 +442,26 @@ point_current() {
     ln -sfn "releases/$1" "$root/current.new" && mv -T "$root/current.new" "$root/current"
 }
 
+# Waits for the server of the release current points at.
 wait_healthy() {
+    local url
+    url=$(health_url)
     # The worker takes about 3.5 minutes to start in gVisor with directfs off, even with a seed.
-    echo "== waiting for $health_url"
+    echo "== waiting for $url"
     for _ in $(seq 600); do
-        curl -sf -o /dev/null "$health_url" && return 0
+        curl -sf -o /dev/null "$url" && return 0
         sleep 1
     done
     echo "not healthy after 10 minutes" >&2
     return 1
 }
 
-# Starts the release current points at (recreating containers whose image or config changed).
+# Starts the release current points at (recreating containers whose image or config changed), with
+# that release's settings.
 start_current() {
+    local r
+    r=$(basename "$(readlink "$root/current")")
+    KOKORO_LISTEN=$(release_setting "$r" LISTEN)
     compose up -d --remove-orphans && wait_healthy
 }
 
