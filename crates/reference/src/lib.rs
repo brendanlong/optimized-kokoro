@@ -1,6 +1,8 @@
 //! Records written by `reference/dump.py`: the deployed Python pipeline's output at each stage.
 #![forbid(unsafe_code)]
 
+pub mod divergence;
+
 use serde::Deserialize;
 use std::fs::File;
 use std::io::{BufRead, BufReader};

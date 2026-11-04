@@ -1,8 +1,6 @@
 //! Python `str` semantics misaki depends on, with Unicode tables generated from the reference Python.
 
-use crate::unicode_tables::{
-    PY_ALPHA, PY_ASSIGNED, PY_DIGIT, PY_LOWER_CHANGES, PY_UPPER_CHANGES, RE_DIGIT, RE_L, RE_LL, RE_LU,
-};
+use crate::unicode_tables::{PY_ALPHA, PY_ASSIGNED, PY_LOWER_CHANGES, PY_UPPER_CHANGES, RE_DIGIT, RE_L, RE_LL, RE_LU};
 use std::borrow::Cow;
 use unicode_normalization::UnicodeNormalization;
 
@@ -55,16 +53,6 @@ pub fn lstrip(s: &str) -> &str {
 
 pub fn strip(s: &str) -> &str {
     s.trim_matches(is_space)
-}
-
-/// The value of a character for which `c.isdigit()` holds (every such character has an integer value).
-pub fn digit_value(c: char) -> Option<u8> {
-    if c.is_ascii_digit() {
-        return Some(c as u8 - b'0');
-    }
-    let cp = c as u32;
-    let i = PY_DIGIT.partition_point(|&(_, hi, _)| hi < cp);
-    PY_DIGIT.get(i).filter(|&&(lo, _, _)| lo <= cp).map(|&(lo, _, v)| v + (cp - lo) as u8)
 }
 
 /// `\p{L}` in the `regex` module.
@@ -180,9 +168,6 @@ mod tests {
         assert!(is_alpha('é') && is_alpha('ß') && is_alpha('中') && !is_alpha('1') && !is_alpha('\''));
         assert!(!str_is_alpha(""));
         assert!(is_space('\x1c') && is_space('\u{3000}') && !is_space('\u{200b}'));
-        assert_eq!(digit_value('٣'), Some(3));
-        assert_eq!(digit_value('²'), Some(2));
-        assert_eq!(digit_value('a'), None);
         assert!(re_upper('É') && re_lower('é') && !re_upper('ǅ') && re_letter('ǅ'));
         assert!(is_ascii_digits("12\n") && !is_ascii_digits("\n") && !is_ascii_digits("1a"));
         assert!(is_upper("ÉCOLE") && is_lower("1-2") && is_upper("1-2"));
@@ -197,7 +182,7 @@ mod tests {
         let data = std::fs::read_to_string(path).unwrap();
         let mut differ = Vec::new();
         for line in data.lines() {
-            let (s, l, u, alpha, space, digit, n): (String, String, String, bool, bool, Option<u8>, String) =
+            let (s, l, u, alpha, space, _digit, n): (String, String, String, bool, bool, Option<u8>, String) =
                 serde_json::from_str(line).unwrap();
             let c = s.chars().next().unwrap();
             if lower(&s) != l
@@ -205,7 +190,6 @@ mod tests {
                 || char_is_lower(c) != (l == s)
                 || is_alpha(c) != alpha
                 || is_space(c) != space
-                || digit_value(c) != digit
                 || nfkc(&s) != n
             {
                 differ.push(format!("U+{:04X}", c as u32));

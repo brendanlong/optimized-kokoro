@@ -11,12 +11,16 @@
 //!   Japanese runs must match exactly;
 //! - runs of scripts `foreign.py` leaves to the English G2P, which now go to espeak's voice for
 //!   the script or read as "<script> text";
-//! - espeak's language-switch flags, which the reference's English fallback reads out.
+//! - espeak's language-switch flags, which the reference's English fallback reads out;
+//! - numbers and symbols: where the port's normalized text differs from the reference's, every
+//!   differing run of words must be a number or symbol the two read differently
+//!   (`kokoro_reference::divergence`), and the record is counted by kind instead of compared.
 //!
 //! `PARITY_SHOW=n` prints up to n mismatches (default 20).
 
 use kokoro_pipeline::foreign::{self, Language, Script, script};
 use kokoro_pipeline::{ForeignG2p, Lang, NormalizationOptions, Pipeline};
+use kokoro_reference::divergence::{self, Kind};
 use kokoro_reference::{Call, Record};
 use std::collections::HashMap;
 use std::time::Instant;
@@ -167,6 +171,7 @@ fn reference_records() {
     let (mut cjk, mut cjk_matched, mut cjk_skipped, mut new_script, mut flagged) = (0, 0, 0, Vec::new(), Vec::new());
     let (mut zh, mut zh_matched, mut failing, mut failing_matched, mut unreadable) = (0, 0, 0, 0, Vec::new());
     let mut mismatches = Vec::new();
+    let (mut changed, mut numbers, mut symbols, mut unchanged_chunks) = (0, 0, 0, 0);
     let start = Instant::now();
     for record in &records {
         let chinese_with_japanese = record.lang == "z" && uses_cjk(record);
@@ -201,6 +206,43 @@ fn reference_records() {
         }
         if reads_unreadable_han(record) {
             unreadable.push(record.id.as_str());
+            continue;
+        }
+        let normalized = kokoro_text::split::normalize(&kokoro_text::join_lines(&record.text), &record.lang, &options);
+        if normalized != record.normalized {
+            match divergence::explain(&record.text, &record.normalized, &normalized) {
+                Ok(kinds) => {
+                    // Chunks whose text is unchanged must still be read exactly as before.
+                    let reference: HashMap<&str, &str> =
+                        record.chunks.iter().map(|c| (c.text.as_str(), c.phonemes.as_str())).collect();
+                    let placeholders = uses_cjk(record) && !japanese_read;
+                    for (text, phonemes) in actual.iter().filter(|_| !placeholders) {
+                        if let Some(&expected) = reference.get(text.as_str())
+                            && expected != phonemes
+                        {
+                            mismatches.push(format!(
+                                "{}: unchanged chunk {text:?} read differently\n  expected: {expected}\n  actual:   {phonemes}",
+                                record.id
+                            ));
+                        }
+                        unchanged_chunks += usize::from(reference.contains_key(text.as_str()));
+                    }
+                    numbers += usize::from(kinds.contains(&Kind::Numbers));
+                    symbols += usize::from(kinds.contains(&Kind::Symbols));
+                    changed += 1;
+                    // `PARITY_CHANGED=FILE` writes each such record, to review the differences.
+                    if let Ok(path) = std::env::var("PARITY_CHANGED") {
+                        use std::io::Write;
+                        let mut file = std::fs::OpenOptions::new().create(true).append(true).open(path).unwrap();
+                        let line =
+                            serde_json::json!({ "id": record.id, "reference": record.normalized, "ours": normalized });
+                        writeln!(file, "{line}").unwrap();
+                    }
+                }
+                Err(why) => {
+                    mismatches.push(format!("{}: normalized text differs, not by a number or symbol: {why}", record.id))
+                }
+            }
             continue;
         }
         let expected: Vec<(String, String)> = if uses_cjk(record) && !chinese_with_japanese && !japanese_read {
@@ -258,6 +300,9 @@ fn reference_records() {
         new_script.len(),
         flagged.len(),
         unreadable.len()
+    );
+    println!(
+        "normalized differently, by the number reader and symbol pass: {changed} records ({numbers} with numbers, {symbols} with symbols), whose {unchanged_chunks} chunks with unchanged text match"
     );
     println!("{} records, {chars} characters in {:.2?}", records.len(), elapsed);
     for m in mismatches.iter().take(show) {

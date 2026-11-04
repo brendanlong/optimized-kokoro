@@ -24,7 +24,6 @@ The text functions before G2P (normalizer options, tags, chunking) have their ow
 python3 text_cases.py fixtures/text_cases.jsonl   # hand-written cases; dump_text.py adds seeded random ones
 .cache/kfa/.venv/bin/python -I dump_text.py fixtures/text_cases.jsonl fixtures/text_cases.out.jsonl
 .cache/kfa/.venv/bin/python -I gen_text_tables.py ../crates/text/src/tables.rs
-.cache/kfa/.venv/bin/python -I gen_float_repr.py 10000 fixtures/float_repr.txt   # repr(float), including ties
 ```
 
 Differences from the deployed image: espeak reads the same espeak-ng 1.52 data (bundled with espeakng-loader), from a copy at a shorter path (see `setup.sh`).

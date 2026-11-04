@@ -94,9 +94,16 @@ fn matches_reference() {
     let show_max: usize = std::env::var("PARITY_SHOW").ok().and_then(|s| s.parse().ok()).unwrap_or(30);
     let (mut calls, mut calls_ok, mut tokens, mut tokens_ok) = (0usize, 0usize, 0usize, 0usize);
     let mut shown = 0;
+    let mut numbers = 0;
     for record in records.iter().filter(|r| r.lang == "a" || r.lang == "b") {
         let g2p = if record.lang == "b" { &gb } else { &us };
         for call in &record.calls {
+            // misaki's number, currency and symbol reading is gone: the text normalizer reads
+            // those before G2P (docs/divergences.md, "Numbers" and "Symbols").
+            if call.input.chars().any(|c| c.is_numeric() || "$£€%&+@".contains(c)) || call.input.contains("](#") {
+                numbers += 1;
+                continue;
+            }
             calls += 1;
             let (got, problems) = replay(g2p, call);
             let expected: Vec<Token> = call
@@ -143,6 +150,7 @@ fn matches_reference() {
         }
     }
     let pct = |a: usize, b: usize| 100.0 * a as f64 / b.max(1) as f64;
+    println!("not compared: {numbers} calls with numbers, money or symbols misaki read");
     println!(
         "calls: {calls_ok}/{calls} exact ({:.3}%); tokens: {tokens_ok}/{tokens} exact ({:.3}%)",
         pct(calls_ok, calls),

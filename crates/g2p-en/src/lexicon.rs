@@ -1,7 +1,8 @@
-//! misaki's `Lexicon`: dictionary lookup, stemming, special cases and numbers.
+//! misaki's `Lexicon`: dictionary lookup, stemming and special cases. misaki's number and
+//! currency reading is gone: the text normalizer reads every number and symbol before G2P
+//! (`docs/divergences.md`).
 
-use crate::num2words;
-use crate::text::{self, is_alpha, is_ascii_digits, is_lower, is_upper, lower, upper};
+use crate::text::{self, is_alpha, is_lower, is_upper, lower, upper};
 use rustc_hash::FxHashMap;
 use serde::Deserialize;
 use std::borrow::Cow;
@@ -25,37 +26,12 @@ fn is_lexicon_char(c: char) -> bool {
     c == '\'' || c == '-' || c.is_ascii_alphabetic()
 }
 
-const ORDINALS: [&str; 4] = ["st", "nd", "rd", "th"];
-
-/// `CURRENCIES`: symbol to (unit, subunit).
-pub(crate) fn currency_units(symbol: char) -> Option<(&'static str, &'static str)> {
-    match symbol {
-        '$' => Some(("dollar", "cent")),
-        '£' => Some(("pound", "pence")),
-        '€' => Some(("euro", "cent")),
-        _ => None,
-    }
-}
-
-fn symbol_word(word: &str) -> Option<&'static str> {
-    match word {
-        "%" => Some("percent"),
-        "&" => Some("and"),
-        "+" => Some("plus"),
-        "@" => Some("at"),
-        _ => None,
-    }
-}
-
 /// What the lexicon reads from a token.
 pub(crate) struct LexToken<'a> {
     /// The alias if there is one, else the text.
     pub text: &'a str,
     pub tag: &'a str,
     pub stress: Option<f64>,
-    pub currency: Option<char>,
-    pub is_head: bool,
-    pub num_flags: &'a str,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -198,32 +174,6 @@ pub(crate) fn apply_stress(ps: &str, stress: Option<f64>) -> String {
     }
 }
 
-/// `re.split(r'[^a-z]+', s)`
-fn split_words(s: &str) -> impl Iterator<Item = &str> {
-    let mut rest = Some(s);
-    std::iter::from_fn(move || {
-        let s = rest?;
-        match s.find(|c: char| !c.is_ascii_lowercase()) {
-            None => {
-                rest = None;
-                Some(s)
-            }
-            Some(i) => {
-                let after = &s[i..];
-                let skip = after.find(|c: char| c.is_ascii_lowercase()).unwrap_or(after.len());
-                rest = Some(&after[skip..]);
-                Some(&s[..i])
-            }
-        }
-    })
-}
-
-/// The longest suffix of `[a-z']` characters.
-fn number_suffix(word: &str) -> &str {
-    let start = word.trim_end_matches(|c: char| c.is_ascii_lowercase() || c == '\'').len();
-    &word[start..]
-}
-
 pub(crate) struct Lexicon {
     british: bool,
     golds: Dict,
@@ -278,9 +228,6 @@ impl Lexicon {
         let found = |ps: &str| Some(Some(ps.to_string()));
         if tag == "ADD" && (word == "." || word == "/") {
             return Some(self.lookup(if word == "." { "dot" } else { "slash" }, None, Some(-0.5), Some(ctx)));
-        }
-        if let Some(w) = symbol_word(word) {
-            return Some(self.lookup(w, None, None, Some(ctx)));
         }
         if word.trim_matches('.').contains('.')
             && text::str_is_alpha(&word.replace('.', ""))
@@ -339,7 +286,7 @@ impl Lexicon {
     }
 
     fn is_known(&self, word: &str) -> bool {
-        if self.golds.contains_key(word) || symbol_word(word).is_some() || self.silvers.contains_key(word) {
+        if self.golds.contains_key(word) || self.silvers.contains_key(word) {
             return true;
         }
         if !text::str_is_alpha(word) || !word.chars().all(is_lexicon_char) {
@@ -561,181 +508,15 @@ impl Lexicon {
         self.stem_ing(word, t, Some(stress.unwrap_or(0.5)), Some(ctx))
     }
 
-    fn is_currency(word: &str) -> bool {
-        match word.split_once('.') {
-            None => true,
-            Some((_, cents)) => !cents.contains('.') && cents.chars().count() < 3,
-        }
-    }
-
-    fn get_number(
-        &self,
-        word: &str,
-        currency: Option<char>,
-        is_head: bool,
-        num_flags: &str,
-    ) -> Result<Option<String>, num2words::Error> {
-        let suffix = number_suffix(word);
-        let suffix = (!suffix.is_empty()).then_some(suffix);
-        let mut word = &word[..word.len() - suffix.map_or(0, str::len)];
-        let mut result: Vec<String> = Vec::new();
-        if let Some(rest) = word.strip_prefix('-') {
-            result.push(self.lookup("minus", None, None, None).unwrap_or_default());
-            word = rest;
-        }
-        let is_ordinal = suffix.is_some_and(|s| ORDINALS.contains(&s));
-        if is_ascii_digits(word) && is_ordinal {
-            self.extend_num(&mut result, &num2words::ordinal(word.trim_end_matches('\n'))?, true, num_flags);
-        } else if result.is_empty() && word.chars().count() == 4 && currency.is_none() && is_ascii_digits(word) {
-            let n: u64 = word.trim_end_matches('\n').parse().expect("digits");
-            self.extend_num(&mut result, &num2words::year(n), true, num_flags);
-        } else if !is_head && !word.contains('.') {
-            let num = word.replace(',', "");
-            let chars: Vec<char> = num.chars().collect();
-            if chars[0] == '0' || chars.len() > 3 {
-                for c in &chars {
-                    self.extend_num(&mut result, &cardinal_char(*c)?, false, num_flags);
-                }
-            } else if chars.len() == 3 && !num.ends_with("00") {
-                self.extend_num(&mut result, &cardinal_char(chars[0])?, true, num_flags);
-                if chars[1] == '0' {
-                    result.push(self.lookup("O", None, Some(-2.0), None).unwrap_or_default());
-                    self.extend_num(&mut result, &cardinal_char(chars[2])?, false, num_flags);
-                } else {
-                    self.extend_num(&mut result, &num2words::cardinal(&num[1..])?, false, num_flags);
-                }
-            } else {
-                self.extend_num(&mut result, &num2words::cardinal(&num)?, true, num_flags);
-            }
-        } else if word.matches('.').count() > 1 || !is_head {
-            let mut first = true;
-            for num in word.replace(',', "").split('.') {
-                if num.is_empty() {
-                } else if num.starts_with('0') || (num.chars().count() != 2 && num.chars().skip(1).any(|c| c != '0')) {
-                    for c in num.chars() {
-                        self.extend_num(&mut result, &cardinal_char(c)?, false, num_flags);
-                    }
-                } else {
-                    self.extend_num(&mut result, &num2words::cardinal(num)?, first, num_flags);
-                }
-                first = false;
-            }
-        } else if let Some((unit, subunit)) = currency.and_then(currency_units).filter(|_| Self::is_currency(word)) {
-            let plain = word.replace(',', "");
-            let mut pairs: Vec<(&str, &str)> = plain.split('.').zip([unit, subunit]).collect();
-            let is_zero = |n: &str| n.bytes().all(|b| b == b'0');
-            if pairs.len() > 1 {
-                if is_zero(pairs[1].0) {
-                    pairs.truncate(1);
-                } else if is_zero(pairs[0].0) {
-                    pairs.remove(0);
-                }
-            }
-            for (i, (num, unit)) in pairs.into_iter().enumerate() {
-                if i > 0 {
-                    result.push(self.lookup("and", None, None, None).unwrap_or_default());
-                }
-                let num = if num.is_empty() { "0" } else { num };
-                self.extend_num(&mut result, &num2words::cardinal(num)?, i == 0, num_flags);
-                let one = num.trim_start_matches('0') == "1";
-                let ps = if !one && unit != "pence" {
-                    self.stem_s(&format!("{unit}s"), None, None, None)
-                } else {
-                    self.lookup(unit, None, None, None)
-                };
-                result.push(ps.unwrap_or_default());
-            }
-        } else {
-            let words = if is_ascii_digits(word) {
-                num2words::cardinal(word.trim_end_matches('\n'))?
-            } else if !word.contains('.') {
-                let digits = word.replace(',', "");
-                if is_ordinal { num2words::ordinal(&digits)? } else { num2words::cardinal(&digits)? }
-            } else {
-                let plain = word.replace(',', "");
-                if let Some(frac) = plain.strip_prefix('.') {
-                    let mut w = String::from("point ");
-                    for (i, c) in frac.chars().enumerate() {
-                        if i > 0 {
-                            w.push(' ');
-                        }
-                        w.push_str(&cardinal_char(c)?);
-                    }
-                    w
-                } else {
-                    num2words::float(&plain)?
-                }
-            };
-            self.extend_num(&mut result, &words, true, num_flags);
-        }
-        if result.is_empty() {
-            return Ok(None);
-        }
-        let joined = result.join(" ");
-        Ok(match suffix {
-            Some("s" | "'s") => self.s(Some(joined)),
-            Some("ed" | "'d") => self.ed(Some(joined)),
-            Some("ing") => self.ing(Some(joined)),
-            _ => Some(joined),
-        })
-    }
-
-    fn extend_num(&self, result: &mut Vec<String>, words: &str, first: bool, num_flags: &str) {
-        let splits: Vec<&str> = split_words(words).collect();
-        for (i, w) in splits.iter().enumerate() {
-            if *w != "and" || num_flags.contains('&') {
-                if first && i == 0 && splits.len() > 1 && *w == "one" && num_flags.contains('a') {
-                    result.push("ə".to_string());
-                } else {
-                    let stress = (*w == "point").then_some(-2.0);
-                    result.push(self.lookup(w, None, stress, None).unwrap_or_default());
-                }
-            } else if num_flags.contains('n')
-                && let Some(last) = result.last_mut()
-            {
-                last.push_str("ən");
-            }
-        }
-    }
-
-    fn append_currency(&self, ps: String, currency: Option<char>) -> String {
-        let Some(symbol) = currency else { return ps };
-        match currency_units(symbol).and_then(|(unit, _)| self.stem_s(&format!("{unit}s"), None, None, None)) {
-            Some(unit) => format!("{ps} {unit}"),
-            None => ps,
-        }
-    }
-
-    fn is_number(word: &str, is_head: bool) -> bool {
-        if !word.chars().any(|c| c.is_ascii_digit()) {
-            return false;
-        }
-        let mut word = word;
-        for s in ["ing", "'d", "ed", "'s", "st", "nd", "rd", "th", "s"] {
-            if let Some(w) = word.strip_suffix(s) {
-                word = w;
-                break;
-            }
-        }
-        word.chars()
-            .enumerate()
-            .all(|(i, c)| c.is_ascii_digit() || c == ',' || c == '.' || (is_head && i == 0 && c == '-'))
-    }
-
-    /// `Lexicon.__call__`
-    pub fn get(&self, tk: &LexToken, ctx: &TokenContext) -> Result<Option<String>, num2words::Error> {
+    /// `Lexicon.__call__`, without misaki's numbers: a word with digits has no reading here.
+    pub fn get(&self, tk: &LexToken, ctx: &TokenContext) -> Option<String> {
         let word = tk.text.replace(['‘', '’'], "'");
         let word = text::nfkc(&word);
-        let word: Cow<str> = if word.is_ascii() {
-            word
-        } else {
-            Cow::Owned(word.chars().map(|c| text::digit_value(c).map_or(c, |d| char::from(b'0' + d))).collect())
-        };
-        // Every lexicon key is ASCII, numbers are ASCII digits by now, and the special cases need
-        // letters, so a non-ASCII character that isn't a letter leaves no reading. Checking first
-        // keeps runs of such characters (combining marks) from paying for every span tried.
+        // Every lexicon key is ASCII and the special cases need letters, so a non-ASCII character
+        // that isn't a letter leaves no reading. Checking first keeps runs of such characters
+        // (combining marks) from paying for every span tried.
         if word.chars().any(|c| !c.is_ascii() && !text::is_alpha(c)) {
-            return Ok(None);
+            return None;
         }
         let stress = if is_lower(&word) {
             None
@@ -744,14 +525,7 @@ impl Lexicon {
         } else {
             Some(0.5)
         };
-        if let Some(ps) = self.get_word(&word, tk.tag, stress, ctx) {
-            return Ok(Some(apply_stress(&self.append_currency(ps, tk.currency), tk.stress)));
-        }
-        if Self::is_number(&word, tk.is_head) {
-            let ps = self.get_number(&word, tk.currency, tk.is_head, tk.num_flags)?;
-            return Ok(ps.map(|ps| apply_stress(&ps, tk.stress)));
-        }
-        Ok(None)
+        self.get_word(&word, tk.tag, stress, ctx).map(|ps| apply_stress(&ps, tk.stress))
     }
 }
 
@@ -761,11 +535,6 @@ fn clen(s: &str) -> usize {
 
 fn drop_last_chars(s: &str, n: usize) -> &str {
     s.char_indices().rev().nth(n - 1).map_or("", |(i, _)| &s[..i])
-}
-
-fn cardinal_char(c: char) -> Result<String, num2words::Error> {
-    let mut buf = [0; 4];
-    num2words::cardinal(c.encode_utf8(&mut buf))
 }
 
 /// `re.match(r'(?i)vs\.?$', word)`; case-insensitive `s` also matches `ſ`.
@@ -811,13 +580,6 @@ mod tests {
 
     #[test]
     fn regex_ports() {
-        assert_eq!(
-            split_words("one hundred and twenty-one").collect::<Vec<_>>(),
-            ["one", "hundred", "and", "twenty", "one"]
-        );
-        assert_eq!(split_words(",a b,").collect::<Vec<_>>(), ["", "a", "b", ""]);
-        assert_eq!(number_suffix("1980's"), "'s");
-        assert_eq!(number_suffix("12"), "");
         assert!(doubled_before_ing("running") && doubled_before_ing("kicking") && !doubled_before_ing("ring"));
     }
 }
