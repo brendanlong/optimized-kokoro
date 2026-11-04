@@ -1,0 +1,26 @@
+# The demo page and its proxy (serve.py, Python stdlib only) on distroless. Build from demo/:
+#   docker build -t optimized-kokoro-demo -f Containerfile .
+# The API key isn't baked in: compose mounts it as a secret.
+#
+# Pinned: base images by digest, npm packages by pnpm-lock.yaml, pnpm by version.
+
+ARG NODE_IMAGE=docker.io/library/node:22-bookworm-slim@sha256:4b150b48b4116e2a22f2c39cc27025fbf4f153e2078fd3b14d159fdb5c7279da
+ARG RUNTIME_IMAGE=gcr.io/distroless/python3-debian12@sha256:2fdb05402a2cf21cf78fdb3ba4c5db167241e9e498140f5bf689d7efb773731f
+
+FROM ${NODE_IMAGE} AS builder
+WORKDIR /src
+COPY package.json pnpm-lock.yaml ./
+# esbuild works without its install script (its binary comes as an optional dependency), which pnpm skips.
+RUN npm install -g pnpm@11.28.6 && pnpm install --frozen-lockfile --config.strict-dep-builds=false
+COPY index.html serve.py ./
+COPY src src
+RUN pnpm run build && \
+    mkdir -p /out/app /out/run/secrets && \
+    cp -r index.html serve.py dist /out/app/
+
+FROM ${RUNTIME_IMAGE}
+COPY --from=builder /out/app /app
+COPY --from=builder /out/run /run
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+USER 65534:65534
+ENTRYPOINT ["/usr/bin/python3", "/app/serve.py"]

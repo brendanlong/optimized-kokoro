@@ -39,7 +39,8 @@ COPY --from=builder /opt/uv-python /opt/uv-python
 COPY --from=builder /app/.venv /app/.venv
 COPY kokoro_worker /app/kokoro_worker
 WORKDIR /app
-# run.sh overrides this with the calling user's uid (--user), so nothing may depend on it.
+# run.sh overrides this with the calling user's uid and deploy/compose.yaml with 65534 (nobody), so
+# nothing may depend on it.
 USER worker
 # The root filesystem is read-only at run time; compile caches go to a tmpfs at /tmp.
 ENV PATH=/app/.venv/bin:$PATH \

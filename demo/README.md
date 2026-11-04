@@ -9,4 +9,4 @@ pnpm install && pnpm run build
 python3 serve.py --listen 0.0.0.0:PORT --upstream http://127.0.0.1:SERVER_PORT --key-file KEY_FILE
 ```
 
-`worker/bench/serve.sh` runs the worker and server for a live trial (a gpuc job).
+`worker/bench/serve.sh` runs the worker and server for a live trial (a gpuc job). In production it runs as the `demo` service of `deploy/compose.yaml` (image: `Containerfile`), on 127.0.0.1:25436 with its own API key.

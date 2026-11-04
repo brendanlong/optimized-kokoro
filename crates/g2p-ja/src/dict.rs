@@ -129,7 +129,7 @@ impl fmt::Debug for Dictionary {
 fn map_read_only(file: &File) -> io::Result<Mmap> {
     // SAFETY: the file is read-only data written once by `build` (via `tools/fetch_unidic.sh`,
     // which checks its SHA-256) and is never written again: the fetch script and deploy
-    // (`deploy/deploy.sh`) install a new dictionary by writing a new file and renaming it over
+    // (`deploy/lib.sh`) install a new dictionary by writing a new file and renaming it over
     // the old path, which leaves the inode we mapped unchanged. Nothing in this program writes
     // to it. The mapping is `Mmap` (read-only), so we can't write through it either. `load`
     // checks the header and that the file's size is exactly what its section sizes add up to,

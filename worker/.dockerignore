@@ -1,0 +1,6 @@
+# Docker reads this, podman .containerignore; keep the two the same.
+.venv
+__pycache__
+tests
+bench
+*.md
