@@ -125,7 +125,8 @@ class Connection:
             self.stats["batches"] += 1
             self.stats["requests"] += len(batch)
             try:
-                requests = [Request(list(m.ids), self.synth.style(m.voice, m.style_len), m.speed) for m in batch]
+                requests = [Request(list(m.ids), self.synth.style(m.voice, m.style_len), m.speed, bool(m.waiting))
+                            for m in batch]
                 for results in self.synth.run(requests):
                     self.stats["groups"] += 1
                     for r in results:

@@ -124,6 +124,7 @@ class Request:
     ids: list[int]  # phoneme ids, without the boundary 0s
     ref_s: torch.Tensor  # [256] style vector on the model's device
     speed: int  # hundredths
+    waiting: bool = True  # a listener is waiting for it now (False: prefetch)
 
 
 @dataclass
@@ -244,15 +245,19 @@ class Synth:
         pred_dur = torch.round(duration).long().clamp(min=1).minimum(max_dur).masked_fill(mask, 0)
         return pred_dur, d, t_en
 
-    def _groups(self, frames: list[int]) -> list[list[int]]:
-        """Split items, most urgent first, into packed rows of at most frame_budget frames."""
-        groups, group, size = [], [], 0
-        for i, f in enumerate(frames):
-            if group and size + f + masked.GAP > self.frame_budget:
+    def _groups(self, frames: list[int], waiting: list[bool]) -> list[list[int]]:
+        """Split items, most urgent first, into packed rows of at most frame_budget frames.
+
+        A row that holds a chunk a listener is waiting for takes no prefetch after it, so waiting
+        chunks decode together, ahead of prefetches, and don't wait for them."""
+        groups, group, size, has_waiting = [], [], 0, False
+        for i, (f, w) in enumerate(zip(frames, waiting)):
+            if group and (size + f + masked.GAP > self.frame_budget or (has_waiting and not w)):
                 groups.append(group)
-                group, size = [], 0
+                group, size, has_waiting = [], 0, False
             group.append(i)
             size += f + masked.GAP
+            has_waiting |= w
         if group:
             groups.append(group)
         return groups
@@ -261,7 +266,8 @@ class Synth:
     def run(self, requests: list[Request]) -> Iterator[list[Result]]:
         """Synthesize a batch; yields results group by group as each finishes, most urgent first.
 
-        `requests` must already be validated, and listed most urgent first."""
+        `requests` must already be validated, and listed most urgent first (as the queue orders
+        them: priority, then waiting before prefetch, then arrival)."""
         dev = self.device
         n = len(requests)
         lengths = torch.tensor([len(r.ids) + 2 for r in requests])
@@ -295,7 +301,7 @@ class Synth:
         d_t = F.pad(d.transpose(1, 2), (0, 1))  # [B, 640, T + 1]; column T is zeros, for padding
         t_en = F.pad(t_en, (0, 1))
         cum = pred_dur.cumsum(1)
-        for group in self._groups([frames[i] for i in ok]):
+        for group in self._groups([frames[i] for i in ok], [requests[i].waiting for i in ok]):
             idx = [ok[g] for g in group]
             yield from self._decode_contained(idx, [frames[i] for i in idx], durations, cum, d_t, t_en, ref)
 
