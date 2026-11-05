@@ -2,9 +2,11 @@
 # gpuc job: waiting chunks in rows of their own (this branch) against main's rows, which mix them
 # with prefetch. Both workers up at once (--max-batch AB_BATCH), and lookahead-shaped closed-loop
 # load (bench/lookahead_load.py) alternating between them, so load from other users of the GPU hits
-# both alike. MAIN is a copy of main's worker/ (git archive origin/main worker | tar -x -C bench/bin/main).
+# both alike. The fixed load gives all-waiting batches at 16 and 64 streams, an A/A control.
+# MAIN is a copy of main's worker/ (git archive origin/main worker | tar -x -C bench/bin/main).
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit
+trap 'kill $(jobs -p) 2> /dev/null' EXIT
 mkdir -p results
 export PYTHONUNBUFFERED=1 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True CUDA_MODULE_LOADING=LAZY
 MODELS=${GPUC_DATA_DIR:-$HOME/.cache}/kokoro-worker-models
@@ -34,7 +36,7 @@ for round in $(seq "${ROUNDS:-3}"); do
         for label in main rows; do
             out="results/$label-$load-$round.json"
             "$PY" bench/lookahead_load.py "/tmp/sock-$label/worker.sock" "$MODELS/config.json" --model "$load" \
-                --concurrency 16 64 --warmup "$([ "$round" = 1 ] && echo 400 || echo 0)" --json "$out" > /dev/null 2>&1
+                --concurrency 16 64 --warmup "$([ "$round" = 1 ] && echo 400 || echo 0)" --json "$out" > "${out%.json}.log" 2>&1
             "$PY" -c "
 import json, sys
 for r in json.load(open(sys.argv[1]))['runs']:
@@ -47,4 +49,5 @@ for r in json.load(open(sys.argv[1]))['runs']:
 done
 kill "$main_pid" "$WORKER_PID"
 wait
+trap - EXIT
 echo "done"

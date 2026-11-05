@@ -251,7 +251,7 @@ class Synth:
         A row that holds a chunk a listener is waiting for takes no prefetch after it, so waiting
         chunks decode together, ahead of prefetches, and don't wait for them."""
         groups, group, size, has_waiting = [], [], 0, False
-        for i, (f, w) in enumerate(zip(frames, waiting)):
+        for i, (f, w) in enumerate(zip(frames, waiting, strict=True)):
             if group and (size + f + masked.GAP > self.frame_budget or (has_waiting and not w)):
                 groups.append(group)
                 group, size, has_waiting = [], 0, False

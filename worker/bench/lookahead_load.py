@@ -12,8 +12,9 @@ drained), prefetch otherwise; the flag isn't changed later. The listener reads a
 arrives, in order.
 
 --model fixed keeps exactly one waiting and two prefetch requests out per stream: when one's audio
-arrives, the stream sends its next chunk with the same flag. With C waiting requests always queued
-and --max-batch at most C, the scheduler (waiting first) never reaches the prefetches.
+arrives, the stream sends its next chunk with the same flag. With C at least twice --max-batch,
+enough waiting requests are queued at every take that the scheduler (waiting first) never reaches
+the prefetches, so batches are all waiting and the rows the same as main's: an A/A control.
 
 Reports throughput (audio seconds per wall second) and time to result (send to audio) for waiting
 and prefetch chunks; for --model front also time to first audio per request.
