@@ -18,6 +18,7 @@ that a batch can hold sentences of different lengths:
 
 import importlib.util
 import json
+import logging
 import re
 import os
 import sys
@@ -31,6 +32,8 @@ from safetensors.torch import load_file
 
 from . import kernels, masked
 from .protocol import MIN_SPEED, chunk_cap, max_duration
+
+log = logging.getLogger(__name__)
 
 SAMPLES_PER_FRAME = 600  # 2x upsample in the decoder, then 10 * 6 in the generator, then hop 5
 VOICE_NAME = re.compile(r"[a-z0-9_]{1,64}")
@@ -306,11 +309,14 @@ class Synth:
             if len(idx) == 1 or all(r.pcm is not None for r in results):
                 yield results
                 return
+            log.warning("packed row of %d had non-finite audio; decoding them one at a time", len(idx))
         except torch.OutOfMemoryError:
             torch.cuda.empty_cache()
             if len(idx) == 1:
                 yield [Result(idx[0], None, None, "out_of_memory")]
                 return
+            log.warning("packed row of %d (%d frames) ran out of memory; decoding them one at a time",
+                        len(idx), sum(frames))
         for i, f in zip(idx, frames):
             yield from self._decode_contained([i], [f], *args)
 
