@@ -2,10 +2,9 @@
 
     uv run python bench/batch_scale.py MODELS [--steps equal mixed profile] [--json out.json]
 
-equal    B copies of one real chunk of about L phonemes: one decoder group, no padding, so this is
-         the model's own batching curve.
-mixed    B chunks drawn from the corpus, grouped by length as the worker groups them (pad_slack),
-         with a frame budget of --frame-budget (the worker's is 9,600), with and without the padding masks.
+equal    B copies of one real chunk of about L phonemes.
+mixed    B chunks drawn from the corpus, packed into decoder rows of at most --frame-budget
+         frames (the worker's is 9,600).
 profile  torch.profiler at a few batch sizes: GPU time by kind of kernel, and GPU busy time as a
          share of unprofiled wall time (what is left is the GPU waiting on the host).
 
@@ -119,19 +118,16 @@ def step_equal(synth, timed, corpus, args, out):
 
 
 def step_mixed(synth, timed, corpus, args, out):
-    print("== mixed: corpus chunks, grouped by length", flush=True)
+    print("== mixed: corpus chunks", flush=True)
     rng = random.Random(0)
     batches = {b: [rng.choice(corpus) for _ in range(b)] for b in batch_sizes(args.max_batch)}
-    for exact in (True, False):
-        synth.exact = exact
-        for b, chunks in batches.items():
-            r = measure(synth, timed, requests_for(synth, chunks), args.reps)
-            r.update(batch=b, exact=exact)
-            out.append(r)
-            print(json.dumps(r), flush=True)
-            if "errors" in r:
-                break
-    synth.exact = True
+    for b, chunks in batches.items():
+        r = measure(synth, timed, requests_for(synth, chunks), args.reps)
+        r.update(batch=b)
+        out.append(r)
+        print(json.dumps(r), flush=True)
+        if "errors" in r:
+            break
 
 
 def kind(name):
