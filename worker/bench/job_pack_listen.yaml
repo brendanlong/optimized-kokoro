@@ -1,0 +1,14 @@
+# gpuc submit bench/job_pack_listen.yaml --host local   (from worker/); see job_pack_listen.sh for its inputs.
+name: kokoro-pack-listen
+setup: uv sync --frozen
+command: bash bench/job_pack_listen.sh
+python: .venv/bin/python
+gpus: 1
+env:
+  REQUIRE_CUDA: "1"
+  ESPEAK_DATA_LINK: /home/claude/worktrees/decf45d1-3ba3-4e7a-b872-21145ffc217e/optimized-kokoro/.claude/worktrees/agent-aa89b332dcca8d0bb/crates/espeak-ng/espeak-ng-data
+outputs:
+  - path: results
+priority: 40
+estimated_runtime_min: 15
+max_runtime_min: 60

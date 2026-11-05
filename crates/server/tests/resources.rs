@@ -121,7 +121,7 @@ async fn cancelled_requests_hold_their_slots_until_acknowledged() {
     let mut worker = ScriptedWorker::listen(&server.socket, worker_side::hello(&hello()));
     let connection = server.worker.connected().await;
 
-    let client = tokio::spawn(speak(server.addr, pcm("Alpha one. Bravo two. Charlie three. Delta four. Echo five.")));
+    let client = tokio::spawn(speak(server.addr, pcm(&longs(&["Alpha", "Bravo", "Charlie", "Delta", "Echo"]))));
     let (id, _, _, _, ids) = worker.synthesize().await;
     worker.synthesize().await;
     worker.synthesize().await;

@@ -2,7 +2,7 @@ mod common;
 
 use common::*;
 use kokoro_server::StubPipeline;
-use kokoro_server::pipeline::{Chunk, DEFAULT_MAX_TOKENS, Lang, Pipeline, PipelineError};
+use kokoro_server::pipeline::{Chunk, Lang, Pipeline, PipelineError};
 use kokoro_server::protocol::worker_side::{self, FrontFrame};
 use kokoro_server::protocol::{FailCode, Hello, Priority, Speed};
 use kokoro_server::stitch::{Plan, max_render_ids};
@@ -179,7 +179,7 @@ async fn speed_is_rounded_to_hundredths() {
 #[tokio::test]
 async fn streams_in_order_when_the_worker_answers_out_of_order() {
     let (server, mut worker) = with_scripted(|c| c.lookahead = 3).await;
-    let text = "One fish. Two fish. Red fish. Blue fish. Old fish.";
+    let text: &str = longs(&["One fish", "Two fish", "Red fish", "Blue fish", "Old fish"]).leak();
     let addr = server.addr;
     let client = tokio::spawn(async move {
         let response = speak(addr, pcm(text)).await;
@@ -207,7 +207,7 @@ async fn streams_in_order_when_the_worker_answers_out_of_order() {
 #[tokio::test]
 async fn first_chunk_streams_before_the_rest_is_rendered() {
     let (server, mut worker) = with_scripted(|_| {}).await;
-    let text = "First sentence here. Second one.";
+    let text = &longs(&["First", "Second"]);
     let chunks = stub_chunks(text);
     let response_task = tokio::spawn(speak(server.addr, pcm(text)));
     let (id0, _, _, _, ids0) = worker.synthesize().await;
@@ -253,6 +253,30 @@ async fn pauses_become_silence_and_options_reach_the_worker() {
     assert_eq!(audio, want);
 }
 
+/// Sentences go to the worker packed into chunks of up to `pack::SOFT_MAX_PHONEMES`, their
+/// phonemes joined by a space: three short ones and a long one fill a chunk, the next long one
+/// starts another, and a short one at the end packs with it.
+#[tokio::test]
+async fn short_sentences_are_rendered_together() {
+    let (server, mut worker) = with_scripted(|_| {}).await;
+    let (first, last) = (long("Then the first"), long("And the last"));
+    let text = format!("Hi. Hi. Blah blah. {first} {last} Bye.");
+    let client = tokio::spawn(speak(server.addr, pcm(&text)));
+    let stub = |t: &str| stub_chunks(t).into_iter().flat_map(|c| c.ids).collect::<Vec<u8>>();
+    let space = 16;
+    let mut expected = Vec::new();
+    for parts in [vec!["Hi.", "Hi.", "Blah blah.", first.as_str()], vec![last.as_str(), "Bye."]] {
+        let ids: Vec<u8> = parts.iter().map(|p| stub(p)).collect::<Vec<_>>().join(&space);
+        let (slot, _, _, _, sent) = worker.synthesize().await;
+        assert_eq!(sent, ids);
+        assert_eq!(worker.style_lens.last(), Some(&(ids.len() as u16)));
+        worker.send(respond(slot, &ids));
+        expected.extend(expected_chunk(&ids));
+    }
+    let response = client.await.unwrap();
+    assert_eq!(samples(&body_bytes(response).await.unwrap()), expected);
+}
+
 /// Voice and rate tags aren't supported, so they're read as text, in the request's one voice.
 #[tokio::test]
 async fn voice_and_rate_tags_are_text() {
@@ -280,9 +304,10 @@ impl Pipeline for LangRecorder {
         lang: Lang,
         text: &'a str,
         max_phonemes: usize,
+        clause_groups: usize,
     ) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
         self.0.lock().unwrap().push(lang);
-        StubPipeline.chunks(lang, text, max_phonemes)
+        StubPipeline.chunks(lang, text, max_phonemes, clause_groups)
     }
 }
 
@@ -305,7 +330,7 @@ async fn the_voice_sets_the_language() {
 #[tokio::test]
 async fn disconnecting_cancels_queued_chunks() {
     let (server, mut worker) = with_scripted(|c| c.lookahead = 3).await;
-    let text = "Alpha one. Bravo two. Charlie three. Delta four. Echo five. Foxtrot six.";
+    let text = &longs(&["Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot"]);
     let response_task = tokio::spawn(speak(server.addr, pcm(text)));
     let (id0, _, _, _, ids0) = worker.synthesize().await;
     let (id1, ..) = worker.synthesize().await;
@@ -367,7 +392,7 @@ async fn a_long_request_does_not_starve_a_short_one() {
 #[tokio::test]
 async fn worker_restart_fails_streams_in_flight_and_reconnects() {
     let (server, mut worker) = with_scripted(|_| {}).await;
-    let text = "Before the crash. After the crash.";
+    let text = &longs(&["Before the crash", "After the crash"]);
     let response_task = tokio::spawn(speak(server.addr, pcm(text)));
     let (id0, _, _, _, ids0) = worker.synthesize().await;
     worker.synthesize().await;
@@ -539,11 +564,18 @@ async fn sentences_over_the_cap_limit_split_at_clauses_and_join_at_the_comma() {
     let (cap, speed) = (720_000, Speed::NORMAL);
     let limit = max_render_ids(cap, speed);
     assert!(limit == 270 && whole[0].ids.len() > limit);
-    let chunks: Vec<_> = StubPipeline.chunks(Lang::AmericanEnglish, &text, limit).map(Result::unwrap).collect();
-    assert_eq!(chunks.len(), 2);
-    assert!(chunks.iter().all(|c| c.ids.len() <= limit));
-    assert!(chunks[0].text.ends_with(',') && chunks[0].split.after && !chunks[0].split.before);
-    assert!(chunks[1].split.before && !chunks[1].split.after);
+    // The clauses are packed to the soft size, two of them a chunk.
+    let soft = kokoro_server::pack::SOFT_MAX_PHONEMES;
+    let chunks: Vec<_> =
+        kokoro_server::pack::pack(StubPipeline.chunks(Lang::AmericanEnglish, &text, limit, soft), soft, limit)
+            .map(Result::unwrap)
+            .collect();
+    assert_eq!(chunks.len(), 3);
+    assert!(chunks.iter().all(|c| c.ids.len() <= soft));
+    for (i, c) in chunks.iter().enumerate() {
+        assert_eq!((c.split.before, c.split.after), (i > 0, i < 2), "{i}");
+        assert_eq!(c.text.matches(',').count(), 2 - usize::from(i == 2));
+    }
 
     let server = start(|_| {}, Arc::new(StubPipeline)).await;
     let mut worker =
@@ -561,7 +593,7 @@ async fn sentences_over_the_cap_limit_split_at_clauses_and_join_at_the_comma() {
         (durations, pcm)
     };
     let mut sent = Vec::new();
-    for _ in 0..2 {
+    for _ in 0..3 {
         let (id, _, _, _, ids) = worker.synthesize().await;
         let (durations, pcm) = render(&ids);
         worker.send(worker_side::result(id, &durations, &pcm));
@@ -569,13 +601,15 @@ async fn sentences_over_the_cap_limit_split_at_clauses_and_join_at_the_comma() {
     }
     let response = client.await.unwrap();
     assert_eq!(response.status(), 200);
-    assert_eq!(sent, [chunks[0].ids.clone(), chunks[1].ids.clone()]);
-    assert_eq!(worker.style_lens, [chunks[0].ids.len() as u16, chunks[1].ids.len() as u16]);
-    // The first keeps 50 ms before its speech and ends after its comma, the last id; the second
-    // starts at its speech and keeps the padding after it, cut to the 24 samples trimmed at the end.
-    let (_, first) = render(&chunks[0].ids);
-    let (_, second) = render(&chunks[1].ids);
-    let expected = [&first[600..first.len() - 600], &second[1800..second.len() - 24]].concat();
+    assert_eq!(sent, chunks.iter().map(|c| c.ids.clone()).collect::<Vec<_>>());
+    assert_eq!(worker.style_lens, chunks.iter().map(|c| c.ids.len() as u16).collect::<Vec<_>>());
+    // The first keeps 50 ms before its speech; each but the last ends after its comma, the last
+    // id; each but the first starts at its speech; the last keeps the padding after it, cut to the
+    // 24 samples trimmed at the end.
+    let pcm: Vec<_> = chunks.iter().map(|c| render(&c.ids).1).collect();
+    let (first, middle, last) = (&pcm[0], &pcm[1], &pcm[2]);
+    let expected =
+        [&first[600..first.len() - 600], &middle[1800..middle.len() - 600], &last[1800..last.len() - 24]].concat();
     assert_eq!(samples(&body_bytes(response).await.unwrap()), expected);
 }
 
@@ -585,7 +619,7 @@ async fn pipeline_failures_fail_the_response() {
         let server = start(|_| {}, Arc::new(BrokenPipeline { fail_at: 4, panic })).await;
         let mut worker = ScriptedWorker::listen(&server.socket, worker_side::hello(&hello()));
         server.worker.connected().await;
-        let client = tokio::spawn(speak(server.addr, pcm("One part. Two part. Three part. Four part. Five part.")));
+        let client = tokio::spawn(speak(server.addr, pcm(&longs(&["One", "Two", "Three", "Four", "Five"]))));
         tokio::spawn(async move {
             loop {
                 let (id, _, _, _, ids) = worker.synthesize().await;
@@ -613,8 +647,9 @@ async fn speaks_chinese_with_a_chinese_voice() {
     let mut body = pcm(text);
     body["voice"] = json!("zf_xiaobei");
     let client = tokio::spawn(speak(server.addr, body));
-    let chunks: Vec<_> = pipelines.chunks(Lang::Chinese, text, DEFAULT_MAX_TOKENS).map(Result::unwrap).collect();
-    assert_eq!(chunks.len(), 2);
+    let chunks = packed_chunks(pipelines.as_ref(), Lang::Chinese, text);
+    // Both sentences are short, so they are one chunk (`pack`).
+    assert_eq!(chunks.len(), 1);
     let voice = VOICES.iter().position(|&v| v == "zf_xiaobei").unwrap() as u16;
     let mut expected = Vec::new();
     for chunk in &chunks {
@@ -637,12 +672,9 @@ async fn speaks_spanish_with_a_spanish_voice() {
     let mut body = pcm(text);
     body["voice"] = json!("ef_dora");
     let client = tokio::spawn(speak(server.addr, body));
-    let chunks: Vec<_> = pipelines.chunks(Lang::Spanish, text, DEFAULT_MAX_TOKENS).map(Result::unwrap).collect();
-    assert_eq!(chunks.len(), 2);
-    assert_ne!(
-        chunks,
-        pipelines.chunks(Lang::AmericanEnglish, text, DEFAULT_MAX_TOKENS).map(Result::unwrap).collect::<Vec<_>>()
-    );
+    let chunks = packed_chunks(pipelines.as_ref(), Lang::Spanish, text);
+    assert_eq!(chunks.len(), 1);
+    assert_ne!(chunks, packed_chunks(pipelines.as_ref(), Lang::AmericanEnglish, text));
     let voice = VOICES.iter().position(|&v| v == "ef_dora").unwrap() as u16;
     let mut expected = Vec::new();
     for chunk in &chunks {
@@ -663,14 +695,15 @@ async fn speaks_english_with_the_real_pipeline() {
     server.worker.connected().await;
     let text = "The quick brown fox jumps over the lazy dog. It costs $5. 東京へ行く";
     let client = tokio::spawn(speak(server.addr, pcm(text)));
-    let chunks: Vec<_> =
-        pipelines.chunks(Lang::AmericanEnglish, text, DEFAULT_MAX_TOKENS).map(Result::unwrap).collect();
+    let chunks = packed_chunks(pipelines.as_ref(), Lang::AmericanEnglish, text);
 
-    assert_eq!(chunks.len(), 3);
+    // Three short sentences, packed into one chunk (`pack`).
+    assert_eq!(chunks.len(), 1);
     // Read by the Japanese G2P when UniDic is installed, else as "Japanese text".
     let japanese =
         if kokoro_pipeline::japanese_available() { ("toːkʲoː e ikɯ", 0) } else { ("ʤˌæpənˈiz tˈɛkst", 1) };
-    assert_eq!((chunks[2].phonemes.as_str(), chunks[2].unread), japanese);
+    assert!(chunks[0].phonemes.ends_with(japanese.0), "{}", chunks[0].phonemes);
+    assert_eq!(chunks[0].unread, japanese.1);
     let mut expected = Vec::new();
     for chunk in &chunks {
         let (id, _, _, _, ids) = worker.synthesize().await;

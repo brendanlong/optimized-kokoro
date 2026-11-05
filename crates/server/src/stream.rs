@@ -20,6 +20,7 @@
 
 use crate::audio::{Joins, final_clause_mark, keep_range, silence};
 use crate::load::{Admission, Shed};
+use crate::pack::{SOFT_MAX_PHONEMES, pack};
 use crate::pipeline::{Chunk, DEFAULT_MAX_TOKENS, Pipeline, PipelineError};
 use crate::request::Speech;
 use crate::stitch::{self, STITCH_ABOVE, Stitcher};
@@ -146,7 +147,7 @@ fn units(chunk: Chunk, speech: &Speech, render_ids: usize) -> Vec<Unit> {
         .collect()
 }
 
-/// Phonemizes the request and sends its units, then how it ended. Runs of text with no G2P yet
+/// Phonemizes the request and sends its units (packed, [`pack`]), then how it ended. Runs of text with no G2P yet
 /// are logged once per request, as a count, since the text itself mustn't reach the logs.
 /// `max_chunk_samples` is the worker's chunk cap.
 fn produce(
@@ -177,7 +178,9 @@ fn produce_units(
 ) -> Option<Produced> {
     let render_ids = stitch::max_render_ids(max_chunk_samples, speech.speed);
     let mut ids = 0usize;
-    for chunk in pipeline.chunks(speech.lang, &speech.text, max_chunk_phonemes(render_ids)) {
+    let max_phonemes = max_chunk_phonemes(render_ids);
+    let chunks = pipeline.chunks(speech.lang, &speech.text, max_phonemes, SOFT_MAX_PHONEMES);
+    for chunk in pack(chunks, SOFT_MAX_PHONEMES, max_phonemes) {
         let units = match chunk {
             Ok(chunk) => {
                 *unread += chunk.unread;
@@ -414,6 +417,7 @@ mod tests {
             &'a self,
             _: Lang,
             text: &'a str,
+            _: usize,
             _: usize,
         ) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
             Box::new((0..self.0).map(move |_| {

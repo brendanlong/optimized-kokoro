@@ -15,6 +15,7 @@ pub mod http;
 pub mod kokoro;
 pub mod load;
 pub mod log;
+pub mod pack;
 pub mod pipeline;
 pub mod protocol;
 pub mod request;

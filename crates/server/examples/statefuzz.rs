@@ -196,7 +196,7 @@ const PROBES: &[&str] = &[
 ];
 
 fn run(p: &KokoroPipelines, lang: Lang, text: &str) -> String {
-    p.chunks(lang, text, kokoro_server::pipeline::DEFAULT_MAX_TOKENS)
+    p.chunks(lang, text, kokoro_server::pipeline::DEFAULT_MAX_TOKENS, kokoro_server::pipeline::DEFAULT_MAX_TOKENS)
         .map(|c| match c {
             Ok(c) => format!("{}|{:?}", c.phonemes, c.pause),
             Err(e) => format!("ERR {e}"),
