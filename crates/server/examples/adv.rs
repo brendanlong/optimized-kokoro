@@ -27,7 +27,12 @@ fn main() {
             let mut ids = 0;
             let mut errs = 0;
             let mut last = Instant::now();
-            for c in p.chunks(lang, text, kokoro_server::pipeline::DEFAULT_MAX_TOKENS) {
+            for c in p.chunks(
+                lang,
+                text,
+                kokoro_server::pipeline::DEFAULT_MAX_TOKENS,
+                kokoro_server::pipeline::DEFAULT_MAX_TOKENS,
+            ) {
                 let now = Instant::now();
                 slowest = slowest.max((now - last).as_secs_f64() * 1e3);
                 last = now;

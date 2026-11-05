@@ -167,6 +167,19 @@ pub fn try_sentence_chunks<P: Phonemes, E, F: FnMut(&str) -> Result<P, E>>(
     max_tokens: usize,
     g2p: &mut F,
 ) -> Result<Vec<Piece<P>>, E> {
+    try_sentence_chunks_grouped(sentence, max_tokens, max_tokens, g2p)
+}
+
+/// [`try_sentence_chunks`] packing the clauses of a sentence longer than `max_tokens` into groups
+/// of at most `groups` phonemes instead of `max_tokens` (the server packs chunks to a smaller size
+/// than the most a chunk may have, `SmartSplit::with_clause_groups`). A sentence of at most
+/// `max_tokens` phonemes is still one piece.
+pub fn try_sentence_chunks_grouped<P: Phonemes, E, F: FnMut(&str) -> Result<P, E>>(
+    sentence: &str,
+    max_tokens: usize,
+    groups: usize,
+    g2p: &mut F,
+) -> Result<Vec<Piece<P>>, E> {
     let whole = phonemize(g2p, sentence)?;
     if phoneme_len(&whole.phonemes) <= max_tokens {
         return Ok(vec![whole]);
@@ -178,7 +191,7 @@ pub fn try_sentence_chunks<P: Phonemes, E, F: FnMut(&str) -> Result<P, E>>(
     let lens: Vec<usize> = pieces.iter().map(|p| phoneme_len(&p.phonemes)).collect();
     let mut pieces = pieces.into_iter();
     let mut out = Vec::new();
-    for range in group(&lens, max_tokens) {
+    for range in group(&lens, groups.min(max_tokens)) {
         out.push(join(pieces.by_ref().take(range.len()).collect(), g2p)?);
     }
     mark_splits(&mut out);
@@ -294,6 +307,8 @@ pub struct SmartSplit<'a, P, F> {
     options: &'a Options,
     limits: &'a Limits,
     max_tokens: usize,
+    /// The size clause groups are packed to ([`SmartSplit::with_clause_groups`]).
+    clause_groups: usize,
     g2p: F,
     sentences: VecDeque<String>,
     ready: VecDeque<Chunk<P>>,
@@ -315,6 +330,7 @@ pub fn try_smart_split<'a, P: Phonemes, E, F: FnMut(&str) -> Result<P, E>>(
         options,
         limits,
         max_tokens,
+        clause_groups: max_tokens,
         g2p,
         sentences: VecDeque::new(),
         ready: VecDeque::new(),
@@ -323,6 +339,15 @@ pub fn try_smart_split<'a, P: Phonemes, E, F: FnMut(&str) -> Result<P, E>>(
 }
 
 impl<P, F> SmartSplit<'_, P, F> {
+    /// Packs the clauses of a sentence cut at clauses (one longer than `max_tokens`) into groups
+    /// of at most `groups` phonemes (by default `max_tokens`, as the reference does). The server
+    /// packs its chunks to a soft size, a sentence's clause groups included, and never cuts a
+    /// sentence that fits `max_tokens` (`docs/divergences.md`).
+    pub fn with_clause_groups(mut self, groups: usize) -> Self {
+        self.clause_groups = groups;
+        self
+    }
+
     fn start_part(&mut self, raw: &str) {
         if py::strip(raw).is_empty() {
             return;
@@ -344,10 +369,12 @@ impl<P: Phonemes, E, F: FnMut(&str) -> Result<P, E>> Iterator for SmartSplit<'_,
             if let Some(sentence) = self.sentences.pop_front() {
                 let sentence = py::strip(&sentence);
                 if !sentence.is_empty() {
-                    let mut pieces = match try_sentence_chunks(sentence, self.max_tokens, &mut self.g2p) {
-                        Ok(pieces) => pieces,
-                        Err(e) => return Some(Err(e)),
-                    };
+                    let mut pieces =
+                        match try_sentence_chunks_grouped(sentence, self.max_tokens, self.clause_groups, &mut self.g2p)
+                        {
+                            Ok(pieces) => pieces,
+                            Err(e) => return Some(Err(e)),
+                        };
                     // A piece without phonemes has no audio, so its neighbours' audio meets.
                     pieces.retain(|p| !p.phonemes.phonemes().is_empty());
                     mark_splits(&mut pieces);
@@ -452,6 +479,29 @@ mod tests {
                 s(format!("{d}."), true, false)
             ]
         );
+    }
+
+    /// Clause groups can be packed smaller than the limit; a sentence within the limit stays whole.
+    #[test]
+    fn clause_groups_can_be_smaller_than_the_limit() {
+        let (a, b, c, d) = (words('a', 30), words('b', 30), words('c', 30), words('d', 30));
+        let text = format!("{a}, {b}; {c}: {d}.");
+        let cut = |limit, groups| -> Vec<String> {
+            try_smart_split(&text, "z", &Options::default(), &Limits::default(), limit, |t: &str| {
+                Ok::<_, Infallible>("x".repeat(t.len()))
+            })
+            .with_clause_groups(groups)
+            .map(|c| match c.unwrap() {
+                Chunk::Speech(p) => p.text,
+                Chunk::Pause(_) => unreachable!(),
+            })
+            .collect()
+        };
+        assert_eq!(cut(450, 40), std::slice::from_ref(&text));
+        assert_eq!(cut(100, 100), [format!("{a}, {b}; {c}:"), format!("{d}.")]);
+        assert_eq!(cut(100, 40), [format!("{a},"), format!("{b};"), format!("{c}:"), format!("{d}.")]);
+        // Never larger than the limit.
+        assert_eq!(cut(70, 450), cut(70, 70));
     }
 
     /// A group of clauses of fewer than `MIN_CLAUSE_CHUNK` phonemes, which the reference would make a

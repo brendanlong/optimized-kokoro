@@ -3,7 +3,7 @@
 //! [`crate::kokoro::KokoroPipelines`] is the real one; this trait is the narrow surface the server
 //! needs from it, so tests can stand in their own.
 
-use kokoro_text::{Limits, Options, Piece, smart_split};
+use kokoro_text::{Limits, Options, Piece};
 
 pub use kokoro_text::{DEFAULT_MAX_TOKENS, Split};
 use std::fmt;
@@ -47,13 +47,15 @@ impl std::error::Error for PipelineError {}
 pub trait Pipeline: Send + Sync + 'static {
     /// The chunks of `text`, normalized with the default options and phonemized lazily as they're
     /// taken. A sentence of more than `max_phonemes` phonemes is cut at clause punctuation
-    /// (Kokoro-FastAPI's limit is [`DEFAULT_MAX_TOKENS`]). Runs on a blocking thread. An error
-    /// stands in for the sentence it happened in; later sentences still follow.
+    /// (Kokoro-FastAPI's limit is [`DEFAULT_MAX_TOKENS`]), its clauses packed into groups of at
+    /// most `clause_groups` phonemes (Kokoro-FastAPI's are `max_phonemes`). Runs on a blocking
+    /// thread. An error stands in for the sentence it happened in; later sentences still follow.
     fn chunks<'a>(
         &'a self,
         lang: Lang,
         text: &'a str,
         max_phonemes: usize,
+        clause_groups: usize,
     ) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a>;
 }
 
@@ -86,10 +88,17 @@ impl Pipeline for StubPipeline {
         lang: Lang,
         text: &'a str,
         max_phonemes: usize,
+        clause_groups: usize,
     ) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
         static LIMITS: std::sync::LazyLock<Limits> = std::sync::LazyLock::new(Limits::default);
         static OPTIONS: std::sync::LazyLock<Options> = std::sync::LazyLock::new(Options::default);
-        let split = smart_split(text, lang.code(), &OPTIONS, &LIMITS, max_phonemes, stub_g2p);
+        let split = kokoro_text::try_smart_split(text, lang.code(), &OPTIONS, &LIMITS, max_phonemes, |t: &str| {
+            Ok::<_, std::convert::Infallible>(stub_g2p(t))
+        })
+        .with_clause_groups(clause_groups)
+        .map(|chunk| match chunk {
+            Ok(chunk) => chunk,
+        });
         Box::new(split.map(|chunk| {
             Ok(match chunk {
                 kokoro_text::Chunk::Speech(Piece { text, phonemes, split }) => {

@@ -254,7 +254,7 @@ async fn pauses_become_silence_and_options_reach_the_worker() {
 }
 
 /// Short sentences go to the worker as one chunk with the next until it is long enough
-/// (`merge::MIN_SENTENCE_CHUNK`), their phonemes joined by a space; a long one goes alone, and a
+/// (`pack::SOFT_MAX_PHONEMES`), their phonemes joined by a space; a long one goes alone, and a
 /// short one at the end joins the chunk before it.
 #[tokio::test]
 async fn short_sentences_are_rendered_together() {
@@ -304,9 +304,10 @@ impl Pipeline for LangRecorder {
         lang: Lang,
         text: &'a str,
         max_phonemes: usize,
+        clause_groups: usize,
     ) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
         self.0.lock().unwrap().push(lang);
-        StubPipeline.chunks(lang, text, max_phonemes)
+        StubPipeline.chunks(lang, text, max_phonemes, clause_groups)
     }
 }
 
@@ -563,11 +564,18 @@ async fn sentences_over_the_cap_limit_split_at_clauses_and_join_at_the_comma() {
     let (cap, speed) = (720_000, Speed::NORMAL);
     let limit = max_render_ids(cap, speed);
     assert!(limit == 270 && whole[0].ids.len() > limit);
-    let chunks: Vec<_> = StubPipeline.chunks(Lang::AmericanEnglish, &text, limit).map(Result::unwrap).collect();
-    assert_eq!(chunks.len(), 2);
-    assert!(chunks.iter().all(|c| c.ids.len() <= limit));
-    assert!(chunks[0].text.ends_with(',') && chunks[0].split.after && !chunks[0].split.before);
-    assert!(chunks[1].split.before && !chunks[1].split.after);
+    // The clauses are packed to the soft size, two of them a chunk.
+    let soft = kokoro_server::pack::SOFT_MAX_PHONEMES;
+    let chunks: Vec<_> =
+        kokoro_server::pack::pack(StubPipeline.chunks(Lang::AmericanEnglish, &text, limit, soft), soft, limit)
+            .map(Result::unwrap)
+            .collect();
+    assert_eq!(chunks.len(), 3);
+    assert!(chunks.iter().all(|c| c.ids.len() <= soft));
+    for (i, c) in chunks.iter().enumerate() {
+        assert_eq!((c.split.before, c.split.after), (i > 0, i < 2), "{i}");
+        assert_eq!(c.text.matches(',').count(), 2 - usize::from(i == 2));
+    }
 
     let server = start(|_| {}, Arc::new(StubPipeline)).await;
     let mut worker =
@@ -585,7 +593,7 @@ async fn sentences_over_the_cap_limit_split_at_clauses_and_join_at_the_comma() {
         (durations, pcm)
     };
     let mut sent = Vec::new();
-    for _ in 0..2 {
+    for _ in 0..3 {
         let (id, _, _, _, ids) = worker.synthesize().await;
         let (durations, pcm) = render(&ids);
         worker.send(worker_side::result(id, &durations, &pcm));
@@ -593,13 +601,15 @@ async fn sentences_over_the_cap_limit_split_at_clauses_and_join_at_the_comma() {
     }
     let response = client.await.unwrap();
     assert_eq!(response.status(), 200);
-    assert_eq!(sent, [chunks[0].ids.clone(), chunks[1].ids.clone()]);
-    assert_eq!(worker.style_lens, [chunks[0].ids.len() as u16, chunks[1].ids.len() as u16]);
-    // The first keeps 50 ms before its speech and ends after its comma, the last id; the second
-    // starts at its speech and keeps the padding after it, cut to the 24 samples trimmed at the end.
-    let (_, first) = render(&chunks[0].ids);
-    let (_, second) = render(&chunks[1].ids);
-    let expected = [&first[600..first.len() - 600], &second[1800..second.len() - 24]].concat();
+    assert_eq!(sent, chunks.iter().map(|c| c.ids.clone()).collect::<Vec<_>>());
+    assert_eq!(worker.style_lens, chunks.iter().map(|c| c.ids.len() as u16).collect::<Vec<_>>());
+    // The first keeps 50 ms before its speech; each but the last ends after its comma, the last
+    // id; each but the first starts at its speech; the last keeps the padding after it, cut to the
+    // 24 samples trimmed at the end.
+    let pcm: Vec<_> = chunks.iter().map(|c| render(&c.ids).1).collect();
+    let (first, middle, last) = (&pcm[0], &pcm[1], &pcm[2]);
+    let expected =
+        [&first[600..first.len() - 600], &middle[1800..middle.len() - 600], &last[1800..last.len() - 24]].concat();
     assert_eq!(samples(&body_bytes(response).await.unwrap()), expected);
 }
 
@@ -637,8 +647,8 @@ async fn speaks_chinese_with_a_chinese_voice() {
     let mut body = pcm(text);
     body["voice"] = json!("zf_xiaobei");
     let client = tokio::spawn(speak(server.addr, body));
-    let chunks = merged_chunks(pipelines.as_ref(), Lang::Chinese, text);
-    // Both sentences are short, so they are one chunk (`merge`).
+    let chunks = packed_chunks(pipelines.as_ref(), Lang::Chinese, text);
+    // Both sentences are short, so they are one chunk (`pack`).
     assert_eq!(chunks.len(), 1);
     let voice = VOICES.iter().position(|&v| v == "zf_xiaobei").unwrap() as u16;
     let mut expected = Vec::new();
@@ -662,9 +672,9 @@ async fn speaks_spanish_with_a_spanish_voice() {
     let mut body = pcm(text);
     body["voice"] = json!("ef_dora");
     let client = tokio::spawn(speak(server.addr, body));
-    let chunks = merged_chunks(pipelines.as_ref(), Lang::Spanish, text);
+    let chunks = packed_chunks(pipelines.as_ref(), Lang::Spanish, text);
     assert_eq!(chunks.len(), 1);
-    assert_ne!(chunks, merged_chunks(pipelines.as_ref(), Lang::AmericanEnglish, text));
+    assert_ne!(chunks, packed_chunks(pipelines.as_ref(), Lang::AmericanEnglish, text));
     let voice = VOICES.iter().position(|&v| v == "ef_dora").unwrap() as u16;
     let mut expected = Vec::new();
     for chunk in &chunks {
@@ -685,9 +695,9 @@ async fn speaks_english_with_the_real_pipeline() {
     server.worker.connected().await;
     let text = "The quick brown fox jumps over the lazy dog. It costs $5. 東京へ行く";
     let client = tokio::spawn(speak(server.addr, pcm(text)));
-    let chunks = merged_chunks(pipelines.as_ref(), Lang::AmericanEnglish, text);
+    let chunks = packed_chunks(pipelines.as_ref(), Lang::AmericanEnglish, text);
 
-    // Three short sentences, merged into one chunk (`merge`).
+    // Three short sentences, packed into one chunk (`pack`).
     assert_eq!(chunks.len(), 1);
     // Read by the Japanese G2P when UniDic is installed, else as "Japanese text".
     let japanese =

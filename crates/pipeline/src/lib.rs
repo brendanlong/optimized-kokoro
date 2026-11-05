@@ -347,10 +347,24 @@ impl Pipeline {
         options: &'a NormalizationOptions,
         max_tokens: usize,
     ) -> impl Iterator<Item = Result<Chunk, Error>> + Send + use<'a> {
+        self.chunks_within_groups(text, options, max_tokens, max_tokens)
+    }
+
+    /// [`chunks_within`](Self::chunks_within), with the clauses of a sentence cut at clauses packed
+    /// into groups of at most `clause_groups` phonemes rather than `max_tokens`
+    /// (`kokoro_text::SmartSplit::with_clause_groups`): the server packs its chunks to a soft size.
+    pub fn chunks_within_groups<'a>(
+        &'a self,
+        text: &str,
+        options: &'a NormalizationOptions,
+        max_tokens: usize,
+        clause_groups: usize,
+    ) -> impl Iterator<Item = Result<Chunk, Error>> + Send + use<'a> {
         let mut request = Request::new(self);
         kokoro_text::try_smart_split(text, self.lang.code(), options, &self.limits, max_tokens, move |t: &str| {
             request.phonemize(t)
         })
+        .with_clause_groups(clause_groups)
         .map(|chunk| {
             chunk.map(|chunk| match chunk {
                 kokoro_text::Chunk::Speech(piece) => speech(piece.text, piece.phonemes, piece.split),

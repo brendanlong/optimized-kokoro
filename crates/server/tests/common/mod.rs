@@ -53,11 +53,11 @@ pub fn respond(slot: u16, ids: &[u8]) -> Vec<u8> {
     worker_side::result(slot, &durations, &pcm)
 }
 
-/// A sentence about `word` long enough that the server renders it as a chunk of its own
-/// (`merge::MIN_SENTENCE_CHUNK`), in the stub pipeline and the real one.
+/// A sentence about `word` long enough that the server renders it as a chunk of its own: two
+/// of them don't fit within `pack::SOFT_MAX_PHONEMES`, in the stub pipeline or the real one.
 pub fn long(word: &str) -> String {
     let sentence = format!("{word} is a sentence that goes on long enough to be rendered as a chunk all by itself.");
-    assert!(sentence.len() >= kokoro_server::merge::MIN_SENTENCE_CHUNK + 10);
+    assert!(2 * (sentence.len() - 4) > kokoro_server::pack::SOFT_MAX_PHONEMES);
     sentence
 }
 
@@ -66,11 +66,11 @@ pub fn longs(words: &[&str]) -> String {
     words.iter().map(|w| long(w)).collect::<Vec<_>>().join(" ")
 }
 
-/// `pipeline`'s chunks of `text` as the server renders them: short sentences merged.
-pub fn merged_chunks(pipeline: &dyn Pipeline, lang: Lang, text: &str) -> Vec<Chunk> {
-    kokoro_server::merge::merge_short(pipeline.chunks(lang, text, DEFAULT_MAX_TOKENS), DEFAULT_MAX_TOKENS)
-        .map(Result::unwrap)
-        .collect()
+/// `pipeline`'s chunks of `text` as the server renders them at speed 1: packed (`pack`).
+pub fn packed_chunks(pipeline: &dyn Pipeline, lang: Lang, text: &str) -> Vec<Chunk> {
+    use kokoro_server::pack::{SOFT_MAX_PHONEMES, pack};
+    let chunks = pipeline.chunks(lang, text, DEFAULT_MAX_TOKENS, SOFT_MAX_PHONEMES);
+    pack(chunks, SOFT_MAX_PHONEMES, DEFAULT_MAX_TOKENS).map(Result::unwrap).collect()
 }
 
 /// The audio the server should produce for `text` in one voice, using the stub pipeline.
@@ -85,16 +85,8 @@ pub fn expected_audio(text: &str) -> Vec<i16> {
     out
 }
 
-/// The stub pipeline's chunks as the server renders them: short sentences merged.
-fn stub_merged(text: &str) -> impl Iterator<Item = Result<Chunk, kokoro_server::PipelineError>> + '_ {
-    kokoro_server::merge::merge_short(
-        StubPipeline.chunks(Lang::AmericanEnglish, text, DEFAULT_MAX_TOKENS),
-        DEFAULT_MAX_TOKENS,
-    )
-}
-
 pub fn stub_chunks(text: &str) -> Vec<Chunk> {
-    stub_merged(text).map(Result::unwrap).collect()
+    packed_chunks(&StubPipeline, Lang::AmericanEnglish, text)
 }
 
 /// A worker whose every move the test makes: it reports each frame the server sends, and
@@ -312,9 +304,10 @@ impl Pipeline for CountingPipeline {
         lang: Lang,
         text: &'a str,
         max_phonemes: usize,
+        clause_groups: usize,
     ) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        StubPipeline.chunks(lang, text, max_phonemes)
+        StubPipeline.chunks(lang, text, max_phonemes, clause_groups)
     }
 }
 
@@ -424,8 +417,9 @@ impl Pipeline for BrokenPipeline {
         lang: Lang,
         text: &'a str,
         max_phonemes: usize,
+        clause_groups: usize,
     ) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
-        Box::new(StubPipeline.chunks(lang, text, max_phonemes).enumerate().map(|(i, chunk)| {
+        Box::new(StubPipeline.chunks(lang, text, max_phonemes, clause_groups).enumerate().map(|(i, chunk)| {
             if i < self.fail_at {
                 chunk
             } else if self.panic {
