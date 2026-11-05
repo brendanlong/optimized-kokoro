@@ -52,7 +52,10 @@ KOKORO_GPU=0                        # a CDI device name from nvidia-ctk cdi list
 KOKORO_LISTEN=127.0.0.1:8880        # the server (IPv4:port); 0.0.0.0 exposes it everywhere
 KOKORO_DEMO_LISTEN=127.0.0.1:25436  # the demo page
 KOKORO_MAX_BATCH=1                  # the worker's --max-batch, 1-64 (worker/README.md)
+KOKORO_MAX_CHUNK_SECONDS=60         # the worker's --max-chunk-seconds, 1-60: its GPU memory (below)
 ```
+
+`KOKORO_MAX_CHUNK_SECONDS` is the most audio one request to the worker may make, at any speed, and the most audio in one of its packed decoder rows, so it sets the worker's peak GPU memory: about 210 MB plus 0.35 MB per frame of 25 ms (40 per second), with packed rows about 15% more, plus about 175 MB for the CUDA context. 60 s (the default) is about 1.4 GB reserved; 30 s keeps the worker near 1 GB on the card, for a GPU shared with a desktop. The server splits chunks that could be longer into overlapping pieces before sending them (`worker/README.md`), so a lower cap costs some stitched long sentences, not errors. The server refuses a worker that announces more than 60 s (`worker_max_chunk_samples`). The compile-cache export runs with the same value.
 
 What it does:
 1. Checks the checkout, the driver against runsc, the CDI device and the ports. Adds the runtime and creates `/srv/optimized-kokoro`.

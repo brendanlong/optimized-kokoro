@@ -1,0 +1,13 @@
+# gpuc submit bench/job_max_frames.yaml --host local   (from worker/)
+name: kokoro-max-frames
+setup: uv sync --frozen
+command: bash bench/job_max_frames.sh
+python: .venv/bin/python
+gpus: 1
+env:
+  REQUIRE_CUDA: "1"
+outputs:
+  - path: results
+priority: 40
+estimated_runtime_min: 45
+max_runtime_min: 150

@@ -11,7 +11,7 @@
 //! bounded: at most three frames per slot (a stale Cancel for its previous request, which the
 //! worker ignores, then a Synthesize and a Cancel).
 //!
-//! A request's audio is at most the worker's chunk cap at its speed (durations implying more are
+//! A request's audio is at most the worker's chunk cap, at any speed (durations implying more are
 //! a violation), so memory is bounded by how many chunks can be in flight, which the request and
 //! lookahead limits fix. An [`AudioGauge`] counts what's held.
 //!
@@ -217,6 +217,11 @@ impl Connection {
 
     /// The slots the front uses on this connection.
     /// The most requests the worker renders at once.
+    /// The most samples one chunk may render, at any speed.
+    pub fn max_chunk_samples(&self) -> u32 {
+        self.hello.max_chunk_samples
+    }
+
     pub fn max_batch(&self) -> u16 {
         self.hello.max_batch
     }

@@ -90,7 +90,7 @@ async fn audio_held_for_clients_that_dont_read_stays_under_the_bound() {
     while let Some(event) = worker.quiet(Duration::from_millis(500)).await {
         if let Event::Frame(FrontFrame::Synthesize { slot, speed, ids, .. }) = event {
             let speed = Speed::from_hundredths(speed).unwrap();
-            let samples = speed.chunk_cap(small.max_chunk_samples);
+            let samples = u64::from(small.max_chunk_samples);
             let durations = durations_for(ids.len(), samples, speed.max_duration());
             worker.send(worker_side::result(slot, &durations, &vec![12_000; samples as usize]));
             rendered += 1;
@@ -98,7 +98,7 @@ async fn audio_held_for_clients_that_dont_read_stays_under_the_bound() {
     }
     tokio::time::sleep(Duration::from_millis(200)).await;
     let held = server.worker.gauge().held();
-    let bound = config.audio_bound(small.max_chunk_samples, Speed::NORMAL);
+    let bound = config.audio_bound(small.max_chunk_samples);
     assert!(rendered < 12 * clients.len(), "the server kept asking for chunks nobody reads");
     assert!(held <= bound, "holding {held} bytes, over the bound {bound}");
     // Kernel socket buffers take some of what hyper writes, so the bound isn't reached exactly.
@@ -335,13 +335,13 @@ async fn shutdown_drops_connections_after_the_grace_period() {
 async fn durations_over_the_chunk_cap_close_the_connection() {
     let server = start(|_| {}, Arc::new(StubPipeline)).await;
     let mut small = hello();
-    small.max_chunk_samples = 600 * 3;
+    small.max_chunk_samples = 600 * 50; // room for 10 ids at 4.7 frames each, so "Hi." isn't stitched
     let mut worker = ScriptedWorker::listen(&server.socket, worker_side::hello(&small));
     server.worker.connected().await;
     let client = tokio::spawn(speak(server.addr, pcm("Hi.")));
     let (slot, _, _, _, ids) = worker.synthesize().await;
-    assert!(ids.len() + 2 > 3);
-    let frame = worker_side::result(slot, &vec![1; ids.len() + 2], &vec![0; 600 * (ids.len() + 2)]);
+    let durations = vec![50; ids.len() + 2];
+    let frame = worker_side::result(slot, &durations, &vec![0; 600 * 50 * (ids.len() + 2)]);
     worker.send(frame[..4 + 5 + 2 * (ids.len() + 2)].to_vec());
     assert_eq!(worker.next().await, Event::Closed);
     assert_eq!(client.await.unwrap().status(), 503);
@@ -387,8 +387,8 @@ async fn a_hello_with_the_largest_chunk_cap_is_refused() {
     assert!(server.worker.current().is_none());
 }
 
-/// The largest Audio the protocol allows (the chunk cap at the slowest speed, from Durations within
-/// the per-id maximum) is accepted, counted while held, and released when dropped.
+/// The largest Audio the protocol allows (the chunk cap, from Durations within the per-id maximum
+/// at the slowest speed) is accepted, counted while held, and released when dropped.
 #[tokio::test]
 async fn maximal_audio_at_the_chunk_cap_is_accepted() {
     let server = start(|_| {}, Arc::new(StubPipeline)).await;
@@ -397,7 +397,7 @@ async fn maximal_audio_at_the_chunk_cap_is_accepted() {
     let request = SynthRequest { speed: Speed::MIN, voice: 0, ids: vec![43; 510], style_len: 510 };
     let mut ticket = connection.submit(&request, Work::untracked(WAITING, request.ids.len())).await.unwrap();
     let (slot, ..) = worker.synthesize().await;
-    let cap = Speed::MIN.chunk_cap(hello().max_chunk_samples);
+    let cap = u64::from(hello().max_chunk_samples);
     let durations = durations_for(510, cap, Speed::MIN.max_duration());
     let samples = durations.iter().map(|&d| u64::from(d)).sum::<u64>() * 600;
     assert_eq!(samples, cap);

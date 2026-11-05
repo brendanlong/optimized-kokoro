@@ -23,15 +23,15 @@ Startup compiles the model (torch.compile, Triton) into a tmpfs; the worker list
 - runs as the calling user's uid (`--userns=keep-id --user $(id -u):$(id -g)`), so the socket belongs to that user whatever the uid. Checked with uid 2000 inside: the venv, models and socket all work;
 - bounded RAM, CPU and host threads through a `systemd-run --user --scope` around podman (`KOKORO_MEMORY_MAX` default 12G, `KOKORO_CPU_QUOTA` 400%, `KOKORO_TASKS_MAX` 1024; in gVisor a batch-8 worker peaked at 5.2 GB of host RAM, and a batch-1 worker under the hostile front at 6.4 GB). runsc runs with `ignore-cgroups` (it can't manage cgroups rootless) and podman refuses runsc with `--cgroups=disabled`, so `--cgroups=split` keeps podman, conmon and the sandbox inside the scope. Checked: a 1 GB allocation under `MemoryMax=300M` kills the sandbox, and 4 busy processes do 4x less work at `CPUQuota=100%` than at 400%. `TasksMax` bounds host threads; gVisor runs guest threads on a few of those, so it doesn't cap guest thread count. GPU memory isn't covered by any of these. `KOKORO_NO_LIMITS=1` skips the scope.
 
-`--max-chunk-seconds` (default 60) is the most audio one request may produce at speed 1. It is scaled by 1/speed and announced in Hello. A longer request gets `Failed` code 3 (too long) before the decoder runs. The server maps that to an error for the whole request (HTTP 500 `processing_error`, "a chunk is outside the model worker's limits"); it doesn't split the chunk. Real 510-phoneme chunks reach about 44 s at speed 1 (`bench/max_duration.py`), so the cap only binds on pathological input.
+`--max-chunk-seconds` (default 60) is the most audio one request may produce, at any speed, and the most frames in one packed decoder row. It is announced in Hello (protocol v4; under v3 it was scaled by 1/speed). It is the knob for the worker's GPU memory: set it per host (`KOKORO_MAX_CHUNK_SECONDS` in `deploy/settings.env`). A request whose predicted audio is longer gets `Failed` code 3 (too long) before the decoder runs, and the server maps that to an error for the whole request (HTTP 500 `processing_error`, "a chunk is outside the model worker's limits"). To keep that rare, the server splits a chunk whose audio could exceed the cap into overlapping pieces before sending it: it allows 4.7 frames per phoneme id at speed 1 (the most measured on the corpus for 64 ids or more, `bench/frames_per_id.py`, was 4.59), so a request gets at most `cap frames × speed / 4.7` ids, and at most 510 (`crates/server/src/stitch.rs`). At the default 60 s and speed 1 that is 510, so nothing is split that Kokoro-FastAPI wouldn't split; at 30 s it is 255 ids at speed 1 and 63 at speed 0.25. Real 510-phoneme chunks reach about 44 s at speed 1 (`bench/max_duration.py`).
 
-The cap is set by GPU memory, and decoder batches are held to the same number of frames. Peak memory grows by about 0.37 MiB per frame (40 frames are one second of audio). Measured peaks with `bench/chunk_memory.py` on the 3060 Ti:
+Peak memory grows by about 0.35 MiB per frame (40 frames are one second of audio) on top of about 210 MB, and the CUDA context adds about 175 MB on the card. A packed row of several sentences costs about 15% more than one request of the same total frames. Measured peaks for one request with `bench/chunk_memory.py` on the 3060 Ti (fp16, compiled):
 
-| frames (seconds of audio) | 2,400 (60) | 4,800 (120) | 9,600 (240) | 12,000 (300) | 14,400 (360) |
-|---|---|---|---|---|---|
-| peak GPU memory reserved | 1.2 GB | 2.1 GB | 3.9 GB | 4.8 GB | out of memory |
+| frames (seconds of audio) | 200 (5) | 800 (20) | 1,200 (30) | 1,600 (40) | 2,400 (60) | 4,800 (120) | 9,600 (240) | 14,400 (360) |
+|---|---|---|---|---|---|---|---|---|
+| peak GPU memory reserved | 300 MB | 558 MB | 806 MB | 1.0 GB | 1.4 GB | 2.1 GB | 3.9 GB | out of memory |
 
-The 14,400-frame run had about 5 GB free next to the desktop and another worker. At 60 s, the worst case is a 240 s chunk at speed 0.25 (9,600 frames), which fits. The old 120 s default allowed 19,200 frames, which did not fit.
+(The 4,800- and 9,600-frame runs are older, from before packing; the 14,400-frame run had about 5 GB free next to the desktop and another worker.) Under v3 the default 60 s allowed 9,600 frames at speed 0.25. The default stays 60 s, which needs about 1.4 GB; 30 s keeps the worker near 1 GB on the card. MAXFRAMES_MEASURED
 
 ## Files
 
@@ -73,13 +73,13 @@ Measured on an H100 SXM 80 GB (RunPod, no gVisor) with `bench/job_scale.sh`; the
 - **Mixed lengths cost the most in practice**, with the length groups that packing has since replaced (see above; packing is not yet measured on the H100). At 25% padding, a batch of corpus chunks splits into 4-6 decoder groups, which run one after another. That holds batch 64 to 60% of the equal-length rate. (The masked and unmasked runs here used different chunks, so this job doesn't measure what the masks cost; `batch_scale.py` now reuses the chunks.)
 - **The worker over its socket gets less again**, 970x at `--max-batch 64`. Not measured, but plausible causes:
   - Closed-loop streams fill batches only partly.
-  - The worker's 9,600-frame group budget is smaller than the 75,000 used in process.
+  - The worker's 9,600-frame group budget (2,400 since protocol v4, the chunk cap at any speed) is smaller than the 75,000 used in process.
   - The next batch's text side waits for this batch's decoder.
 - **The Triton conv1d (`_conv1d_kernel`) is about half of GPU time at large batches**: 48% at batch 64, 52% at 256.
   - Against cuDNN at batch 64 (`bench/conv_peak.py`, one call of each decoder layer shape), it's 19% slower in total, 25.8 vs 21.7 ms. On the two 1024-channel layers it's 3x slower (111 vs 330-350 TFLOP/s). On the 128-channel k3 and k7 layers at 48,000 steps it's faster, but slower on k11.
   - Even matching cuDNN everywhere would save at most about 8% at saturation.
   - At 1,878x the model does about 100 TFLOP/s: 1,878 × 27.6 GMAC (the per-layer count of multiply-adds per second of audio) × 2 FLOP per multiply-add. That is about a tenth of the card's dense fp16 peak.
-- **One call is limited to 2^31 elements**, by the kernel's int32 offsets. That's about 75,000 frames in one group: 128 copies of a 250-phoneme chunk (74,880 frames) ran, 256 failed. The worker's own frame budget is 9,600.
+- **One call is limited to 2^31 elements**, by the kernel's int32 offsets. That's about 75,000 frames in one group: 128 copies of a 250-phoneme chunk (74,880 frames) ran, 256 failed. The worker's own frame budget is the chunk cap in frames, 2,400 by default.
 
 ## Kernels
 
