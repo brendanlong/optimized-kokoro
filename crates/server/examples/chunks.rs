@@ -22,15 +22,15 @@ fn main() {
     for line in std::io::stdin().lock().lines() {
         let text: String = serde_json::from_str(&line.unwrap()).unwrap();
         let groups = if soft == 0 { limit } else { soft };
-        let units: Vec<Chunk> = pipelines
-            .chunks(Lang::AmericanEnglish, &text, limit, groups)
-            .map(Result::unwrap)
-            .filter(|c| c.pause.is_none() && !c.ids.is_empty())
-            .collect();
+        let all: Vec<Chunk> =
+            pipelines.chunks(Lang::AmericanEnglish, &text, limit, groups).map(Result::unwrap).collect();
+        let speech = |c: &Chunk| c.pause.is_none() && !c.ids.is_empty();
+        let units: Vec<Chunk> = all.iter().filter(|c| speech(c)).cloned().collect();
         let packed: Vec<Chunk> = if soft == 0 {
             units.clone()
         } else {
-            pack(units.iter().cloned().map(Ok), soft, limit).map(Result::unwrap).collect()
+            // Pauses go through the packing as in the server: nothing packs across them.
+            pack(all.into_iter().map(Ok), soft, limit).map(Result::unwrap).filter(speech).collect()
         };
         let mut next = units.iter();
         let chunks: Vec<_> = packed

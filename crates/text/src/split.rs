@@ -191,25 +191,26 @@ pub fn try_sentence_chunks_grouped<P: Phonemes, E, F: FnMut(&str) -> Result<P, E
     let lens: Vec<usize> = pieces.iter().map(|p| phoneme_len(&p.phonemes)).collect();
     let mut pieces = pieces.into_iter();
     let mut out = Vec::new();
-    for range in group(&lens, groups.min(max_tokens)) {
+    for range in group(&lens, groups.min(max_tokens), max_tokens) {
         out.push(join(pieces.by_ref().take(range.len()).collect(), g2p)?);
     }
     mark_splits(&mut out);
     Ok(out)
 }
 
-/// Packs clauses of `lens` phonemes into consecutive groups of at most `max` (counting a space
-/// between clauses), as the reference does: each clause that fits joins the group before it.
-/// Then, where a group has fewer than [`MIN_CLAUSE_CHUNK`] phonemes (a divergence), it takes the
-/// next group's first clause if they fit together, else the previous group's last clause if they
-/// fit and what is left of that group is long enough (or nothing), else it joins a neighbour over
-/// the limit, which the server then stitches from pieces rendered with words around them.
-fn group(lens: &[usize], max: usize) -> Vec<std::ops::Range<usize>> {
+/// Packs clauses of `lens` phonemes into consecutive groups of at most `fill` (counting a space
+/// between clauses), as the reference does with `fill` = `max`: each clause that fits joins the
+/// group before it. Then, where a group has fewer than [`MIN_CLAUSE_CHUNK`] phonemes (a
+/// divergence), it takes the next group's first clause if they fit within `max` together, else the
+/// previous group's last clause if they fit and what is left of that group is long enough (or
+/// nothing), else it joins a whole neighbour it fits with, else it joins a neighbour over the
+/// limit, which the server then stitches from pieces rendered with words around them.
+fn group(lens: &[usize], fill: usize, max: usize) -> Vec<std::ops::Range<usize>> {
     let size = |r: std::ops::Range<usize>| lens[r.clone()].iter().sum::<usize>() + r.len().saturating_sub(1);
     let mut groups: Vec<std::ops::Range<usize>> = Vec::new();
     for i in 0..lens.len() {
         match groups.last_mut() {
-            Some(last) if size(last.start..i + 1) <= max => last.end = i + 1,
+            Some(last) if size(last.start..i + 1) <= fill => last.end = i + 1,
             _ => groups.push(i..i + 1),
         }
     }
@@ -234,6 +235,13 @@ fn group(lens: &[usize], max: usize) -> Vec<std::ops::Range<usize>> {
                 groups.remove(i - 1);
                 i -= 1;
             }
+        } else if i + 1 < groups.len() && size(g.start..groups[i + 1].end) <= max {
+            groups[i].end = groups[i + 1].end;
+            groups.remove(i + 1);
+        } else if i > 0 && size(groups[i - 1].start..g.end) <= max {
+            groups[i - 1].end = g.end;
+            groups.remove(i);
+            i -= 1;
         } else if i + 1 < groups.len() {
             groups[i].end = groups[i + 1].end;
             groups.remove(i + 1);
@@ -547,13 +555,17 @@ mod tests {
     /// The grouping by itself: greedy as the reference, then no group under the minimum.
     #[test]
     fn groups_are_greedy_then_never_short() {
-        assert_eq!(group(&[40, 40, 40], 100), [0..2, 2..3]);
-        assert_eq!(group(&[90, 3, 59], 100), [0..2, 2..3]);
-        assert_eq!(group(&[97, 3, 97], 100), [0..1, 1..3]);
-        assert_eq!(group(&[48, 48, 3, 97], 100), [0..1, 1..3, 3..4]);
-        assert_eq!(group(&[97, 3], 100), vec![0..2]);
-        assert_eq!(group(&[3; 40], 0).iter().map(|r| r.len()).collect::<Vec<_>>(), [7, 7, 7, 7, 12]);
-        assert!(group(&[], 100).is_empty());
+        assert_eq!(group(&[40, 40, 40], 100, 100), [0..2, 2..3]);
+        assert_eq!(group(&[90, 3, 59], 100, 100), [0..2, 2..3]);
+        assert_eq!(group(&[97, 3, 97], 100, 100), [0..1, 1..3]);
+        assert_eq!(group(&[48, 48, 3, 97], 100, 100), [0..1, 1..3, 3..4]);
+        assert_eq!(group(&[97, 3], 100, 100), vec![0..2]);
+        assert_eq!(group(&[3; 40], 0, 0).iter().map(|r| r.len()).collect::<Vec<_>>(), [7, 7, 7, 7, 12]);
+        assert!(group(&[], 100, 100).is_empty());
+        // Filled to a smaller size, a short group never goes past the limit when a neighbour fits.
+        assert_eq!(group(&[120, 10, 445], 130, 450), [0..2, 2..3]);
+        assert_eq!(group(&[10, 111, 24, 150], 130, 150), [0..3, 3..4]);
+        assert_eq!(group(&[10, 120, 120], 130, 450), [0..2, 2..3]);
     }
 
     #[test]

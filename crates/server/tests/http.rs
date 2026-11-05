@@ -253,9 +253,9 @@ async fn pauses_become_silence_and_options_reach_the_worker() {
     assert_eq!(audio, want);
 }
 
-/// Short sentences go to the worker as one chunk with the next until it is long enough
-/// (`pack::SOFT_MAX_PHONEMES`), their phonemes joined by a space; a long one goes alone, and a
-/// short one at the end joins the chunk before it.
+/// Sentences go to the worker packed into chunks of up to `pack::SOFT_MAX_PHONEMES`, their
+/// phonemes joined by a space: three short ones and a long one fill a chunk, the next long one
+/// starts another, and a short one at the end packs with it.
 #[tokio::test]
 async fn short_sentences_are_rendered_together() {
     let (server, mut worker) = with_scripted(|_| {}).await;
