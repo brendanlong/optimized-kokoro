@@ -263,6 +263,22 @@ t_install() {
     expect_rc 0 && check_state && expect_out "Up: the server on 127.0.0.1:18880" &&
         expect "project $(project "$(cur)")" [ "$(project "$(cur)")" = "optimized-kokoro-$(cur | tr '[:upper:]' '[:lower:]')" ]
 }
+# The worker's settings reach both its export run and the release's .env (which compose.yaml
+# reads); a value outside the range is refused before anything is built.
+t_install_worker_settings() {
+    fresh
+    printf 'KOKORO_MAX_BATCH=8\nKOKORO_MAX_CHUNK_SECONDS=30\n' >> "$D/settings.env"
+    run install.sh "${imports[@]}"
+    expect_rc 0 && check_state || return 1
+    expect "no --max-chunk-seconds 30 in the export" grep -q -- "--max-batch 8 --max-chunk-seconds 30 --export-cache" "$FAKE_LOG" &&
+        expect "not in .env" grep -qx KOKORO_MAX_CHUNK_SECONDS=30 "$D/releases/$(cur)/.env" || return 1
+    for bad in 24 61; do
+        fresh
+        echo KOKORO_MAX_CHUNK_SECONDS=$bad >> "$D/settings.env"
+        run install.sh "${imports[@]}"
+        expect_rc 1 && expect_out "KOKORO_MAX_CHUNK_SECONDS (25-60)" && expect "built anyway" [ -z "$(releases)" ] || return 1
+    done
+}
 t_install_fails() {
     fresh
     run FAIL_HEALTH=new install.sh "${imports[@]}"

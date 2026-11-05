@@ -7,7 +7,6 @@
 //! relay in `docs/plan.md`), so only our clients reach it. Without that, the connection cap and
 //! the header timeout only make such a flood expensive (see [`Config::max_connections`]).
 
-use crate::protocol::Speed;
 use crate::worker;
 use serde::Deserialize;
 use std::net::SocketAddr;
@@ -162,7 +161,7 @@ pub struct Config {
     /// the worker acknowledges them. Defaults to `max_concurrent_requests × lookahead`; the
     /// worker's hello may lower it.
     pub worker_slots: Option<u16>,
-    /// The largest per-chunk audio cap (samples at speed 1) a worker may announce in its hello.
+    /// The largest per-chunk audio cap (samples, at any speed) a worker may announce in its hello.
     /// It bounds the audio the server holds (see [`Config::audio_bound`]); a worker announcing
     /// more is refused. Default 60 s, the worker's own default since 2026-11-04 (it was 120 s).
     pub worker_max_chunk_samples: u32,
@@ -325,27 +324,25 @@ impl Config {
     }
 
     /// The most audio, in bytes, the server can hold at once when the worker's chunk cap is
-    /// `max_chunk_samples` (at most `worker_max_chunk_samples`) and every request runs at `speed`
-    /// (`Speed::MIN` for the worst case). There is no byte budget; this bound comes from counts.
+    /// `max_chunk_samples` (at most `worker_max_chunk_samples`), at any speed. There is no byte
+    /// budget; this bound comes from counts.
     ///
     /// Each speech request holds at most `lookahead + 2` chunks: `lookahead - 1` finished ones
     /// waiting in its window for an earlier one, one waiting to enter the response channel, one in
     /// the channel, and one hyper is writing (plus up to `HYPER_QUEUE_BYTES` of smaller frames
-    /// hyper queues before it stops polling the body). A chunk is at most the request's chunk cap,
-    /// or one pause. The worker connection reads one more Result at a time; audio for cancelled
+    /// hyper queues before it stops polling the body). A chunk is at most the chunk cap, or one
+    /// pause. The worker connection reads one more Result at a time; audio for cancelled
     /// requests is dropped as it arrives. Worker slots don't add to this: a slot is freed when its
     /// Result arrives, and its audio then counts against its request.
     ///
-    /// Defaults (48 requests, lookahead 3, the 60 s ceiling): a chunk is at most 2.88 MB at
-    /// speed 1, so 48 × (5 × 2.88 MB + 0.42 MB) + 2.88 MB ≈ 714 MB; at speed 0.25 with every
-    /// chunk at the cap, 11.52 MB a chunk, 48 × 58.0 MB + 11.5 MB = 2,796,374,016 bytes (2.80 GB,
-    /// 2.60 GiB). The server's other memory is about 160 MB (measured: the nine text pipelines
-    /// loaded, 32 requests in flight), so the worst case is about 2.96 GB, inside the container's
-    /// 3 GiB (`deploy/compose.yaml`, 3.22 GB) with about 260 MB to spare (52 would leave about
-    /// 30 MB, and 53 would not fit). Real sentences are around
-    /// 5 s (240 KB), so typical use holds a few MB.
-    pub fn audio_bound(&self, max_chunk_samples: u32, speed: Speed) -> usize {
-        let chunk_samples = speed.chunk_cap(max_chunk_samples).max(MAX_PAUSE_SAMPLES);
+    /// Defaults (48 requests, lookahead 3, the 60 s ceiling): a chunk is at most 2.88 MB, so
+    /// 48 × (5 × 2.88 MB + 0.42 MB) + 2.88 MB = 714,134,016 bytes. (Until protocol v4 the cap
+    /// scaled with 1/speed, and the worst case, at speed 0.25, was 2.80 GB.) The server's other
+    /// memory is about 160 MB (measured: the nine text pipelines loaded, 32 requests in flight), so
+    /// the worst case is about 875 MB, well inside the container's 3 GiB (`deploy/compose.yaml`).
+    /// Real sentences are around 5 s (240 KB), so typical use holds a few MB.
+    pub fn audio_bound(&self, max_chunk_samples: u32) -> usize {
+        let chunk_samples = u64::from(max_chunk_samples).max(MAX_PAUSE_SAMPLES);
         let chunk = usize::try_from(2 * chunk_samples).unwrap_or(usize::MAX);
         let per_stream = (self.lookahead + 2).saturating_mul(chunk).saturating_add(HYPER_QUEUE_BYTES);
         self.max_concurrent_requests.saturating_mul(per_stream).saturating_add(chunk)
@@ -420,13 +417,12 @@ mod tests {
     #[test]
     fn the_worst_case_audio_fits_the_server_container() {
         let config = Config::default();
-        let worst = config.audio_bound(config.worker_max_chunk_samples, Speed::MIN);
-        assert_eq!(worst, 2_796_374_016);
+        let worst = config.audio_bound(config.worker_max_chunk_samples);
+        assert_eq!(worst, 714_134_016);
         // deploy/compose.yaml gives the server 3 GiB; the rest of the process is about 160 MB.
         const CONTAINER: usize = 3 << 30;
         const REST: usize = 160_000_000;
         assert!(worst + REST + 200_000_000 < CONTAINER, "{worst}");
-        assert_eq!(config.audio_bound(config.worker_max_chunk_samples, Speed::NORMAL), 714_134_016);
     }
 
     #[test]

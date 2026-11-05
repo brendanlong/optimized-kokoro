@@ -59,10 +59,10 @@ class Client:
 
     def read(self) -> tuple[int, bytes]:
         (length,) = struct.unpack("<I", _recv_exact(self.sock, 4))
-        # Before Hello, the bound is Hello's; after it, a Result at the slowest speed is the largest.
+        # Before Hello, the bound is Hello's; after it, a Result with the most ids and the cap's samples.
         hello = getattr(self, "hello", None)
         bound = HELLO_MAX if hello is None else (
-            5 + 2 * (hello.max_phonemes + 2) + 2 * P.chunk_cap(hello.max_chunk_samples, P.MIN_SPEED))
+            5 + 2 * (hello.max_phonemes + 2) + 2 * hello.max_chunk_samples)
         if not 1 <= length <= bound:
             raise WorkerError(f"frame length {length}")
         body = _recv_exact(self.sock, length)
@@ -144,7 +144,7 @@ def main() -> None:
     durations, pcm = payload
     if len(durations) != len(ids) + 2 or not all(1 <= d <= P.max_duration(speed) for d in durations):
         raise WorkerError("bad durations")
-    if len(pcm) // 2 > P.chunk_cap(client.hello.max_chunk_samples, speed):
+    if len(pcm) // 2 > client.hello.max_chunk_samples:
         raise WorkerError("audio over the chunk cap")
     print(f"durations: {durations}")
     write_wav(args.out, pcm, client.hello.sample_rate)

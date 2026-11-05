@@ -91,7 +91,10 @@ enum Produced {
     End,
 }
 
-fn units(chunk: Chunk, speech: &Speech) -> Vec<Unit> {
+/// A chunk's units. `render_ids` is the most ids one worker request may have
+/// ([`stitch::max_render_ids`]): a chunk with more, or with more than `STITCH_ABOVE` phonemes, is
+/// stitched.
+fn units(chunk: Chunk, speech: &Speech, render_ids: usize) -> Vec<Unit> {
     if let Some(pause) = chunk.pause {
         return if pause > 0.0 { vec![Unit::Silence(silence(pause))] } else { Vec::new() };
     }
@@ -106,11 +109,11 @@ fn units(chunk: Chunk, speech: &Speech) -> Vec<Unit> {
         style_len: style_len.min(usize::from(u16::MAX)) as u16,
     };
     let finish = |stitch| Finish { text: text.clone(), speed: speech.speed.as_f64(), stitch };
-    if chunk.phonemes.chars().count() <= STITCH_ABOVE {
+    if chunk.phonemes.chars().count() <= STITCH_ABOVE && chunk.ids.len() <= render_ids {
         let n = chunk.ids.len();
         return vec![Unit::Speech(request(chunk.ids, n), finish(None))];
     }
-    let plan = Arc::new(stitch::Plan::new(chunk.ids));
+    let plan = Arc::new(stitch::Plan::new(chunk.ids, render_ids));
     (0..plan.pieces())
         .map(|i| {
             let ids = plan.context_ids(i).to_vec();
@@ -121,9 +124,16 @@ fn units(chunk: Chunk, speech: &Speech) -> Vec<Unit> {
 
 /// Phonemizes the request and sends its units, then how it ended. Runs of text with no G2P yet
 /// are logged once per request, as a count, since the text itself mustn't reach the logs.
-fn produce(pipeline: &dyn Pipeline, speech: &Speech, max_ids: usize, out: &mpsc::Sender<Produced>) {
+/// `max_chunk_samples` is the worker's chunk cap.
+fn produce(
+    pipeline: &dyn Pipeline,
+    speech: &Speech,
+    max_ids: usize,
+    max_chunk_samples: u32,
+    out: &mpsc::Sender<Produced>,
+) {
     let mut unread = 0usize;
-    let end = produce_units(pipeline, speech, max_ids, out, &mut unread);
+    let end = produce_units(pipeline, speech, max_ids, max_chunk_samples, out, &mut unread);
     if unread > 0 {
         crate::warn!("read {unread} runs of text with no G2P for their language or script as their name");
     }
@@ -137,15 +147,17 @@ fn produce_units(
     pipeline: &dyn Pipeline,
     speech: &Speech,
     max_ids: usize,
+    max_chunk_samples: u32,
     out: &mpsc::Sender<Produced>,
     unread: &mut usize,
 ) -> Option<Produced> {
+    let render_ids = stitch::max_render_ids(max_chunk_samples, speech.speed);
     let mut ids = 0usize;
     for chunk in pipeline.chunks(speech.lang, &speech.text) {
         let units = match chunk {
             Ok(chunk) => {
                 *unread += chunk.unread;
-                units(chunk, speech)
+                units(chunk, speech, render_ids)
             }
             Err(e) => return Some(Produced::Failed(StreamError::Pipeline(e))),
         };
@@ -270,8 +282,9 @@ pub fn start(
     let (unit_tx, unit_rx) = mpsc::channel(1);
     let permits: Arc<dyn Send + Sync> = Arc::new(permits);
     let producer_permits = permits.clone();
+    let max_chunk_samples = connection.max_chunk_samples();
     tokio::task::spawn_blocking(move || {
-        produce(pipeline.as_ref(), &speech, limits.max_ids, &unit_tx);
+        produce(pipeline.as_ref(), &speech, limits.max_ids, max_chunk_samples, &unit_tx);
         drop(producer_permits);
     });
     let drive_admission = admission.clone();
@@ -384,7 +397,7 @@ mod tests {
     fn unread_runs_are_logged_once_without_their_text() {
         let speech = Speech { lang: Lang::AmericanEnglish, text: "SECRET".into(), voice: 0, speed: Speed::NORMAL };
         let (tx, mut rx) = mpsc::channel(1);
-        let lines = crate::log::capture(|| produce(&AllUnread(3333), &speech, 60_000, &tx));
+        let lines = crate::log::capture(|| produce(&AllUnread(3333), &speech, 60_000, 1_440_000, &tx));
         assert_eq!(lines.len(), 1, "{lines:?}");
         assert!(lines[0].contains("6666") && !lines[0].contains("SECRET"), "{}", lines[0]);
         assert!(matches!(rx.try_recv(), Ok(Produced::End)));

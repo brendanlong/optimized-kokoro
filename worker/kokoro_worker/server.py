@@ -259,12 +259,12 @@ def main() -> None:
     # 1 by default. On the 3060 Ti, batching 8 gives more throughput at 16 concurrent requests (173x
     # vs 161x in gVisor) and about the same at 1; see README.md.
     parser.add_argument("--max-batch", type=int, default=1)
-    # 60 s: real 510-phoneme chunks reach about 44 s at speed 1, and the slowest speed (0.25) then
-    # allows 240 s (9,600 frames), which peaks at 3.9 GB of GPU memory; 120 s (19,200 frames) ran
-    # out of memory on an 8 GB card. A packed decoder row is held to the same frame count.
+    # 60 s (2,400 frames) at any speed, and a packed decoder row is held to the same frame count:
+    # about 1.4 GB of GPU memory reserved at most. Real 510-phoneme chunks reach about 44 s at
+    # speed 1; the front splits chunks that would exceed the cap (README.md).
     parser.add_argument("--max-chunk-seconds", type=float, default=60.0,
-                        help="longest audio one request may produce at speed 1 (scaled by 1/speed); "
-                             "real 510-phoneme chunks reach about 44 s")
+                        help="longest audio one request may produce, at any speed; sets the worker's "
+                             "peak GPU memory (README.md)")
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--fp32", action="store_true")
     parser.add_argument("--no-compile", action="store_true")

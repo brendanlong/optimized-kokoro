@@ -2,7 +2,8 @@
 # Shared by install.sh and update.sh (sourced, not run). Runs as root.
 #
 # Layout of $root (/srv/optimized-kokoro, everything root-owned):
-#   settings.env            KOKORO_GPU, KOKORO_LISTEN, KOKORO_DEMO_LISTEN, KOKORO_MAX_BATCH, KOKORO_CLOUDFLARED
+#   settings.env            KOKORO_GPU, KOKORO_LISTEN, KOKORO_DEMO_LISTEN, KOKORO_MAX_BATCH,
+#                           KOKORO_MAX_CHUNK_SECONDS, KOKORO_CLOUDFLARED
 #   models/                 what kokoro_worker.convert wrote (0644)
 #   unidic/SHA256.dic       UniDic for Japanese, named by its checksum (fetch_unidic.sh's OUT_SHA256);
 #                           each release's .env names the one it uses, so a new dictionary never
@@ -333,6 +334,9 @@ ensure_dirs() {
 #KOKORO_DEMO_LISTEN=127.0.0.1:25436
 # The worker's --max-batch (8 for many listeners: worker/README.md). The cache seed depends on it.
 #KOKORO_MAX_BATCH=1
+# The worker's --max-chunk-seconds, 25-60: the most audio one request to the worker may make, at
+# any speed. It sets the worker's peak GPU memory (deploy/README.md); the server splits longer chunks.
+#KOKORO_MAX_CHUNK_SECONDS=60
 # 1 runs a Cloudflare Tunnel to the server, with the tunnel token in secrets/cloudflared.token
 # (deploy/README.md, "Cloudflare Tunnel").
 #KOKORO_CLOUDFLARED=0
@@ -342,12 +346,13 @@ EOF
     load_settings
 }
 
-# Reads settings.env into KOKORO_GPU, KOKORO_LISTEN, KOKORO_DEMO_LISTEN, KOKORO_MAX_BATCH and
-# KOKORO_CLOUDFLARED (with
-# defaults); anything else in it is an error, not dropped.
+# Reads settings.env into KOKORO_GPU, KOKORO_LISTEN, KOKORO_DEMO_LISTEN, KOKORO_MAX_BATCH,
+# KOKORO_MAX_CHUNK_SECONDS and KOKORO_CLOUDFLARED (with defaults); anything else in it is an
+# error, not dropped.
 load_settings() {
     local line n=0 key value
-    KOKORO_GPU=0 KOKORO_LISTEN=127.0.0.1:8880 KOKORO_DEMO_LISTEN=127.0.0.1:25436 KOKORO_MAX_BATCH=1 KOKORO_CLOUDFLARED=0
+    KOKORO_GPU=0 KOKORO_LISTEN=127.0.0.1:8880 KOKORO_DEMO_LISTEN=127.0.0.1:25436 KOKORO_MAX_BATCH=1 KOKORO_MAX_CHUNK_SECONDS=60
+    KOKORO_CLOUDFLARED=0
     while IFS= read -r line || [ -n "$line" ]; do
         n=$((n + 1))
         [[ $line =~ ^[[:space:]]*(#.*)?$ ]] && continue
@@ -359,9 +364,12 @@ load_settings() {
         KOKORO_LISTEN | KOKORO_DEMO_LISTEN) valid_address "$value" ;;
         # The worker's own range.
         KOKORO_MAX_BATCH) [[ $value =~ ^[0-9]{1,2}$ ]] && ((10#$value >= 1 && 10#$value <= 64)) ;;
+        # Up to the server's ceiling, worker_max_chunk_samples (60 s). Below 25 s, requests at speed
+        # 0.25 would be split into windows of fewer than 32 ids (stitch.rs max_render_ids).
+        KOKORO_MAX_CHUNK_SECONDS) [[ $value =~ ^[0-9]{1,2}$ ]] && ((10#$value >= 25 && 10#$value <= 60)) ;;
         KOKORO_CLOUDFLARED) [[ $value =~ ^[01]$ ]] ;;
         *) false ;;
-        esac || die "$root/settings.env line $n isn't a valid KOKORO_GPU (a CDI GPU name, not all), KOKORO_LISTEN or KOKORO_DEMO_LISTEN (IPv4:port), KOKORO_MAX_BATCH (1-64) or KOKORO_CLOUDFLARED (0 or 1): $line"
+        esac || die "$root/settings.env line $n isn't a valid KOKORO_GPU (a CDI GPU name, not all), KOKORO_LISTEN or KOKORO_DEMO_LISTEN (IPv4:port), KOKORO_MAX_BATCH (1-64), KOKORO_MAX_CHUNK_SECONDS (25-60) or KOKORO_CLOUDFLARED (0 or 1): $line"
         printf -v "$key" %s "$value"
     done < "$root/settings.env"
     [ "$(port_of "$KOKORO_LISTEN")" != "$(port_of "$KOKORO_DEMO_LISTEN")" ] || die "KOKORO_LISTEN and KOKORO_DEMO_LISTEN use the same port"
@@ -384,6 +392,7 @@ settings_env() {
     echo "KOKORO_LISTEN=$KOKORO_LISTEN"
     echo "KOKORO_DEMO_LISTEN=$KOKORO_DEMO_LISTEN"
     echo "KOKORO_MAX_BATCH=$KOKORO_MAX_BATCH"
+    echo "KOKORO_MAX_CHUNK_SECONDS=$KOKORO_MAX_CHUNK_SECONDS"
     [ "$KOKORO_CLOUDFLARED" != 1 ] || echo "COMPOSE_PROFILES=cloudflared"
 }
 
@@ -669,7 +678,7 @@ stage_release() {
     gpu_watch_start export
     compose_rel "$rel" run --rm --no-deps -T -e KOKORO_CACHE_SEED= \
         -v "$dir/cache-seed:/cache-export" worker \
-        --max-batch "$KOKORO_MAX_BATCH" --export-cache /cache-export
+        --max-batch "$KOKORO_MAX_BATCH" --max-chunk-seconds "$KOKORO_MAX_CHUNK_SECONDS" --export-cache /cache-export
     gpu_watch_stop
     peak=$(gpu_peak export)
     gpu_need=

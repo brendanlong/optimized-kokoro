@@ -7,8 +7,8 @@ use common::*;
 use kokoro_server::StubPipeline;
 use kokoro_server::config::ApiKey;
 use kokoro_server::pipeline::{Chunk, Lang, Pipeline, PipelineError};
-use kokoro_server::protocol::worker_side;
-use kokoro_server::stitch::Plan;
+use kokoro_server::protocol::{Speed, worker_side};
+use kokoro_server::stitch::{Plan, max_render_ids};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -175,7 +175,7 @@ async fn no_frames(worker: &mut ScriptedWorker) -> Option<Event> {
 async fn phoneme_ids_per_request_are_capped_counting_stitched_context() {
     let long = (0..120).map(|i| format!("word{}", char::from(b'a' + (i % 26) as u8))).collect::<Vec<_>>().join(" ");
     let chunk = stub_chunks(&long).remove(0);
-    let plan = Plan::new(chunk.ids.clone());
+    let plan = Plan::new(chunk.ids.clone(), max_render_ids(hello().max_chunk_samples, Speed::NORMAL));
     let stitched: usize = (0..plan.pieces()).map(|i| plan.context_ids(i).len()).sum();
     assert!(plan.pieces() > 1 && stitched > chunk.ids.len());
 

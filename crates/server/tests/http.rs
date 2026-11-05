@@ -4,7 +4,8 @@ use common::*;
 use kokoro_server::StubPipeline;
 use kokoro_server::pipeline::{Chunk, Lang, Pipeline, PipelineError};
 use kokoro_server::protocol::worker_side::{self, FrontFrame};
-use kokoro_server::protocol::{FailCode, Priority};
+use kokoro_server::protocol::{FailCode, Hello, Priority, Speed};
+use kokoro_server::stitch::{Plan, max_render_ids};
 use serde_json::json;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
@@ -478,6 +479,47 @@ async fn long_clauses_are_stitched_from_overlapping_pieces() {
     assert!(!audio.is_empty());
     assert!(pieces[0].len() < chunk.ids.len() && pieces[1].ends_with(&chunk.ids[chunk.ids.len() - 20..]));
     assert_eq!(worker.style_lens, [chunk.ids.len().min(510) as u16; 2]);
+}
+
+/// Below 450 phonemes, a chunk is still stitched when its audio could exceed the worker's chunk
+/// cap: a 30 s cap holds 270 ids at speed 1 and 45 at speed 0.25.
+#[tokio::test]
+async fn chunks_that_could_exceed_the_cap_are_stitched() {
+    let text = (0..50).map(|i| format!("word{}", char::from(b'a' + (i % 26) as u8))).collect::<Vec<_>>().join(" ");
+    let chunk = stub_chunks(&text).remove(0);
+    assert!(chunk.phonemes.chars().count() <= 450 && chunk.ids.len() > 270, "{}", chunk.ids.len());
+    for (cap, speed, most) in [(1_440_000, 100, None), (720_000, 100, Some(270)), (720_000, 25, Some(45))] {
+        let speed = Speed::from_hundredths(speed).unwrap();
+        let expected = match most {
+            None => vec![chunk.ids.clone()],
+            Some(most) => {
+                assert_eq!(max_render_ids(cap, speed), most);
+                let plan = Plan::new(chunk.ids.clone(), most);
+                (0..plan.pieces()).map(|i| plan.context_ids(i).to_vec()).collect()
+            }
+        };
+        let server = start(|_| {}, Arc::new(StubPipeline)).await;
+        let mut worker =
+            ScriptedWorker::listen(&server.socket, worker_side::hello(&Hello { max_chunk_samples: cap, ..hello() }));
+        server.worker.connected().await;
+        let mut body = pcm(&text);
+        body["speed"] = speed.as_f64().into();
+        let client = tokio::spawn(speak(server.addr, body));
+        let mut pieces = Vec::new();
+        while pieces.len() < expected.len() {
+            let (id, _, _, _, ids) = worker.synthesize().await;
+            worker.send(respond(id, &ids));
+            pieces.push(ids);
+        }
+        let response = client.await.unwrap();
+        assert_eq!(response.status(), 200);
+        assert!(!body_bytes(response).await.unwrap().is_empty());
+        assert_eq!(pieces, expected);
+        if let Some(most) = most {
+            assert!(pieces.len() > 1 && pieces.iter().all(|p| p.len() <= most), "{} pieces", pieces.len());
+            assert!(worker.style_lens.iter().all(|&s| usize::from(s) == chunk.ids.len()));
+        }
+    }
 }
 
 #[tokio::test]

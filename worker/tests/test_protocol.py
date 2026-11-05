@@ -122,5 +122,3 @@ def test_result_frame():
 
 def test_integer_bounds():
     assert [P.max_duration(s) for s in (25, 30, 100, 400)] == [200, 167, 50, 13]
-    assert P.chunk_cap(2_880_000, 25) == 11_520_000
-    assert P.chunk_cap(1, 30) == 4

@@ -41,7 +41,7 @@ services:
     runtime: runsc-kokoro
     network_mode: none
     # The same flags must go to the export run (lib.sh), or the cache seed won't match.
-    command: ["--max-batch", "${KOKORO_MAX_BATCH:?}"]
+    command: ["--max-batch", "${KOKORO_MAX_BATCH:?}", "--max-chunk-seconds", "${KOKORO_MAX_CHUNK_SECONDS:?}"]
     environment:
       KOKORO_CACHE_SEED: /cache-seed
       # The device comes from CDI; "void" keeps runsc off the legacy nvidia-container-cli path.

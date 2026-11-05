@@ -37,21 +37,22 @@ def pct(xs, p):
     return xs[min(len(xs) - 1, int(p / 100 * len(xs)))]
 
 
-def run(client: Client, chunks, concurrency: int, n_requests: int, voice: int, offset: int = 0):
+def run(client: Client, chunks, concurrency: int, n_requests: int, voice: int, offset: int = 0, speed: int = 100):
     streams = [(offset + k * len(chunks) // concurrency) % len(chunks) for k in range(concurrency)]
     # Each stream has one request out at a time, so its index is its slot.
     sent_at = {}
     sent = 0
-    latencies, audio_s = [], 0.0
+    latencies, audio_s, longest_s = [], 0.0, 0.0
     failures = 0
 
     def send(stream: int):
         nonlocal sent
-        ids = chunks[streams[stream] % len(chunks)][1]
+        chunk = chunks[streams[stream] % len(chunks)]
         streams[stream] += 1
         sent += 1
         sent_at[stream] = time.monotonic()
-        client.send(P.synthesize(stream, ids, voice))
+        # (phonemes, ids), or (phonemes, ids, style_len) for a piece of a stitched chunk
+        client.send(P.synthesize(stream, chunk[1], voice, speed, style_len=chunk[2] if len(chunk) > 2 else None))
 
     start = time.monotonic()
     for k in range(min(concurrency, n_requests)):
@@ -65,6 +66,7 @@ def run(client: Client, chunks, concurrency: int, n_requests: int, voice: int, o
         if kind == "result":
             latencies.append(latency)
             audio_s += len(payload[1]) / 2 / P.SAMPLE_RATE
+            longest_s = max(longest_s, len(payload[1]) / 2 / P.SAMPLE_RATE)
         else:
             failures += 1
         if sent < n_requests:
@@ -78,6 +80,7 @@ def run(client: Client, chunks, concurrency: int, n_requests: int, voice: int, o
         "wall_s": round(wall, 3),
         "audio_s": round(audio_s, 2),
         "x_realtime": round(audio_s / wall, 1),
+        "longest_s": round(longest_s, 2),
         "latency_ms": {
             "p50": round(1000 * statistics.median(latencies), 1),
             "p90": round(1000 * pct(latencies, 90), 1),

@@ -1,4 +1,4 @@
-//! Worker protocol v3 frames (`docs/worker-protocol.md`): length-prefixed, little-endian, no floats.
+//! Worker protocol v4 frames (`docs/worker-protocol.md`): length-prefixed, little-endian, no floats.
 //!
 //! Synthesize is `u8 type, u16 slot, u8 priority, u8 waiting, u16 speed (hundredths),
 //! u16 voice_index, u16 n_ids, u16 style_len, n_ids × u8 id`. The style vector is row `style_len - 1` of the voice
@@ -6,7 +6,7 @@
 //! 510) for each piece of a stitched one.
 //!
 //! What the front accepts from the worker, beyond the frame layouts:
-//! - Hello comes first and only once, with version 3, `2 <= vocab_size <= 256`,
+//! - Hello comes first and only once, with version 4, `2 <= vocab_size <= 256`,
 //!   `max_phonemes == 510`, `max_batch >= 1`, `slots >= 1`, `sample_rate == 24000`,
 //!   `max_chunk_samples >= 1` and at most the configured ceiling (`worker_max_chunk_samples`), and
 //!   1 or more distinct voice names of 1 to 64 bytes of `[a-z0-9_]`.
@@ -14,7 +14,7 @@
 //! - Result: exactly `n_ids + 2` durations, each from 1 to `ceil(50 / speed)` (Kokoro's `max_dur`
 //!   is 50 sigmoid bins, divided by speed), then exactly `600 × Σ durations` samples (Kokoro v1.0
 //!   renders 600 samples per duration unit; measured exact on the real model), no more than the
-//!   request's chunk cap, `ceil(max_chunk_samples / speed)` (see [`Speed::chunk_cap`]).
+//!   chunk cap, `max_chunk_samples`, at any speed.
 //! - Failed: code 1 (cancelled) only after the front sent Cancel for that slot, 2 (internal
 //!   error), or 3 (too long: the predicted audio exceeds the chunk cap).
 //! - Each length prefix is checked against its frame type's bound before anything is allocated:
@@ -29,7 +29,7 @@ use std::io;
 use tokio::io::{AsyncRead, AsyncReadExt};
 
 pub const MAGIC: [u8; 4] = *b"KOKW";
-pub const VERSION: u16 = 3;
+pub const VERSION: u16 = 4;
 pub const MAX_PHONEMES: u16 = 510;
 pub const SAMPLE_RATE: u32 = 24_000;
 /// Kokoro v1.0 renders 600 samples per predicted duration unit, so a Result has exactly
@@ -89,12 +89,6 @@ impl Speed {
     pub fn max_duration(self) -> u16 {
         (DURATION_BINS * 100).div_ceil(u32::from(self.0)) as u16
     }
-
-    /// The most samples the worker produces for one chunk at this speed:
-    /// `ceil(max_chunk_samples / speed)`, in integers as the worker computes it.
-    pub fn chunk_cap(self, max_chunk_samples: u32) -> u64 {
-        (u64::from(max_chunk_samples) * 100).div_ceil(u64::from(self.0))
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -104,7 +98,7 @@ pub struct Hello {
     pub max_batch: u16,
     /// Requests the worker accepts at once; each is named by a slot index below this.
     pub slots: u16,
-    /// The worker's output cap for one chunk at speed 1, in samples.
+    /// The worker's output cap for one chunk, in samples, at any speed.
     pub max_chunk_samples: u32,
     pub voices: Vec<String>,
 }
@@ -302,7 +296,7 @@ async fn read_result<R: AsyncRead + Unpin>(
     let slot = reader.read_u16_le().await?;
     let Some(e) = expected(slot) else { return violation(format!("result for slot {slot}, which is free")) };
     let n = usize::from(e.n_ids) + 2;
-    let max_samples = e.speed.chunk_cap(e.max_chunk_samples);
+    let max_samples = u64::from(e.max_chunk_samples);
     let header = RESULT_HEADER + 2 * n;
     if len < header || (len - header) as u64 > 2 * max_samples {
         return violation(format!("slot {slot}: a result of {len} bytes for {} ids", e.n_ids));
@@ -561,6 +555,9 @@ mod tests {
         assert!(read(&long, Some(expect(1))).await.is_err());
         let capped = Expected { max_chunk_samples: 600 * 3 - 1, ..expect(1) };
         assert!(read(&ok(&[1, 1, 1]), Some(capped)).await.is_err(), "over the chunk cap");
+        let slow_cap = Expected { speed: Speed::MIN, max_chunk_samples: 600 * 3, ..expect(1) };
+        assert!(read(&ok(&[1, 1, 1]), Some(slow_cap)).await.is_ok());
+        assert!(read(&ok(&[1, 2, 1]), Some(slow_cap)).await.is_err(), "the cap doesn't grow at slow speeds");
     }
 
     #[tokio::test]
@@ -632,7 +629,5 @@ mod tests {
         assert_eq!(Speed::NORMAL.max_duration(), 50);
         assert_eq!(Speed::MAX.max_duration(), 13);
         assert_eq!(Speed::from_hundredths(30).unwrap().max_duration(), 167);
-        assert_eq!(Speed::MIN.chunk_cap(2_880_000), 11_520_000);
-        assert_eq!(Speed::from_hundredths(30).unwrap().chunk_cap(1), 4);
     }
 }

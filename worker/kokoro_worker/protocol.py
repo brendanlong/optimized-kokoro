@@ -1,4 +1,4 @@
-"""Worker protocol v3 framing and validation (docs/worker-protocol.md). No torch here.
+"""Worker protocol v4 framing and validation (docs/worker-protocol.md). No torch here.
 
 Every check the spec asks for happens in `parse_request`, except whether a slot is busy, which
 the queue knows; anything rejected is a ProtocolError, and the caller closes the connection.
@@ -7,7 +7,7 @@ the queue knows; anything rejected is a ProtocolError, and the caller closes the
 import struct
 from dataclasses import dataclass
 
-VERSION = 3
+VERSION = 4
 MAGIC = b"KOKW"
 MAX_PHONEMES = 510
 MIN_SPEED, MAX_SPEED = 25, 400  # hundredths
@@ -92,11 +92,6 @@ def frame(body: bytes) -> bytes:
 def max_duration(speed: int) -> int:
     """The longest duration one id can get at `speed` hundredths: ceil(50 / speed)."""
     return -(-DURATION_BINS * 100 // speed)
-
-
-def chunk_cap(max_chunk_samples: int, speed: int) -> int:
-    """Most samples one request at `speed` hundredths may produce: ceil(max_chunk_samples / speed)."""
-    return -(-max_chunk_samples * 100 // speed)
 
 
 def hello(vocab_size: int, max_phonemes: int, max_batch: int, slots: int, max_chunk_samples: int,

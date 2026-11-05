@@ -31,7 +31,7 @@ import torch.nn.functional as F
 from safetensors.torch import load_file
 
 from . import kernels, masked
-from .protocol import MIN_SPEED, chunk_cap, max_duration
+from .protocol import max_duration
 
 log = logging.getLogger(__name__)
 
@@ -152,9 +152,9 @@ class Synth:
         self.device = torch.device(device)
         self.half = half and self.device.type == "cuda"
         self.max_chunk_samples = max_chunk_samples
-        # A packed row holds at most as many frames as the longest single chunk may have (the cap at
-        # the slowest speed), so a batch never needs more memory than one request can.
-        self.frame_budget = frame_budget or chunk_cap(max_chunk_samples, MIN_SPEED) // SAMPLES_PER_FRAME
+        # A packed row holds at most as many frames as one chunk may have, so a batch never needs
+        # more memory than the longest single request.
+        self.frame_budget = frame_budget or max_chunk_samples // SAMPLES_PER_FRAME
 
         model = build_kmodel(config)
         model.load_state_dict(load_file(os.path.join(model_dir, "model.safetensors")), strict=True)
@@ -284,8 +284,7 @@ class Synth:
         durations = [pred_cpu[i, : lengths[i]].tolist() for i in range(n)]
 
         # The cap is checked before the decoder runs, so an over-long request costs only its text side.
-        fits = [frames[i] * SAMPLES_PER_FRAME <= chunk_cap(self.max_chunk_samples, r.speed)
-                for i, r in enumerate(requests)]
+        fits = [f * SAMPLES_PER_FRAME <= self.max_chunk_samples for f in frames]
         ok = [i for i in range(n) if fits[i]]
         too_long = [i for i in range(n) if not fits[i]]
         if too_long:

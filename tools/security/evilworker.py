@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Hostile worker. Usage: evilworker.py SOCKET MODE [seconds-to-run]. Logs events to stderr."""
+"""Hostile worker, protocol v4. Usage: evilworker.py SOCKET MODE [seconds-to-run]. Logs events to stderr."""
 import os, socket, struct, sys, threading, time, random
 
 SOCK, MODE = sys.argv[1], sys.argv[2]
@@ -7,7 +7,7 @@ RUN = float(sys.argv[3]) if len(sys.argv) > 3 else 20
 VOICES = ["af_heart", "af_bella", "bf_emma"]
 
 
-def hello(slots=64, cap=2880000, voices=VOICES, version=2, vocab=178, maxph=510, batch=4, rate=24000, magic=b"KOKW", n_voices=None):
+def hello(slots=64, cap=1440000, voices=VOICES, version=4, vocab=178, maxph=510, batch=4, rate=24000, magic=b"KOKW", n_voices=None):
     body = b"\x01" + magic + struct.pack("<HHHHHIIH", version, vocab, maxph, batch, slots, rate, cap,
                                          len(voices) if n_voices is None else n_voices)
     parts = []
@@ -49,8 +49,8 @@ def read_frames(conn, on_frame):
                 break
             body, buf = buf[4:4 + ln], buf[4 + ln:]
             if body[0] == 0x10:
-                slot, prio, speed, voice, n_ids, style = struct.unpack("<HBHHHH", body[1:12])
-                on_frame(("syn", slot, speed, n_ids, body[12:]))
+                slot, prio, waiting, speed, voice, n_ids, style = struct.unpack("<HBBHHHH", body[1:13])
+                on_frame(("syn", slot, speed, n_ids, body[13:]))
             elif body[0] == 0x11:
                 on_frame(("cancel", struct.unpack("<H", body[1:3])[0]))
 
@@ -68,7 +68,7 @@ def serve(conn):
     # ---------- hello abuse ----------
     hellos = {
         "slots0": lambda: hello(slots=0), "slots65535": lambda: hello(slots=65535),
-        "cap_over": lambda: hello(cap=2880001), "cap0": lambda: hello(cap=0), "cap_max": lambda: hello(cap=0xFFFFFFFF),
+        "cap_over": lambda: hello(cap=1440001), "cap0": lambda: hello(cap=0), "cap_max": lambda: hello(cap=0xFFFFFFFF),
         "vocab1": lambda: hello(vocab=1), "vocab257": lambda: hello(vocab=257), "voices0": lambda: hello(voices=[]),
         "voices_dup": lambda: hello(voices=["af_a", "af_a"]), "voice_bad": lambda: hello(voices=["af_A"]),
         "voice_long": lambda: hello(voices=["a" * 65]), "voice_empty": lambda: hello(voices=[""]),
@@ -108,7 +108,7 @@ def serve(conn):
     if m == "hello_twice":
         conn.sendall(hello() + hello()); time.sleep(RUN); return
 
-    CAP = int(os.environ.get("EVIL_CAP", "2880000"))
+    CAP = int(os.environ.get("EVIL_CAP", "1440000"))
     conn.sendall(hello(slots=int(os.environ.get("EVIL_SLOTS", "64")), cap=CAP))
     lock = threading.Lock()
     busy = {}
@@ -149,8 +149,8 @@ def serve(conn):
         elif m == "cap_exceed":
             send(result(slot, [maxdur(speed)] * (n + 2)))
         elif m == "fill_cap":
-            cap = -(-CAP * 100 // speed)
-            per = max(1, min(maxdur(speed), cap // (600 * (n + 2))))
+            # v4: the cap is the same at every speed.
+            per = max(1, min(maxdur(speed), CAP // (600 * (n + 2))))
             send(result(slot, [per] * (n + 2)))
         elif m == "cancel_then_result":
             def t():
