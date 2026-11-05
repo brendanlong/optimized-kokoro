@@ -85,7 +85,7 @@ fn reference_dumps() {
     let mut chunk_stage = Stage::new("chunks");
     let mut call_stage = Stage::new("G2P calls");
     let options = Options::default();
-    let mut changed = 0;
+    let (mut changed, mut regrouped, mut regrouped_calls) = (0, 0, 0);
     for record in &records {
         let actual = split::normalize(&join_lines(&record.text), &record.lang, &options);
         if actual != record.normalized {
@@ -108,11 +108,32 @@ fn reference_dumps() {
         let actual = chunks(record, &mut calls);
         let expected: Vec<(String, String)> =
             record.chunks.iter().map(|c| (c.text.clone(), c.phonemes.clone())).collect();
+        // Short clauses are regrouped on purpose (docs/divergences.md), which also changes the
+        // G2P calls of the regrouped sentences.
+        if actual != expected && kokoro_reference::clause_regrouping(&expected, &actual).is_some() {
+            regrouped += 1;
+            continue;
+        }
         chunk_stage.check(&record.id, &expected, &actual);
         let expected: Vec<String> = record.calls.iter().map(|c| c.input.clone()).collect();
+        // A sentence cut at clauses reads all its clauses before its groups, where the reference reads
+        // each group as soon as the clause after it doesn't fit (docs/divergences.md): the calls
+        // come in another order. Its whole-sentence calls must still match.
+        let cut = record.chunks.iter().any(|c| c.text.trim_end().ends_with([',', ';', ':', '，', '、', '；', '：']));
+        if cut && expected != calls {
+            let whole = |calls: &[String]| -> Vec<String> {
+                calls.iter().filter(|c| record.sentences.iter().any(|s| s.trim() == c.as_str())).cloned().collect()
+            };
+            call_stage.check(&record.id, &whole(&expected), &whole(&calls));
+            regrouped_calls += 1;
+            continue;
+        }
         call_stage.check(&record.id, &expected, &calls);
     }
-    println!("{} records; {changed} normalized differently by the number reader and symbol pass", records.len());
+    println!(
+        "{} records; {changed} normalized differently by the number reader and symbol pass, {regrouped} with short clauses regrouped, {regrouped_calls} with clause-cut sentences whose G2P calls come in another order",
+        records.len()
+    );
     let ok = [&normalized, &sentence_stage, &chunk_stage, &call_stage].map(Stage::report);
     assert!(ok.iter().all(|&ok| ok), "mismatches against the reference");
 }

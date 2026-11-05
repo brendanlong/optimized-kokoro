@@ -2,7 +2,8 @@
 # gpuc job: the clause-split listening comparison (bench/clause_joins.py). A worker at
 # --max-chunk-seconds 30 serves each server binary in SERVERS in turn (bench/bin/kokoro-server-LABEL,
 # with espeak-ng-data in bench/bin/ and ESPEAK_DATA_LINK the path the binaries were built with);
-# then a worker at 60 s renders every sentence whole. Results in results/clause/.
+# then a worker at 60 s renders every sentence whole, and short clauses alone and in context. Results in
+# results/clause/.
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit
 mkdir -p results/clause
@@ -50,6 +51,8 @@ wait $WORKER_PID 2> /dev/null
 
 start_worker cap60 60
 "$PY" bench/clause_joins.py worker /tmp/sock-cap60/worker.sock bench/clause/sentences.json results/clause
+# Clauses alone vs in their sentence (bench/clause_short.py), for the minimum chunk size.
+"$PY" bench/clause_short.py /tmp/sock-cap60/worker.sock bench/clause/short.json results/clause | tail -n 1
 kill $WORKER_PID
 wait $WORKER_PID 2> /dev/null
 echo "done"

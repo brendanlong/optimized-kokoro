@@ -123,12 +123,67 @@ pub fn without_language_flags(phonemes: &str) -> Option<String> {
     FLAG.is_match(phonemes).then(|| FLAG.replace_all(phonemes, "").into_owned())
 }
 
+/// Whether `ours` differs from the reference's chunks of a record only in how sentences cut at
+/// clauses are grouped: the port never lets a clause too short to stand alone make a chunk of its
+/// own (docs/divergences.md, "Text: short clauses"), so such a sentence's clauses may be packed
+/// differently and read again in other groups. Chunks are (text, phonemes). Each sentence cut at
+/// clauses is a run of chunks whose texts end at clause punctuation, then one that doesn't: every
+/// other chunk must be equal, and a regrouped run must hold the same clauses, in order. Returns
+/// how many runs were regrouped, or `None` if anything else differs.
+pub fn clause_regrouping(reference: &[(String, String)], ours: &[(String, String)]) -> Option<usize> {
+    fn runs(chunks: &[(String, String)]) -> Vec<&[(String, String)]> {
+        let mut out = Vec::new();
+        let mut start = 0;
+        for (i, (text, _)) in chunks.iter().enumerate() {
+            if !text.trim_end().ends_with([',', ';', ':', '，', '、', '；', '：']) || i + 1 == chunks.len() {
+                out.push(&chunks[start..=i]);
+                start = i + 1;
+            }
+        }
+        out
+    }
+    let text = |run: &[(String, String)]| run.iter().map(|c| c.0.trim()).collect::<Vec<_>>().join(" ");
+    let (a, b) = (runs(reference), runs(ours));
+    if a.len() != b.len() {
+        return None;
+    }
+    let mut regrouped = 0;
+    for (a, b) in a.iter().zip(&b) {
+        if a == b {
+            continue;
+        }
+        let same_groups = a.len() == b.len() && a.iter().zip(*b).all(|(x, y)| x.0 == y.0);
+        if same_groups || text(a) != text(b) {
+            return None;
+        }
+        regrouped += 1;
+    }
+    Some(regrouped)
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
     fn language_flags() {
         assert_eq!(super::without_language_flags("hˈɪndi(hi)həlˈʌnt(An-us) (ˈɛɹ"), Some("hˈɪndihəlˈʌnt (ˈɛɹ".into()));
         assert_eq!(super::without_language_flags("(ʧˌInˈiz) (a)"), None);
+    }
+
+    #[test]
+    fn clause_regrouping_only_explains_regrouped_clauses() {
+        let c = |t: &str| (t.to_owned(), format!("<{t}>"));
+        let reference = [c("One."), c("aaa, he,"), c("bbb."), c("Two.")];
+        let regrouped = [c("One."), c("aaa,"), c("he, bbb."), c("Two.")];
+        assert_eq!(super::clause_regrouping(&reference, &regrouped), Some(1));
+        assert_eq!(super::clause_regrouping(&reference, &reference), Some(0));
+        let merged = [c("One."), c("aaa, he, bbb."), c("Two.")];
+        assert_eq!(super::clause_regrouping(&reference, &merged), Some(1));
+        let other_word = [c("One."), c("aaa,"), c("she, bbb."), c("Two.")];
+        assert_eq!(super::clause_regrouping(&reference, &other_word), None);
+        let other_sentence = [c("Uno."), c("aaa,"), c("he, bbb."), c("Two.")];
+        assert_eq!(super::clause_regrouping(&reference, &other_sentence), None);
+        let phonemes = [c("One."), c("aaa, he,"), ("bbb.".into(), "x".into()), c("Two.")];
+        assert_eq!(super::clause_regrouping(&reference, &phonemes), None);
     }
 
     #[test]

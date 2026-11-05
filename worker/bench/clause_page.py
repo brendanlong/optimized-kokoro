@@ -1,6 +1,6 @@
 """The clause-split listening page, from bench/clause_joins.py's renders (job_clause_joins.sh).
 
-    python bench/clause_page.py SENTENCES RESULTS_DIR PHONEMIZE OUT_DIR
+    python bench/clause_page.py SENTENCES RESULTS_DIR PHONEMIZE OUT_DIR [SHORT_INPUTS]
 
 PHONEMIZE is the pipeline's phonemize example (`cargo build --release -p kokoro-pipeline --example
 phonemize`), used to recompute each variant's chunks so every join between two server sends is
@@ -9,6 +9,10 @@ OUT_DIR/audio/*.mp3 (ffmpeg) and OUT_DIR/pauses.json.
 
 A pause is the run of 5 ms windows quieter than -45 dBFS (the trimming threshold) around a point:
 a join between two sends, or for the whole render the middle of a clause mark's frames.
+
+With SHORT_INPUTS (bench/clause/short.json, rendered by bench/clause_short.py in the same job), the page
+also has short clauses alone against the same words in their sentence, and how much longer a clause
+alone takes by its length (bench/clause_short_analysis.py).
 """
 
 import html
@@ -158,7 +162,41 @@ def main():
         entry["variants"]["whole"] = {"seconds": round(len(trimmed) / RATE, 2)}
         data.append(entry)
     json.dump(data, open(f"{out}/pauses.json", "w"), indent=1)
-    write_body(data, f"{out}/body.html")
+    short = shorts(sys.argv[5], results, out) if len(sys.argv) > 5 else None
+    write_body(data, f"{out}/body.html", short)
+
+
+def shorts(inputs, results, out):
+    """Examples of clauses alone vs in their sentence, and the length ratio by clause length."""
+    import clause_short_analysis as csa
+
+    rows = json.load(open(inputs, encoding="utf-8"))
+    ratios = []
+    examples = []
+    for i, row in enumerate(rows):
+        r = np.load(f"{results}/short-{i}.npz")
+        for k, c in enumerate(row["clauses"]):
+            n = len(c["ids"])
+            a, b = csa.span(r["whole_dur"], c["offset"], n)
+            pa, pb = csa.span(r[f"own_dur_{k}"], 0, n)
+            ra, rb = csa.span(r[f"row_dur_{k}"], 0, n)
+            ratios.append((n, (pb - pa) / max(b - a, 1), (rb - ra) / max(b - a, 1)))
+            pick = c["text"] == "he," or (i < 10 and n < 12) or (i < 10 and 40 <= n <= 45 and len(examples) < 9)
+            if pick and len(examples) < 10:
+                name = f"short-{i}-{k}"
+                alone = r[f"own_{k}"]
+                mp3(alone, f"{out}/audio/{name}-alone.mp3")
+                mp3(r["whole"][max(0, a - 2400):b + 2400], f"{out}/audio/{name}-in.mp3")
+                examples.append({"name": name, "text": c["text"], "ids": n, "sentence": row["text"],
+                                 "alone_s": round((pb - pa) / RATE, 2), "in_s": round((b - a) / RATE, 2)})
+    table = []
+    for lo, hi in [(1, 5), (6, 10), (11, 15), (16, 20), (21, 24), (25, 30), (31, 40), (41, 60), (61, 510)]:
+        xs = [x for n, x, _ in ratios if lo <= n <= hi]
+        ys = [y for n, _, y in ratios if lo <= n <= hi]
+        if xs:
+            table.append((f"{lo}–{hi}", len(xs), float(np.median(xs)), float(np.percentile(xs, 90)),
+                          float(np.median(ys))))
+    return {"examples": examples, "table": table, "clauses": len(ratios), "sentences": len(rows)}
 
 
 def stats(xs):
@@ -185,7 +223,34 @@ def summary(data, h):
         h.append(f"<tr><td>{what}</td><td>{stats(xs)}</td></tr>")
 
 
-def write_body(data, path):
+def write_short(short, h):
+    h.append("<h2>Short clauses alone</h2>")
+    h.append(f"<p>Each clause of {short['sentences']} Gutenberg sentences ({short['clauses']} clauses, the sentences above "
+             "first) rendered by itself, as a chunk is sent (its own style row), against the same ids inside the "
+             "whole sentence. Kokoro drawls a short input: the frames of its ids last much longer alone. From 25 "
+             "phonemes on a clause alone takes about as long as in its sentence, so no chunk cut from a sentence is "
+             "now shorter than that (<code>MIN_CLAUSE_CHUNK</code>). The last column renders the clause with the whole "
+             "sentence's style row instead, which doesn't help.</p>")
+    h.append("<table><thead><tr><th>Clause ids</th><th>Clauses</th><th>Alone ÷ in sentence, median</th>"
+             "<th>90th percentile</th><th>With the sentence's style row, median</th></tr></thead><tbody>")
+    for rng, n, med, p90, row in short["table"]:
+        h.append(f"<tr><td>{rng}</td><td>{n}</td><td>{med:.2f}×</td><td>{p90:.2f}×</td><td>{row:.2f}×</td></tr>")
+    h.append("</tbody></table>")
+    h.append("<p>Examples: the clause alone (as the reference would render it if it were cut out by itself), and the "
+             "same words cut from the whole sentence with 100 ms either side. <code>he,</code> is from row 4, "
+             "<em>Not so the sailor…</em>.</p>")
+    h.append('<table class="clips"><thead><tr><th>Clause</th><th>Alone</th><th>In its sentence</th></tr></thead><tbody>')
+    for e in short["examples"]:
+        h.append(f'<tr><td><b>{html.escape(e["text"])}</b><br><span class="note">{e["ids"]} ids; from '
+                 f'“{html.escape(e["sentence"][:80])}…”</span></td>'
+                 f'<td><audio controls preload="none" src="audio/{e["name"]}-alone.mp3"></audio><br>'
+                 f'<span class="note">ids {e["alone_s"]} s</span></td>'
+                 f'<td><audio controls preload="none" src="audio/{e["name"]}-in.mp3"></audio><br>'
+                 f'<span class="note">ids {e["in_s"]} s</span></td></tr>')
+    h.append("</tbody></table>")
+
+
+def write_body(data, path, short=None):
     h = []
     h.append("<p>Long sentences rendered by the real server and GPU worker (RTX 3060 Ti), voice af_heart, worker "
              "<code>--max-chunk-seconds 30</code>, for brendanlong/optimized-kokoro branch "
@@ -234,11 +299,14 @@ def write_body(data, path):
                     if j["kind"] == "stitch":
                         parts.append(f'{j["ms"]}<em>s</em>')
                     else:
-                        parts.append(f'{j["ms"]}' + (f' [{j["whole_ms"]}]' if "whole_ms" in j else ""))
+                        parts.append(f'{j["ms"]}' + (f' [{j["whole_ms"]}]' if "whole_ms" in j else "")
+                                     + f' after “…{html.escape(j["after"][-20:])}”')
                 cell.append('<span class="note">joins: ' + (", ".join(parts) or "none") + " ms</span>")
             h.append("<td>" + "<br>".join(cell) + "</td>")
         h.append("</tr>")
     h.append("</tbody></table></div>")
+    if short:
+        write_short(short, h)
     h.append("<style>.clips td{vertical-align:top}.clips td.text{min-width:18em;max-width:28em}"
              ".clips audio{width:14em}.note{font-size:.85em;color:var(--muted, #666)}"
              ".wide{overflow-x:auto}</style>")
