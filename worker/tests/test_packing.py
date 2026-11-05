@@ -166,3 +166,29 @@ def test_neighbours_dont_change_a_sentence(decoder):
         diff = float((before[i] - after[i]).abs().max())
         assert diff < 1e-5, f"sentence {i}: max diff {diff:.3g} (peak {float(before[i].abs().max()):.3g})"
         assert not torch.allclose(before[(i + 1) % len(FRAMES)], after[(i + 1) % len(FRAMES)], atol=1e-3)
+
+
+def _groups(frames, waiting, budget=100):
+    from kokoro_worker.model import Synth
+
+    synth = Synth.__new__(Synth)
+    synth.frame_budget = budget
+    return synth._groups(frames, waiting)
+
+
+def test_rows_fill_to_the_frame_budget():
+    span = 30 + masked.GAP
+    assert _groups([30, 30, 30, 30], [True] * 4, budget=3 * span) == [[0, 1, 2], [3]]
+    assert _groups([30, 30, 30, 30], [False] * 4, budget=3 * span) == [[0, 1, 2], [3]]
+    assert _groups([200, 10], [True, True]) == [[0], [1]]  # a long one still gets a row
+
+
+def test_waiting_chunks_dont_share_a_row_with_prefetch_after_them():
+    # most urgent first: waiting, waiting, then prefetch
+    assert _groups([10, 10, 10, 10], [True, True, False, False]) == [[0, 1], [2, 3]]
+    # a more urgent prefetch, then less urgent waiting chunks: rows stay in order, and only a
+    # prefetch after a waiting chunk starts a row
+    assert _groups([10, 10, 10, 10], [False, True, False, True]) == [[0, 1], [2, 3]]
+    assert _groups([10, 10, 10], [False, False, True]) == [[0, 1, 2]]
+    # the budget still splits waiting chunks
+    assert _groups([40, 40, 40, 10], [True, True, True, False]) == [[0, 1], [2], [3]]

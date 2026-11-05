@@ -24,12 +24,14 @@ class FakeSynth:
         self.gate = threading.Event()
         self.gate.set()
         self.batches = []
+        self.waiting = []  # per batch, each request's waiting flag, in the order run got them
 
     def style(self, voice, style_len):
         return None
 
     def run(self, requests):
         self.batches.append(len(requests))
+        self.waiting.append([r.waiting for r in requests])
         self.gate.wait(10)
         results = []
         for i, r in enumerate(requests):
@@ -139,6 +141,34 @@ def test_batches_queued_requests(worker):
         assert kind == "result"
         seen.add(slot)
     assert synth.batches[0] == 1 and max(synth.batches) <= 4
+
+
+def test_the_batch_carries_waiting_flags_most_urgent_first():
+    synth = FakeSynth()
+    synth.gate.clear()
+    a, b = socket.socketpair()
+    conn = Connection(a, synth, max_batch=4, slots=SLOTS)
+    thread = threading.Thread(target=conn.serve, daemon=True)
+    thread.start()
+    client = Client.__new__(Client)
+    client.sock = b
+    b.settimeout(10)
+    assert client.read()[0] == P.HELLO
+    client.send(P.synthesize(0, [1], 0))
+    while not synth.batches:
+        pass
+    for slot, priority, waiting in [(1, 128, 0), (2, 128, 1), (3, 200, 0), (4, 128, 1)]:
+        client.send(P.synthesize(slot, [1], 0, priority=priority, waiting=waiting))
+    deadline = time.monotonic() + 10
+    while len(conn.queue._heap) < 4 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    synth.gate.set()
+    for _ in range(5):
+        assert client.receive()[0] == "result"
+    # slot 3 (more urgent, prefetch), then 2 and 4 (waiting), then 1 (prefetch)
+    assert synth.waiting == [[True], [False, True, True, False]]
+    b.close()
+    thread.join(10)
 
 
 @pytest.mark.parametrize(
