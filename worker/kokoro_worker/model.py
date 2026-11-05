@@ -311,7 +311,11 @@ class Synth:
                 return
             log.warning("packed row of %d had non-finite audio; decoding them one at a time", len(idx))
         except torch.OutOfMemoryError:
-            torch.cuda.empty_cache()
+            oom = True
+        else:
+            oom = False
+        if oom:
+            torch.cuda.empty_cache()  # outside the except, so the traceback no longer holds the row
             if len(idx) == 1:
                 yield [Result(idx[0], None, None, "out_of_memory")]
                 return

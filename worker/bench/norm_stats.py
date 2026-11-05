@@ -115,9 +115,9 @@ def main():
               f"   {r['std_cv_within_voice']:.3f} / {r['std_cv_all']:.3f}")
 
     # 2. Frozen statistics (each voice's average) on held-out sentences, for all norms and for the
-    # later ones only. Norms 0-11 are the F0/N predictor's, 12-20 the decoder's, 21-69 the generator's.
+    # later ones only. Norms 0-11 are the F0/N predictor's, 12-21 the decoder's, 22-69 the generator's.
     frozen_voice = {n: [(m.mean(0), s.mean(0)) for m, s in per_voice[n]] for n in VOICES}
-    subsets = {"all": 0, "decoder_and_generator": 12, "generator": 21}
+    subsets = {"all": 0, "decoder_and_generator": 12, "generator": 22}
     results = {"floor": [], **{k: [] for k in subsets}}
     for v, name in zip(voices, VOICES):
         for k, ids in enumerate(test):

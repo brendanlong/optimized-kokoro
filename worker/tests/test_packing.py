@@ -1,3 +1,7 @@
+"""Packing on CPU, with a random-weight decoder for the parts that need one. Packed against unpacked
+audio isn't compared here: with random weights the audio is too sensitive (a 1e-6 change in F0
+moves samples by 0.5); bench/check_packing.py compares them on the real model."""
+
 import pytest
 import torch
 import torch.nn.functional as F

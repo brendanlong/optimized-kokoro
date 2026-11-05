@@ -9,9 +9,12 @@ isn't local is done per sentence:
 - the harmonic source's phase sum restarts at each segment, and its upsampling works in each
   segment's own sample positions and clamps at its edges.
 With the excitation noise off, each segment's audio is then its audio alone, up to float rounding,
-except within about 10 samples (0.4 ms) of its edges: there the harmonic STFT and the inverse STFT
-see the gap's zeros instead of the reflect padding and window normalization of a row's ends, and
-the generator's one-sample reflection pad is a zero. Edges are near-silent anyway.
+except near its edges. There the harmonic STFT's first and last frames see the gap's zeros instead
+of a row's reflect padding, the inverse STFT's window normalization counts the gap's frames, and
+the sample in front of the segment, which a row's reflection pad would copy from the segment, is
+the transposed convolution's output there. The generator's resblocks spread that over a few
+hundred samples, and through the norm statistics a little over the whole segment; the
+spectrograms (bench/check_packing.py) were the same with and without per-segment edge handling.
 The generator magnifies rounding in the harmonic phase (a 1e-3 change in the source moves samples
 by about 0.06), so "up to float rounding" is judged on the spectrogram, not sample by sample.
 
