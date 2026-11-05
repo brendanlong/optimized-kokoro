@@ -273,7 +273,13 @@ fn reference_records() {
                 failing_matched += usize::from(record.error.is_some());
             }
         } else if error.is_some() == record.error.is_some()
-            && kokoro_reference::clause_regrouping(&expected, &actual).is_some()
+            && kokoro_reference::clause_regrouping(
+                &expected,
+                &actual,
+                kokoro_text::MIN_CLAUSE_CHUNK,
+                Some(&record.sentences),
+            )
+            .is_some()
         {
             // Short clauses are regrouped on purpose (docs/divergences.md).
             regrouped += 1;

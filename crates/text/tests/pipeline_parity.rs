@@ -110,21 +110,30 @@ fn reference_dumps() {
             record.chunks.iter().map(|c| (c.text.clone(), c.phonemes.clone())).collect();
         // Short clauses are regrouped on purpose (docs/divergences.md), which also changes the
         // G2P calls of the regrouped sentences.
-        if actual != expected && kokoro_reference::clause_regrouping(&expected, &actual).is_some() {
+        if actual != expected
+            && kokoro_reference::clause_regrouping(
+                &expected,
+                &actual,
+                kokoro_text::MIN_CLAUSE_CHUNK,
+                Some(&record.sentences),
+            )
+            .is_some()
+        {
             regrouped += 1;
             continue;
         }
         chunk_stage.check(&record.id, &expected, &actual);
         let expected: Vec<String> = record.calls.iter().map(|c| c.input.clone()).collect();
         // A sentence cut at clauses reads all its clauses before its groups, where the reference reads
-        // each group as soon as the clause after it doesn't fit (docs/divergences.md): the calls
-        // come in another order. Its whole-sentence calls must still match.
-        let cut = record.chunks.iter().any(|c| c.text.trim_end().ends_with([',', ';', ':', '，', '、', '；', '：']));
-        if cut && expected != calls {
-            let whole = |calls: &[String]| -> Vec<String> {
-                calls.iter().filter(|c| record.sentences.iter().any(|s| s.trim() == c.as_str())).cloned().collect()
+        // each group as soon as the clause after it doesn't fit (docs/divergences.md): the same
+        // calls, in another order.
+        if expected != calls {
+            let sorted = |calls: &[String]| {
+                let mut calls = calls.to_vec();
+                calls.sort();
+                calls
             };
-            call_stage.check(&record.id, &whole(&expected), &whole(&calls));
+            call_stage.check(&record.id, &sorted(&expected), &sorted(&calls));
             regrouped_calls += 1;
             continue;
         }

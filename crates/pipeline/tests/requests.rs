@@ -218,19 +218,33 @@ fn requests_match_the_reference() {
             Some(_) => prefix_matches && actual[expected.len()..].iter().any(|a| matches!(a, Expected::Error { .. })),
             None => prefix_matches && expected.len() == actual.len(),
         };
-        let speech = |chunks: &mut dyn Iterator<Item = &Expected>| -> Vec<(String, String)> {
+        // Pauses and errors stay in, as chunks of their own, so they must match too.
+        let pairs = |chunks: &mut dyn Iterator<Item = &Expected>| -> Vec<(String, String)> {
             chunks
-                .filter_map(|c| match c {
-                    Expected::Speech { text, phonemes, .. } => Some((text.clone(), phonemes.clone())),
-                    _ => None,
+                .map(|c| match c {
+                    Expected::Speech { text, phonemes, .. } => (text.clone(), phonemes.clone()),
+                    other => (format!("{other:?}"), String::new()),
                 })
                 .collect()
         };
+        // A chunk with the same text on both sides must be the same, ids and words included.
+        let shared_equal = actual.iter().all(|a| {
+            expected.iter().all(|e| match (e, a) {
+                (Expected::Speech { text, .. }, Expected::Speech { text: t, .. }) if text == t => *e == a,
+                _ => true,
+            })
+        });
         // Short clauses are regrouped on purpose (docs/divergences.md).
         if !ok
             && no_error
-            && kokoro_reference::clause_regrouping(&speech(&mut expected.iter().copied()), &speech(&mut actual.iter()))
-                .is_some()
+            && shared_equal
+            && kokoro_reference::clause_regrouping(
+                &pairs(&mut expected.iter().copied()),
+                &pairs(&mut actual.iter()),
+                kokoro_text::MIN_CLAUSE_CHUNK,
+                None,
+            )
+            .is_some_and(|n| n > 0)
         {
             regrouped += 1;
             continue;

@@ -132,7 +132,14 @@ fn espeak_reference_records() {
         count.compared += 1;
         if actual == expected {
             count.matched += 1;
-        } else if kokoro_reference::clause_regrouping(&expected, &actual).is_some() {
+        } else if kokoro_reference::clause_regrouping(
+            &expected,
+            &actual,
+            kokoro_text::MIN_CLAUSE_CHUNK,
+            Some(&record.sentences),
+        )
+        .is_some()
+        {
             count.matched += 1;
             count.regrouped += 1;
         } else {

@@ -124,13 +124,22 @@ pub fn without_language_flags(phonemes: &str) -> Option<String> {
 }
 
 /// Whether `ours` differs from the reference's chunks of a record only in how sentences cut at
-/// clauses are grouped: the port never lets a clause too short to stand alone make a chunk of its
-/// own (docs/divergences.md, "Text: short clauses"), so such a sentence's clauses may be packed
-/// differently and read again in other groups. Chunks are (text, phonemes). Each sentence cut at
-/// clauses is a run of chunks whose texts end at clause punctuation, then one that doesn't: every
-/// other chunk must be equal, and a regrouped run must hold the same clauses, in order. Returns
-/// how many runs were regrouped, or `None` if anything else differs.
-pub fn clause_regrouping(reference: &[(String, String)], ours: &[(String, String)]) -> Option<usize> {
+/// clauses are grouped: the port never lets a group of clauses of fewer than `min` phonemes make a
+/// chunk of its own (docs/divergences.md, "Text: short clauses"), so such a sentence's clauses may
+/// be packed differently and read again in other groups. Chunks are (text, phonemes).
+///
+/// Each sentence cut at clauses is a run of chunks whose texts end at clause punctuation, then one
+/// that doesn't. Every other chunk must be equal. A regrouped run must hold the same clauses in
+/// order, grouped differently; the reference's run must have a chunk of fewer than `min`
+/// phonemes; a chunk whose text both runs have must read the same; and with `sentences` given, the
+/// run must be one of them (so a sentence ending in `:` can't merge with the next). Returns how
+/// many runs were regrouped, or `None` if anything else differs.
+pub fn clause_regrouping(
+    reference: &[(String, String)],
+    ours: &[(String, String)],
+    min: usize,
+    sentences: Option<&[String]>,
+) -> Option<usize> {
     fn runs(chunks: &[(String, String)]) -> Vec<&[(String, String)]> {
         let mut out = Vec::new();
         let mut start = 0;
@@ -143,6 +152,7 @@ pub fn clause_regrouping(reference: &[(String, String)], ours: &[(String, String
         out
     }
     let text = |run: &[(String, String)]| run.iter().map(|c| c.0.trim()).collect::<Vec<_>>().join(" ");
+    let squeeze = |s: &str| s.chars().filter(|c| !c.is_whitespace()).collect::<String>();
     let (a, b) = (runs(reference), runs(ours));
     if a.len() != b.len() {
         return None;
@@ -153,7 +163,10 @@ pub fn clause_regrouping(reference: &[(String, String)], ours: &[(String, String
             continue;
         }
         let same_groups = a.len() == b.len() && a.iter().zip(*b).all(|(x, y)| x.0 == y.0);
-        if same_groups || text(a) != text(b) {
+        let short = a.iter().any(|c| c.1.chars().count() < min);
+        let same_reading = a.iter().all(|x| b.iter().all(|y| x.0 != y.0 || x.1 == y.1));
+        let one_sentence = sentences.is_none_or(|sentences| sentences.iter().any(|s| squeeze(s) == squeeze(&text(a))));
+        if same_groups || text(a) != text(b) || !short || !same_reading || !one_sentence {
             return None;
         }
         regrouped += 1;
@@ -170,20 +183,26 @@ mod tests {
     }
 
     #[test]
-    fn clause_regrouping_only_explains_regrouped_clauses() {
+    fn clause_regrouping_only_explains_regrouped_short_clauses() {
         let c = |t: &str| (t.to_owned(), format!("<{t}>"));
         let reference = [c("One."), c("aaa, he,"), c("bbb."), c("Two.")];
-        let regrouped = [c("One."), c("aaa,"), c("he, bbb."), c("Two.")];
-        assert_eq!(super::clause_regrouping(&reference, &regrouped), Some(1));
-        assert_eq!(super::clause_regrouping(&reference, &reference), Some(0));
-        let merged = [c("One."), c("aaa, he, bbb."), c("Two.")];
-        assert_eq!(super::clause_regrouping(&reference, &merged), Some(1));
-        let other_word = [c("One."), c("aaa,"), c("she, bbb."), c("Two.")];
-        assert_eq!(super::clause_regrouping(&reference, &other_word), None);
-        let other_sentence = [c("Uno."), c("aaa,"), c("he, bbb."), c("Two.")];
-        assert_eq!(super::clause_regrouping(&reference, &other_sentence), None);
-        let phonemes = [c("One."), c("aaa, he,"), ("bbb.".into(), "x".into()), c("Two.")];
-        assert_eq!(super::clause_regrouping(&reference, &phonemes), None);
+        let regroup = |ours: &[(String, String)]| super::clause_regrouping(&reference, ours, 25, None);
+        assert_eq!(regroup(&[c("One."), c("aaa,"), c("he, bbb."), c("Two.")]), Some(1));
+        assert_eq!(regroup(&reference), Some(0));
+        assert_eq!(regroup(&[c("One."), c("aaa, he, bbb."), c("Two.")]), Some(1));
+        assert_eq!(regroup(&[c("One."), c("aaa,"), c("she, bbb."), c("Two.")]), None);
+        assert_eq!(regroup(&[c("Uno."), c("aaa,"), c("he, bbb."), c("Two.")]), None);
+        // The same grouping read differently, or a shared chunk read differently.
+        assert_eq!(regroup(&[c("One."), c("aaa, he,"), ("bbb.".into(), "x".into()), c("Two.")]), None);
+        let long = |t: &str| (t.to_owned(), "x".repeat(30));
+        let reference_long = [long("aaa, he,"), long("bbb.")];
+        // Nothing short in the reference's run: no reason to regroup.
+        assert_eq!(super::clause_regrouping(&reference_long, &[long("aaa,"), long("he, bbb.")], 25, None), None);
+        // Two sentences, the first ending in ':', aren't one run.
+        let two = [c("He said:"), c("Next.")];
+        let sentences = ["He said:".to_owned(), "Next.".to_owned()];
+        assert_eq!(super::clause_regrouping(&two, &[c("He said: Next.")], 25, None), Some(1));
+        assert_eq!(super::clause_regrouping(&two, &[c("He said: Next.")], 25, Some(&sentences)), None);
     }
 
     #[test]

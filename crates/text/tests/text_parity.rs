@@ -122,7 +122,13 @@ fn text_cases() {
                 .collect()
         };
         let regrouped = str_of(&case, "kind") == "smart_split"
-            && kokoro_reference::clause_regrouping(&pairs(&expected), &pairs(&actual)).is_some();
+            && kokoro_reference::clause_regrouping(
+                &pairs(&expected),
+                &pairs(&actual),
+                kokoro_text::MIN_CLAUSE_CHUNK,
+                None,
+            )
+            .is_some();
         if expected != actual && regrouped {
             *changed.entry("smart_split".to_owned()).or_default() += 1;
             regrouped_cases += 1;
