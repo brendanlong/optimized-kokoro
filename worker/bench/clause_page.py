@@ -114,7 +114,7 @@ def mp3(pcm, path):
 VARIANTS = [
     ("main", "A. main today", "stitched at spaces; clause-split only above 450 phonemes, 410 ms × 0.8 padding"),
     ("b", "B. clause split, today's padding", "split at clauses to fit the cap, each piece trimmed as a sentence"),
-    ("c", "C. clause split, model's comma timing", "this PR: cut after the comma's frames, next starts at its first id"),
+    ("c", "C. clause split, model's comma timing", "this PR: cut after the comma's frames, next starts at its first sound"),
     ("whole", "D. whole sentence", "one request, cap 60 s: Kokoro's own phrasing"),
 ]
 
@@ -161,37 +161,56 @@ def main():
     write_body(data, f"{out}/body.html")
 
 
-def ms_list(joins, kind):
-    return [j["ms"] for j in joins if j["kind"] == kind]
-
-
 def stats(xs):
     return f"{np.mean(xs):.0f} ms (median {np.median(xs):.0f}, {min(xs)}–{max(xs)}, n={len(xs)})" if xs else "none"
 
 
+def joins_of(data, label, kind):
+    return [j for d in data for j in d["variants"][label]["joins"] if j["kind"] == kind]
+
+
+def summary(data, h):
+    c_joins = joins_of(data, "c", "clause")
+    same = [j["whole_ms"] for j in c_joins if "whole_ms" in j]
+    rows = [
+        ("D: Kokoro's own pause at the clause marks where B and C cut", same),
+        ("D: Kokoro's own pause at every clause mark (<code>, ; :</code>)", [m for d in data for m in d["whole_comma_ms"]]),
+        ("C: clause joins (this PR)", [j["ms"] for j in c_joins]),
+        ("C minus D, join by join", [j["ms"] - j["whole_ms"] for j in c_joins if "whole_ms" in j]),
+        ("B: clause joins, today's padding", [j["ms"] for j in joins_of(data, "b", "clause")]),
+        ("A: stitch crossfades (main)", [j["ms"] for j in joins_of(data, "main", "stitch")]),
+        ("A: clause joins above 450 phonemes (main)", [j["ms"] for j in joins_of(data, "main", "clause")]),
+    ]
+    for what, xs in rows:
+        h.append(f"<tr><td>{what}</td><td>{stats(xs)}</td></tr>")
+
+
 def write_body(data, path):
     h = []
-    c_joins = [j for d in data for j in d["variants"]["c"]["joins"] if j["kind"] == "clause"]
-    b_joins = [j for d in data for j in d["variants"]["b"]["joins"] if j["kind"] == "clause"]
-    same = [j["whole_ms"] for j in c_joins if "whole_ms" in j]
-    all_commas = [m for d in data for m in d["whole_comma_ms"]]
     h.append("<p>Long sentences rendered by the real server and GPU worker (RTX 3060 Ti), voice af_heart, worker "
              "<code>--max-chunk-seconds 30</code>, for brendanlong/optimized-kokoro branch "
              "<code>brendanlong/clause-splits</code>. At a 30 s cap one request may hold 270 ids at speed 1 and 120 at "
              "speed 0.5, so these sentences must be split. The last two rows are at speed 0.5.</p>")
+    h.append("<ul><li><b>A</b> is main: the chunker cuts only above 450 phonemes, so each sentence is one chunk "
+             "stitched from overlapping pieces crossfaded at a space (and the 468-phoneme one is also cut at a "
+             "clause, with today's trimming).</li>"
+             "<li><b>B</b> cuts at clauses to fit the cap and trims every chunk as Kokoro-FastAPI trims a sentence: "
+             "about 280 ms × 1/speed kept after a comma, 50 ms before the next chunk.</li>"
+             "<li><b>C</b> (this branch) ends a chunk right after its comma's frames, from the worker's durations, "
+             "and starts the next at its first sound above −45 dBFS. (Starting it at the end of its leading boundary "
+             "id's frames, the first try, clicked: the first word had begun there, up to 4,140 in amplitude.)</li>"
+             "<li><b>D</b> is the whole sentence in one request to a worker at a 60 s cap, trimmed as a sentence: "
+             "how Kokoro itself phrases it.</li></ul>")
     h.append("<h2>Pauses at the joins</h2>")
     h.append("<p>A pause is the run of 5 ms windows quieter than −45 dBFS around a join between two of the server's "
-             "sends (for D, around the middle of a clause mark's frames in the whole render).</p>")
-    h.append("<table><thead><tr><th>What</th><th>Mean pause</th></tr></thead><tbody>")
-    h.append(f"<tr><td>D: Kokoro's own pause at the clause marks where C splits</td><td>{stats(same)}</td></tr>")
-    h.append(f"<tr><td>D: Kokoro's own pause at every clause mark (<code>, ; :</code>)</td><td>{stats(all_commas)}</td></tr>")
-    h.append(f"<tr><td>C: clause joins (this PR)</td><td>{stats([j['ms'] for j in c_joins])}</td></tr>")
-    h.append(f"<tr><td>B: clause joins, today's padding</td><td>{stats([j['ms'] for j in b_joins])}</td></tr>")
-    a_st = [m for d in data for m in ms_list(d["variants"]["main"]["joins"], "stitch")]
-    a_cl = [m for d in data for m in ms_list(d["variants"]["main"]["joins"], "clause")]
-    h.append(f"<tr><td>A: stitch crossfades (main)</td><td>{stats(a_st)}</td></tr>")
-    h.append(f"<tr><td>A: clause joins above 450 phonemes (main)</td><td>{stats(a_cl)}</td></tr>")
-    h.append("</tbody></table>")
+             "sends (for D, around the middle of a clause mark's frames in the whole render). Mean (median, range, "
+             "count).</p>")
+    for speed in sorted({d["speed"] for d in data}, reverse=True):
+        group = [d for d in data if d["speed"] == speed]
+        h.append(f"<h3>Speed {speed:g}</h3>")
+        h.append("<table><thead><tr><th>What</th><th>Pause</th></tr></thead><tbody>")
+        summary(group, h)
+        h.append("</tbody></table>")
     h.append("<h2>Sentences</h2>")
     h.append("<p>Under each player: the pause at each join, in order; <em>s</em> marks a stitch crossfade, the rest are "
              "clause cuts, with Kokoro's own pause at that mark (from D) in brackets.</p>")

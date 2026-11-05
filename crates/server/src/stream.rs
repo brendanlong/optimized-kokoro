@@ -120,25 +120,27 @@ fn units(chunk: Chunk, speech: &Speech, render_ids: usize) -> Vec<Unit> {
         style_len: style_len.min(usize::from(u16::MAX)) as u16,
     };
     let split = chunk.split;
-    let finish = |stitch, ids: &[u8], first: bool, last: bool| Finish {
+    // `own` is where the piece's own ids start in the ids it is rendered with: a clause mark
+    // before it is in the context, whose audio the stitcher drops, so the end is trimmed instead.
+    let finish = |stitch, ids: &[u8], own: usize, first: bool, last: bool| Finish {
         text: text.clone(),
         speed: speech.speed.as_f64(),
         stitch,
         joins: Joins {
             start_at_speech: first && split.before,
-            end_after_id: if last && split.after { final_clause_mark(ids) } else { None },
+            end_after_id: if last && split.after { final_clause_mark(&ids[own..]).map(|i| own + i) } else { None },
         },
     };
     if chunk.phonemes.chars().count() <= STITCH_ABOVE && chunk.ids.len() <= render_ids {
         let n = chunk.ids.len();
-        let finish = finish(None, &chunk.ids, true, true);
+        let finish = finish(None, &chunk.ids, 0, true, true);
         return vec![Unit::Speech(request(chunk.ids, n), finish)];
     }
     let plan = Arc::new(stitch::Plan::new(chunk.ids, render_ids));
     (0..plan.pieces())
         .map(|i| {
             let ids = plan.context_ids(i).to_vec();
-            let finish = finish(Some((plan.clone(), i)), &ids, i == 0, i + 1 == plan.pieces());
+            let finish = finish(Some((plan.clone(), i)), &ids, plan.own_start(i), i == 0, i + 1 == plan.pieces());
             Unit::Speech(request(ids, plan.style_len().into()), finish)
         })
         .collect()

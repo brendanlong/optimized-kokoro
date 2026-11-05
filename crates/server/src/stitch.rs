@@ -132,6 +132,11 @@ impl Plan {
         &self.ids[first..stop]
     }
 
+    /// Where piece `piece`'s own ids start in [`context_ids`](Self::context_ids).
+    pub fn own_start(&self, piece: usize) -> usize {
+        self.ranges[piece].0 - self.contexts[piece].0
+    }
+
     /// The style length the reference renders every piece with: the whole chunk's.
     pub fn style_len(&self) -> u16 {
         self.ids.len().min(MODEL_LIMIT) as u16
