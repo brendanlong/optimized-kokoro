@@ -1,0 +1,13 @@
+# gpuc submit train/job.yaml --host local   (from worker/)
+name: kokoro-short-rows
+setup: uv sync --frozen
+command: bash train/job.sh
+python: .venv/bin/python
+gpus: 1
+env:
+  REQUIRE_CUDA: "1"
+outputs:
+  - path: results
+priority: 40
+estimated_runtime_min: 75
+max_runtime_min: 240
