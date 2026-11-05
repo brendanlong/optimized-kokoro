@@ -72,12 +72,58 @@ def plan(phonemize, text, speed, new):
     for ci, c in enumerate(chunks(phonemize, text, limit)):
         ids = c["ids"]
         marks += sum(1 for i in ids if i in CLAUSE)
-        n = 1
+        ranges = [(0, len(ids))]
         if len(c["phonemes"]) > 450 or len(ids) > ri:
             window = min(max(ri, 2), 510)
-            n = len(pieces(ids, min(max(window * 450 // 510, 1), window - 1), new))
-        sends += [(ci, c["text"], marks, k == n - 1) for k in range(n)]
+            ranges = pieces(ids, min(max(window * 450 // 510, 1), window - 1), new)
+        # For a stitched piece, how many of the chunk's words come before the cut after it.
+        sends += [(ci, c["text"], marks, k == len(ranges) - 1, ids[:end].count(SPACE) + 1)
+                  for k, (_, end) in enumerate(ranges)]
     return sends
+
+
+def marked_text(sends):
+    """The sentence with | at each clause cut and ‖ at each stitch crossfade (at the word the piece
+    ends with, counted in the phonemes' words)."""
+    out, cuts = [], set()
+    for k, (ci, text, _, last, words) in enumerate(sends):
+        if not last:
+            cuts.add(words)
+        if last:
+            ws = text.split()
+            out.append(" ".join(w + (" ‖" if j + 1 in cuts else "") for j, w in enumerate(ws)))
+            cuts = set()
+    return " | ".join(out)
+
+
+def final_clause_mark(ids):
+    """audio.rs final_clause_mark."""
+    for i in range(len(ids) - 1, -1, -1):
+        if ids[i] in CLAUSE:
+            return i
+        if ids[i] > SPACE:
+            return None
+    return None
+
+
+def join_like_c(pcm, dur, ids, first, last, speed):
+    """The part of one chunk's rendering the server keeps (audio.rs keep_range) where the chunk is cut
+    from its sentence before it unless `first`, and after it unless `last` (then its text ends a
+    sentence)."""
+    a = pcm[24:-24]
+    loud = np.nonzero(np.abs(a.astype(np.int32)) > THRESHOLD)[0]
+    start = 24 + (max(0, loud[0] - 1200) if first else loud[0])
+    end = 24 + min(len(a), loud[-1] + int(np.ceil((9840 - 1200) / speed)))
+    mark = None if last else final_clause_mark(ids)
+    if mark is not None:
+        end = int(600 * np.sum(dur[: mark + 2]))
+    return pcm[start:end]
+
+
+def clauses(sentence):
+    import clause_joins
+
+    return clause_joins.clauses(sentence)
 
 
 def quiet(pcm):
@@ -120,6 +166,7 @@ VARIANTS = [
     ("b", "B. clause split, today's padding", "split at clauses to fit the cap, each piece trimmed as a sentence"),
     ("c", "C. clause split, model's comma timing", "this PR: cut after the comma's frames, next starts at its first sound"),
     ("whole", "D. whole sentence", "one request, cap 60 s: Kokoro's own phrasing"),
+    ("e", "E. every clause its own chunk", "bench only: each clause rendered alone, joined as C"),
 ]
 
 
@@ -151,19 +198,81 @@ def main():
             joins = []
             for s in range(len(seg) - 1):
                 at = int(np.sum(seg[: s + 1]))
-                ci, text, marks, last = sends[s]
+                ci, text, marks, last, _ = sends[s]
                 clause = last  # between two chunks
                 j = {"kind": "clause" if clause else "stitch", "ms": pause_at(q, at), "after": text[-40:]}
                 if clause and 0 < marks <= len(comma):
                     j["whole_ms"] = comma[marks - 1]
                 joins.append(j)
             mp3(pcm, f"{out}/audio/{label}-{i}.mp3")
-            entry["variants"][label] = {"joins": joins, "seconds": round(len(pcm) / RATE, 2)}
-        entry["variants"]["whole"] = {"seconds": round(len(trimmed) / RATE, 2)}
+            entry["variants"][label] = {"joins": joins, "seconds": round(len(pcm) / RATE, 2),
+                                        "split": marked_text(sends)}
+        entry["variants"]["whole"] = {"seconds": round(len(trimmed) / RATE, 2), "split": row["text"]}
+        cl = row["clauses"]
+        segs = [join_like_c(whole[f"clause_{k}"], whole[f"clause_dur_{k}"], ids, k == 0, k + 1 == len(cl), speed)
+                for k, ids in enumerate(cl)]
+        pcm = np.concatenate(segs)
+        q = quiet(pcm)
+        joins, at, marks = [], 0, 0
+        texts = clauses(row["text"])
+        for k, seg in enumerate(segs[:-1]):
+            at += len(seg)
+            marks += sum(1 for x in cl[k] if x in CLAUSE)
+            j = {"kind": "clause", "ms": pause_at(q, at), "after": texts[k][-40:]}
+            if 0 < marks <= len(comma):
+                j["whole_ms"] = comma[marks - 1]
+            joins.append(j)
+        mp3(pcm, f"{out}/audio/e-{i}.mp3")
+        entry["variants"]["e"] = {"joins": joins, "seconds": round(len(pcm) / RATE, 2), "split": " | ".join(texts)}
         data.append(entry)
     json.dump(data, open(f"{out}/pauses.json", "w"), indent=1)
     short = shorts(sys.argv[5], results, out) if len(sys.argv) > 5 else None
-    write_body(data, f"{out}/body.html", short)
+    he = he_clips(rows, results, out)
+    write_body(data, f"{out}/body.html", short, he)
+
+
+def find(ids, sub):
+    return next((k for k in range(len(ids) - len(sub) + 1) if ids[k:k + len(sub)] == sub), None)
+
+
+def peakiness(x):
+    """Median over 10 ms frames of the strongest 1-8 kHz bin over the mean one: a ringing tone is a
+    narrow peak."""
+    x = x.astype(np.float64)
+    n = 1 + max(0, len(x) - 1024) // 240
+    out = []
+    for i in range(n):
+        f = np.abs(np.fft.rfft(np.pad(x[i * 240:i * 240 + 1024], (0, max(0, 1024 - len(x[i * 240:i * 240 + 1024])))) * np.hanning(1024)))
+        band = f[43:342]
+        if band.mean() > 0:
+            out.append(band.max() / band.mean())
+    return float(np.median(out)) if out else 0.0
+
+
+def he_clips(rows, results, out):
+    """Row 4's "he,": where it falls in each render, with its frames and a ringing measure."""
+    i = next(k for k, r in enumerate(rows) if r["id"] == "gutenberg-moby-dick-01077")
+    row, r = rows[i], np.load(f"{results}/whole-{i}.npz")
+    texts = clauses(row["text"])
+    k = texts.index("he,")
+    he = row["clauses"][k]
+    found = []
+
+    def clip(name, pcm, dur, ids, label):
+        at = find(list(ids), he)
+        cum = np.concatenate([[0], np.cumsum(dur)]) * 600
+        a, b = int(cum[at + 1]), int(cum[at + 1 + len(he)])
+        lo, hi = max(0, a - 12000), min(len(pcm), b + 12000)
+        mp3(pcm[lo:hi], f"{out}/audio/he-{name}.mp3")
+        found.append({"name": name, "label": label, "ms": round((b - a) * 1000 / RATE),
+                      "peak": round(peakiness(pcm[a:b]), 1), "at": at, "of": len(ids)})
+
+    clip("whole", r["pcm"], r["durations"], row["ids"], "D: the whole sentence")
+    for c, ids in enumerate(row["chunks"]):
+        if find(list(ids), he) is not None:
+            clip("c", r[f"chunk_{c}"], r[f"chunk_dur_{c}"], ids, f"C's chunk {c + 1} of {len(row['chunks'])}")
+    clip("e", r[f"clause_{k}"], r[f"clause_dur_{k}"], he, "E: “he,” alone")
+    return {"row": i + 1, "found": found, "chunks": [len(c) for c in row["chunks"]]}
 
 
 def shorts(inputs, results, out):
@@ -216,6 +325,8 @@ def summary(data, h):
         ("C: clause joins (this PR)", [j["ms"] for j in c_joins]),
         ("C minus D, join by join", [j["ms"] - j["whole_ms"] for j in c_joins if "whole_ms" in j]),
         ("B: clause joins, today's padding", [j["ms"] for j in joins_of(data, "b", "clause")]),
+        ("E: every clause cut, joined as C", [j["ms"] for j in joins_of(data, "e", "clause")]),
+        ("E minus D, join by join", [j["ms"] - j["whole_ms"] for j in joins_of(data, "e", "clause") if "whole_ms" in j]),
         ("A: stitch crossfades (main)", [j["ms"] for j in joins_of(data, "main", "stitch")]),
         ("A: clause joins above 450 phonemes (main)", [j["ms"] for j in joins_of(data, "main", "clause")]),
     ]
@@ -250,7 +361,23 @@ def write_short(short, h):
     h.append("</tbody></table>")
 
 
-def write_body(data, path, short=None):
+def write_he(he, h):
+    h.append("<h2>Row 4: “, he, ”</h2>")
+    h.append(f"<p>In C (and B, which renders the same chunks) the sentence is two chunks of {he['chunks'][0]} and "
+             f"{he['chunks'][1]} ids, cut after “misery,”. “he,” is inside the first, far from the cut, so in C it is "
+             "neither a chunk of its own nor next to a seam. A stitches this sentence (one crossfade, between “his” and "
+             "“misery,”), also far from it. Each clip is “he,” with 0.5 s either side; the ringing measure is "
+             "the median, over 10 ms frames of the word, of the strongest 1–8 kHz bin over the mean one.</p>")
+    h.append("<table><thead><tr><th>Render</th><th>“he,” at id</th><th>Its frames</th><th>Ringing measure</th>"
+             "<th>Clip</th></tr></thead><tbody>")
+    for f in he["found"]:
+        h.append(f'<tr><td>{html.escape(f["label"])}</td><td>{f["at"]} of {f["of"]}</td><td>{f["ms"]} ms</td>'
+                 f'<td>{f["peak"]}</td><td><audio controls preload="none" src="audio/he-{f["name"]}.mp3"></audio>'
+                 "</td></tr>")
+    h.append("</tbody></table>")
+
+
+def write_body(data, path, short=None, he=None):
     h = []
     h.append("<p>Long sentences rendered by the real server and GPU worker (RTX 3060 Ti), voice af_heart, worker "
              "<code>--max-chunk-seconds 30</code>, for brendanlong/optimized-kokoro branch "
@@ -265,7 +392,12 @@ def write_body(data, path, short=None):
              "and starts the next at its first sound above −45 dBFS. (Starting it at the end of its leading boundary "
              "id's frames, the first try, clicked: the first word had begun there, up to 4,140 in amplitude.)</li>"
              "<li><b>D</b> is the whole sentence in one request to a worker at a 60 s cap, trimmed as a sentence: "
-             "how Kokoro itself phrases it.</li></ul>")
+             "how Kokoro itself phrases it.</li>"
+             "<li><b>E</b> (for judging by ear only, not something the server does) cuts at every clause mark: each "
+             "clause rendered alone at the sentence's speed, joined the C way. Short clauses here are exactly what "
+             "the 25-phoneme minimum now prevents.</li></ul>"
+             "<p>Under each player, the text shows where that variant cuts: <b>|</b> a clause cut, <b>‖</b> a stitch "
+             "crossfade (after the word the piece ends with).</p>")
     h.append("<h2>Pauses at the joins</h2>")
     h.append("<p>A pause is the run of 5 ms windows quieter than −45 dBFS around a join between two of the server's "
              "sends (for D, around the middle of a clause mark's frames in the whole render). Mean (median, range, "
@@ -290,6 +422,8 @@ def write_body(data, path, short=None):
             v = d["variants"][label]
             cell = [f'<audio controls preload="none" src="audio/{label}-{i}.mp3"></audio>',
                     f'<span class="note">{v["seconds"]} s</span>']
+            if label != "whole":
+                cell.append(f'<span class="split">{html.escape(v["split"])}</span>')
             if label == "whole":
                 cell.append('<span class="note">clause marks: ' + ", ".join(f"{m}" for m in d["whole_comma_ms"])
                             + " ms</span>")
@@ -305,11 +439,13 @@ def write_body(data, path, short=None):
             h.append("<td>" + "<br>".join(cell) + "</td>")
         h.append("</tr>")
     h.append("</tbody></table></div>")
+    if he:
+        write_he(he, h)
     if short:
         write_short(short, h)
     h.append("<style>.clips td{vertical-align:top}.clips td.text{min-width:18em;max-width:28em}"
              ".clips audio{width:14em}.note{font-size:.85em;color:var(--muted, #666)}"
-             ".wide{overflow-x:auto}</style>")
+             ".wide{overflow-x:auto}.split{font-size:.8em;display:block;max-width:22em}</style>")
     open(path, "w").write("\n".join(h))
 
 
