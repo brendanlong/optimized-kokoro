@@ -20,8 +20,9 @@ fn one_stream(c: &mut kokoro_server::Config) {
     c.max_streams_per_key = 1;
 }
 
-/// The stub pipeline, except that the first request blocks before its second chunk until the
-/// test releases it, as a long adversarial sentence keeps the phonemizer busy.
+/// The stub pipeline, except that the first request blocks before its third chunk until the
+/// test releases it, as a long adversarial sentence keeps the phonemizer busy. (Its first chunk is
+/// handed out once the second is read: the server holds a chunk until it knows the next won't join it.)
 struct SlowSecondChunk {
     entered: AtomicBool,
     release: Mutex<Option<std::sync::mpsc::Receiver<()>>>,
@@ -35,7 +36,7 @@ impl Pipeline for SlowSecondChunk {
         max_phonemes: usize,
     ) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
         Box::new(StubPipeline.chunks(lang, text, max_phonemes).enumerate().map(move |(i, chunk)| {
-            if i == 1
+            if i == 2
                 && let Some(release) = self.release.lock().unwrap().take()
             {
                 self.entered.store(true, Ordering::SeqCst);
@@ -45,6 +46,10 @@ impl Pipeline for SlowSecondChunk {
         }))
     }
 }
+
+/// Sentences long enough not to be merged (`merge::MIN_SENTENCE_CHUNK`).
+const LONG_SENTENCES: &str = "The first part of this text is long enough to be a chunk by itself. \
+    The second part of this text is long enough to be a chunk by itself too. The third part follows them.";
 
 /// Finding 1: a client that disconnects while its text is still being phonemized doesn't get
 /// its permits back until the phonemizing stops.
@@ -56,7 +61,7 @@ async fn permits_cover_phonemizing_after_the_client_leaves() {
     let _worker = AutoWorker::listen(&server.socket, Duration::from_millis(1));
     server.worker.connected().await;
 
-    let first = speak(server.addr, pcm("First part. Second part. Third part.")).await;
+    let first = speak(server.addr, pcm(LONG_SENTENCES)).await;
     assert_eq!(first.status(), 200);
     while !pipeline.entered.load(Ordering::SeqCst) {
         tokio::time::sleep(Duration::from_millis(10)).await;

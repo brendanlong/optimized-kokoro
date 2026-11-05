@@ -53,11 +53,30 @@ pub fn respond(slot: u16, ids: &[u8]) -> Vec<u8> {
     worker_side::result(slot, &durations, &pcm)
 }
 
+/// A sentence about `word` long enough that the server renders it as a chunk of its own
+/// (`merge::MIN_SENTENCE_CHUNK`), in the stub pipeline and the real one.
+pub fn long(word: &str) -> String {
+    let sentence = format!("{word} is a sentence that goes on long enough to be rendered as a chunk all by itself.");
+    assert!(sentence.len() >= kokoro_server::merge::MIN_SENTENCE_CHUNK + 10);
+    sentence
+}
+
+/// `long` for each word, as one text.
+pub fn longs(words: &[&str]) -> String {
+    words.iter().map(|w| long(w)).collect::<Vec<_>>().join(" ")
+}
+
+/// `pipeline`'s chunks of `text` as the server renders them: short sentences merged.
+pub fn merged_chunks(pipeline: &dyn Pipeline, lang: Lang, text: &str) -> Vec<Chunk> {
+    kokoro_server::merge::merge_short(pipeline.chunks(lang, text, DEFAULT_MAX_TOKENS), DEFAULT_MAX_TOKENS)
+        .map(Result::unwrap)
+        .collect()
+}
+
 /// The audio the server should produce for `text` in one voice, using the stub pipeline.
 pub fn expected_audio(text: &str) -> Vec<i16> {
     let mut out = Vec::new();
-    for chunk in StubPipeline.chunks(Lang::AmericanEnglish, text, DEFAULT_MAX_TOKENS) {
-        let chunk = chunk.unwrap();
+    for chunk in stub_chunks(text) {
         match chunk.pause {
             Some(p) => out.extend(std::iter::repeat_n(0, (p * 24000.0) as usize)),
             None => out.extend(expected_chunk(&chunk.ids)),
@@ -66,8 +85,16 @@ pub fn expected_audio(text: &str) -> Vec<i16> {
     out
 }
 
+/// The stub pipeline's chunks as the server renders them: short sentences merged.
+fn stub_merged(text: &str) -> impl Iterator<Item = Result<Chunk, kokoro_server::PipelineError>> + '_ {
+    kokoro_server::merge::merge_short(
+        StubPipeline.chunks(Lang::AmericanEnglish, text, DEFAULT_MAX_TOKENS),
+        DEFAULT_MAX_TOKENS,
+    )
+}
+
 pub fn stub_chunks(text: &str) -> Vec<Chunk> {
-    StubPipeline.chunks(Lang::AmericanEnglish, text, DEFAULT_MAX_TOKENS).map(Result::unwrap).collect()
+    stub_merged(text).map(Result::unwrap).collect()
 }
 
 /// A worker whose every move the test makes: it reports each frame the server sends, and
