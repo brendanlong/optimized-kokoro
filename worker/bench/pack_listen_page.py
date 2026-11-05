@@ -74,7 +74,7 @@ def main():
     body = {}
     for set_name, s in plan.items():
         variants = list(s["passages"][0]["variants"])
-        agg = {v: {"errors": 0, "words": 0, "ttfa": [], "sentence": [], "clause": [], "between": [], "chunks": 0,
+        agg = {v: {"errors": 0, "words": 0, "ttfa": [], "sentence": [], "clause": [], "between": [], "joins": [], "chunks": 0,
                    "first_ids": []} for v in variants}
         sections = []
         for p in s["passages"]:
@@ -102,8 +102,9 @@ def main():
                         pos += 1
                     if ci + 1 < len(chunks) and len(segs) == len(chunks):
                         ms = (edge(silent(segs[ci]), True) + edge(silent(segs[ci + 1]), False)) * 5
-                        a["between"].append(ms)
-                        pauses.append(str(ms) + ("<sup>c</sup>" if c["split"][1] else ""))
+                        clause = c["units"][-1]["after"]
+                        a["joins" if clause else "between"].append(ms)
+                        pauses.append(str(ms) + ("<sup>c</sup>" if clause else ""))
                 r = asr[k]
                 a["errors"] += r["errors"]
                 a["words"] += r["words"]
@@ -121,17 +122,17 @@ def main():
                             "<th>First audio, ms</th><th>Whisper errors</th></tr></thead><tbody>" + "".join(rows) + "</tbody></table>")
         summary = ["<table><thead><tr><th>Variant</th><th>WER</th><th>First audio, median ms (range over passages)</th>"
                    "<th>First chunk, mean ids</th><th>Chunks</th><th>Pause after a sentence, inside a chunk: median ms (range)</th>"
-                   "<th>At a clause mark inside a chunk</th><th>Between chunks</th></tr></thead><tbody>"]
+                   "<th>At a clause mark inside a chunk</th><th>Between chunks, at a sentence end</th><th>Between chunks, at a clause cut</th></tr></thead><tbody>"]
         nums = {}
         for v, a in agg.items():
             t = a["ttfa"]
             nums[v] = {"wer": 100 * a["errors"] / a["words"], "errors": a["errors"], "words": a["words"],
                        "ttfa_median": statistics.median(t), "ttfa_range": [min(t), max(t)], "chunks": a["chunks"],
                        "first_ids_mean": statistics.mean(a["first_ids"]),
-                       "sentence": a["sentence"], "clause": a["clause"], "between": a["between"]}
+                       "sentence": a["sentence"], "clause": a["clause"], "between": a["between"], "joins": a["joins"]}
             summary.append(f"<tr><td>{html.escape(label(v))}</td><td>{nums[v]['wer']:.1f}% ({a['errors']}/{a['words']})</td>"
                            f"<td>{statistics.median(t):.0f} ({min(t):.0f}–{max(t):.0f})</td><td>{nums[v]['first_ids_mean']:.0f}</td>"
-                           f"<td>{a['chunks']}</td><td>{stats(a['sentence'])}</td><td>{stats(a['clause'])}</td><td>{stats(a['between'])}</td></tr>")
+                           f"<td>{a['chunks']}</td><td>{stats(a['sentence'])}</td><td>{stats(a['clause'])}</td><td>{stats(a['between'])}</td><td>{stats(a['joins'])}</td></tr>")
         summary.append("</tbody></table>")
         numbers["sets"][set_name] = nums
         body[set_name] = ("\n".join(summary), "\n".join(sections))
@@ -146,9 +147,9 @@ def main():
                                                       "fit": [slope, intercept]}))
     for set_name, nums in numbers["sets"].items():
         for v, n in nums.items():
-            print(set_name, v, f"WER {n['wer']:.1f}% ({n['errors']}/{n['words']})", f"ttfa {n['ttfa_median']:.0f} {n['ttfa_range']}",
+            print(set_name, v, f"WER {n['wer']:.1f}% ({n['errors']}/{n['words']})", f"ttfa {n['ttfa_median']:.0f} ({n['ttfa_range'][0]:.0f}-{n['ttfa_range'][1]:.0f})",
                   f"first {n['first_ids_mean']:.0f}", f"chunks {n['chunks']}", "sentence", stats(n["sentence"]),
-                  "clause", stats(n["clause"]), "between", stats(n["between"]))
+                  "clause", stats(n["clause"]), "between", stats(n["between"]), "joins", stats(n["joins"]))
     print(f"decode: {slope:.3f} ms/id + {intercept:.1f} ms")
 
 

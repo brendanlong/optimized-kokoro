@@ -18,9 +18,11 @@ use crate::pipeline::{Chunk, PipelineError, Split};
 use crate::stitch::SPACE_ID;
 use std::collections::VecDeque;
 
-/// The size a chunk is filled to. Rendering at batch 1 on the 3060 Ti costs about 0.4 ms per id,
-/// so a chunk this long is about 50 ms of decoding: short enough for quick first audio, long
-/// enough to read a few short sentences together (`worker/bench/merge_short.py`).
+/// The size a chunk is filled to. Decoding at batch 1 on the 3060 Ti takes about 13 ms plus
+/// 0.25 ms per id (43 ms at 130 ids, 126 ms at 450; `worker/bench/pack_listen.py`), so this bounds
+/// the first chunk's decoding to about 45 ms (the clean-up may add a short sentence) while still
+/// reading a few short sentences together. A constant: it trades first-audio latency against
+/// context, and a faster GPU only makes every size cheaper.
 pub const SOFT_MAX_PHONEMES: usize = 130;
 
 /// The fewest phonemes a chunk should have, as for chunks cut from a sentence: Kokoro drawls a
