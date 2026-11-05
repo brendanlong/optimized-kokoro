@@ -38,14 +38,14 @@ Peak memory reserved is about 200 MB plus 0.5 MB per frame (40 frames are one se
 
 (The 4,800- and 9,600-frame runs are older, from before packing; the 14,400-frame run had about 5 GB free next to the desktop and another worker.) Under v3 the default 60 s allowed 9,600 frames at speed 0.25. The default stays 60 s, which needs about 1.4 GB; 30 s keeps the worker near 1 GB on the card.
 
-Measured on the 3060 Ti at `--max-batch 8`, in process, two rounds alternating (`bench/job_max_frames.sh`): real corpus chunks closed-loop at 16 and 64 streams (`bench/load.py`), then the longest requests the server sends for the cap at speeds 0.25, 0.5 and 1, 16 streams (`bench/cap_load.py`, windows of `max_render_ids` ids in af_nicole, the voice with the longest durations):
+Measured on the 3060 Ti at `--max-batch 8`, in process, two rounds alternating (`bench/job_max_frames.sh`): real corpus chunks closed-loop at 16 and 64 streams (`bench/load.py`), then the longest requests the server sends for the cap at speeds 0.25, 0.5 and 1, 16 streams (`bench/cap_load.py`: windows of `max_render_ids` ids inside long corpus chunks, with the whole chunk's style row as the server sends stitched pieces, in af_nicole, the voice with the longest durations):
 
 | `--max-chunk-seconds` | peak GPU reserved (torch) | corpus, 16 streams | corpus, 64 streams | decoder rows for 3,400 requests | longest requests: refused, longest audio |
 |---|---|---|---|---|---|
-| 30 | 816 MiB | 197-202x | 197-202x | 895-899 | none of 1,200; 28.6 s |
-| 60 | 1,336 MiB | 214-217x | 212-214x | 466-469 | none of 1,200; 56.9 s |
+| 30 | 816 MiB | 202-203x | 199-201x | 897-902 | none of 1,200; 28.1 s |
+| 60 | 1,336 MiB | 218-220x | 215-219x | 468-469 | none of 1,200; 56.1 s |
 
-The peak came from the corpus's packed rows both times; the longest requests run one per row. So 30 s keeps the worker at about 1 GB on the card with the CUDA context, for about 7% less throughput, from twice as many decoder rows.
+The peak came from the corpus's packed rows both times; the longest requests run one per row. So 30 s keeps the worker at about 1 GB on the card with the CUDA context, for about 8% less throughput, from twice as many decoder rows.
 
 ## Files
 
