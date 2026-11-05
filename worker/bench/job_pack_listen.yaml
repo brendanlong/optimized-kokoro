@@ -1,7 +1,7 @@
-# gpuc submit bench/job_merge_short.yaml --host local   (from worker/); see job_merge_short.sh for its inputs.
-name: kokoro-merge-short
+# gpuc submit bench/job_pack_listen.yaml --host local   (from worker/); see job_pack_listen.sh for its inputs.
+name: kokoro-pack-listen
 setup: uv sync --frozen
-command: bash bench/job_merge_short.sh
+command: bash bench/job_pack_listen.sh
 python: .venv/bin/python
 gpus: 1
 env:
