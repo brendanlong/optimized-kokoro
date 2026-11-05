@@ -160,7 +160,7 @@ def main():
     for name, rows in pauses.items():
         diffs = [ms - today_at[(pid, b)] for pid, b, ms, i in rows if i]
         summary[name]["inside_minus_today_median"] = statistics.median(diffs) if diffs else None
-    json.dump({"summary": summary, "pauses": pauses, "shorts": shorts}, open(f"{page}/numbers.json", "w"), indent=1)
+    json.dump({"summary": summary, "pauses": pauses, "shorts": shorts}, open(f"{page}/numbers.json", "w"), indent=1, default=int)
     table = ["<table><thead><tr><th>Variant</th><th>WER</th><th>Pauses inside merged chunks: n, median ms (range)</th>"
              "<th>Pauses between chunks: n, median ms (range)</th><th>Merged pause minus today's at the same boundary (median ms)</th></tr></thead><tbody>"]
     for k, s in summary.items():
@@ -179,7 +179,7 @@ def main():
     open(f"{page}/summary.html", "w").write("\n".join(table) + "\n<!--short-->\n" + "\n".join(short_rows))
     open(f"{page}/passages.html", "w").write("\n".join(body))
     for k, s in summary.items():
-        print(k, json.dumps(s))
+        print(k, json.dumps(s, default=int))
     if shorts:
         m = [s for s in shorts if s["variant"] == "m50"]
         print("m50 shorts: median length ratio alone/merged",
