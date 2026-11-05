@@ -1,0 +1,19 @@
+<h2 id="findings">Findings</h2>
+<ul>
+<li><b>The stretch is mostly fixed for the shortest inputs.</b> At 1&ndash;5 phonemes, the phrase alone was
+13.5 frames (340 ms) longer than in context. With the fitted rows it is 3.8 frames longer. The speech-length gap
+drops from 29% to 18%; two in-context renders with different fillers differ by 9%. At 6&ndash;10 phonemes the
+excess goes from 13.0 to 7.0 frames.</li>
+<li><b>Loudness is not fixed, and on average it wasn't the problem.</b> Over 309 held-out phrases, the original
+rows are only +0.2 dB louder than in context on average (+0.5 dB at 6&ndash;10 phonemes). Each phrase still sits
+about 0.8 dB from its in-context level either way, against a 0.3 dB floor. Short words like "Yes." stay 1.7 dB
+louder. One row serves every phrase of a given length, so it can correct that length's average but not each
+phrase's own offset. Checked teacher-forced in fp32, the fitted rows bring the mean level bias to about 0.1 dB.</li>
+<li><b>Whisper: about the same.</b> Its exact-transcript rate goes from 83% to 84% (85% in context). "No." alone is
+now heard as "No." rather than "Now.".</li>
+<li><b>11&ndash;30 phonemes: small change.</b> The speech-length gap shrinks a little. Total frames at 21&ndash;30
+move slightly further from context, mostly in the final punctuation's pause: about 6.5 frames alone against
+about 3.5 in context, and the row barely moves it. That pause is silence.</li>
+<li><b>Long inputs are untouched.</b> Rows 30+ are byte-identical to the originals, and all 8 filler sentences
+(60&ndash;100 phonemes) render bit-identically with the patched pack.</li>
+</ul>
