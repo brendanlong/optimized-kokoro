@@ -3,7 +3,7 @@
 # "30 60"), --max-batch 8, ROUNDS times in alternation. For each: real corpus chunks closed-loop at
 # 16 and 64 streams (bench/load.py), then the longest requests the front sends for that cap at
 # speeds 0.25, 0.5 and 1 (bench/cap_load.py). Memory: the worker's own log (torch's peak reserved,
-# per connection) and nvidia-smi's per-process usage, sampled every 0.5 s.
+# per connection). (nvidia-smi listed no processes on the 3060 Ti host, so it isn't sampled.)
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit
 mkdir -p results
@@ -25,14 +25,6 @@ for round in $(seq "${ROUNDS:-2}"); do
         "$PY" -m kokoro_worker.server --socket "$sock/worker.sock" --models "$MODELS" --max-batch 8 \
             --max-chunk-seconds "$cap" > "results/$label.worker.log" 2>&1 &
         worker=$!
-        (
-            while kill -0 $worker 2> /dev/null; do
-                nvidia-smi --query-compute-apps=pid,used_memory --format=csv,noheader,nounits 2> /dev/null |
-                    awk -F', *' -v pid=$worker '$1 == pid {print $2}'
-                sleep 0.5
-            done
-        ) > "results/$label.smi" &
-        sampler=$!
         until grep -q "listening on" "results/$label.worker.log"; do
             sleep 1
             kill -0 $worker 2> /dev/null || { echo "worker died"; tail -5 "results/$label.worker.log"; continue 2; }
@@ -48,8 +40,6 @@ for round in $(seq "${ROUNDS:-2}"); do
         grep -E "connection done" "results/$label.worker.log" | tail -1 | sed 's/^[^ ]* [^ ]* //'
         kill $worker
         wait $worker 2> /dev/null
-        wait $sampler
-        echo "nvidia-smi, the worker process: peak $(sort -n "results/$label.smi" | tail -1) MiB"
     done
 done
 echo "done"
