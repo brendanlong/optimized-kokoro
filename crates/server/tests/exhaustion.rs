@@ -28,8 +28,13 @@ struct SlowSecondChunk {
 }
 
 impl Pipeline for SlowSecondChunk {
-    fn chunks<'a>(&'a self, lang: Lang, text: &'a str) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
-        Box::new(StubPipeline.chunks(lang, text).enumerate().map(move |(i, chunk)| {
+    fn chunks<'a>(
+        &'a self,
+        lang: Lang,
+        text: &'a str,
+        max_phonemes: usize,
+    ) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
+        Box::new(StubPipeline.chunks(lang, text, max_phonemes).enumerate().map(move |(i, chunk)| {
             if i == 1
                 && let Some(release) = self.release.lock().unwrap().take()
             {

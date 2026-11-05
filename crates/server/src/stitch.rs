@@ -5,7 +5,9 @@
 //!
 //! Kokoro-FastAPI stitches above 450 phonemes and renders each piece with up to 510 ids. Here a
 //! worker request also has to fit the worker's chunk cap, so at a low cap or a slow speed both
-//! shrink to [`max_render_ids`] (a divergence, `docs/divergences.md`).
+//! shrink to [`max_render_ids`] (a divergence, `docs/divergences.md`). The chunker cuts sentences
+//! at clause punctuation to that size first (`stream::max_chunk_phonemes`), so only a clause too
+//! long by itself is stitched.
 
 use crate::protocol::{SAMPLES_PER_FRAME, Speed};
 
@@ -29,13 +31,19 @@ const FRAMES_PER_ID_TENTHS: u64 = 40;
 const FRAMES_OVERHEAD: u64 = 120;
 /// Kokoro v1.0's id for a space.
 pub const SPACE_ID: u8 = 16;
+/// Kokoro v1.0's ids for `;`, `:` and `,`.
+pub const CLAUSE_IDS: [u8; 3] = [1, 2, 3];
+/// How far back from a piece's longest end clause punctuation is preferred to the last space.
+const CLAUSE_SHARE_PERCENT: usize = 40;
 
 fn find_space(ids: &[u8], from: usize) -> Option<usize> {
     ids.get(from..)?.iter().position(|&id| id == SPACE_ID).map(|i| from + i)
 }
 
-/// `[start, end)` ranges of at most `max_len` ids, ending at spaces where possible. The space
-/// between two pieces is in neither.
+/// `[start, end)` ranges of at most `max_len` ids, ending just after clause punctuation (`,;:`)
+/// followed by a space when there is one in the back `CLAUSE_SHARE` of the range, else at the last
+/// space, where possible. The space between two pieces is in neither. Kokoro-FastAPI only looks for
+/// spaces (a divergence, `docs/divergences.md`); a cut in a pause crossfades two silences.
 fn pieces(ids: &[u8], max_len: usize) -> Vec<(usize, usize)> {
     let mut out = Vec::new();
     let mut start = 0;
@@ -43,6 +51,8 @@ fn pieces(ids: &[u8], max_len: usize) -> Vec<(usize, usize)> {
         let mut end = start + max_len;
         if end >= ids.len() {
             end = ids.len();
+        } else if let Some(space) = clause_space(ids, start, end, max_len) {
+            end = space;
         } else if let Some(space) = ids[start + 1..=end].iter().rposition(|&id| id == SPACE_ID) {
             end = start + 1 + space;
         }
@@ -50,6 +60,13 @@ fn pieces(ids: &[u8], max_len: usize) -> Vec<(usize, usize)> {
         start = if end < ids.len() && ids[end] == SPACE_ID { end + 1 } else { end };
     }
     out
+}
+
+/// The last space in `ids[start + 1..=end]` that follows clause punctuation, if it is in the back
+/// `CLAUSE_SHARE` of a piece of `max_len`.
+fn clause_space(ids: &[u8], start: usize, end: usize, max_len: usize) -> Option<usize> {
+    let from = (start + max_len - max_len * CLAUSE_SHARE_PERCENT / 100).max(start + 2);
+    (from..=end).rev().find(|&i| ids[i] == SPACE_ID && CLAUSE_IDS.contains(&ids[i - 1]))
 }
 
 /// The ids a piece is rendered with: up to `WORDS_AHEAD` words after it, and as much before it
@@ -303,6 +320,39 @@ mod tests {
                 })
                 .sum();
             assert_eq!(total, 600 * 2 * (ids.len() + 2), "window {window}: {} pieces", plan.pieces());
+        }
+    }
+
+    /// A piece ends after the last comma (or `;`, `:`) in the back 40% of its longest range, else at
+    /// its last space.
+    #[test]
+    fn pieces_end_at_clause_punctuation_near_their_end() {
+        let a = 43;
+        let comma = 3;
+        // Words of 4 ids; a comma ends the word at `at` (the comma replacing its last id).
+        let ids_with_comma = |at: usize| -> Vec<u8> {
+            let mut ids = Vec::new();
+            for w in 0..40 {
+                if w > 0 {
+                    ids.push(SPACE_ID);
+                }
+                ids.extend([a; 4]);
+                if w == at {
+                    *ids.last_mut().unwrap() = comma;
+                }
+            }
+            ids
+        };
+        // 40 words of 4 ids and 39 spaces: 199 ids, word w's space at 5w + 4. Pieces of at most 100
+        // ids, so a comma counts from the space at 60: word 12's does, word 11's doesn't, and word
+        // 20's is past the piece.
+        for (at, end) in [(15, 79), (12, 64), (11, 99), (19, 99), (20, 99)] {
+            let ids = ids_with_comma(at);
+            let first = pieces(&ids, 100)[0];
+            assert_eq!(first, (0, end), "comma ending word {at}");
+            if end != 99 {
+                assert_eq!((ids[end - 1], ids[end]), (comma, SPACE_ID));
+            }
         }
     }
 

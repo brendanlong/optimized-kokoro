@@ -113,6 +113,17 @@ fn phoneme_len<P: Phonemes>(p: &P) -> usize {
 pub struct Piece<P> {
     pub text: String,
     pub phonemes: P,
+    /// Where the chunk was cut from its sentence: `before`, the sentence started in an earlier
+    /// chunk; `after`, it goes on in the next, and this chunk ends at clause punctuation. Both
+    /// false for a whole sentence.
+    pub split: Split,
+}
+
+/// Which sides of a chunk [`sentence_chunks`] cut at clause punctuation (see [`Piece::split`]).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Split {
+    pub before: bool,
+    pub after: bool,
 }
 
 /// One item of `smart_split`'s output.
@@ -124,11 +135,11 @@ pub enum Chunk<P> {
 }
 
 fn phonemize<P, E, F: FnMut(&str) -> Result<P, E>>(g2p: &mut F, text: &str) -> Result<Piece<P>, E> {
-    Ok(Piece { text: text.to_owned(), phonemes: g2p(text)? })
+    Ok(Piece { text: text.to_owned(), phonemes: g2p(text)?, split: Split::default() })
 }
 
 /// `sentence_chunks`: the sentence whole, or cut at clause punctuation and repacked when its
-/// phonemes are longer than `max_tokens`.
+/// phonemes are longer than `max_tokens`. Each piece says where it was cut ([`Piece::split`]).
 pub fn sentence_chunks<P: Phonemes, F: FnMut(&str) -> P>(
     sentence: &str,
     max_tokens: usize,
@@ -164,7 +175,17 @@ pub fn try_sentence_chunks<P: Phonemes, E, F: FnMut(&str) -> Result<P, E>>(
     if !group.is_empty() {
         out.push(join(group, g2p)?);
     }
+    mark_splits(&mut out);
     Ok(out)
+}
+
+/// Marks which of a sentence's chunks were cut from it at clause punctuation: all but the last
+/// end at it, and all but the first follow one.
+fn mark_splits<P>(pieces: &mut [Piece<P>]) {
+    let last = pieces.len().saturating_sub(1);
+    for (i, piece) in pieces.iter_mut().enumerate() {
+        piece.split = Split { before: i > 0, after: i < last };
+    }
 }
 
 /// `split_clauses`' texts: each clause stripped, with the punctuation that ended it.
@@ -270,12 +291,14 @@ impl<P: Phonemes, E, F: FnMut(&str) -> Result<P, E>> Iterator for SmartSplit<'_,
             if let Some(sentence) = self.sentences.pop_front() {
                 let sentence = py::strip(&sentence);
                 if !sentence.is_empty() {
-                    let pieces = match try_sentence_chunks(sentence, self.max_tokens, &mut self.g2p) {
+                    let mut pieces = match try_sentence_chunks(sentence, self.max_tokens, &mut self.g2p) {
                         Ok(pieces) => pieces,
                         Err(e) => return Some(Err(e)),
                     };
-                    self.ready
-                        .extend(pieces.into_iter().filter(|p| !p.phonemes.phonemes().is_empty()).map(Chunk::Speech));
+                    // A piece without phonemes has no audio, so its neighbours' audio meets.
+                    pieces.retain(|p| !p.phonemes.phonemes().is_empty());
+                    mark_splits(&mut pieces);
+                    self.ready.extend(pieces.into_iter().map(Chunk::Speech));
                 }
                 continue;
             }
@@ -335,6 +358,44 @@ mod tests {
             .collect();
         assert_eq!(shape, ["aaaa, bbbb,", "cccc.", "<1.5>", "Next."]);
         assert_eq!(calls, ["aaaa, bbbb, cccc.", "aaaa,", "bbbb,", "cccc.", "aaaa, bbbb,", "Next."]);
+        let splits: Vec<_> = chunks
+            .iter()
+            .filter_map(|c| match c {
+                Chunk::Speech(p) => Some((p.split.before, p.split.after)),
+                Chunk::Pause(_) => None,
+            })
+            .collect();
+        assert_eq!(splits, [(false, true), (true, false), (false, false)]);
+    }
+
+    /// The limit is the caller's: the server lowers it when its worker takes fewer ids. A clause
+    /// with no phonemes leaves no audio, so it doesn't count as a cut.
+    #[test]
+    fn clause_splits_follow_the_limit_and_skip_silent_clauses() {
+        let g2p = |t: &str| "x".repeat(t.len());
+        let pieces = |limit| -> Vec<_> {
+            smart_split("aaaa, bbbb; cccc: dddd.", "z", &Options::default(), &Limits::default(), limit, g2p)
+                .map(|c| match c {
+                    Chunk::Speech(p) => (p.text, p.split.before, p.split.after),
+                    Chunk::Pause(_) => unreachable!(),
+                })
+                .collect()
+        };
+        let s = |t: &str, before, after| (t.to_owned(), before, after);
+        assert_eq!(pieces(450), [s("aaaa, bbbb; cccc: dddd.", false, false)]);
+        assert_eq!(pieces(12), [s("aaaa, bbbb;", false, true), s("cccc: dddd.", true, false)]);
+        assert_eq!(
+            pieces(0),
+            [s("aaaa,", false, true), s("bbbb;", true, true), s("cccc:", true, true), s("dddd.", true, false)]
+        );
+        let silent = |t: &str| if t.starts_with('b') { String::new() } else { "x".repeat(t.len()) };
+        let chunks: Vec<_> = smart_split("aaaa, bbbb,", "z", &Options::default(), &Limits::default(), 5, silent)
+            .map(|c| match c {
+                Chunk::Speech(p) => (p.text, p.split.before, p.split.after),
+                Chunk::Pause(_) => unreachable!(),
+            })
+            .collect();
+        assert_eq!(chunks, [s("aaaa,", false, false)]);
     }
 
     #[test]

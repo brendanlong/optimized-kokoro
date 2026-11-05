@@ -4,6 +4,8 @@
 //! needs from it, so tests can stand in their own.
 
 use kokoro_text::{Limits, Options, Piece, smart_split};
+
+pub use kokoro_text::{DEFAULT_MAX_TOKENS, Split};
 use std::fmt;
 
 pub use kokoro_pipeline::Lang;
@@ -26,6 +28,8 @@ pub struct Chunk {
     pub pause: Option<f64>,
     /// Runs of text with no G2P for their language or script yet, read as "<name> text".
     pub unread: usize,
+    /// Which sides of the chunk were cut from its sentence at clause punctuation.
+    pub split: Split,
 }
 
 /// Text processing failed, which fails the request.
@@ -42,9 +46,15 @@ impl std::error::Error for PipelineError {}
 
 pub trait Pipeline: Send + Sync + 'static {
     /// The chunks of `text`, normalized with the default options and phonemized lazily as they're
-    /// taken. Runs on a blocking thread. An error stands in for the sentence it happened in; later
-    /// sentences still follow.
-    fn chunks<'a>(&'a self, lang: Lang, text: &'a str) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a>;
+    /// taken. A sentence of more than `max_phonemes` phonemes is cut at clause punctuation
+    /// (Kokoro-FastAPI's limit is [`DEFAULT_MAX_TOKENS`]). Runs on a blocking thread. An error
+    /// stands in for the sentence it happened in; later sentences still follow.
+    fn chunks<'a>(
+        &'a self,
+        lang: Lang,
+        text: &'a str,
+        max_phonemes: usize,
+    ) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a>;
 }
 
 /// A test pipeline: Kokoro-FastAPI's chunking (from `kokoro-text`) with a fake G2P that keeps
@@ -71,15 +81,20 @@ fn stub_id(c: char) -> u8 {
 }
 
 impl Pipeline for StubPipeline {
-    fn chunks<'a>(&'a self, lang: Lang, text: &'a str) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
+    fn chunks<'a>(
+        &'a self,
+        lang: Lang,
+        text: &'a str,
+        max_phonemes: usize,
+    ) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
         static LIMITS: std::sync::LazyLock<Limits> = std::sync::LazyLock::new(Limits::default);
         static OPTIONS: std::sync::LazyLock<Options> = std::sync::LazyLock::new(Options::default);
-        let split = smart_split(text, lang.code(), &OPTIONS, &LIMITS, kokoro_text::DEFAULT_MAX_TOKENS, stub_g2p);
+        let split = smart_split(text, lang.code(), &OPTIONS, &LIMITS, max_phonemes, stub_g2p);
         Box::new(split.map(|chunk| {
             Ok(match chunk {
-                kokoro_text::Chunk::Speech(Piece { text, phonemes }) => {
+                kokoro_text::Chunk::Speech(Piece { text, phonemes, split }) => {
                     let ids = phonemes.chars().map(stub_id).collect();
-                    Chunk { text, phonemes, ids, pause: None, unread: 0 }
+                    Chunk { text, phonemes, ids, pause: None, unread: 0, split }
                 }
                 kokoro_text::Chunk::Pause(seconds) => Chunk {
                     text: String::new(),
@@ -87,6 +102,7 @@ impl Pipeline for StubPipeline {
                     ids: Vec::new(),
                     pause: Some(seconds),
                     unread: 0,
+                    split: Split::default(),
                 },
             })
         }))

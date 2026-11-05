@@ -6,7 +6,7 @@ use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming;
 use hyper::{Request, Response};
-use kokoro_server::pipeline::{Chunk, Lang, Pipeline, PipelineError};
+use kokoro_server::pipeline::{Chunk, DEFAULT_MAX_TOKENS, Lang, Pipeline, PipelineError};
 use kokoro_server::protocol::worker_side::{self, FrontFrame, read_front};
 use kokoro_server::protocol::{FailCode, Hello, Priority};
 use kokoro_server::{Config, StubPipeline, Worker, http, serve};
@@ -56,7 +56,7 @@ pub fn respond(slot: u16, ids: &[u8]) -> Vec<u8> {
 /// The audio the server should produce for `text` in one voice, using the stub pipeline.
 pub fn expected_audio(text: &str) -> Vec<i16> {
     let mut out = Vec::new();
-    for chunk in StubPipeline.chunks(Lang::AmericanEnglish, text) {
+    for chunk in StubPipeline.chunks(Lang::AmericanEnglish, text, DEFAULT_MAX_TOKENS) {
         let chunk = chunk.unwrap();
         match chunk.pause {
             Some(p) => out.extend(std::iter::repeat_n(0, (p * 24000.0) as usize)),
@@ -67,7 +67,7 @@ pub fn expected_audio(text: &str) -> Vec<i16> {
 }
 
 pub fn stub_chunks(text: &str) -> Vec<Chunk> {
-    StubPipeline.chunks(Lang::AmericanEnglish, text).map(Result::unwrap).collect()
+    StubPipeline.chunks(Lang::AmericanEnglish, text, DEFAULT_MAX_TOKENS).map(Result::unwrap).collect()
 }
 
 /// A worker whose every move the test makes: it reports each frame the server sends, and
@@ -280,9 +280,14 @@ pub struct CountingPipeline {
 }
 
 impl Pipeline for CountingPipeline {
-    fn chunks<'a>(&'a self, lang: Lang, text: &'a str) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
+    fn chunks<'a>(
+        &'a self,
+        lang: Lang,
+        text: &'a str,
+        max_phonemes: usize,
+    ) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        StubPipeline.chunks(lang, text)
+        StubPipeline.chunks(lang, text, max_phonemes)
     }
 }
 
@@ -387,8 +392,13 @@ pub struct BrokenPipeline {
 }
 
 impl Pipeline for BrokenPipeline {
-    fn chunks<'a>(&'a self, lang: Lang, text: &'a str) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
-        Box::new(StubPipeline.chunks(lang, text).enumerate().map(|(i, chunk)| {
+    fn chunks<'a>(
+        &'a self,
+        lang: Lang,
+        text: &'a str,
+        max_phonemes: usize,
+    ) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
+        Box::new(StubPipeline.chunks(lang, text, max_phonemes).enumerate().map(|(i, chunk)| {
             if i < self.fail_at {
                 chunk
             } else if self.panic {

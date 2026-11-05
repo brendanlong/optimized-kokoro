@@ -2,7 +2,7 @@ mod common;
 
 use common::*;
 use kokoro_server::StubPipeline;
-use kokoro_server::pipeline::{Chunk, Lang, Pipeline, PipelineError};
+use kokoro_server::pipeline::{Chunk, DEFAULT_MAX_TOKENS, Lang, Pipeline, PipelineError};
 use kokoro_server::protocol::worker_side::{self, FrontFrame};
 use kokoro_server::protocol::{FailCode, Hello, Priority, Speed};
 use kokoro_server::stitch::{Plan, max_render_ids};
@@ -275,9 +275,14 @@ async fn voice_and_rate_tags_are_text() {
 struct LangRecorder(Mutex<Vec<Lang>>);
 
 impl Pipeline for LangRecorder {
-    fn chunks<'a>(&'a self, lang: Lang, text: &'a str) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
+    fn chunks<'a>(
+        &'a self,
+        lang: Lang,
+        text: &'a str,
+        max_phonemes: usize,
+    ) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
         self.0.lock().unwrap().push(lang);
-        StubPipeline.chunks(lang, text)
+        StubPipeline.chunks(lang, text, max_phonemes)
     }
 }
 
@@ -522,6 +527,58 @@ async fn chunks_that_could_exceed_the_cap_are_stitched() {
     }
 }
 
+/// Below the cap-derived limit's ids, a long sentence is cut at its commas instead of stitched,
+/// and the cut ends join at the model's own timing: the first chunk ends right after its comma's
+/// frames, the next starts at its first loud sample, so neither keeps Kokoro-FastAPI's padding.
+#[tokio::test]
+async fn sentences_over_the_cap_limit_split_at_clauses_and_join_at_the_comma() {
+    let clause = |c: usize| (0..10).map(move |i| format!("word{}", char::from(b'a' + ((c * 10 + i) % 26) as u8)));
+    let text = (0..6).map(|c| clause(c).collect::<Vec<_>>().join(" ")).collect::<Vec<_>>().join(", ") + ".";
+    let whole = stub_chunks(&text);
+    assert_eq!(whole.len(), 1, "one chunk at the reference's limit");
+    let (cap, speed) = (720_000, Speed::NORMAL);
+    let limit = max_render_ids(cap, speed);
+    assert!(limit == 270 && whole[0].ids.len() > limit);
+    let chunks: Vec<_> = StubPipeline.chunks(Lang::AmericanEnglish, &text, limit).map(Result::unwrap).collect();
+    assert_eq!(chunks.len(), 2);
+    assert!(chunks.iter().all(|c| c.ids.len() <= limit));
+    assert!(chunks[0].text.ends_with(',') && chunks[0].split.after && !chunks[0].split.before);
+    assert!(chunks[1].split.before && !chunks[1].split.after);
+
+    let server = start(|_| {}, Arc::new(StubPipeline)).await;
+    let mut worker =
+        ScriptedWorker::listen(&server.socket, worker_side::hello(&Hello { max_chunk_samples: cap, ..hello() }));
+    server.worker.connected().await;
+    let client = tokio::spawn(speak(server.addr, pcm(&text)));
+    // Each id one frame of loud samples, after 3 silent frames for the leading boundary id and
+    // before one for the trailing one.
+    let render = |ids: &[u8]| -> (Vec<u16>, Vec<i16>) {
+        let mut durations = vec![3];
+        durations.extend(std::iter::repeat_n(1, ids.len() + 1));
+        let mut pcm = vec![0; 1800];
+        pcm.extend(std::iter::repeat_n(5000, 600 * ids.len()));
+        pcm.extend([0; 600]);
+        (durations, pcm)
+    };
+    let mut sent = Vec::new();
+    for _ in 0..2 {
+        let (id, _, _, _, ids) = worker.synthesize().await;
+        let (durations, pcm) = render(&ids);
+        worker.send(worker_side::result(id, &durations, &pcm));
+        sent.push(ids);
+    }
+    let response = client.await.unwrap();
+    assert_eq!(response.status(), 200);
+    assert_eq!(sent, [chunks[0].ids.clone(), chunks[1].ids.clone()]);
+    assert_eq!(worker.style_lens, [chunks[0].ids.len() as u16, chunks[1].ids.len() as u16]);
+    // The first keeps 50 ms before its speech and ends after its comma, the last id; the second
+    // starts at its speech and keeps the padding after it, cut to the 24 samples trimmed at the end.
+    let (_, first) = render(&chunks[0].ids);
+    let (_, second) = render(&chunks[1].ids);
+    let expected = [&first[600..first.len() - 600], &second[1800..second.len() - 24]].concat();
+    assert_eq!(samples(&body_bytes(response).await.unwrap()), expected);
+}
+
 #[tokio::test]
 async fn pipeline_failures_fail_the_response() {
     for panic in [false, true] {
@@ -556,7 +613,7 @@ async fn speaks_chinese_with_a_chinese_voice() {
     let mut body = pcm(text);
     body["voice"] = json!("zf_xiaobei");
     let client = tokio::spawn(speak(server.addr, body));
-    let chunks: Vec<_> = pipelines.chunks(Lang::Chinese, text).map(Result::unwrap).collect();
+    let chunks: Vec<_> = pipelines.chunks(Lang::Chinese, text, DEFAULT_MAX_TOKENS).map(Result::unwrap).collect();
     assert_eq!(chunks.len(), 2);
     let voice = VOICES.iter().position(|&v| v == "zf_xiaobei").unwrap() as u16;
     let mut expected = Vec::new();
@@ -580,9 +637,12 @@ async fn speaks_spanish_with_a_spanish_voice() {
     let mut body = pcm(text);
     body["voice"] = json!("ef_dora");
     let client = tokio::spawn(speak(server.addr, body));
-    let chunks: Vec<_> = pipelines.chunks(Lang::Spanish, text).map(Result::unwrap).collect();
+    let chunks: Vec<_> = pipelines.chunks(Lang::Spanish, text, DEFAULT_MAX_TOKENS).map(Result::unwrap).collect();
     assert_eq!(chunks.len(), 2);
-    assert_ne!(chunks, pipelines.chunks(Lang::AmericanEnglish, text).map(Result::unwrap).collect::<Vec<_>>());
+    assert_ne!(
+        chunks,
+        pipelines.chunks(Lang::AmericanEnglish, text, DEFAULT_MAX_TOKENS).map(Result::unwrap).collect::<Vec<_>>()
+    );
     let voice = VOICES.iter().position(|&v| v == "ef_dora").unwrap() as u16;
     let mut expected = Vec::new();
     for chunk in &chunks {
@@ -603,7 +663,8 @@ async fn speaks_english_with_the_real_pipeline() {
     server.worker.connected().await;
     let text = "The quick brown fox jumps over the lazy dog. It costs $5. 東京へ行く";
     let client = tokio::spawn(speak(server.addr, pcm(text)));
-    let chunks: Vec<_> = pipelines.chunks(Lang::AmericanEnglish, text).map(Result::unwrap).collect();
+    let chunks: Vec<_> =
+        pipelines.chunks(Lang::AmericanEnglish, text, DEFAULT_MAX_TOKENS).map(Result::unwrap).collect();
 
     assert_eq!(chunks.len(), 3);
     // Read by the Japanese G2P when UniDic is installed, else as "Japanese text".

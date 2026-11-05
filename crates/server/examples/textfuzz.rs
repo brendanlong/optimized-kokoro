@@ -214,7 +214,7 @@ fn main() {
                     let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                         let _ = kokoro_text::check_pause_budget(&text, &kokoro_text::Limits::default());
                         let _ = kokoro_text::check_speakable(&text, &kokoro_text::Options::default());
-                        for c in p.chunks(lang, &text).flatten() {
+                        for c in p.chunks(lang, &text, kokoro_server::pipeline::DEFAULT_MAX_TOKENS).flatten() {
                             assert!(c.pause.is_some() || c.ids.iter().all(|i| (1..178).contains(i)), "bad id");
                         }
                     }));

@@ -35,7 +35,7 @@ use std::sync::{Arc, OnceLock};
 pub use kokoro_g2p_en::Token;
 #[doc(hidden)]
 pub use kokoro_g2p_ja::skip_without_dictionary;
-pub use kokoro_text::{DEFAULT_MAX_TOKENS, Limits, Options as NormalizationOptions};
+pub use kokoro_text::{DEFAULT_MAX_TOKENS, Limits, Options as NormalizationOptions, Split};
 pub use vocab::id;
 
 /// Whether this process has loaded misaki's Chinese G2P yet: only Han text or a Chinese request
@@ -206,6 +206,9 @@ pub struct Chunk {
     pub words: Vec<Word>,
     /// How many runs with no G2P for their language or script were read as "<name> text".
     pub unread: usize,
+    /// Which sides of the chunk were cut from its sentence at clause punctuation, for a sentence
+    /// longer than the chunk limit.
+    pub split: Split,
 }
 
 /// A word of a chunk, located in its phonemes (Kokoro-FastAPI's `_word_spans`). A run of another
@@ -332,13 +335,25 @@ impl Pipeline {
         text: &str,
         options: &'a NormalizationOptions,
     ) -> impl Iterator<Item = Result<Chunk, Error>> + Send + use<'a> {
+        self.chunks_within(text, options, self.max_tokens)
+    }
+
+    /// [`chunks`](Self::chunks) with sentences of more than `max_tokens` phonemes cut at clauses,
+    /// whatever [`with_max_tokens`](Self::with_max_tokens) set: the server's limit depends on the
+    /// request's speed.
+    pub fn chunks_within<'a>(
+        &'a self,
+        text: &str,
+        options: &'a NormalizationOptions,
+        max_tokens: usize,
+    ) -> impl Iterator<Item = Result<Chunk, Error>> + Send + use<'a> {
         let mut request = Request::new(self);
-        kokoro_text::try_smart_split(text, self.lang.code(), options, &self.limits, self.max_tokens, move |t: &str| {
+        kokoro_text::try_smart_split(text, self.lang.code(), options, &self.limits, max_tokens, move |t: &str| {
             request.phonemize(t)
         })
         .map(|chunk| {
             chunk.map(|chunk| match chunk {
-                kokoro_text::Chunk::Speech(piece) => speech(piece.text, piece.phonemes),
+                kokoro_text::Chunk::Speech(piece) => speech(piece.text, piece.phonemes, piece.split),
                 kokoro_text::Chunk::Pause(seconds) => Chunk {
                     text: String::new(),
                     phonemes: String::new(),
@@ -347,6 +362,7 @@ impl Pipeline {
                     pause: Some(seconds),
                     words: Vec::new(),
                     unread: 0,
+                    split: Split::default(),
                 },
             })
         })
@@ -384,14 +400,14 @@ impl kokoro_text::Phonemes for Phonemes {
     }
 }
 
-fn speech(text: String, p: Phonemes) -> Chunk {
+fn speech(text: String, p: Phonemes, split: Split) -> Chunk {
     let (ids, kept) = vocab::ids(&p.phonemes);
     let words = match &p.tokens {
         Some(tokens) => word_spans(tokens, &kept),
         None => text_word_spans(&text, &p.phonemes, &kept),
     };
     let dropped = kept.len() - 1 - ids.len();
-    Chunk { text, phonemes: p.phonemes, ids, dropped, pause: None, words, unread: p.unread }
+    Chunk { text, phonemes: p.phonemes, ids, dropped, pause: None, words, unread: p.unread, split }
 }
 
 /// `_word_spans` without misaki's tokens (every pipeline but English): the text's words paired
