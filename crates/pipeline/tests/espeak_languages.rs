@@ -72,6 +72,8 @@ struct Count {
     records: usize,
     compared: usize,
     matched: usize,
+    /// Matched but for regrouped short clauses (docs/divergences.md).
+    regrouped: usize,
     chunks: usize,
     chars: usize,
     skipped: BTreeMap<&'static str, Vec<String>>,
@@ -130,6 +132,16 @@ fn espeak_reference_records() {
         count.compared += 1;
         if actual == expected {
             count.matched += 1;
+        } else if kokoro_reference::clause_regrouping(
+            &expected,
+            &actual,
+            kokoro_text::MIN_CLAUSE_CHUNK,
+            Some(&record.sentences),
+        )
+        .is_some()
+        {
+            count.matched += 1;
+            count.regrouped += 1;
         } else {
             let first =
                 expected.iter().zip(&actual).position(|(e, a)| e != a).unwrap_or(expected.len().min(actual.len()));
@@ -146,9 +158,10 @@ fn espeak_reference_records() {
     let elapsed = start.elapsed();
     for (lang, c) in &counts {
         println!(
-            "{lang}: {}/{} compared records match exactly, of {} ({} chunks, {} characters); not compared: {:?}",
+            "{lang}: {}/{} compared records match ({} with short clauses regrouped), of {} ({} chunks, {} characters); not compared: {:?}",
             c.matched,
             c.compared,
+            c.regrouped,
             c.records,
             c.chunks,
             c.chars,

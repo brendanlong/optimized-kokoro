@@ -167,7 +167,7 @@ fn reference_records() {
         Pipeline::new(Lang::Chinese).unwrap().with_foreign_g2p(Language::Japanese, Box::new(Recorded(japanese)));
     let options = NormalizationOptions::default();
     let show: usize = std::env::var("PARITY_SHOW").ok().and_then(|s| s.parse().ok()).unwrap_or(20);
-    let (mut matched, mut compared, mut chars) = (0, 0, 0);
+    let (mut matched, mut compared, mut chars, mut regrouped) = (0, 0, 0, 0);
     let (mut cjk, mut cjk_matched, mut cjk_skipped, mut new_script, mut flagged) = (0, 0, 0, Vec::new(), Vec::new());
     let (mut zh, mut zh_matched, mut failing, mut failing_matched, mut unreadable) = (0, 0, 0, 0, Vec::new());
     let mut mismatches = Vec::new();
@@ -272,6 +272,17 @@ fn reference_records() {
                 zh_matched += usize::from(record.lang == "z");
                 failing_matched += usize::from(record.error.is_some());
             }
+        } else if error.is_some() == record.error.is_some()
+            && kokoro_reference::clause_regrouping(
+                &expected,
+                &actual,
+                kokoro_text::MIN_CLAUSE_CHUNK,
+                Some(&record.sentences),
+            )
+            .is_some()
+        {
+            // Short clauses are regrouped on purpose (docs/divergences.md).
+            regrouped += 1;
         } else {
             let first =
                 expected.iter().zip(&actual).position(|(e, a)| e != a).unwrap_or(expected.len().min(actual.len()));
@@ -288,7 +299,7 @@ fn reference_records() {
     }
     let elapsed = start.elapsed();
     println!(
-        "{matched}/{compared} records match exactly ({:.3}%): {zh_matched}/{zh} of them Chinese ({}), {failing_matched}/{failing} up to where the reference fails; {cjk_matched}/{cjk} English records with Japanese runs match with placeholders ({cjk_skipped} not compared: a chunk spans several G2P calls)",
+        "{matched}/{compared} records match exactly ({:.3}%), and {regrouped} but for regrouped short clauses: {zh_matched}/{zh} of them Chinese ({}), {failing_matched}/{failing} up to where the reference fails; {cjk_matched}/{cjk} English records with Japanese runs match with placeholders ({cjk_skipped} not compared: a chunk spans several G2P calls)",
         100.0 * matched as f64 / compared.max(1) as f64,
         if japanese_read {
             "Japanese runs read with UniDic"

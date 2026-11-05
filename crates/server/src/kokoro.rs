@@ -18,11 +18,23 @@ impl KokoroPipelines {
 }
 
 impl Pipeline for KokoroPipelines {
-    fn chunks<'a>(&'a self, lang: Lang, text: &'a str) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
+    fn chunks<'a>(
+        &'a self,
+        lang: Lang,
+        text: &'a str,
+        max_phonemes: usize,
+    ) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
         let pipeline = self.pipelines.iter().find(|p| p.lang() == lang).expect("a pipeline for every language");
-        Box::new(pipeline.chunks(text, &self.options).map(|chunk| {
+        Box::new(pipeline.chunks_within(text, &self.options, max_phonemes).map(|chunk| {
             chunk
-                .map(|c| Chunk { text: c.text, phonemes: c.phonemes, ids: c.ids, pause: c.pause, unread: c.unread })
+                .map(|c| Chunk {
+                    text: c.text,
+                    phonemes: c.phonemes,
+                    ids: c.ids,
+                    pause: c.pause,
+                    unread: c.unread,
+                    split: c.split,
+                })
                 .map_err(|e| PipelineError(e.to_string()))
         }))
     }
@@ -31,12 +43,13 @@ impl Pipeline for KokoroPipelines {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pipeline::DEFAULT_MAX_TOKENS;
 
     #[test]
     fn reads_english_and_names_what_it_cant_read() {
         let pipelines = KokoroPipelines::load().unwrap();
         let chunks: Vec<_> = pipelines
-            .chunks(Lang::AmericanEnglish, "Hello there. [pause:0.5s] 東京 is big. カナ too.")
+            .chunks(Lang::AmericanEnglish, "Hello there. [pause:0.5s] 東京 is big. カナ too.", DEFAULT_MAX_TOKENS)
             .map(Result::unwrap)
             .collect();
         assert_eq!(chunks[0].text, "Hello there.");
@@ -54,7 +67,8 @@ mod tests {
     #[test]
     fn chinese_voices_get_chinese_phonemes() {
         let pipelines = KokoroPipelines::load().unwrap();
-        let chunks: Vec<_> = pipelines.chunks(Lang::Chinese, "银行行长在长城上。").map(Result::unwrap).collect();
+        let chunks: Vec<_> =
+            pipelines.chunks(Lang::Chinese, "银行行长在长城上。", DEFAULT_MAX_TOKENS).map(Result::unwrap).collect();
         assert_eq!(chunks[0].phonemes, "i↗nxa↗ŋxa↗ŋꭧa↓ŋ ʦai↘ ꭧʰa↗ŋꭧʰə↗ŋ ʂa↘ŋ.");
         assert_eq!(chunks[0].ids.len(), chunks[0].phonemes.chars().count());
     }
@@ -65,9 +79,13 @@ mod tests {
             return kokoro_pipeline::skip_without_dictionary("no UniDic at $KOKORO_UNIDIC");
         }
         let pipelines = KokoroPipelines::load().unwrap();
-        let chunk = pipelines.chunks(Lang::Japanese, "東京へ行きます。").next().unwrap().unwrap();
+        let chunk = pipelines.chunks(Lang::Japanese, "東京へ行きます。", DEFAULT_MAX_TOKENS).next().unwrap().unwrap();
         assert_eq!((chunk.phonemes.as_str(), chunk.unread), ("toːkʲoː e ikʲimasɨ", 0));
-        let chunk = pipelines.chunks(Lang::AmericanEnglish, "She said こんにちは.").next().unwrap().unwrap();
+        let chunk = pipelines
+            .chunks(Lang::AmericanEnglish, "She said こんにちは.", DEFAULT_MAX_TOKENS)
+            .next()
+            .unwrap()
+            .unwrap();
         assert_eq!((chunk.phonemes.as_str(), chunk.unread), ("ʃˌi sˈɛd koɲɲiʨiβa.", 0));
     }
 
@@ -81,7 +99,7 @@ mod tests {
             (Lang::Italian, "Ciao mondo.", "ʧˈao mˈondo."),
             (Lang::BrazilianPortuguese, "Olá, mundo.", "olˈa, mˈu\u{303}ŋdʊ."),
         ] {
-            let chunk = pipelines.chunks(lang, text).next().unwrap().unwrap();
+            let chunk = pipelines.chunks(lang, text, DEFAULT_MAX_TOKENS).next().unwrap().unwrap();
             assert_eq!((chunk.phonemes.as_str(), chunk.unread), (phonemes, 0), "{lang:?}");
             assert_eq!(chunk.ids.len(), chunk.phonemes.chars().count(), "{lang:?}");
         }
@@ -90,7 +108,7 @@ mod tests {
     #[test]
     fn british_voices_get_british_phonemes() {
         let pipelines = KokoroPipelines::load().unwrap();
-        let phonemes = |lang| pipelines.chunks(lang, "tomato").next().unwrap().unwrap().phonemes;
+        let phonemes = |lang| pipelines.chunks(lang, "tomato", DEFAULT_MAX_TOKENS).next().unwrap().unwrap().phonemes;
         assert_ne!(phonemes(Lang::AmericanEnglish), phonemes(Lang::BritishEnglish));
     }
 }

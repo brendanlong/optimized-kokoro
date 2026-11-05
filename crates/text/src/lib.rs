@@ -21,6 +21,7 @@ pub mod tags;
 
 pub use normalize::{Normalizer, Options};
 pub use split::{
-    Chunk, DEFAULT_MAX_TOKENS, Phonemes, Piece, SmartSplit, join_lines, sentences, smart_split, try_smart_split,
+    Chunk, DEFAULT_MAX_TOKENS, MIN_CLAUSE_CHUNK, Phonemes, Piece, SmartSplit, Split, join_lines, sentences,
+    smart_split, try_smart_split,
 };
 pub use tags::{Limits, Rejected, check_pause_budget, check_speakable, strip_emoji};

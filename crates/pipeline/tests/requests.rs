@@ -114,6 +114,7 @@ fn requests_match_the_reference() {
     let cases = cases();
     let mut failures = Vec::new();
     let (mut flagged, mut rechunked, mut new_script, mut stateful, mut numbers, mut fuzzed) = (0, 0, 0, 0, 0, 0);
+    let mut regrouped = 0;
     for case in &cases {
         if uses_new_script(&case.text) {
             new_script += 1;
@@ -204,6 +205,7 @@ fn requests_match_the_reference() {
             _ => e == a,
         };
         let prefix_matches = expected.len() <= actual.len() && expected.iter().zip(&actual).all(|(e, a)| same(e, a));
+        let no_error = error.is_none();
         let ok = match error {
             // misaki's `TypeError` on `İ` after punctuation: the port reads it (docs/divergences.md).
             Some(e) if e.starts_with("TypeError: ord() expected a character") => prefix_matches,
@@ -216,6 +218,37 @@ fn requests_match_the_reference() {
             Some(_) => prefix_matches && actual[expected.len()..].iter().any(|a| matches!(a, Expected::Error { .. })),
             None => prefix_matches && expected.len() == actual.len(),
         };
+        // Pauses and errors stay in, as chunks of their own, so they must match too.
+        let pairs = |chunks: &mut dyn Iterator<Item = &Expected>| -> Vec<(String, String)> {
+            chunks
+                .map(|c| match c {
+                    Expected::Speech { text, phonemes, .. } => (text.clone(), phonemes.clone()),
+                    other => (format!("{other:?}"), String::new()),
+                })
+                .collect()
+        };
+        // A chunk with the same text on both sides must be the same, ids and words included.
+        let shared_equal = actual.iter().all(|a| {
+            expected.iter().all(|e| match (e, a) {
+                (Expected::Speech { text, .. }, Expected::Speech { text: t, .. }) if text == t => *e == a,
+                _ => true,
+            })
+        });
+        // Short clauses are regrouped on purpose (docs/divergences.md).
+        if !ok
+            && no_error
+            && shared_equal
+            && kokoro_reference::clause_regrouping(
+                &pairs(&mut expected.iter().copied()),
+                &pairs(&mut actual.iter()),
+                kokoro_text::MIN_CLAUSE_CHUNK,
+                None,
+            )
+            .is_some_and(|n| n > 0)
+        {
+            regrouped += 1;
+            continue;
+        }
         if !ok {
             // Numbers and symbols are read differently on purpose (docs/divergences.md): where the
             // chunks' text differs only by them, the request is counted apart.
@@ -245,12 +278,13 @@ fn requests_match_the_reference() {
             ));
         }
     }
-    let compared = cases.len() - new_script - rechunked - stateful - numbers - fuzzed;
+    let compared = cases.len() - new_script - rechunked - stateful - numbers - fuzzed - regrouped;
     println!(
         "{} of {compared} requests match ({flagged} of them once espeak's language-switch flags are dropped from the reference's); \
          not compared: {rechunked} chunked differently without the flags, {new_script} with other scripts, \
          {stateful} where the reference's espeak read a word by an earlier call's state, \
-         {numbers} with numbers or symbols read differently, {fuzzed} more fuzzed ones with digits or symbols",
+         {numbers} with numbers or symbols read differently, {fuzzed} more fuzzed ones with digits or symbols, \
+         {regrouped} with short clauses regrouped",
         compared - failures.len(),
     );
     for f in failures.iter().take(10) {

@@ -18,9 +18,9 @@
 //! [`StreamError::Shed`] and its queued chunks are cancelled. Once the first audio is handed out
 //! it never is.
 
-use crate::audio::{silence, trim_range};
+use crate::audio::{Joins, final_clause_mark, keep_range, silence};
 use crate::load::{Admission, Shed};
-use crate::pipeline::{Chunk, Pipeline, PipelineError};
+use crate::pipeline::{Chunk, DEFAULT_MAX_TOKENS, Pipeline, PipelineError};
 use crate::request::Speech;
 use crate::stitch::{self, STITCH_ABOVE, Stitcher};
 use crate::worker::{Connection, HeldAudio, SynthError, SynthRequest, Synthesized};
@@ -77,6 +77,8 @@ struct Finish {
     text: Arc<str>,
     speed: f64,
     stitch: Option<(Arc<stitch::Plan>, usize)>,
+    /// Where it meets the chunks its sentence was split into at clause punctuation, if any.
+    joins: Joins,
 }
 
 #[derive(Debug)]
@@ -91,9 +93,18 @@ enum Produced {
     End,
 }
 
+/// The most phonemes a sentence may have before the chunker cuts it at clause punctuation: the
+/// reference's 450, or fewer if one worker request may have fewer ids (`render_ids`, from
+/// [`stitch::max_render_ids`]). An id is a phoneme the vocabulary has, so a chunk within this many
+/// phonemes is rendered whole; only a clause longer than this by itself is stitched.
+pub fn max_chunk_phonemes(render_ids: usize) -> usize {
+    render_ids.min(DEFAULT_MAX_TOKENS)
+}
+
 /// A chunk's units. `render_ids` is the most ids one worker request may have
 /// ([`stitch::max_render_ids`]): a chunk with more, or with more than `STITCH_ABOVE` phonemes, is
-/// stitched.
+/// stitched. Where the chunker cut the chunk's sentence, the first unit starts and the last ends at
+/// the cut ([`Joins`]).
 fn units(chunk: Chunk, speech: &Speech, render_ids: usize) -> Vec<Unit> {
     if let Some(pause) = chunk.pause {
         return if pause > 0.0 { vec![Unit::Silence(silence(pause))] } else { Vec::new() };
@@ -108,16 +119,29 @@ fn units(chunk: Chunk, speech: &Speech, render_ids: usize) -> Vec<Unit> {
         ids,
         style_len: style_len.min(usize::from(u16::MAX)) as u16,
     };
-    let finish = |stitch| Finish { text: text.clone(), speed: speech.speed.as_f64(), stitch };
+    let split = chunk.split;
+    // `own` is where the piece's own ids start in the ids it is rendered with: a clause mark
+    // before it is in the context, whose audio the stitcher drops, so the end is trimmed instead.
+    let finish = |stitch, ids: &[u8], own: usize, first: bool, last: bool| Finish {
+        text: text.clone(),
+        speed: speech.speed.as_f64(),
+        stitch,
+        joins: Joins {
+            start_at_speech: first && split.before,
+            end_after_id: if last && split.after { final_clause_mark(&ids[own..]).map(|i| own + i) } else { None },
+        },
+    };
     if chunk.phonemes.chars().count() <= STITCH_ABOVE && chunk.ids.len() <= render_ids {
         let n = chunk.ids.len();
-        return vec![Unit::Speech(request(chunk.ids, n), finish(None))];
+        let finish = finish(None, &chunk.ids, 0, true, true);
+        return vec![Unit::Speech(request(chunk.ids, n), finish)];
     }
     let plan = Arc::new(stitch::Plan::new(chunk.ids, render_ids));
     (0..plan.pieces())
         .map(|i| {
             let ids = plan.context_ids(i).to_vec();
-            Unit::Speech(request(ids, plan.style_len().into()), finish(Some((plan.clone(), i))))
+            let finish = finish(Some((plan.clone(), i)), &ids, plan.own_start(i), i == 0, i + 1 == plan.pieces());
+            Unit::Speech(request(ids, plan.style_len().into()), finish)
         })
         .collect()
 }
@@ -153,7 +177,7 @@ fn produce_units(
 ) -> Option<Produced> {
     let render_ids = stitch::max_render_ids(max_chunk_samples, speech.speed);
     let mut ids = 0usize;
-    for chunk in pipeline.chunks(speech.lang, &speech.text) {
+    for chunk in pipeline.chunks(speech.lang, &speech.text, max_chunk_phonemes(render_ids)) {
         let units = match chunk {
             Ok(chunk) => {
                 *unread += chunk.unread;
@@ -335,12 +359,12 @@ async fn drive(
                 Done::Speech(result, finish) => {
                     speech_in_window -= 1;
                     let synth = result.map_err(StreamError::Synth)?;
+                    let cuts = finish.joins.cuts(&synth.durations, synth.pcm.len());
                     let pcm = match &finish.stitch {
                         Some((plan, index)) => stitcher.piece(plan, *index, synth.pcm, &synth.durations),
                         None => synth.pcm,
                     };
-
-                    let range = trim_range(&pcm, &finish.text, finish.speed);
+                    let range = keep_range(&pcm, &finish.text, finish.speed, cuts);
                     send(pcm_bytes(&pcm[range], synth.held)).await
                 }
             },
@@ -379,18 +403,72 @@ async fn drive(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pipeline::Lang;
+    use crate::pipeline::{Lang, Split};
     use crate::protocol::Speed;
 
     /// `n` chunks, each holding two runs read as their name.
     struct AllUnread(usize);
 
     impl Pipeline for AllUnread {
-        fn chunks<'a>(&'a self, _: Lang, text: &'a str) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
+        fn chunks<'a>(
+            &'a self,
+            _: Lang,
+            text: &'a str,
+            _: usize,
+        ) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
             Box::new((0..self.0).map(move |_| {
-                Ok(Chunk { text: text.into(), phonemes: String::new(), ids: Vec::new(), pause: None, unread: 2 })
+                Ok(Chunk {
+                    text: text.into(),
+                    phonemes: String::new(),
+                    ids: Vec::new(),
+                    pause: None,
+                    unread: 2,
+                    split: Split::default(),
+                })
             }))
         }
+    }
+
+    #[test]
+    fn the_chunk_limit_is_the_references_or_the_workers() {
+        assert_eq!(max_chunk_phonemes(510), 450);
+        assert_eq!(max_chunk_phonemes(450), 450);
+        assert_eq!(max_chunk_phonemes(270), 270);
+        assert_eq!(max_chunk_phonemes(0), 0);
+    }
+
+    /// A clause too long by itself is stitched; only its first piece starts and its last piece
+    /// ends at the clause cuts.
+    #[test]
+    fn a_stitched_clause_joins_its_neighbours_at_its_outer_pieces() {
+        let speech = Speech { lang: Lang::AmericanEnglish, text: String::new(), voice: 0, speed: Speed::NORMAL };
+        let mut ids: Vec<u8> = (0..300).map(|i| if i % 6 == 5 { stitch::SPACE_ID } else { 43 }).collect();
+        ids.push(3);
+        let joins = |split| -> Vec<Joins> {
+            let chunk = Chunk {
+                text: "words,".into(),
+                phonemes: "x".repeat(ids.len()),
+                ids: ids.clone(),
+                pause: None,
+                unread: 0,
+                split,
+            };
+            units(chunk, &speech, 120)
+                .into_iter()
+                .map(|unit| match unit {
+                    Unit::Speech(_, finish) => finish.joins,
+                    Unit::Silence(_) => unreachable!(),
+                })
+                .collect()
+        };
+        let both = joins(Split { before: true, after: true });
+        assert!(both.len() >= 3, "{} pieces", both.len());
+        let plan = stitch::Plan::new(ids.clone(), 120);
+        let last = plan.context_ids(plan.pieces() - 1).len() - 1;
+        assert_eq!(both[0], Joins { start_at_speech: true, end_after_id: None });
+        assert!(both[1..both.len() - 1].iter().all(|j| *j == Joins::default()));
+        assert_eq!(both[both.len() - 1], Joins { start_at_speech: false, end_after_id: Some(last) });
+        assert!(joins(Split::default()).iter().all(|j| *j == Joins::default()));
     }
 
     #[test]

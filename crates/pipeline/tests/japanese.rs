@@ -62,7 +62,15 @@ fn japanese_reference_records() {
             actual.len() > expected.len() && actual[..expected.len()] == expected[..]
         } else {
             compared += 1;
+            // Short clauses are regrouped on purpose (docs/divergences.md).
             actual == expected
+                || kokoro_reference::clause_regrouping(
+                    &expected,
+                    &actual,
+                    kokoro_text::MIN_CLAUSE_CHUNK,
+                    Some(&record.sentences),
+                )
+                .is_some()
         };
         if ok {
             matched += 1;
