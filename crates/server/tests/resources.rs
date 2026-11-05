@@ -335,12 +335,13 @@ async fn shutdown_drops_connections_after_the_grace_period() {
 async fn durations_over_the_chunk_cap_close_the_connection() {
     let server = start(|_| {}, Arc::new(StubPipeline)).await;
     let mut small = hello();
-    small.max_chunk_samples = 600 * 50; // room for 10 ids at 4.7 frames each, so "Hi." isn't stitched
+    small.max_chunk_samples = 600 * 160; // room for 10 ids (4 frames each and 120), so "Hi." isn't stitched
     let mut worker = ScriptedWorker::listen(&server.socket, worker_side::hello(&small));
     server.worker.connected().await;
     let client = tokio::spawn(speak(server.addr, pcm("Hi.")));
     let (slot, _, _, _, ids) = worker.synthesize().await;
     let durations = vec![50; ids.len() + 2];
+    assert!(50 * (ids.len() + 2) > 160);
     let frame = worker_side::result(slot, &durations, &vec![0; 600 * 50 * (ids.len() + 2)]);
     worker.send(frame[..4 + 5 + 2 * (ids.len() + 2)].to_vec());
     assert_eq!(worker.next().await, Event::Closed);

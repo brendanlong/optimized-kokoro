@@ -482,13 +482,13 @@ async fn long_clauses_are_stitched_from_overlapping_pieces() {
 }
 
 /// Below 450 phonemes, a chunk is still stitched when its audio could exceed the worker's chunk
-/// cap: a 30 s cap holds 255 ids at speed 1 and 63 at speed 0.25.
+/// cap: a 30 s cap holds 270 ids at speed 1 and 45 at speed 0.25.
 #[tokio::test]
 async fn chunks_that_could_exceed_the_cap_are_stitched() {
     let text = (0..50).map(|i| format!("word{}", char::from(b'a' + (i % 26) as u8))).collect::<Vec<_>>().join(" ");
     let chunk = stub_chunks(&text).remove(0);
-    assert!(chunk.phonemes.chars().count() <= 450 && chunk.ids.len() > 255, "{}", chunk.ids.len());
-    for (cap, speed, most) in [(1_440_000, 100, None), (720_000, 100, Some(255)), (720_000, 25, Some(63))] {
+    assert!(chunk.phonemes.chars().count() <= 450 && chunk.ids.len() > 270, "{}", chunk.ids.len());
+    for (cap, speed, most) in [(1_440_000, 100, None), (720_000, 100, Some(270)), (720_000, 25, Some(45))] {
         let speed = Speed::from_hundredths(speed).unwrap();
         let expected = match most {
             None => vec![chunk.ids.clone()],

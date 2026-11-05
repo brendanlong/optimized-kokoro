@@ -334,8 +334,8 @@ ensure_dirs() {
 #KOKORO_DEMO_LISTEN=127.0.0.1:25436
 # The worker's --max-batch (8 for many listeners: worker/README.md). The cache seed depends on it.
 #KOKORO_MAX_BATCH=1
-# The worker's --max-chunk-seconds, 1-60: the most audio one request to the worker may make, at any
-# speed. It sets the worker's peak GPU memory (deploy/README.md); the server splits longer chunks.
+# The worker's --max-chunk-seconds, 25-60: the most audio one request to the worker may make, at
+# any speed. It sets the worker's peak GPU memory (deploy/README.md); the server splits longer chunks.
 #KOKORO_MAX_CHUNK_SECONDS=60
 # 1 runs a Cloudflare Tunnel to the server, with the tunnel token in secrets/cloudflared.token
 # (deploy/README.md, "Cloudflare Tunnel").
@@ -364,11 +364,12 @@ load_settings() {
         KOKORO_LISTEN | KOKORO_DEMO_LISTEN) valid_address "$value" ;;
         # The worker's own range.
         KOKORO_MAX_BATCH) [[ $value =~ ^[0-9]{1,2}$ ]] && ((10#$value >= 1 && 10#$value <= 64)) ;;
-        # Up to the server's ceiling, worker_max_chunk_samples (60 s).
-        KOKORO_MAX_CHUNK_SECONDS) [[ $value =~ ^[0-9]{1,2}$ ]] && ((10#$value >= 1 && 10#$value <= 60)) ;;
+        # Up to the server's ceiling, worker_max_chunk_samples (60 s). Below 25 s, requests at speed
+        # 0.25 would be split into windows of fewer than 32 ids (stitch.rs max_render_ids).
+        KOKORO_MAX_CHUNK_SECONDS) [[ $value =~ ^[0-9]{1,2}$ ]] && ((10#$value >= 25 && 10#$value <= 60)) ;;
         KOKORO_CLOUDFLARED) [[ $value =~ ^[01]$ ]] ;;
         *) false ;;
-        esac || die "$root/settings.env line $n isn't a valid KOKORO_GPU (a CDI GPU name, not all), KOKORO_LISTEN or KOKORO_DEMO_LISTEN (IPv4:port), KOKORO_MAX_BATCH (1-64), KOKORO_MAX_CHUNK_SECONDS (1-60) or KOKORO_CLOUDFLARED (0 or 1): $line"
+        esac || die "$root/settings.env line $n isn't a valid KOKORO_GPU (a CDI GPU name, not all), KOKORO_LISTEN or KOKORO_DEMO_LISTEN (IPv4:port), KOKORO_MAX_BATCH (1-64), KOKORO_MAX_CHUNK_SECONDS (25-60) or KOKORO_CLOUDFLARED (0 or 1): $line"
         printf -v "$key" %s "$value"
     done < "$root/settings.env"
     [ "$(port_of "$KOKORO_LISTEN")" != "$(port_of "$KOKORO_DEMO_LISTEN")" ] || die "KOKORO_LISTEN and KOKORO_DEMO_LISTEN use the same port"

@@ -47,11 +47,12 @@ def run(client: Client, chunks, concurrency: int, n_requests: int, voice: int, o
 
     def send(stream: int):
         nonlocal sent
-        ids = chunks[streams[stream] % len(chunks)][1]
+        chunk = chunks[streams[stream] % len(chunks)]
         streams[stream] += 1
         sent += 1
         sent_at[stream] = time.monotonic()
-        client.send(P.synthesize(stream, ids, voice, speed))
+        # (phonemes, ids), or (phonemes, ids, style_len) for a piece of a stitched chunk
+        client.send(P.synthesize(stream, chunk[1], voice, speed, style_len=chunk[2] if len(chunk) > 2 else None))
 
     start = time.monotonic()
     for k in range(min(concurrency, n_requests)):

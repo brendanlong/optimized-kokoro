@@ -215,17 +215,17 @@ impl Connection {
         &self.gauge
     }
 
-    /// The slots the front uses on this connection.
-    /// The most requests the worker renders at once.
     /// The most samples one chunk may render, at any speed.
     pub fn max_chunk_samples(&self) -> u32 {
         self.hello.max_chunk_samples
     }
 
+    /// The most requests the worker renders at once.
     pub fn max_batch(&self) -> u16 {
         self.hello.max_batch
     }
 
+    /// The slots the front uses on this connection.
     pub fn slots(&self) -> usize {
         self.state.lock().unwrap().slots.len()
     }

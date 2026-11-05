@@ -272,10 +272,12 @@ t_install_worker_settings() {
     expect_rc 0 && check_state || return 1
     expect "no --max-chunk-seconds 30 in the export" grep -q -- "--max-batch 8 --max-chunk-seconds 30 --export-cache" "$FAKE_LOG" &&
         expect "not in .env" grep -qx KOKORO_MAX_CHUNK_SECONDS=30 "$D/releases/$(cur)/.env" || return 1
-    fresh
-    echo KOKORO_MAX_CHUNK_SECONDS=61 >> "$D/settings.env"
-    run install.sh "${imports[@]}"
-    expect_rc 1 && expect_out "KOKORO_MAX_CHUNK_SECONDS (1-60)" && expect "built anyway" [ -z "$(releases)" ]
+    for bad in 24 61; do
+        fresh
+        echo KOKORO_MAX_CHUNK_SECONDS=$bad >> "$D/settings.env"
+        run install.sh "${imports[@]}"
+        expect_rc 1 && expect_out "KOKORO_MAX_CHUNK_SECONDS (25-60)" && expect "built anyway" [ -z "$(releases)" ] || return 1
+    done
 }
 t_install_fails() {
     fresh

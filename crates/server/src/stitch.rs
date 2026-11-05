@@ -15,14 +15,18 @@ const MODEL_LIMIT: usize = 510;
 const CROSSFADE: usize = 480;
 const WORDS_AHEAD: usize = 4;
 const MAX_PIECE: usize = MODEL_LIMIT - 60;
-/// Frames per id to allow for, in tenths, at speed 1 (`frames × speed` is about constant), the
-/// boundary ids' frames included. Measured on the corpus in 8 voices (`worker/bench/frames_per_id.py`),
-/// the most was 4.59 for windows of 64 ids, 4.28 for 128 and 3.45 for 510 (all af_nicole), so
-/// 4.7 holds for requests of about 64 ids or more. Shorter windows reached 4.95 at 32 ids and 6.4
-/// at 16, but the limit is below 64 ids only when cap × speed is 7.5 s or less (63 ids for a 30 s
-/// cap at speed 0.25). With the default cap (60 s) at speed 1, 4.7 still allows 510 ids, so
-/// nothing changes there.
-const FRAMES_PER_ID_TENTHS: u64 = 47;
+/// The frames to allow for a request of n ids at speed 1 (`frames × speed` is about constant):
+/// `FRAMES_PER_ID_TENTHS / 10 × n + FRAMES_OVERHEAD`. The overhead is the boundary ids and the
+/// pauses at a request's edges, which make short requests longer per id. Measured with
+/// `worker/bench/frames_per_id.py`: fp16 durations at speeds 0.25 and 1 for every corpus chunk, for
+/// windows of 8 to 510 ids of the corpus rendered with longer style rows up to 510 (as stitched
+/// pieces are, `Plan::style_len`), and for the reference fixtures' other-language and mixed-script
+/// chunks, in 8 English voices and the fixtures' own languages' voices. Every one of the 146,762
+/// cases was under `3.8 n + 116` frames (the most: 109 frames for 8 ids, 340 for 64, 1,050 for
+/// 256, 1,763 for 510; all af_nicole). `4.0 n + 120` leaves 8-10% over that for 64-256 ids, and
+/// still allows 510 ids at the default cap (60 s) at speed 1, so nothing changes there.
+const FRAMES_PER_ID_TENTHS: u64 = 40;
+const FRAMES_OVERHEAD: u64 = 120;
 /// Kokoro v1.0's id for a space.
 pub const SPACE_ID: u8 = 16;
 
@@ -71,12 +75,13 @@ fn context(ids: &[u8], start: usize, end: usize, window: usize) -> (usize, usize
 }
 
 /// The most ids one request to the worker may have, at `speed`, for its audio to stay within a
-/// chunk cap of `max_chunk_samples`: `min(510, cap frames × speed / frames per id)`. A chunk
-/// with more ids is stitched from pieces rendered with at most this many. The worker still
-/// refuses a chunk whose predicted audio is over its cap.
+/// chunk cap of `max_chunk_samples`: `min(510, (cap frames × speed − 120) / 4)`, 0 if the cap is
+/// that small (then [`Plan::new`] still renders windows of 2). A chunk with more ids is stitched
+/// from pieces rendered with at most this many. The worker still refuses a chunk whose predicted
+/// audio is over its cap.
 pub fn max_render_ids(max_chunk_samples: u32, speed: Speed) -> usize {
-    let frames = u64::from(max_chunk_samples) / SAMPLES_PER_FRAME;
-    let ids = frames * u64::from(speed.hundredths()) / (10 * FRAMES_PER_ID_TENTHS);
+    let frames = u64::from(max_chunk_samples) / SAMPLES_PER_FRAME * u64::from(speed.hundredths()) / 100;
+    let ids = frames.saturating_sub(FRAMES_OVERHEAD) * 10 / FRAMES_PER_ID_TENTHS;
     usize::try_from(ids).unwrap_or(usize::MAX).min(MODEL_LIMIT)
 }
 
@@ -238,10 +243,12 @@ mod tests {
     #[test]
     fn render_ids_follow_the_cap_and_the_speed() {
         assert_eq!(max_render_ids(1_440_000, Speed::NORMAL), MODEL_LIMIT);
-        assert_eq!(max_render_ids(720_000, Speed::NORMAL), 255);
-        assert_eq!(max_render_ids(720_000, Speed::from_hundredths(50).unwrap()), 127);
-        assert_eq!(max_render_ids(720_000, Speed::MIN), 63);
-        assert_eq!(max_render_ids(1_440_000, Speed::MIN), 127);
+        assert_eq!(max_render_ids(720_000, Speed::NORMAL), 270);
+        assert_eq!(max_render_ids(720_000, Speed::from_hundredths(50).unwrap()), 120);
+        assert_eq!(max_render_ids(720_000, Speed::MIN), 45);
+        assert_eq!(max_render_ids(1_440_000, Speed::MIN), 120);
+        assert_eq!(max_render_ids(600_000, Speed::MIN), 32);
+        assert_eq!(max_render_ids(24_000 * 12, Speed::MIN), 0);
         assert_eq!(max_render_ids(720_000, Speed::MAX), MODEL_LIMIT);
         assert_eq!(max_render_ids(1, Speed::NORMAL), 0);
     }
@@ -264,7 +271,7 @@ mod tests {
     #[test]
     fn small_windows_render_every_id_within_the_window() {
         let ids = words(1200);
-        for window in [0, 1, 2, 3, 10, 63, 127, 255, 509, 510, 2000] {
+        for window in [0, 1, 2, 3, 10, 32, 45, 120, 270, 509, 510, 2000] {
             let plan = Plan::new(ids.clone(), window);
             let limit = window.clamp(2, MODEL_LIMIT);
             let mut covered = Vec::new();
@@ -286,7 +293,7 @@ mod tests {
     #[test]
     fn stitching_small_pieces_keeps_the_length() {
         let ids = words(700);
-        for window in [3, 10, 63, 255, 510] {
+        for window in [3, 10, 45, 270, 510] {
             let plan = Plan::new(ids.clone(), window);
             let mut stitcher = Stitcher::default();
             let total: usize = (0..plan.pieces())

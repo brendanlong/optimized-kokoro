@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fake Kokoro worker, protocol v2. Usage: fakeworker.py SOCKET [MODE] [delay_ms]
+"""Fake Kokoro worker, protocol v4. Usage: fakeworker.py SOCKET [MODE] [delay_ms]
 Modes: normal (render each Synthesize after delay), stall (never reply), slow (delay).
 Logs to stderr."""
 import asyncio, os, struct, sys, time
@@ -9,11 +9,11 @@ MODE = sys.argv[2] if len(sys.argv) > 2 else "normal"
 DELAY = float(sys.argv[3]) / 1000 if len(sys.argv) > 3 else 0.0
 VOICES = ["af_heart", "af_bella", "am_adam", "bf_emma", "bm_george", "jf_alpha", "zf_xiaobei", "a", "b_"]
 SLOTS = int(os.environ.get("FW_SLOTS", "1024"))
-CAP = int(os.environ.get("FW_CAP", "2880000"))
+CAP = int(os.environ.get("FW_CAP", "1440000"))
 DUR = int(os.environ.get("FW_DUR", "1"))
 
 def hello():
-    body = b"\x01KOKW" + struct.pack("<HHHHHIIH", 2, 178, 510, 8, SLOTS, 24000, CAP, len(VOICES))
+    body = b"\x01KOKW" + struct.pack("<HHHHHIIH", 4, 178, 510, 8, SLOTS, 24000, CAP, len(VOICES))
     for v in VOICES:
         body += bytes([len(v)]) + v.encode()
     return struct.pack("<I", len(body)) + body
@@ -43,8 +43,8 @@ async def handle(reader, writer):
             (ln,) = struct.unpack("<I", hdr)
             body = await reader.readexactly(ln)
             if body[0] == 0x10:
-                slot, prio, speed, voice, n_ids, style = struct.unpack("<HBHHHH", body[1:12])
-                ids = body[12:12 + n_ids]
+                slot, prio, waiting, speed, voice, n_ids, style = struct.unpack("<HBBHHHH", body[1:13])
+                ids = body[13:13 + n_ids]
                 stats["synth"] += 1; stats["ids_total"] += n_ids
                 queue.put_nowait((slot, ids, speed))
                 stats["max_queue"] = max(stats["max_queue"], queue.qsize())
