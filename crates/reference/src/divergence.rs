@@ -1,5 +1,6 @@
 //! Checks that a difference from the reference's normalized text is one `docs/divergences.md`
-//! lists: the number reader ("Numbers") or the symbol pass ("Symbols").
+//! lists: the number reader ("Numbers"), the symbol pass ("Symbols"), dashes ("Dashes") or Roman
+//! numerals ("Roman").
 //!
 //! Both texts are split into words and punctuation and compared token by token. Every run of
 //! tokens that differs must hold, on the reference's side, a digit (a number the reference left
@@ -19,6 +20,9 @@ pub enum Kind {
     Symbols,
     /// A spaced hyphen read as a dash, an en dash inside a word read as a hyphen (issue #35).
     Dashes,
+    /// A Roman numeral the reference left as letters, read as its number ("World War two",
+    /// "Henry the eighth").
+    Roman,
 }
 
 /// Punctuation both normalizers leave as it is.
@@ -540,6 +544,192 @@ fn has_number_word(text: &str, ordinals: bool) -> bool {
         })
 }
 
+/// The value of a Roman numeral in standard form ("XIV" 14, "MCMXCIV" 1994), up to 3999, with a
+/// possessive "'s" allowed; `None` for anything else ("IIII", "IC").
+fn roman_value(token: &str) -> Option<u32> {
+    let token = token.strip_suffix("'s").or_else(|| token.strip_suffix("’s")).unwrap_or(token);
+    let digit = |c: char| match c {
+        'I' => Some(1),
+        'V' => Some(5),
+        'X' => Some(10),
+        'L' => Some(50),
+        'C' => Some(100),
+        'D' => Some(500),
+        'M' => Some(1000),
+        _ => None,
+    };
+    let values: Vec<i64> = token.chars().map(digit).collect::<Option<_>>()?;
+    let n: i64 =
+        values.iter().enumerate().map(|(i, &v)| if values.get(i + 1).is_some_and(|&w| w > v) { -v } else { v }).sum();
+    let n = u32::try_from(n).ok().filter(|n| (1..4000).contains(n))?;
+    let mut canonical = String::new();
+    let mut rest = n;
+    for (v, s) in [
+        (1000, "M"),
+        (900, "CM"),
+        (500, "D"),
+        (400, "CD"),
+        (100, "C"),
+        (90, "XC"),
+        (50, "L"),
+        (40, "XL"),
+        (10, "X"),
+        (9, "IX"),
+        (5, "V"),
+        (4, "IV"),
+        (1, "I"),
+    ] {
+        while rest >= v {
+            canonical.push_str(s);
+            rest -= v;
+        }
+    }
+    (canonical == token).then_some(n)
+}
+
+/// The values a reading of a number below 4000 stands for, as a cardinal or ordinal ("fifty -
+/// five" 55, "eighth" 8, "one thousand and sixty - six" 1066) or a year in pairs ("nineteen
+/// ninety - four" 1994, "nineteen hundred" 1900, "nineteen oh five" 1905). Empty if a word isn't
+/// one of a number's.
+fn number_values(words: &[&str]) -> Vec<u32> {
+    const UNITS: [&str; 20] = [
+        "zero",
+        "one",
+        "two",
+        "three",
+        "four",
+        "five",
+        "six",
+        "seven",
+        "eight",
+        "nine",
+        "ten",
+        "eleven",
+        "twelve",
+        "thirteen",
+        "fourteen",
+        "fifteen",
+        "sixteen",
+        "seventeen",
+        "eighteen",
+        "nineteen",
+    ];
+    const TENS: [&str; 8] = ["twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"];
+    let value = |word: &str| -> Option<u32> {
+        let w = word.strip_suffix("'s").unwrap_or(word).to_lowercase();
+        let w = match w.as_str() {
+            "first" => "one".to_owned(),
+            "second" => "two".to_owned(),
+            "third" => "three".to_owned(),
+            "fifth" => "five".to_owned(),
+            "eighth" => "eight".to_owned(),
+            "ninth" => "nine".to_owned(),
+            "twelfth" => "twelve".to_owned(),
+            _ => w
+                .strip_suffix("ieth")
+                .map(|s| format!("{s}y"))
+                .or_else(|| w.strip_suffix("th").map(str::to_owned))
+                .unwrap_or(w),
+        };
+        let w = w.as_str();
+        UNITS.iter().position(|&u| u == w).map(|i| i as u32).or_else(|| match w {
+            "hundred" => Some(100),
+            "thousand" => Some(1000),
+            "oh" => Some(0),
+            _ => TENS.iter().position(|&t| t == w).map(|i| 20 + 10 * i as u32),
+        })
+    };
+    let Some(values) =
+        words.iter().filter(|w| !matches!(**w, "-" | "and" | ",")).map(|w| value(w)).collect::<Option<Vec<u32>>>()
+    else {
+        return Vec::new();
+    };
+    let plain = |values: &[u32]| -> Option<u32> {
+        let (mut total, mut current) = (0, 0);
+        for &v in values {
+            match v {
+                100 if current > 0 && current < 10 => current *= 100,
+                1000 if current > 0 => {
+                    total += current * 1000;
+                    current = 0;
+                }
+                100 | 1000 => return None,
+                v => current += v,
+            }
+        }
+        Some(total + current)
+    };
+    let mut out: Vec<u32> = plain(&values).into_iter().collect();
+    for split in 1..values.len().min(3) {
+        let (high, low) = values.split_at(split);
+        let low = if low == [100] { Some(0) } else { plain(low) };
+        if let (Some(high), Some(low)) = (plain(high), low)
+            && (10..100).contains(&high)
+            && low < 100
+        {
+            out.push(high * 100 + low);
+        }
+    }
+    out
+}
+
+/// Whether `ours` is `theirs` with Roman numerals read as their numbers, as cardinals or as "the"
+/// and an ordinal ("Louis XIV's" against "Louis the fourteenth's"), and nothing else changed.
+/// Each numeral must be in the input.
+fn roman_read(input: &str, theirs: &[&str], ours: &[&str]) -> bool {
+    let Some((&first, rest)) = theirs.split_first() else {
+        return ours.is_empty();
+    };
+    let Some(v) = roman_value(first).filter(|_| input.contains(first)) else {
+        return ours.first() == Some(&first) && roman_read(input, rest, &ours[1..]);
+    };
+    let possessive = first.ends_with("'s") || first.ends_with("’s");
+    let number_word = |w: &str| made_of(w, NUMERALS) || matches!(w, "-" | "and" | ",");
+    for start in [0, 1] {
+        if start == 1 && ours.first().is_none_or(|w| !w.eq_ignore_ascii_case("the")) {
+            continue;
+        }
+        let run = ours[start.min(ours.len())..].iter().take_while(|w| number_word(w)).count();
+        for k in 1..=run.min(12) {
+            let words = &ours[start..start + k];
+            let last = words[k - 1];
+            let ordinal = ["first", "second", "third", "th", "th's", "first's", "second's", "third's"]
+                .iter()
+                .any(|s| last.to_lowercase().ends_with(s));
+            if (start == 1) == ordinal
+                && possessive == last.ends_with("'s")
+                && number_values(words).contains(&v)
+                && roman_read(input, rest, &ours[start + k..])
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// The reference's tokens with each differing run that `ours` reads as Roman numerals (see
+/// [`roman_read`]) replaced by ours, and whether there was one.
+fn with_roman_read<'a>(input: &str, a: &[&'a str], b: &[&'a str]) -> (Vec<&'a str>, bool) {
+    if !a.iter().any(|w| roman_value(w).is_some()) {
+        return (a.to_vec(), false);
+    }
+    let wrap = |side: &[&'a str]| -> Vec<Masked<'a>> {
+        side.iter().map(|&w| Masked { token: w, text: w.to_owned() }).collect()
+    };
+    let (mut out, mut last, mut roman) = (Vec::new(), 0, false);
+    for (ra, rb) in align(&wrap(a), &wrap(b)).hunks {
+        if a[ra.clone()].iter().any(|w| roman_value(w).is_some()) && roman_read(input, &a[ra.clone()], &b[rb.clone()]) {
+            out.extend_from_slice(&a[last..ra.start]);
+            out.extend_from_slice(&b[rb]);
+            last = ra.end;
+            roman = true;
+        }
+    }
+    out.extend_from_slice(&a[last..]);
+    (out, roman)
+}
+
 /// Why `ours` differs from the reference's normalized text of `input`: the divergences that
 /// explain every difference, or the first one nothing explains. A number difference needs a
 /// number in the input (a digit or another number character: `²`, `½`, `①`), and a symbol
@@ -548,9 +738,15 @@ pub fn explain(input: &str, reference: &str, ours: &str) -> Result<BTreeSet<Kind
     let input_numbers = input.chars().any(char::is_numeric);
     let input_symbols = input.chars().any(is_symbol);
     let (a, b) = (tokens(reference), tokens(ours));
+    let mut kinds = BTreeSet::new();
+    // Roman numerals read as numbers are taken out first, word by word: masking would join a
+    // reading to the number words around it ("first of the Two", "five . The Five").
+    let (a, roman) = with_roman_read(input, &a, &b);
+    if roman {
+        kinds.insert(Kind::Roman);
+    }
     let (ma, mb) = (mask(&a), mask(&b));
     let alignment = align(&ma, &mb);
-    let mut kinds = BTreeSet::new();
     let unexplained = |what: String| Err(format!("{what} (input {input:?})"));
     // Runs of numbers read differently, where the rest lines up.
     let mut changed_numbers = std::collections::HashSet::new();
@@ -694,5 +890,54 @@ mod tests {
         assert_eq!(ok("from a–z", "from a - z", "from A to Z"), BTreeSet::from([Kind::Dashes]));
         err("from a z", "from a z", "from A to Z");
         err("think of a", "think of a", "think of — a");
+    }
+
+    #[test]
+    fn explains_roman_numerals_read_as_numbers_only() {
+        let ok = |input: &str, a: &str, b: &str| explain(input, a, b).unwrap();
+        let roman = BTreeSet::from([Kind::Roman]);
+        assert_eq!(ok("World War II ended.", "World War II ended.", "World War two ended."), roman);
+        assert_eq!(ok("Henry VIII's wives", "Henry VIII's wives", "Henry the eighth's wives"), roman);
+        assert_eq!(ok("Super Bowl LV", "Super Bowl LV", "Super Bowl fifty-five"), roman);
+        assert_eq!(ok("XXI and XXIV", "XXI and XXIV", "twenty-one and twenty-four"), roman);
+        assert_eq!(ok("George II and III", "George II and III", "George the second and the third"), roman);
+        assert_eq!(ok("MCMXCIV.", "MCMXCIV.", "nineteen ninety-four."), roman);
+        assert_eq!(ok("MCM.", "MCM.", "nineteen hundred."), roman);
+        assert_eq!(ok("MMXXIV", "MMXXIV", "two thousand and twenty-four"), roman);
+        assert_eq!(ok("II-era", "II-era", "two-era"), roman);
+        let err = |input: &str, a: &str, b: &str| assert!(explain(input, a, b).is_err(), "{a:?} -> {b:?}");
+        // The wrong number, or anything else changed.
+        err("World War II", "World War II", "World War three");
+        err("Henry VIII", "Henry VIII", "Henry the seventh");
+        err("Henry VIII", "Henry VIII", "Henry eighth");
+        err("Super Bowl LV", "Super Bowl LV", "Super Bowl fifty");
+        err("World War II ended", "World War II ended", "World War two began");
+        err("World War II", "World War II", "the World War two");
+        err("IIII", "IIII", "four");
+        err("Henry VIII's", "Henry VIII's", "Henry the eighth");
+        // The numeral must be in the input.
+        err("World War 2", "World War II", "World War two");
+        // Next to other number words, which masking would join to the reading.
+        assert_eq!(ok("Mystery V. The Five", "Mystery V. The Five", "Mystery five. The Five"), roman);
+        assert_eq!(
+            ok(
+                "Francis I of the Two Sicilies",
+                "Francis I of the Two Sicilies",
+                "Francis the first of the Two Sicilies"
+            ),
+            roman
+        );
+        assert_eq!(
+            ok("World War II, 1945", "World War II, nineteen forty-five", "World War two, nineteen forty-five"),
+            roman
+        );
+        assert_eq!(
+            ok(
+                "Louis XIV in 1700",
+                "Louis XIV in one thousand, seven hundred",
+                "Louis the fourteenth in seventeen hundred"
+            ),
+            BTreeSet::from([Kind::Numbers, Kind::Roman])
+        );
     }
 }

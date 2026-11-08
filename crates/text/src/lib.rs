@@ -13,6 +13,7 @@ pub mod normalize;
 pub mod numbers;
 pub mod py;
 pub mod pyre;
+mod roman;
 mod scan;
 pub mod split;
 mod symbols;

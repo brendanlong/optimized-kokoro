@@ -89,6 +89,7 @@ fn text_cases() {
     let mut changed: BTreeMap<String, usize> = BTreeMap::new();
     let mut by_input_only = 0;
     let mut regrouped_cases = 0;
+    let mut roman = 0;
     for line in std::fs::read_to_string(path).unwrap().lines().filter(|l| !l.trim().is_empty()) {
         let case: Value = serde_json::from_str(line).unwrap();
         let (expected, actual) = run(&case);
@@ -105,8 +106,12 @@ fn text_cases() {
             c.is_numeric() || (!c.is_alphanumeric() && !c.is_whitespace() && !".,;:!?'\"()[]{}-—–…“”‘’«»`".contains(c))
         });
         let kind = matches!(str_of(&case, "kind"), "normalize" | "smart_split");
-        let strict =
-            kind && kokoro_reference::divergence::explain(text, &strings(&expected), &strings(&actual)).is_ok();
+        let explained = kokoro_reference::divergence::explain(text, &strings(&expected), &strings(&actual));
+        let strict = kind && explained.is_ok();
+        roman += usize::from(
+            kind && expected != actual
+                && explained.is_ok_and(|k| k.contains(&kokoro_reference::divergence::Kind::Roman)),
+        );
         let by_input =
             kind && (case["options"] != "default" || str_of(&case, "id").starts_with("fuzz-")) && has_number_or_symbol;
         // Short clauses are regrouped on purpose (docs/divergences.md).
@@ -152,6 +157,7 @@ fn text_cases() {
         );
     }
     println!("of those, {by_input_only} explained only by a digit or symbol in the input (fuzz and other option sets)");
+    println!("and {roman} with Roman numerals read as numbers");
     println!("and {regrouped_cases} smart_split cases differ by regrouped short clauses");
     for m in mismatches.iter().take(40) {
         println!("{m}");

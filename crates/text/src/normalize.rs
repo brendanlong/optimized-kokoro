@@ -1,13 +1,13 @@
 //! Kokoro-FastAPI's text normalizers (`normalization/base.py` and `english.py`), with numbers
 //! and symbols read by this crate's own passes (`numbers.rs`, `symbols.rs`) instead of the
-//! reference's (`docs/divergences.md`). The reference's unit option is gone: the number pass
-//! reads units.
+//! reference's, and Roman numerals where the context shows they are numbers (`roman.rs`;
+//! `docs/divergences.md`). The reference's unit option is gone: the number pass reads units.
 
 use crate::english_data::VALID_TLDS;
 use crate::numbers::{self, cardinal};
 use crate::py;
 use crate::pyre::{Captures, Pattern, compile, compile_i};
-use crate::{scan, symbols};
+use crate::{roman, scan, symbols};
 use std::ops::Range;
 use std::sync::LazyLock;
 
@@ -117,7 +117,16 @@ type Pass = fn(&Patterns, &str) -> String;
 /// `EnglishNormalizer.pass_order`: the passes the options enable, in order.
 fn pass_order(options: &Options) -> Vec<(&'static str, Pass)> {
     let all: [(&str, bool, Pass); 16] = [
-        ("caps_words", options.caps_normalization, caps_words),
+        // Roman numerals are read where the caps pass runs: on the text before it, replaced after.
+        (
+            "roman_numerals_and_caps_words",
+            true,
+            if options.caps_normalization {
+                |p, t| replace_spans(&caps_words(p, t), roman::readings(t))
+            } else {
+                |_, t| replace_spans(t, roman::readings(t))
+            },
+        ),
         ("contractions", true, |p, t| {
             let t = p.contraction.sub(t, |c| format!("{} are", &c[1]));
             p.contraction_bare.sub(&t, |c| format!("{} are", &c[1]))
@@ -211,11 +220,12 @@ fn caps_words(p: &Patterns, text: &str) -> String {
     };
     let runs = scan::caps_runs(text);
     let text = replace_spans(text, runs.into_iter().map(|r| (r.clone(), p.caps_word.sub(&text[r], lower))));
+    // Only ASCII capitals are lowercased, so the Roman numerals' spans still hold.
     p.long_caps.sub(&text, lower)
 }
 
 /// The text with each (sorted, disjoint) span replaced.
-fn replace_spans(text: &str, spans: impl IntoIterator<Item = (Range<usize>, String)>) -> String {
+pub(crate) fn replace_spans(text: &str, spans: impl IntoIterator<Item = (Range<usize>, String)>) -> String {
     let mut out = String::with_capacity(text.len());
     let mut last = 0;
     for (range, replacement) in spans {
@@ -322,6 +332,17 @@ mod tests {
         assert_eq!(n("a ––b and a –– b"), "a — b and a — b");
         assert_eq!(n("a–z and the A–Z list"), "A to Z and the A to Z list");
         assert_eq!(n("1939–1945 and $5–$10"), "nineteen thirty-nine to nineteen forty-five and five to ten dollars");
+    }
+
+    #[test]
+    fn roman_numerals_around_the_caps_pass() {
+        let n = |t: &str| english(t, &Options::default());
+        // Decided on the capitals, read after the caps pass lowercased the phrase.
+        assert_eq!(n("BOOK I. (Folio), CHAPTER XXXV."), "book one. (Folio), chapter thirty-five.");
+        assert_eq!(n("WORLD WAR II"), "world WAR two");
+        assert_eq!(n("Henry VIII's wives and an IV drip"), "Henry the eighth's wives and an IV drip");
+        let none = Options { caps_normalization: false, ..Options::default() };
+        assert_eq!(english("BOOK I. (Folio)", &none), "BOOK one. (Folio)");
     }
 
     #[test]
