@@ -12,8 +12,8 @@
 //!    or ")": a numbered heading or list item ("IV. Results"; "I. Introduction" can't be told
 //!    from "V. Putin said"). Lines are joined into sentences before the normalizer runs
 //!    (`split::join_lines`), so a sentence start stands in for a line start;
-//! 3. it continues a list of numerals, and ends it or goes on with it ("Super Bowls XXI and
-//!    XXIV,", "George II and III"; not "World War II, IV drug use").
+//! 3. it continues a list of numerals ("Super Bowls XXI and XXIV", "George II and III"; after a
+//!    bare comma the list must then end or go on, so not "World War II, IV drug use").
 //!
 //! After a person's given name (`data/given_names.txt`, from US Social Security baby names) it
 //! is an ordinal, "Henry VIII" as "Henry the eighth"; otherwise a cardinal, "Saturn V" as
@@ -367,8 +367,8 @@ fn continues_list(between: &str) -> bool {
     matches!(between, ", " | " and " | " or " | " & " | ", and " | ", or " | " to ")
 }
 
-/// Whether a numeral that continues a list ends it or goes on with it: punctuation, the end, or
-/// another separator ("XXI and XXIV, this", "XII, XIII and its"; not "World War II, IV drug use").
+/// Whether a numeral after a comma in a list ends it or goes on with it: punctuation, the end, or
+/// another separator ("XII, XIII and its"; not "World War II, IV drug use").
 fn ends_list(after: &str) -> bool {
     let next = after.chars().next();
     next.is_none_or(|c| !c.is_alphanumeric() && !c.is_whitespace())
@@ -396,7 +396,12 @@ fn reading(text: &str, start: usize, end: usize, previous: Option<(usize, Readin
     // "I" closing a list is the pronoun as often as not ("Charles III and I.").
     let list = token != "I" || after.starts_with(|c: char| c.is_whitespace());
     let reading = previous
-        .filter(|&(previous_end, _)| list && continues_list(&text[previous_end..start]) && ends_list(after))
+        .filter(|&(previous_end, _)| {
+            let between = &text[previous_end..start];
+            // After a bare comma the list must go on or end ("II, IV drug use" isn't one); a
+            // conjunction already closes it ("World Wars I and II were").
+            list && continues_list(between) && (between != ", " || ends_list(after))
+        })
         .map(|(_, reading)| reading)
         .or_else(|| word_before(before, token == "I" && after.starts_with([',', ';', '?', '!'])))
         .or_else(|| heading.then_some(Reading::Cardinal))?;
@@ -487,6 +492,8 @@ mod tests {
         // A list of numerals.
         assert_eq!(r("Super Bowls XXI and XXIV"), "Super Bowls twenty-one and twenty-four");
         assert_eq!(r("George II and III"), "George the second and the third");
+        assert_eq!(r("World Wars I and II were"), "World Wars one and two were");
+        assert_eq!(r("Super Bowls XXI and XXIV were played"), "Super Bowls twenty-one and twenty-four were played");
         assert_eq!(r("Louis XIV and MCMLXXXIV"), "Louis the fourteenth and nineteen eighty-four");
         // Headings.
         assert_eq!(r("IV. Results"), "four. Results");
