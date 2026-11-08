@@ -258,8 +258,8 @@ fn requests_match_the_reference() {
             // chunks' text differs only by them, the request is counted apart.
             let joined = |chunks: &mut dyn Iterator<Item = &Expected>| texts(chunks).join(" ");
             let (theirs, ours) = (joined(&mut expected.iter().copied()), joined(&mut actual.iter()));
-            if let Ok(kinds) = kokoro_reference::divergence::explain(&case.text, &theirs, &ours)
-                && theirs != ours
+            if theirs != ours
+                && let Ok(kinds) = kokoro_reference::divergence::explain(&case.text, &theirs, &ours)
             {
                 numbers += 1;
                 roman += usize::from(kinds.contains(&kokoro_reference::divergence::Kind::Roman));

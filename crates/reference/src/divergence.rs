@@ -545,7 +545,8 @@ fn has_number_word(text: &str, ordinals: bool) -> bool {
 }
 
 /// The value of a Roman numeral in standard form ("XIV" 14, "MCMXCIV" 1994), up to 3999, with a
-/// possessive "'s" allowed; `None` for anything else ("IIII", "IC").
+/// possessive "'s" allowed; `None` for anything else ("IIII", "IC"). A copy of the reader's own
+/// (`kokoro-text`'s `roman.rs`), so the check stands apart from it.
 fn roman_value(token: &str) -> Option<u32> {
     let token = token.strip_suffix("'s").or_else(|| token.strip_suffix("’s")).unwrap_or(token);
     let digit = |c: char| match c {
@@ -587,12 +588,12 @@ fn roman_value(token: &str) -> Option<u32> {
     (canonical == token).then_some(n)
 }
 
-/// The values a reading of a number below 4000 stands for, as a cardinal or ordinal ("fifty -
-/// five" 55, "eighth" 8, "one thousand and sixty - six" 1066) or a year in pairs ("nineteen
-/// ninety - four" 1994, "nineteen hundred" 1900, "nineteen oh five" 1905). Empty if a word isn't
-/// one of a number's.
-fn number_values(words: &[&str]) -> Vec<u32> {
-    const UNITS: [&str; 20] = [
+/// The readings of a number below 4000 the checker accepts: the cardinal ("fifty-five", "one
+/// thousand two hundred and five"), from 1000 a year in pairs ("nineteen ninety-four", "nineteen
+/// hundred", "nineteen oh five"), and below 100 "the" and the ordinal ("the eighth"). Built here
+/// rather than taken from the number reader, so that the check doesn't trust the code it checks.
+fn readings_of(v: u32) -> Vec<String> {
+    const ONES: [&str; 20] = [
         "zero",
         "one",
         "two",
@@ -614,98 +615,71 @@ fn number_values(words: &[&str]) -> Vec<u32> {
         "eighteen",
         "nineteen",
     ];
-    const TENS: [&str; 8] = ["twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"];
-    let value = |word: &str| -> Option<u32> {
-        let w = word.strip_suffix("'s").unwrap_or(word).to_lowercase();
-        let w = match w.as_str() {
-            "first" => "one".to_owned(),
-            "second" => "two".to_owned(),
-            "third" => "three".to_owned(),
-            "fifth" => "five".to_owned(),
-            "eighth" => "eight".to_owned(),
-            "ninth" => "nine".to_owned(),
-            "twelfth" => "twelve".to_owned(),
-            _ => w
-                .strip_suffix("ieth")
-                .map(|s| format!("{s}y"))
-                .or_else(|| w.strip_suffix("th").map(str::to_owned))
-                .unwrap_or(w),
+    const TENS: [&str; 10] = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"];
+    let under_100 = |n: u32| match n {
+        0..20 => ONES[n as usize].to_owned(),
+        _ if n.is_multiple_of(10) => TENS[n as usize / 10].to_owned(),
+        _ => format!("{}-{}", TENS[n as usize / 10], ONES[n as usize % 10]),
+    };
+    let under_1000 = |n: u32| match (n / 100, n % 100) {
+        (0, rest) => under_100(rest),
+        (h, 0) => format!("{} hundred", ONES[h as usize]),
+        (h, rest) => format!("{} hundred and {}", ONES[h as usize], under_100(rest)),
+    };
+    let cardinal = match (v / 1000, v % 1000) {
+        (0, rest) => under_1000(rest),
+        (t, 0) => format!("{} thousand", ONES[t as usize]),
+        (t, rest) if rest < 100 => format!("{} thousand and {}", ONES[t as usize], under_100(rest)),
+        (t, rest) => format!("{} thousand {}", ONES[t as usize], under_1000(rest)),
+    };
+    let mut out = vec![cardinal.clone()];
+    if v >= 1000 {
+        let (high, low) = (under_100(v / 100), v % 100);
+        out.push(match low {
+            0 => format!("{high} hundred"),
+            1..10 => format!("{high} oh {}", ONES[low as usize]),
+            _ => format!("{high} {}", under_100(low)),
+        });
+    }
+    if v < 100 {
+        let split = cardinal.rfind('-').map_or(0, |i| i + 1);
+        let last = match &cardinal[split..] {
+            "one" => "first".to_owned(),
+            "two" => "second".to_owned(),
+            "three" => "third".to_owned(),
+            "five" => "fifth".to_owned(),
+            "eight" => "eighth".to_owned(),
+            "nine" => "ninth".to_owned(),
+            "twelve" => "twelfth".to_owned(),
+            w if w.ends_with('y') => format!("{}ieth", &w[..w.len() - 1]),
+            w => format!("{w}th"),
         };
-        let w = w.as_str();
-        UNITS.iter().position(|&u| u == w).map(|i| i as u32).or_else(|| match w {
-            "hundred" => Some(100),
-            "thousand" => Some(1000),
-            "oh" => Some(0),
-            _ => TENS.iter().position(|&t| t == w).map(|i| 20 + 10 * i as u32),
-        })
-    };
-    let Some(values) =
-        words.iter().filter(|w| !matches!(**w, "-" | "and" | ",")).map(|w| value(w)).collect::<Option<Vec<u32>>>()
-    else {
-        return Vec::new();
-    };
-    let plain = |values: &[u32]| -> Option<u32> {
-        let (mut total, mut current) = (0, 0);
-        for &v in values {
-            match v {
-                100 if current > 0 && current < 10 => current *= 100,
-                1000 if current > 0 => {
-                    total += current * 1000;
-                    current = 0;
-                }
-                100 | 1000 => return None,
-                v => current += v,
-            }
-        }
-        Some(total + current)
-    };
-    let mut out: Vec<u32> = plain(&values).into_iter().collect();
-    for split in 1..values.len().min(3) {
-        let (high, low) = values.split_at(split);
-        let low = if low == [100] { Some(0) } else { plain(low) };
-        if let (Some(high), Some(low)) = (plain(high), low)
-            && (10..100).contains(&high)
-            && low < 100
-        {
-            out.push(high * 100 + low);
-        }
+        out.push(format!("the {}{last}", &cardinal[..split]));
     }
     out
 }
 
-/// Whether `ours` is `theirs` with Roman numerals read as their numbers, as cardinals or as "the"
-/// and an ordinal ("Louis XIV's" against "Louis the fourteenth's"), and nothing else changed.
-/// Each numeral must be in the input.
+/// Whether `ours` is `theirs` with Roman numerals read as their numbers (one of
+/// [`readings_of`], keeping the numeral's "'s": "Louis XIV's" against "Louis the fourteenth's"),
+/// and nothing else changed. Each numeral must be a word of the input.
 fn roman_read(input: &str, theirs: &[&str], ours: &[&str]) -> bool {
     let Some((&first, rest)) = theirs.split_first() else {
         return ours.is_empty();
     };
-    let Some(v) = roman_value(first).filter(|_| input.contains(first)) else {
+    let core = first.strip_suffix("'s").or_else(|| first.strip_suffix("’s")).unwrap_or(first);
+    let in_input = || input.split(|c: char| !c.is_alphanumeric()).any(|w| w == core);
+    let Some(v) = roman_value(first).filter(|_| in_input()) else {
         return ours.first() == Some(&first) && roman_read(input, rest, &ours[1..]);
     };
-    let possessive = first.ends_with("'s") || first.ends_with("’s");
-    let number_word = |w: &str| made_of(w, NUMERALS) || matches!(w, "-" | "and" | ",");
-    for start in [0, 1] {
-        if start == 1 && ours.first().is_none_or(|w| !w.eq_ignore_ascii_case("the")) {
-            continue;
-        }
-        let run = ours[start.min(ours.len())..].iter().take_while(|w| number_word(w)).count();
-        for k in 1..=run.min(12) {
-            let words = &ours[start..start + k];
-            let last = words[k - 1];
-            let ordinal = ["first", "second", "third", "th", "th's", "first's", "second's", "third's"]
-                .iter()
-                .any(|s| last.to_lowercase().ends_with(s));
-            if (start == 1) == ordinal
-                && possessive == last.ends_with("'s")
-                && number_values(words).contains(&v)
-                && roman_read(input, rest, &ours[start + k..])
-            {
-                return true;
-            }
-        }
-    }
-    false
+    let suffix = &first[core.len()..];
+    // The readings of a value start with different words, so at most one matches: no backtracking.
+    readings_of(v).into_iter().any(|reading| {
+        let reading = format!("{reading}{suffix}");
+        let words = tokens(&reading);
+        ours.len() >= words.len()
+            && ours.iter().zip(&words).all(|(a, b)| a == b)
+            && roman_read(input, rest, &ours[words.len()..])
+    })
 }
 
 /// The reference's tokens with each differing run that `ours` reads as Roman numerals (see
@@ -915,8 +889,25 @@ mod tests {
         err("World War II", "World War II", "the World War two");
         err("IIII", "IIII", "four");
         err("Henry VIII's", "Henry VIII's", "Henry the eighth");
-        // The numeral must be in the input.
+        // Number words in another order or sum, or with words added at a reading's edges (the
+        // review's examples).
+        err("LV", "LV", "five fifty");
+        err("XIV", "XIV", "four ten");
+        err("II", "II", "one one");
+        err("II", "II", "oh two");
+        err("MCMXCIV", "MCMXCIV", "nineteen four ninety");
+        err("Henry II", "Henry II", "Henry the one first");
+        err("Henry IV", "Henry IV", "Henry the first third");
+        err("Henry II", "Henry II", "Henry The second");
+        err("War XXI ended", "War XXI ended", "War and twenty-one ended");
+        err("War XXI ended", "War XXI ended", "War twenty-one, ended");
+        err("War II then", "War II then", "War two - then");
+        // A failing hunk of many numerals fails fast (each reading of a value starts differently).
+        let many = |unit: &str, end: &str| format!("{}{end}", unit.repeat(40));
+        err(&many("II ", "zzz"), &many("II ", "zzz"), &many("two and ", "yyy"));
+        // The numeral must be a word of the input.
         err("World War 2", "World War II", "World War two");
+        err("World War III", "World War II", "World War two");
         // Next to other number words, which masking would join to the reading.
         assert_eq!(ok("Mystery V. The Five", "Mystery V. The Five", "Mystery five. The Five"), roman);
         assert_eq!(

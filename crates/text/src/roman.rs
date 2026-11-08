@@ -6,27 +6,28 @@
 //! A token of the capitals I V X L C D M that is a numeral in standard form (so not "IIII", "VV"
 //! or "IC") is a number when:
 //! 1. the word right before it, with only spaces between, is a capitalised word that isn't a
-//!    function word ("The", "His", "Then", …) or a possessive ("Vuitton's LV"): "World War II",
-//!    "Super Bowl LV", "Louis XIV";
-//! 2. it starts a line, the text or a sentence, and is followed by "." or ")": a numbered heading
-//!    or list item ("IV. Results"). Lines are joined into sentences before the normalizer runs
+//!    function word ("The", "His", "Then", …), a contraction ("Aren't I?") or a possessive
+//!    ("Vuitton's LV"): "World War II", "Super Bowl LV", "Louis XIV";
+//! 2. it has two letters or more, starts a line, the text or a sentence, and is followed by "."
+//!    or ")": a numbered heading or list item ("IV. Results"; "I. Introduction" can't be told
+//!    from "V. Putin said"). Lines are joined into sentences before the normalizer runs
 //!    (`split::join_lines`), so a sentence start stands in for a line start;
-//! 3. it continues a list of numerals ("Super Bowls XXI and XXIV", "George II and III").
+//! 3. it continues a list of numerals, and ends it or goes on with it ("Super Bowls XXI and
+//!    XXIV,", "George II and III"; not "World War II, IV drug use").
 //!
 //! After a person's given name (`data/given_names.txt`, from US Social Security baby names) it
 //! is an ordinal, "Henry VIII" as "Henry the eighth"; otherwise a cardinal, "Saturn V" as
-//! "Saturn five".
+//! "Saturn five". A numeral of 100 or more is always a cardinal.
 //!
 //! Some tokens need more: a single letter is a numeral only if it is I or V (a single C, D, L, M
 //! or X is far more often a letter: "Vitamin D", "Type C", "Malcolm X", "Generation X"); a
 //! numeral with C, D or M needs four letters (two or three are acronyms: "CD", "DC", "MD", "CLI",
 //! "MMM"; years are long: "MCMXCIV"); a single letter after a given name and before ". Capital" is
-//! a middle initial ("Vladimir V. Putin"), and one among initials is no heading ("I. M. Pei",
-//! "K. V. Puttappa"); and "I", which is far more often the pronoun, must be followed by
-//! punctuation, the end of the text, or "and", "or", "of" ("World War I.", "Elizabeth I of
-//! England", "Class I or Class II"), not by a word ("In Paris I saw"), and before a comma the word
-//! before it mustn't start the sentence ("Thinks I, I'll wait"). A numeral of 100 or more is
-//! always a cardinal.
+//! a middle initial ("Vladimir V. Putin"); and "I", which is far more often the pronoun, must be
+//! followed by punctuation, the end of the text, or "and", "or", "of" ("World War I.", "Elizabeth
+//! I of England", "Class I or Class II"), not by a word ("In Paris I saw"); before `,` `;` `?` `!`
+//! the word before it mustn't start the sentence ("Thinks I, I'll wait", "Dare I?"); and it
+//! doesn't close a list ("Charles III and I.").
 
 use crate::numbers::{cardinal, numbers, ordinal_of};
 use std::ops::Range;
@@ -217,6 +218,10 @@ enum Reading {
 /// The value of a numeral in standard form (each power of ten as I, II, III, IV, V, …, IX), up to
 /// 3999; `None` for anything else ("IIII", "VV", "IC", "XM").
 fn value(token: &str) -> Option<u32> {
+    // The longest numeral in standard form is MMMDCCCLXXXVIII.
+    if token.len() > 15 {
+        return None;
+    }
     let digit = |c: char| match c {
         'I' => Some(1),
         'V' => Some(5),
@@ -281,8 +286,9 @@ fn is_space(c: char) -> bool {
 }
 
 /// The evidence of the word before (rule 1): how to read the numeral after it, if it is one. For
-/// "I" before a comma, a word that starts a sentence is capitalised for that alone ("Thinks I,
-/// I'll wait"; "BOOK I." and "Elizabeth I of England" still read).
+/// "I" before a comma, semicolon, "?" or "!", a word that starts a sentence is capitalised for
+/// that alone ("Thinks I, I'll wait", "Dare I?"; "BOOK I." and "Elizabeth I of England" still
+/// read).
 fn word_before(before: &str, pronoun: bool) -> Option<Reading> {
     let trimmed = before.trim_end_matches(is_space);
     if trimmed.len() == before.len() {
@@ -299,10 +305,15 @@ fn word_before(before: &str, pronoun: bool) -> Option<Reading> {
     if !capitalised || possessive || !word.chars().next_back().is_some_and(char::is_alphabetic) {
         return None;
     }
-    if FUNCTION_WORDS.binary_search(&word.to_lowercase().as_str()).is_ok() {
+    // A contraction is a verb or pronoun with its auxiliary ("Aren't I?", "I'm II").
+    let contraction = word.contains(['\'', '’']);
+    if contraction || FUNCTION_WORDS.binary_search(&word.to_lowercase().as_str()).is_ok() {
         return None;
     }
-    if pronoun && starts_line(trimmed[..start].trim_end_matches(['"', '“', '\'', '‘', '(', '['])) {
+    // Here any period ends a sentence, even one after a letter ("Haven't I. Dare I?").
+    let opening = trimmed[..start].trim_end_matches(['"', '“', '\'', '‘', '(', '[']);
+    let sentence = opening.trim_end_matches(char::is_whitespace);
+    if pronoun && (sentence.is_empty() || sentence.ends_with(['.', '!', '?', ':']) && sentence.len() < opening.len()) {
         return None;
     }
     Some(if is_given_name(word) { Reading::Ordinal } else { Reading::Cardinal })
@@ -330,8 +341,9 @@ fn ends_word(after: &str) -> bool {
     let free = |c: Option<char>| c.is_none_or(|c| !c.is_alphanumeric());
     match next {
         None => true,
-        Some(c) if c.is_whitespace() || ",;:!?)]}\"”".contains(c) => true,
-        Some('.') => then.is_none_or(|c| c.is_whitespace() || "\"”)]'’".contains(c)),
+        Some(c) if c.is_whitespace() || ",;!?)]}\"”—".contains(c) => true,
+        // Not "III:16" or "V.9221".
+        Some('.' | ':') => then.is_none_or(|c| c.is_whitespace() || "\"”)]'’".contains(c)),
         Some('\'' | '’') => free(then) || (then == Some('s') && free(chars.next())),
         Some('-' | '–') => then.is_some_and(char::is_alphabetic),
         _ => false,
@@ -355,6 +367,14 @@ fn continues_list(between: &str) -> bool {
     matches!(between, ", " | " and " | " or " | " & " | ", and " | ", or " | " to ")
 }
 
+/// Whether a numeral that continues a list ends it or goes on with it: punctuation, the end, or
+/// another separator ("XXI and XXIV, this", "XII, XIII and its"; not "World War II, IV drug use").
+fn ends_list(after: &str) -> bool {
+    let next = after.chars().next();
+    next.is_none_or(|c| !c.is_alphanumeric() && !c.is_whitespace())
+        || [", ", " and ", " or ", " & ", " to "].iter().any(|s| after.starts_with(s))
+}
+
 /// A single letter after a given name, then ". " and a capital: a middle initial.
 fn middle_initial(after: &str) -> bool {
     after.strip_prefix(". ").and_then(|rest| rest.chars().next()).is_some_and(char::is_uppercase)
@@ -370,19 +390,18 @@ fn reading(text: &str, start: usize, end: usize, previous: Option<(usize, Readin
     if token == "I" && !i_may_be_numeral(after) {
         return None;
     }
+    // A single letter isn't a heading: "I. Introduction" can't be told from "V. Putin said" or
+    // "I. M. Pei".
+    let heading = token.len() > 1 && starts_line(before) && after.starts_with(['.', ')']);
+    // "I" closing a list is the pronoun as often as not ("Charles III and I.").
+    let list = token != "I" || after.starts_with(|c: char| c.is_whitespace());
     let reading = previous
-        .filter(|&(previous_end, _)| continues_list(&text[previous_end..start]))
+        .filter(|&(previous_end, _)| list && continues_list(&text[previous_end..start]) && ends_list(after))
         .map(|(_, reading)| reading)
-        .or_else(|| word_before(before, token == "I" && after.starts_with([',', ';'])))
-        .or_else(|| (starts_line(before) && after.starts_with(['.', ')'])).then_some(Reading::Cardinal))?;
-    if token.len() == 1 && after.starts_with('.') {
-        // "I. M. Pei", "V. I. Lenin": initials, not a heading.
-        let initial = after[1..].trim_start_matches(is_space);
-        let mut chars = initial.chars();
-        let next_initial = chars.next().is_some_and(char::is_uppercase) && chars.next() == Some('.');
-        if next_initial || reading == Reading::Ordinal && middle_initial(after) {
-            return None;
-        }
+        .or_else(|| word_before(before, token == "I" && after.starts_with([',', ';', '?', '!'])))
+        .or_else(|| heading.then_some(Reading::Cardinal))?;
+    if token.len() == 1 && reading == Reading::Ordinal && middle_initial(after) {
+        return None;
     }
     // No one has a regnal number of a hundred or more: "Louis XIV and MCMLXXXIV" is a year.
     Some(if n >= 100 { Reading::Cardinal } else { reading })
@@ -471,6 +490,9 @@ mod tests {
         assert_eq!(r("Louis XIV and MCMLXXXIV"), "Louis the fourteenth and nineteen eighty-four");
         // Headings.
         assert_eq!(r("IV. Results"), "four. Results");
+        assert_eq!(r("Intro. II. Methods"), "Intro. two. Methods");
+        assert_eq!(r("World War II—the war"), "World War two—the war");
+        assert_eq!(r("World Wars I and II."), "World Wars one and two.");
         assert_eq!(r("Methods. II) Data"), "Methods. two) Data");
         assert_eq!(r("Intro\nIII. Data"), "Intro\nthree. Data");
     }
@@ -486,6 +508,9 @@ mod tests {
         same("His IV was out.");
         same("Then I left.");
         same("Then I, too, left.");
+        // A list must go on or end after a numeral that continues it.
+        assert_eq!(roman_numerals("After World War II, IV drug use rose."), "After World War two, IV drug use rose.");
+        assert_eq!(roman_numerals("Charles III and I."), "Charles the third and I.");
         same("in XIX. century");
         // Possessives.
         same("Vuitton's LV bags");
@@ -507,6 +532,9 @@ mod tests {
         // Initials.
         same("Vladimir V. Putin");
         same("I. M. Pei designed it.");
+        same("V. Putin said. Authors: I. Asimov wrote. I. Introduction");
+        same("Aren't I? Didn't I? Well? Haven't I. Dare I? Need I! I'm II.");
+        same("John III:16");
         same("Adiga, K. V. Puttappa and V. K. Gokak");
         // Glued to other things.
         same("Pop V.9221");
