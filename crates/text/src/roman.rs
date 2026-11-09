@@ -15,27 +15,23 @@
 //! 3. it continues a list of numerals ("Super Bowls XXI and XXIV", "George II and III"; after a
 //!    bare comma the list must then end or go on, so not "World War II, IV drug use").
 //!
-//! After a person's given name (`data/given_names.txt`, from US Social Security baby names) it
-//! is an ordinal, "Henry VIII" as "Henry the eighth"; otherwise a cardinal, "Saturn V" as
-//! "Saturn five". A numeral of 100 or more is always a cardinal.
+//! A number is read as a cardinal: "Saturn five", "World War two", and after a name too ("Henry
+//! eight", "Elizabeth two"). An ordinal would need to know a name from another capitalised word,
+//! and Brendan chose the plain reading (2026-11-09).
 //!
 //! Some tokens need more: a single letter is a numeral only if it is I or V (a single C, D, L, M
 //! or X is far more often a letter: "Vitamin D", "Type C", "Malcolm X", "Generation X"); a
 //! numeral with C, D or M needs four letters (two or three are acronyms: "CD", "DC", "MD", "CLI",
-//! "MMM"; years are long: "MCMXCIV"); a single letter after a given name and before ". Capital" is
-//! a middle initial ("Vladimir V. Putin"); and "I", which is far more often the pronoun, must be
+//! "MMM"; years are long: "MCMXCIV"); a single letter before ". Capital" may be an initial as
+//! much as a sentence's end ("Vladimir V. Putin", "World War I. The"), so it stays a letter; and
+//! "I", which is far more often the pronoun, must be
 //! followed by punctuation, the end of the text, or "and", "or", "of" ("World War I.", "Elizabeth
 //! I of England", "Class I or Class II"), not by a word ("In Paris I saw"); before `,` `;` `?` `!`
 //! the word before it mustn't start the sentence ("Thinks I, I'll wait", "Dare I?"); and it
 //! doesn't close a list ("Charles III and I.").
 
-use crate::numbers::{cardinal, numbers, ordinal_of};
+use crate::numbers::numbers;
 use std::ops::Range;
-use std::sync::LazyLock;
-
-/// Given names, sorted by byte, one per line (`tools/gen_given_names.py`).
-static GIVEN_NAMES: LazyLock<Vec<&'static str>> =
-    LazyLock::new(|| include_str!("../data/given_names.txt").lines().collect());
 
 /// Closed-class words: a capitalised one before a numeral is no evidence that it is a number
 /// ("The IV", "His CD", "Then I").
@@ -209,12 +205,6 @@ const FUNCTION_WORDS: &[&str] = &[
     "yours",
 ];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Reading {
-    Cardinal,
-    Ordinal,
-}
-
 /// The value of a numeral in standard form (each power of ten as I, II, III, IV, V, …, IX), up to
 /// 3999; `None` for anything else ("IIII", "VV", "IC", "XM").
 fn value(token: &str) -> Option<u32> {
@@ -275,24 +265,18 @@ fn readable(token: &str) -> bool {
     }
 }
 
-fn is_given_name(word: &str) -> bool {
-    let word = word.rsplit('-').next().unwrap_or(word);
-    let title: String = word.chars().take(1).chain(word.chars().skip(1).flat_map(char::to_lowercase)).collect();
-    [word, title.as_str()].iter().any(|w| GIVEN_NAMES.binary_search(w).is_ok())
-}
-
 fn is_space(c: char) -> bool {
     c.is_whitespace() && c != '\n' && c != '\r'
 }
 
-/// The evidence of the word before (rule 1): how to read the numeral after it, if it is one. For
+/// The evidence of the word before (rule 1): whether the numeral after it is a number. For
 /// "I" before a comma, semicolon, "?" or "!", a word that starts a sentence is capitalised for
 /// that alone ("Thinks I, I'll wait", "Dare I?"; "BOOK I." and "Elizabeth I of England" still
 /// read).
-fn word_before(before: &str, pronoun: bool) -> Option<Reading> {
+fn word_before(before: &str, pronoun: bool) -> bool {
     let trimmed = before.trim_end_matches(is_space);
     if trimmed.len() == before.len() {
-        return None;
+        return false;
     }
     let start = trimmed
         .char_indices()
@@ -303,20 +287,17 @@ fn word_before(before: &str, pronoun: bool) -> Option<Reading> {
     let capitalised = word.chars().next().is_some_and(char::is_uppercase);
     let possessive = ["'s", "’s", "'S", "’S"].iter().any(|s| word.ends_with(s));
     if !capitalised || possessive || !word.chars().next_back().is_some_and(char::is_alphabetic) {
-        return None;
+        return false;
     }
     // A contraction is a verb or pronoun with its auxiliary ("Aren't I?", "I'm II").
     let contraction = word.contains(['\'', '’']);
     if contraction || FUNCTION_WORDS.binary_search(&word.to_lowercase().as_str()).is_ok() {
-        return None;
+        return false;
     }
     // Here any period ends a sentence, even one after a letter ("Haven't I. Dare I?").
     let opening = trimmed[..start].trim_end_matches(['"', '“', '\'', '‘', '(', '[']);
     let sentence = opening.trim_end_matches(char::is_whitespace);
-    if pronoun && (sentence.is_empty() || sentence.ends_with(['.', '!', '?', ':']) && sentence.len() < opening.len()) {
-        return None;
-    }
-    Some(if is_given_name(word) { Reading::Ordinal } else { Reading::Cardinal })
+    !(pronoun && (sentence.is_empty() || sentence.ends_with(['.', '!', '?', ':']) && sentence.len() < opening.len()))
 }
 
 /// Whether `before` ends where a line, the text or a sentence starts (rule 2). A period after a
@@ -375,41 +356,33 @@ fn ends_list(after: &str) -> bool {
         || [", ", " and ", " or ", " & ", " to "].iter().any(|s| after.starts_with(s))
 }
 
-/// A single letter after a given name, then ". " and a capital: a middle initial.
-fn middle_initial(after: &str) -> bool {
+/// ". " and a capital: after a single letter, an initial as much as a sentence's end.
+fn initial(after: &str) -> bool {
     after.strip_prefix(". ").and_then(|rest| rest.chars().next()).is_some_and(char::is_uppercase)
 }
 
-/// The numeral in its context: how it is read, if it is a number.
-fn reading(text: &str, start: usize, end: usize, previous: Option<(usize, Reading)>) -> Option<Reading> {
+/// Whether the numeral is a number in its context. `previous` is where the last numeral read as
+/// a number ended.
+fn is_number(text: &str, start: usize, end: usize, previous: Option<usize>) -> bool {
     let (token, before, after) = (&text[start..end], &text[..start], &text[end..]);
-    let n = value(token)?;
-    if !readable(token) || !ends_word(after) {
-        return None;
+    if value(token).is_none() || !readable(token) || !ends_word(after) {
+        return false;
     }
-    if token == "I" && !i_may_be_numeral(after) {
-        return None;
+    if token == "I" && !i_may_be_numeral(after) || token.len() == 1 && initial(after) {
+        return false;
     }
     // A single letter isn't a heading: "I. Introduction" can't be told from "V. Putin said" or
     // "I. M. Pei".
     let heading = token.len() > 1 && starts_line(before) && after.starts_with(['.', ')']);
     // "I" closing a list is the pronoun as often as not ("Charles III and I.").
     let list = token != "I" || after.starts_with(|c: char| c.is_whitespace());
-    let reading = previous
-        .filter(|&(previous_end, _)| {
-            let between = &text[previous_end..start];
-            // After a bare comma the list must go on or end ("II, IV drug use" isn't one); a
-            // conjunction already closes it ("World Wars I and II were").
-            list && continues_list(between) && (between != ", " || ends_list(after))
-        })
-        .map(|(_, reading)| reading)
-        .or_else(|| word_before(before, token == "I" && after.starts_with([',', ';', '?', '!'])))
-        .or_else(|| heading.then_some(Reading::Cardinal))?;
-    if token.len() == 1 && reading == Reading::Ordinal && middle_initial(after) {
-        return None;
-    }
-    // No one has a regnal number of a hundred or more: "Louis XIV and MCMLXXXIV" is a year.
-    Some(if n >= 100 { Reading::Cardinal } else { reading })
+    previous.is_some_and(|previous_end| {
+        let between = &text[previous_end..start];
+        // After a bare comma the list must go on or end ("II, IV drug use" isn't one); a
+        // conjunction already closes it ("World Wars I and II were").
+        list && continues_list(between) && (between != ", " || ends_list(after))
+    }) || word_before(before, token == "I" && after.starts_with([',', ';', '?', '!']))
+        || heading
 }
 
 /// Each numeral the context shows to be a number, as its span in `text` and its words.
@@ -423,7 +396,7 @@ pub fn readings(text: &str) -> Vec<(Range<usize>, String)> {
     if !text.contains(['I', 'V', 'X', 'L', 'C', 'D', 'M']) {
         return out;
     }
-    let mut previous: Option<(usize, Reading)> = None;
+    let mut previous = None;
     let mut chars = text.char_indices().peekable();
     while let Some((start, c)) = chars.next() {
         if !c.is_alphanumeric() {
@@ -434,16 +407,12 @@ pub fn readings(text: &str) -> Vec<(Range<usize>, String)> {
             end = i + c.len_utf8();
             chars.next();
         }
-        let Some(reading) = reading(text, start, end, previous) else {
+        if !is_number(text, start, end, previous) {
             continue;
-        };
-        let n = value(&text[start..end]).expect("reading checks the value").to_string();
-        let words = match reading {
-            Reading::Cardinal => numbers(&n),
-            Reading::Ordinal => format!("the {}", ordinal_of(&cardinal(&n))),
-        };
-        out.push((start..end, words));
-        previous = Some((end, reading));
+        }
+        let n = value(&text[start..end]).expect("is_number checks the value");
+        out.push((start..end, numbers(&n.to_string())));
+        previous = Some(end);
     }
     out
 }
@@ -465,21 +434,18 @@ mod tests {
         for bad in ["IIII", "VV", "IC", "XM", "IIV", "VX", "LL", "DD", "MMMM", "IL", "XXL", ""] {
             assert_eq!(value(bad), None, "{bad}");
         }
-        assert!(GIVEN_NAMES.windows(2).all(|w| w[0] < w[1]), "given_names.txt is sorted");
         assert!(FUNCTION_WORDS.windows(2).all(|w| w[0] < w[1]), "FUNCTION_WORDS is sorted");
     }
 
     #[test]
     fn numerals_with_evidence() {
         let r = |t: &str| roman_numerals(t);
-        // A given name before: an ordinal.
-        assert_eq!(r("John V was king."), "John the fifth was king.");
-        assert_eq!(r("Queen Elizabeth II died."), "Queen Elizabeth the second died.");
-        assert_eq!(r("Henry VIII's wives"), "Henry the eighth's wives");
-        assert_eq!(r("the Versailles of Louis XIV."), "the Versailles of Louis the fourteenth.");
-        assert_eq!(r("Pope John Paul II"), "Pope John Paul the second");
-        assert_eq!(r("Elizabeth I of England"), "Elizabeth the first of England");
-        // Another capitalised word: a cardinal.
+        // After a name too, a cardinal.
+        assert_eq!(r("John V was king."), "John five was king.");
+        assert_eq!(r("Queen Elizabeth II died."), "Queen Elizabeth two died.");
+        assert_eq!(r("Henry VIII's wives"), "Henry eight's wives");
+        assert_eq!(r("the Versailles of Louis XIV."), "the Versailles of Louis fourteen.");
+        assert_eq!(r("Elizabeth I of England"), "Elizabeth one of England");
         assert_eq!(r("the Saturn V rocket"), "the Saturn five rocket");
         assert_eq!(r("After World War II, prices"), "After World War two, prices");
         assert_eq!(r("World War I-era"), "World War one-era");
@@ -491,10 +457,10 @@ mod tests {
         assert_eq!(r("Class I or Class II"), "Class one or Class two");
         // A list of numerals.
         assert_eq!(r("Super Bowls XXI and XXIV"), "Super Bowls twenty-one and twenty-four");
-        assert_eq!(r("George II and III"), "George the second and the third");
+        assert_eq!(r("George II and III"), "George two and three");
         assert_eq!(r("World Wars I and II were"), "World Wars one and two were");
         assert_eq!(r("Super Bowls XXI and XXIV were played"), "Super Bowls twenty-one and twenty-four were played");
-        assert_eq!(r("Louis XIV and MCMLXXXIV"), "Louis the fourteenth and nineteen eighty-four");
+        assert_eq!(r("Louis XIV and MCMLXXXIV"), "Louis fourteen and nineteen eighty-four");
         // Headings.
         assert_eq!(r("IV. Results"), "four. Results");
         assert_eq!(r("Intro. II. Methods"), "Intro. two. Methods");
@@ -517,7 +483,7 @@ mod tests {
         same("Then I, too, left.");
         // A list must go on or end after a numeral that continues it.
         assert_eq!(roman_numerals("After World War II, IV drug use rose."), "After World War two, IV drug use rose.");
-        assert_eq!(roman_numerals("Charles III and I."), "Charles the third and I.");
+        assert_eq!(roman_numerals("Charles III and I."), "Charles three and I.");
         same("in XIX. century");
         // Possessives.
         same("Vuitton's LV bags");

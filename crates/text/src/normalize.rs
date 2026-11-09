@@ -340,7 +340,7 @@ mod tests {
         // Decided on the capitals, read after the caps pass lowercased the phrase.
         assert_eq!(n("BOOK I. (Folio), CHAPTER XXXV."), "book one. (Folio), chapter thirty-five.");
         assert_eq!(n("WORLD WAR II"), "world WAR two");
-        assert_eq!(n("Henry VIII's wives and an IV drip"), "Henry the eighth's wives and an IV drip");
+        assert_eq!(n("Henry VIII's wives and an IV drip"), "Henry eight's wives and an IV drip");
         let none = Options { caps_normalization: false, ..Options::default() };
         assert_eq!(english("BOOK I. (Folio)", &none), "BOOK one. (Folio)");
     }

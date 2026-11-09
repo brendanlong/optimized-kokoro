@@ -21,7 +21,7 @@ pub enum Kind {
     /// A spaced hyphen read as a dash, an en dash inside a word read as a hyphen (issue #35).
     Dashes,
     /// A Roman numeral the reference left as letters, read as its number ("World War two",
-    /// "Henry the eighth").
+    /// "Henry eight").
     Roman,
 }
 
@@ -590,8 +590,8 @@ fn roman_value(token: &str) -> Option<u32> {
 
 /// The readings of a number below 4000 the checker accepts: the cardinal ("fifty-five", "one
 /// thousand two hundred and five"), from 1000 a year in pairs ("nineteen ninety-four", "nineteen
-/// hundred", "nineteen oh five"), and below 100 "the" and the ordinal ("the eighth"). Built here
-/// rather than taken from the number reader, so that the check doesn't trust the code it checks.
+/// hundred", "nineteen oh five"). Built here rather than taken from the number reader, so that the
+/// check doesn't trust the code it checks.
 fn readings_of(v: u32) -> Vec<String> {
     const ONES: [&str; 20] = [
         "zero",
@@ -632,7 +632,7 @@ fn readings_of(v: u32) -> Vec<String> {
         (t, rest) if rest < 100 => format!("{} thousand and {}", ONES[t as usize], under_100(rest)),
         (t, rest) => format!("{} thousand {}", ONES[t as usize], under_1000(rest)),
     };
-    let mut out = vec![cardinal.clone()];
+    let mut out = vec![cardinal];
     if v >= 1000 {
         let (high, low) = (under_100(v / 100), v % 100);
         out.push(match low {
@@ -641,26 +641,11 @@ fn readings_of(v: u32) -> Vec<String> {
             _ => format!("{high} {}", under_100(low)),
         });
     }
-    if v < 100 {
-        let split = cardinal.rfind('-').map_or(0, |i| i + 1);
-        let last = match &cardinal[split..] {
-            "one" => "first".to_owned(),
-            "two" => "second".to_owned(),
-            "three" => "third".to_owned(),
-            "five" => "fifth".to_owned(),
-            "eight" => "eighth".to_owned(),
-            "nine" => "ninth".to_owned(),
-            "twelve" => "twelfth".to_owned(),
-            w if w.ends_with('y') => format!("{}ieth", &w[..w.len() - 1]),
-            w => format!("{w}th"),
-        };
-        out.push(format!("the {}{last}", &cardinal[..split]));
-    }
     out
 }
 
 /// Whether `ours` is `theirs` with Roman numerals read as their numbers (one of
-/// [`readings_of`], keeping the numeral's "'s": "Louis XIV's" against "Louis the fourteenth's"),
+/// [`readings_of`], keeping the numeral's "'s": "Louis XIV's" against "Louis fourteen's"),
 /// and nothing else changed. Each numeral must be a word of the input.
 fn roman_read(input: &str, theirs: &[&str], ours: &[&str]) -> bool {
     let Some((&first, rest)) = theirs.split_first() else {
@@ -871,10 +856,10 @@ mod tests {
         let ok = |input: &str, a: &str, b: &str| explain(input, a, b).unwrap();
         let roman = BTreeSet::from([Kind::Roman]);
         assert_eq!(ok("World War II ended.", "World War II ended.", "World War two ended."), roman);
-        assert_eq!(ok("Henry VIII's wives", "Henry VIII's wives", "Henry the eighth's wives"), roman);
+        assert_eq!(ok("Henry VIII's wives", "Henry VIII's wives", "Henry eight's wives"), roman);
         assert_eq!(ok("Super Bowl LV", "Super Bowl LV", "Super Bowl fifty-five"), roman);
         assert_eq!(ok("XXI and XXIV", "XXI and XXIV", "twenty-one and twenty-four"), roman);
-        assert_eq!(ok("George II and III", "George II and III", "George the second and the third"), roman);
+        assert_eq!(ok("George II and III", "George II and III", "George two and three"), roman);
         assert_eq!(ok("MCMXCIV.", "MCMXCIV.", "nineteen ninety-four."), roman);
         assert_eq!(ok("MCM.", "MCM.", "nineteen hundred."), roman);
         assert_eq!(ok("MMXXIV", "MMXXIV", "two thousand and twenty-four"), roman);
@@ -888,7 +873,9 @@ mod tests {
         err("World War II ended", "World War II ended", "World War two began");
         err("World War II", "World War II", "the World War two");
         err("IIII", "IIII", "four");
-        err("Henry VIII's", "Henry VIII's", "Henry the eighth");
+        err("Henry VIII's", "Henry VIII's", "Henry eight");
+        // No ordinals: the reader reads every numeral as a cardinal.
+        err("Henry VIII", "Henry VIII", "Henry the eighth");
         // Number words in another order or sum, or with words added at a reading's edges (the
         // review's examples).
         err("LV", "LV", "five fifty");
@@ -911,11 +898,7 @@ mod tests {
         // Next to other number words, which masking would join to the reading.
         assert_eq!(ok("Mystery V. The Five", "Mystery V. The Five", "Mystery five. The Five"), roman);
         assert_eq!(
-            ok(
-                "Francis I of the Two Sicilies",
-                "Francis I of the Two Sicilies",
-                "Francis the first of the Two Sicilies"
-            ),
+            ok("Francis I of the Two Sicilies", "Francis I of the Two Sicilies", "Francis one of the Two Sicilies"),
             roman
         );
         assert_eq!(
@@ -923,11 +906,7 @@ mod tests {
             roman
         );
         assert_eq!(
-            ok(
-                "Louis XIV in 1700",
-                "Louis XIV in one thousand, seven hundred",
-                "Louis the fourteenth in seventeen hundred"
-            ),
+            ok("Louis XIV in 1700", "Louis XIV in one thousand, seven hundred", "Louis fourteen in seventeen hundred"),
             BTreeSet::from([Kind::Numbers, Kind::Roman])
         );
     }
