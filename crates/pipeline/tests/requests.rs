@@ -114,6 +114,7 @@ fn requests_match_the_reference() {
     let cases = cases();
     let mut failures = Vec::new();
     let (mut flagged, mut rechunked, mut new_script, mut stateful, mut numbers, mut fuzzed) = (0, 0, 0, 0, 0, 0);
+    let mut roman = 0;
     let mut regrouped = 0;
     for case in &cases {
         if uses_new_script(&case.text) {
@@ -188,7 +189,10 @@ fn requests_match_the_reference() {
             if theirs != ours {
                 // The text differs by its numbers or symbols, not by where it was chunked.
                 match kokoro_reference::divergence::explain(&case.text, &theirs, &ours) {
-                    Ok(_) => numbers += 1,
+                    Ok(kinds) => {
+                        numbers += 1;
+                        roman += usize::from(kinds.contains(&kokoro_reference::divergence::Kind::Roman));
+                    }
                     Err(_) if fuzz(&case.text) => fuzzed += 1,
                     Err(why) => failures.push(format!("{}: {why}", case.id)),
                 }
@@ -254,8 +258,11 @@ fn requests_match_the_reference() {
             // chunks' text differs only by them, the request is counted apart.
             let joined = |chunks: &mut dyn Iterator<Item = &Expected>| texts(chunks).join(" ");
             let (theirs, ours) = (joined(&mut expected.iter().copied()), joined(&mut actual.iter()));
-            if theirs != ours && kokoro_reference::divergence::explain(&case.text, &theirs, &ours).is_ok() {
+            if theirs != ours
+                && let Ok(kinds) = kokoro_reference::divergence::explain(&case.text, &theirs, &ours)
+            {
                 numbers += 1;
+                roman += usize::from(kinds.contains(&kokoro_reference::divergence::Kind::Roman));
                 continue;
             }
             // The character fuzz glues digits and symbols to letters of many scripts in ways the
@@ -283,7 +290,7 @@ fn requests_match_the_reference() {
         "{} of {compared} requests match ({flagged} of them once espeak's language-switch flags are dropped from the reference's); \
          not compared: {rechunked} chunked differently without the flags, {new_script} with other scripts, \
          {stateful} where the reference's espeak read a word by an earlier call's state, \
-         {numbers} with numbers or symbols read differently, {fuzzed} more fuzzed ones with digits or symbols, \
+         {numbers} with numbers or symbols read differently ({roman} with Roman numerals), {fuzzed} more fuzzed ones with digits or symbols, \
          {regrouped} with short clauses regrouped",
         compared - failures.len(),
     );

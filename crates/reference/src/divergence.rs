@@ -1,5 +1,6 @@
 //! Checks that a difference from the reference's normalized text is one `docs/divergences.md`
-//! lists: the number reader ("Numbers") or the symbol pass ("Symbols").
+//! lists: the number reader ("Numbers"), the symbol pass ("Symbols"), dashes ("Dashes") or Roman
+//! numerals ("Roman").
 //!
 //! Both texts are split into words and punctuation and compared token by token. Every run of
 //! tokens that differs must hold, on the reference's side, a digit (a number the reference left
@@ -19,6 +20,9 @@ pub enum Kind {
     Symbols,
     /// A spaced hyphen read as a dash, an en dash inside a word read as a hyphen (issue #35).
     Dashes,
+    /// A Roman numeral the reference left as letters, read as its number ("World War two",
+    /// "Henry eight").
+    Roman,
 }
 
 /// Punctuation both normalizers leave as it is.
@@ -540,6 +544,151 @@ fn has_number_word(text: &str, ordinals: bool) -> bool {
         })
 }
 
+/// The value of a Roman numeral in standard form ("XIV" 14, "MCMXCIV" 1994), up to 3999, with a
+/// possessive "'s" allowed; `None` for anything else ("IIII", "IC"). A copy of the reader's own
+/// (`kokoro-text`'s `roman.rs`), so the check stands apart from it.
+fn roman_value(token: &str) -> Option<u32> {
+    let token = token.strip_suffix("'s").or_else(|| token.strip_suffix("’s")).unwrap_or(token);
+    let digit = |c: char| match c {
+        'I' => Some(1),
+        'V' => Some(5),
+        'X' => Some(10),
+        'L' => Some(50),
+        'C' => Some(100),
+        'D' => Some(500),
+        'M' => Some(1000),
+        _ => None,
+    };
+    let values: Vec<i64> = token.chars().map(digit).collect::<Option<_>>()?;
+    let n: i64 =
+        values.iter().enumerate().map(|(i, &v)| if values.get(i + 1).is_some_and(|&w| w > v) { -v } else { v }).sum();
+    let n = u32::try_from(n).ok().filter(|n| (1..4000).contains(n))?;
+    let mut canonical = String::new();
+    let mut rest = n;
+    for (v, s) in [
+        (1000, "M"),
+        (900, "CM"),
+        (500, "D"),
+        (400, "CD"),
+        (100, "C"),
+        (90, "XC"),
+        (50, "L"),
+        (40, "XL"),
+        (10, "X"),
+        (9, "IX"),
+        (5, "V"),
+        (4, "IV"),
+        (1, "I"),
+    ] {
+        while rest >= v {
+            canonical.push_str(s);
+            rest -= v;
+        }
+    }
+    (canonical == token).then_some(n)
+}
+
+/// The readings of a number below 4000 the checker accepts: the cardinal ("fifty-five", "one
+/// thousand two hundred and five"), from 1000 a year in pairs ("nineteen ninety-four", "nineteen
+/// hundred", "nineteen oh five"). Built here rather than taken from the number reader, so that the
+/// check doesn't trust the code it checks.
+fn readings_of(v: u32) -> Vec<String> {
+    const ONES: [&str; 20] = [
+        "zero",
+        "one",
+        "two",
+        "three",
+        "four",
+        "five",
+        "six",
+        "seven",
+        "eight",
+        "nine",
+        "ten",
+        "eleven",
+        "twelve",
+        "thirteen",
+        "fourteen",
+        "fifteen",
+        "sixteen",
+        "seventeen",
+        "eighteen",
+        "nineteen",
+    ];
+    const TENS: [&str; 10] = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"];
+    let under_100 = |n: u32| match n {
+        0..20 => ONES[n as usize].to_owned(),
+        _ if n.is_multiple_of(10) => TENS[n as usize / 10].to_owned(),
+        _ => format!("{}-{}", TENS[n as usize / 10], ONES[n as usize % 10]),
+    };
+    let under_1000 = |n: u32| match (n / 100, n % 100) {
+        (0, rest) => under_100(rest),
+        (h, 0) => format!("{} hundred", ONES[h as usize]),
+        (h, rest) => format!("{} hundred and {}", ONES[h as usize], under_100(rest)),
+    };
+    let cardinal = match (v / 1000, v % 1000) {
+        (0, rest) => under_1000(rest),
+        (t, 0) => format!("{} thousand", ONES[t as usize]),
+        (t, rest) if rest < 100 => format!("{} thousand and {}", ONES[t as usize], under_100(rest)),
+        (t, rest) => format!("{} thousand {}", ONES[t as usize], under_1000(rest)),
+    };
+    let mut out = vec![cardinal];
+    if v >= 1000 {
+        let (high, low) = (under_100(v / 100), v % 100);
+        out.push(match low {
+            0 => format!("{high} hundred"),
+            1..10 => format!("{high} oh {}", ONES[low as usize]),
+            _ => format!("{high} {}", under_100(low)),
+        });
+    }
+    out
+}
+
+/// Whether `ours` is `theirs` with Roman numerals read as their numbers (one of
+/// [`readings_of`], keeping the numeral's "'s": "Louis XIV's" against "Louis fourteen's"),
+/// and nothing else changed. Each numeral must be a word of the input.
+fn roman_read(input: &str, theirs: &[&str], ours: &[&str]) -> bool {
+    let Some((&first, rest)) = theirs.split_first() else {
+        return ours.is_empty();
+    };
+    let core = first.strip_suffix("'s").or_else(|| first.strip_suffix("’s")).unwrap_or(first);
+    let in_input = || input.split(|c: char| !c.is_alphanumeric()).any(|w| w == core);
+    let Some(v) = roman_value(first).filter(|_| in_input()) else {
+        return ours.first() == Some(&first) && roman_read(input, rest, &ours[1..]);
+    };
+    let suffix = &first[core.len()..];
+    // The readings of a value start with different words, so at most one matches: no backtracking.
+    readings_of(v).into_iter().any(|reading| {
+        let reading = format!("{reading}{suffix}");
+        let words = tokens(&reading);
+        ours.len() >= words.len()
+            && ours.iter().zip(&words).all(|(a, b)| a == b)
+            && roman_read(input, rest, &ours[words.len()..])
+    })
+}
+
+/// The reference's tokens with each differing run that `ours` reads as Roman numerals (see
+/// [`roman_read`]) replaced by ours, and whether there was one.
+fn with_roman_read<'a>(input: &str, a: &[&'a str], b: &[&'a str]) -> (Vec<&'a str>, bool) {
+    if !a.iter().any(|w| roman_value(w).is_some()) {
+        return (a.to_vec(), false);
+    }
+    let wrap = |side: &[&'a str]| -> Vec<Masked<'a>> {
+        side.iter().map(|&w| Masked { token: w, text: w.to_owned() }).collect()
+    };
+    let (mut out, mut last, mut roman) = (Vec::new(), 0, false);
+    for (ra, rb) in align(&wrap(a), &wrap(b)).hunks {
+        if a[ra.clone()].iter().any(|w| roman_value(w).is_some()) && roman_read(input, &a[ra.clone()], &b[rb.clone()]) {
+            out.extend_from_slice(&a[last..ra.start]);
+            out.extend_from_slice(&b[rb]);
+            last = ra.end;
+            roman = true;
+        }
+    }
+    out.extend_from_slice(&a[last..]);
+    (out, roman)
+}
+
 /// Why `ours` differs from the reference's normalized text of `input`: the divergences that
 /// explain every difference, or the first one nothing explains. A number difference needs a
 /// number in the input (a digit or another number character: `²`, `½`, `①`), and a symbol
@@ -548,9 +697,15 @@ pub fn explain(input: &str, reference: &str, ours: &str) -> Result<BTreeSet<Kind
     let input_numbers = input.chars().any(char::is_numeric);
     let input_symbols = input.chars().any(is_symbol);
     let (a, b) = (tokens(reference), tokens(ours));
+    let mut kinds = BTreeSet::new();
+    // Roman numerals read as numbers are taken out first, word by word: masking would join a
+    // reading to the number words around it ("first of the Two", "five . The Five").
+    let (a, roman) = with_roman_read(input, &a, &b);
+    if roman {
+        kinds.insert(Kind::Roman);
+    }
     let (ma, mb) = (mask(&a), mask(&b));
     let alignment = align(&ma, &mb);
-    let mut kinds = BTreeSet::new();
     let unexplained = |what: String| Err(format!("{what} (input {input:?})"));
     // Runs of numbers read differently, where the rest lines up.
     let mut changed_numbers = std::collections::HashSet::new();
@@ -694,5 +849,65 @@ mod tests {
         assert_eq!(ok("from a–z", "from a - z", "from A to Z"), BTreeSet::from([Kind::Dashes]));
         err("from a z", "from a z", "from A to Z");
         err("think of a", "think of a", "think of — a");
+    }
+
+    #[test]
+    fn explains_roman_numerals_read_as_numbers_only() {
+        let ok = |input: &str, a: &str, b: &str| explain(input, a, b).unwrap();
+        let roman = BTreeSet::from([Kind::Roman]);
+        assert_eq!(ok("World War II ended.", "World War II ended.", "World War two ended."), roman);
+        assert_eq!(ok("Henry VIII's wives", "Henry VIII's wives", "Henry eight's wives"), roman);
+        assert_eq!(ok("Super Bowl LV", "Super Bowl LV", "Super Bowl fifty-five"), roman);
+        assert_eq!(ok("XXI and XXIV", "XXI and XXIV", "twenty-one and twenty-four"), roman);
+        assert_eq!(ok("George II and III", "George II and III", "George two and three"), roman);
+        assert_eq!(ok("MCMXCIV.", "MCMXCIV.", "nineteen ninety-four."), roman);
+        assert_eq!(ok("MCM.", "MCM.", "nineteen hundred."), roman);
+        assert_eq!(ok("MMXXIV", "MMXXIV", "two thousand and twenty-four"), roman);
+        assert_eq!(ok("II-era", "II-era", "two-era"), roman);
+        let err = |input: &str, a: &str, b: &str| assert!(explain(input, a, b).is_err(), "{a:?} -> {b:?}");
+        // The wrong number, or anything else changed.
+        err("World War II", "World War II", "World War three");
+        err("Henry VIII", "Henry VIII", "Henry the seventh");
+        err("Henry VIII", "Henry VIII", "Henry eighth");
+        err("Super Bowl LV", "Super Bowl LV", "Super Bowl fifty");
+        err("World War II ended", "World War II ended", "World War two began");
+        err("World War II", "World War II", "the World War two");
+        err("IIII", "IIII", "four");
+        err("Henry VIII's", "Henry VIII's", "Henry eight");
+        // No ordinals: the reader reads every numeral as a cardinal.
+        err("Henry VIII", "Henry VIII", "Henry the eighth");
+        // Number words in another order or sum, or with words added at a reading's edges (the
+        // review's examples).
+        err("LV", "LV", "five fifty");
+        err("XIV", "XIV", "four ten");
+        err("II", "II", "one one");
+        err("II", "II", "oh two");
+        err("MCMXCIV", "MCMXCIV", "nineteen four ninety");
+        err("Henry II", "Henry II", "Henry the one first");
+        err("Henry IV", "Henry IV", "Henry the first third");
+        err("Henry II", "Henry II", "Henry The second");
+        err("War XXI ended", "War XXI ended", "War and twenty-one ended");
+        err("War XXI ended", "War XXI ended", "War twenty-one, ended");
+        err("War II then", "War II then", "War two - then");
+        // A failing hunk of many numerals fails fast (each reading of a value starts differently).
+        let many = |unit: &str, end: &str| format!("{}{end}", unit.repeat(40));
+        err(&many("II ", "zzz"), &many("II ", "zzz"), &many("two and ", "yyy"));
+        // The numeral must be a word of the input.
+        err("World War 2", "World War II", "World War two");
+        err("World War III", "World War II", "World War two");
+        // Next to other number words, which masking would join to the reading.
+        assert_eq!(ok("Mystery V. The Five", "Mystery V. The Five", "Mystery five. The Five"), roman);
+        assert_eq!(
+            ok("Francis I of the Two Sicilies", "Francis I of the Two Sicilies", "Francis one of the Two Sicilies"),
+            roman
+        );
+        assert_eq!(
+            ok("World War II, 1945", "World War II, nineteen forty-five", "World War two, nineteen forty-five"),
+            roman
+        );
+        assert_eq!(
+            ok("Louis XIV in 1700", "Louis XIV in one thousand, seven hundred", "Louis fourteen in seventeen hundred"),
+            BTreeSet::from([Kind::Numbers, Kind::Roman])
+        );
     }
 }
