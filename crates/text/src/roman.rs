@@ -24,11 +24,11 @@
 //! numeral with C, D or M needs four letters (two or three are acronyms: "CD", "DC", "MD", "CLI",
 //! "MMM"; years are long: "MCMXCIV"); a single letter before ". Capital" may be an initial as
 //! much as a sentence's end ("Vladimir V. Putin", "World War I. The"), so it stays a letter; and
-//! "I", which is far more often the pronoun, must be
-//! followed by punctuation, the end of the text, or "and", "or", "of" ("World War I.", "Elizabeth
-//! I of England", "Class I or Class II"), not by a word ("In Paris I saw"); before `,` `;` `?` `!`
-//! the word before it mustn't start the sentence ("Thinks I, I'll wait", "Dare I?"); and it
-//! doesn't close a list ("Charles III and I.").
+//! "I", which is far more often the pronoun, must be followed by punctuation, the end of the
+//! text, or "and", "or", "of" ("World War I,", "Elizabeth I of England", "Class I or Class II"),
+//! not by a word ("In Paris I saw"); before `,` `;` `?` `!` the word before it mustn't start the
+//! sentence ("Thinks I, I'll wait", "Dare I?"); and it doesn't close a list ("Charles III and
+//! I.").
 
 use crate::numbers::numbers;
 use std::ops::Range;
