@@ -12,9 +12,12 @@
 //! - runs of scripts `foreign.py` leaves to the English G2P, which now go to espeak's voice for
 //!   the script or read as "<script> text";
 //! - espeak's language-switch flags, which the reference's English fallback reads out;
-//! - numbers, symbols, dashes and Roman numerals: where the port's normalized text differs from
-//!   the reference's, every differing run of words must be one of those, read differently
-//!   (`kokoro_reference::divergence`), and the record is counted by kind instead of compared.
+//! - numbers, symbols, dashes, Roman numerals, abbreviations, footnote marks, rates and money
+//!   before what it buys: where the port's normalized text differs from the reference's, every
+//!   differing run of words must be one of those, read differently
+//!   (`kokoro_reference::divergence`), and the record is counted by kind instead of compared;
+//! - "dr" and "mr" in a case other than "Dr" and "Mr", which misaki's lexicons read "doctor" and
+//!   "mister": chunks holding one aren't compared, and the rest of the record must match.
 //!
 //! `PARITY_SHOW=n` prints up to n mismatches (default 20).
 
@@ -172,6 +175,8 @@ fn reference_records() {
     let (mut zh, mut zh_matched, mut failing, mut failing_matched, mut unreadable) = (0, 0, 0, 0, Vec::new());
     let mut mismatches = Vec::new();
     let (mut changed, mut numbers, mut symbols, mut unchanged_chunks, mut dashes, mut roman) = (0, 0, 0, 0, 0, 0);
+    let mut by_kind: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    let mut dropped_abbreviations = 0;
     let start = Instant::now();
     for record in &records {
         let chinese_with_japanese = record.lang == "z" && uses_cjk(record);
@@ -219,6 +224,7 @@ fn reference_records() {
                     for (text, phonemes) in actual.iter().filter(|_| !placeholders) {
                         if let Some(&expected) = reference.get(text.as_str())
                             && expected != phonemes
+                            && !divergence::has_dropped_abbreviation(text)
                         {
                             mismatches.push(format!(
                                 "{}: unchanged chunk {text:?} read differently\n  expected: {expected}\n  actual:   {phonemes}",
@@ -231,6 +237,9 @@ fn reference_records() {
                     symbols += usize::from(kinds.contains(&Kind::Symbols));
                     dashes += usize::from(kinds.contains(&Kind::Dashes));
                     roman += usize::from(kinds.contains(&Kind::Roman));
+                    for kind in &kinds {
+                        *by_kind.entry(format!("{kind:?}")).or_default() += 1;
+                    }
                     changed += 1;
                     // `PARITY_CHANGED=FILE` writes each such record, to review the differences.
                     if let Ok(path) = std::env::var("PARITY_CHANGED") {
@@ -284,6 +293,15 @@ fn reference_records() {
         {
             // Short clauses are regrouped on purpose (docs/divergences.md).
             regrouped += 1;
+        } else if error.is_some() == record.error.is_some()
+            && expected.len() == actual.len()
+            && expected
+                .iter()
+                .zip(&actual)
+                .all(|(e, a)| e == a || e.0 == a.0 && divergence::has_dropped_abbreviation(&e.0))
+        {
+            // "MR" and "dr" are read without misaki's "mister" and "doctor" (docs/divergences.md).
+            dropped_abbreviations += 1;
         } else {
             let first =
                 expected.iter().zip(&actual).position(|(e, a)| e != a).unwrap_or(expected.len().min(actual.len()));
@@ -317,6 +335,7 @@ fn reference_records() {
     println!(
         "normalized differently, by the number reader and symbol pass: {changed} records ({numbers} with numbers, {symbols} with symbols, {dashes} with dashes, {roman} with Roman numerals), whose {unchanged_chunks} chunks with unchanged text match"
     );
+    println!("by kind: {by_kind:?}; {dropped_abbreviations} more read \"dr\" or \"mr\" without misaki's lexicon entry");
     println!("{} records, {chars} characters in {:.2?}", records.len(), elapsed);
     for m in mismatches.iter().take(show) {
         println!("{m}");

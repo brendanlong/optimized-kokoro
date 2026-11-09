@@ -8,7 +8,9 @@
 //! [`split::join_lines`], [`normalize`], [`split::sentences`] and chunking with the caller's G2P.
 #![forbid(unsafe_code)]
 
+mod abbreviations;
 mod english_data;
+mod footnotes;
 pub mod normalize;
 pub mod numbers;
 pub mod py;

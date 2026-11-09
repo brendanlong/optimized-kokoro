@@ -1,6 +1,7 @@
 //! Checks that a difference from the reference's normalized text is one `docs/divergences.md`
-//! lists: the number reader ("Numbers"), the symbol pass ("Symbols"), dashes ("Dashes") or Roman
-//! numerals ("Roman").
+//! lists: the number reader ("Numbers"), the symbol pass ("Symbols"), dashes ("Dashes"), Roman
+//! numerals ("Roman"), abbreviations ("Abbreviations"), footnote marks ("Footnotes"), rates
+//! ("Rates") or money before what it buys ("AttributiveMoney").
 //!
 //! Both texts are split into words and punctuation and compared token by token. Every run of
 //! tokens that differs must hold, on the reference's side, a digit (a number the reference left
@@ -23,6 +24,15 @@ pub enum Kind {
     /// A Roman numeral the reference left as letters, read as its number ("World War two",
     /// "Henry eight").
     Roman,
+    /// An abbreviation read in full: "St." as "Saint" or "Street", "Dr." as "Doctor" or "Drive",
+    /// "No." as "number", "Dec." as "December", "pp." as "pages", "tl;dr" as "TLDR".
+    Abbreviations,
+    /// A footnote or citation mark dropped: "find.6", "[2]", "↩", "¶", "§ § §".
+    Footnotes,
+    /// A rate's slash read "per", "a" or "an": "twenty dollars a month", "tok per second".
+    Rates,
+    /// An amount of money in the singular before what it buys: "a five dollar bill".
+    AttributiveMoney,
 }
 
 /// Punctuation both normalizers leave as it is.
@@ -689,6 +699,206 @@ fn with_roman_read<'a>(input: &str, a: &[&'a str], b: &[&'a str]) -> (Vec<&'a st
     (out, roman)
 }
 
+type Span = std::ops::Range<usize>;
+
+/// The reference's tokens with part of each differing run replaced by ours where `accept` explains
+/// it, and whether there was one. `accept` is given the reference's tokens, the run's range in
+/// them and our run, and returns the part of each run (relative ranges) it explains; the rest of
+/// the run is left for the other checks.
+fn with_hunks_read<'a>(
+    a: &[&'a str],
+    b: &[&'a str],
+    accept: impl Fn(&[&str], Span, &[&str]) -> Option<(Span, Span)>,
+) -> (Vec<&'a str>, bool) {
+    let wrap = |side: &[&'a str]| -> Vec<Masked<'a>> {
+        side.iter().map(|&w| Masked { token: w, text: w.to_owned() }).collect()
+    };
+    let (mut out, mut last, mut any) = (Vec::new(), 0, false);
+    for (ra, rb) in align(&wrap(a), &wrap(b)).hunks {
+        if let Some((theirs, ours)) = accept(a, ra.clone(), &b[rb.clone()]) {
+            out.extend_from_slice(&a[last..ra.start + theirs.start]);
+            out.extend_from_slice(&b[rb.start + ours.start..rb.start + ours.end]);
+            last = ra.start + theirs.end;
+            any = true;
+        }
+    }
+    out.extend_from_slice(&a[last..]);
+    (out, any)
+}
+
+/// `check` on whole runs, as [`with_hunks_read`] takes it.
+fn whole(check: bool, theirs: Span, ours: usize) -> Option<(Span, Span)> {
+    check.then_some((0..theirs.len(), 0..ours))
+}
+
+/// Whether `word` is a word of the input.
+fn input_word(input: &str, word: &str) -> bool {
+    input.split(|c: char| !c.is_alphanumeric()).any(|w| w == word)
+}
+
+/// The readings of an abbreviation the abbreviation pass expands (`kokoro-text`'s
+/// `abbreviations.rs`), written out here so the check stands apart from it.
+fn expansions(abbreviation: &str) -> &'static [&'static str] {
+    match abbreviation {
+        "St" => &["Saint", "Street"],
+        "Dr" | "DR" => &["Doctor", "Drive"],
+        "Doctor" => &["Drive"],
+        "No" => &["Number"],
+        "no" => &["number"],
+        "Nos" => &["Numbers"],
+        "nos" => &["numbers"],
+        "MR" => &["Mister"],
+        "MRS" => &["Mrs"],
+        "Jan" => &["January"],
+        "Feb" => &["February"],
+        "Mar" => &["March"],
+        "Apr" => &["April"],
+        "Jun" => &["June"],
+        "Jul" => &["July"],
+        "Aug" => &["August"],
+        "Sep" | "Sept" => &["September"],
+        "Oct" => &["October"],
+        "Nov" => &["November"],
+        "Dec" => &["December"],
+        "p" => &["page"],
+        "pp" => &["pages"],
+        "Vol" => &["Volume"],
+        "vol" => &["volume"],
+        "ca" => &["circa"],
+        "esp" => &["especially"],
+        "v" => &["versus"],
+        _ => &[],
+    }
+}
+
+/// Whether `ours` is `theirs` with an abbreviation read in full ("St ." as "Saint", "Dec ." as
+/// "December", "tl ; dr" as "TLDR"), periods aside. The abbreviation must be a word of the input.
+/// The part of a differing run that [`abbreviation_read`] explains: the whole run, or its start or
+/// end ("Jan . 5 th" against "January fifth", whose number is left for the number check).
+fn abbreviation_part(input: &str, theirs: &[&str], ours: &[&str]) -> Option<(Span, Span)> {
+    let (n, m) = (theirs.len(), ours.len());
+    for t in (1..=n.min(4)).rev() {
+        for o in (1..=m.min(2)).rev() {
+            if abbreviation_read(input, &theirs[..t], &ours[..o]) {
+                return Some((0..t, 0..o));
+            }
+            if abbreviation_read(input, &theirs[n - t..], &ours[m - o..]) {
+                return Some((n - t..n, m - o..m));
+            }
+        }
+    }
+    None
+}
+
+fn abbreviation_read(input: &str, theirs: &[&str], ours: &[&str]) -> bool {
+    let words = |side: &[&str]| -> Vec<String> { side.iter().filter(|&&t| t != ".").map(|t| t.to_string()).collect() };
+    let (theirs, ours) = (words(theirs), words(ours));
+    let [reading] = ours.as_slice() else { return false };
+    let tldr = |t: &[String]| match t {
+        [one] => one.eq_ignore_ascii_case("tldr"),
+        [tl, semicolon, dr] => tl.eq_ignore_ascii_case("tl") && semicolon == ";" && dr.eq_ignore_ascii_case("dr"),
+        _ => false,
+    };
+    if reading == "TLDR" && tldr(&theirs) {
+        return input.to_lowercase().contains("tldr") || input.to_lowercase().contains("tl;dr");
+    }
+    let [abbreviation] = theirs.as_slice() else { return false };
+    let in_input = if abbreviation == "Doctor" { input_word(input, "Dr") } else { input_word(input, abbreviation) };
+    in_input && expansions(abbreviation).contains(&reading.as_str())
+}
+
+/// Whether `ours` drops the reference's run `a[run]` as a footnote or citation mark: a back-link
+/// arrow (and its number), a pilcrow, section sign or diamond; a bracketed number or list of them
+/// ("[ two ]", "[ 3 , 4 ]"); or one or two digits (or their words) right after the punctuation that
+/// ends a word ("find . six"). The input must have such a mark.
+fn footnote_dropped(input: &str, a: &[&str], run: std::ops::Range<usize>, ours: &[&str]) -> bool {
+    let theirs = &a[run.clone()];
+    if !ours.is_empty() || theirs.is_empty() {
+        return false;
+    }
+    let marks = ['↩', '¶', '§', '♦', '◆'];
+    let number =
+        |t: &&str| (t.chars().all(|c| c.is_ascii_digit()) && t.len() <= 3) || made_of(t, NUMERALS) && has_cardinal(t);
+    let mark = |t: &&str| t.chars().all(|c| marks.contains(&c) || matches!(c, '\u{FE0E}' | '\u{FE0F}'));
+    if theirs.iter().any(mark) && theirs.iter().all(|t| mark(t) || number(t)) {
+        return input.contains(marks);
+    }
+    if let ["[", inner @ .., "]"] = theirs {
+        let list = |t: &&str| number(t) || matches!(*t, "," | "-" | "–" | "to" | "and");
+        return input.contains('[') && !inner.is_empty() && inner.iter().all(list);
+    }
+    // A marker glued to a word's punctuation: in the input, a letter, the punctuation and a digit.
+    let glued = input.chars().collect::<Vec<_>>().windows(3).any(|w| {
+        w[0].is_alphabetic() && ".,;!?".contains(w[1]) && w[2].is_ascii_digit()
+            || ".,;!?".contains(w[0]) && ")\"”'’".contains(w[1]) && w[2].is_ascii_digit()
+    });
+    let after_punctuation = run.start > 0 && a[run.start - 1].chars().all(|c| ".,;!?)\"”'’".contains(c));
+    glued && after_punctuation && theirs.len() == 1 && number(&theirs[0])
+}
+
+/// A unit of time's abbreviation and its name, as a rate reads it ("s" "second").
+fn time_name(word: &str) -> Option<&'static str> {
+    Some(match word.to_ascii_lowercase().as_str() {
+        "s" | "sec" | "second" => "second",
+        "min" | "minute" => "minute",
+        "h" | "hr" | "hour" => "hour",
+        "day" => "day",
+        "wk" | "week" => "week",
+        "mo" | "month" => "month",
+        "yr" | "year" => "year",
+        _ => return None,
+    })
+}
+
+/// Whether `ours` is `theirs` with a rate's slash read "per", "a" or "an" ("slash month" as "a
+/// month", "GB slash s" as "gigabytes per second"): the word after the slash kept or named, and the
+/// one before it kept or read as a unit's name.
+fn rate_read(input: &str, a: &[&str], run: Span, ours: &[&str]) -> bool {
+    let theirs = &a[run.clone()];
+    let Some(i) = theirs.iter().position(|&t| t == "slash" || t == "/") else { return false };
+    let Some(j) = ours.iter().position(|&t| matches!(t, "per" | "a" | "an")) else { return false };
+    let (before, after) = (&theirs[..i], &theirs[i + 1..]);
+    let (our_before, our_after) = (&ours[..j], &ours[j + 1..]);
+    let before_ok = match (before, our_before) {
+        ([], []) => true,
+        ([x], [y]) => x == y || x.len() <= 8 && made_of(y, NUMERALS),
+        _ => false,
+    };
+    // After the slash, a unit of time ("a month", "per second"), or after money any word ("per
+    // seat").
+    let money = input.contains(['$', '£', '€', '¥', '₹']);
+    // The word after the run when the run ends at the slash's reading.
+    let next = a.get(run.end).copied();
+    let (after, our_after) = match (after, our_after, next) {
+        ([], [], Some(next)) => (vec![next], vec![next]),
+        _ => (after.to_vec(), our_after.to_vec()),
+    };
+    let after_ok = match (after.as_slice(), our_after.as_slice()) {
+        ([x], [y]) => time_name(x) == Some(y) || x == y && (time_name(y).is_some() || money && ours[j] == "per"),
+        _ => false,
+    };
+    input.contains('/') && before_ok && after_ok
+}
+
+/// Whether a run of number words in ours reads an amount in the singular before what it buys
+/// ("five dollar") where the reference's is plural ("five dollars").
+fn attributive_money(theirs: &str, ours: &str) -> bool {
+    const SINGULAR: [&str; 11] =
+        ["dollar", "pound", "euro", "rupee", "ruble", "bitcoin", "peso", "shekel", "won", "yen", "lira"];
+    let words: Vec<&str> = ours.split([' ', '-']).collect();
+    words.iter().enumerate().any(|(k, w)| {
+        SINGULAR.contains(w) && k > 0 && words[k - 1] != "one" && theirs.split(' ').any(|t| t == format!("{w}s"))
+    })
+}
+
+/// Whether `text` has "dr" or "mr" in a case other than "Dr" and "Mr" ("DR Congo", "the MR
+/// role", "tl;dr"), which misaki's lexicons read "doctor" and "mister" and the port spells out or
+/// leaves to espeak (`docs/divergences.md`, "misaki English: lowercase abbreviations").
+pub fn has_dropped_abbreviation(text: &str) -> bool {
+    text.split(|c: char| !c.is_ascii_alphanumeric())
+        .any(|w| (w.eq_ignore_ascii_case("dr") || w.eq_ignore_ascii_case("mr")) && !matches!(w, "Dr" | "Mr"))
+}
+
 /// Why `ours` differs from the reference's normalized text of `input`: the divergences that
 /// explain every difference, or the first one nothing explains. A number difference needs a
 /// number in the input (a digit or another number character: `²`, `½`, `①`), and a symbol
@@ -703,6 +913,17 @@ pub fn explain(input: &str, reference: &str, ours: &str) -> Result<BTreeSet<Kind
     let (a, roman) = with_roman_read(input, &a, &b);
     if roman {
         kinds.insert(Kind::Roman);
+    }
+    // So are abbreviations read in full, dropped footnote marks and rates' slashes.
+    let (a, abbreviations) = with_hunks_read(&a, &b, |a, run, ours| abbreviation_part(input, &a[run], ours));
+    let (a, footnotes) =
+        with_hunks_read(&a, &b, |a, run, ours| whole(footnote_dropped(input, a, run.clone(), ours), run, ours.len()));
+    let (a, rates) =
+        with_hunks_read(&a, &b, |a, run, ours| whole(rate_read(input, a, run.clone(), ours), run, ours.len()));
+    for (found, kind) in [(abbreviations, Kind::Abbreviations), (footnotes, Kind::Footnotes), (rates, Kind::Rates)] {
+        if found {
+            kinds.insert(kind);
+        }
     }
     let (ma, mb) = (mask(&a), mask(&b));
     let alignment = align(&ma, &mb);
@@ -721,6 +942,9 @@ pub fn explain(input: &str, reference: &str, ours: &str) -> Result<BTreeSet<Kind
             }
             changed_numbers.insert(i);
             kinds.insert(Kind::Numbers);
+            if attributive_money(&ma[i].text, &mb[j].text) {
+                kinds.insert(Kind::AttributiveMoney);
+            }
         }
     }
     for (ra, rb) in alignment.hunks {
@@ -786,6 +1010,9 @@ pub fn explain(input: &str, reference: &str, ours: &str) -> Result<BTreeSet<Kind
             || (other_ok(theirs, mine) && other_ok(mine, theirs) && numbers_ok && (has_number || near_changed))
         {
             kinds.insert(Kind::Numbers);
+            if attributive_money(&show(theirs), &show(mine)) {
+                kinds.insert(Kind::AttributiveMoney);
+            }
         } else {
             return unexplained(what());
         }
@@ -823,7 +1050,7 @@ mod tests {
             numbers
         );
         assert_eq!(ok("US$10 and v2", "USten and vtwo", "US ten and v-two"), numbers);
-        assert_eq!(ok("10 km/h,", "ten km slash h,", "ten kilometers per hour,"), numbers);
+        assert_eq!(ok("10 km/h,", "ten km slash h,", "ten kilometers per hour,"), BTreeSet::from([Kind::Rates]));
         assert_eq!(
             ok("1939–1945", "nineteen thirty-nine- nineteen forty-five", "nineteen thirty-nine to nineteen forty-five"),
             numbers
@@ -909,5 +1136,45 @@ mod tests {
             ok("Louis XIV in 1700", "Louis XIV in one thousand, seven hundred", "Louis fourteen in seventeen hundred"),
             BTreeSet::from([Kind::Numbers, Kind::Roman])
         );
+    }
+
+    #[test]
+    fn explains_abbreviations_footnotes_rates_and_money_before_nouns_only() {
+        let ok = |input: &str, a: &str, b: &str| explain(input, a, b).unwrap();
+        let kind = |k: Kind| BTreeSet::from([k]);
+        assert_eq!(ok("St. Louis", "St. Louis", "Saint Louis"), kind(Kind::Abbreviations));
+        assert_eq!(ok("on Main St. and", "on Main St. and", "on Main Street and"), kind(Kind::Abbreviations));
+        assert_eq!(ok("Elm Dr. The", "Elm Doctor The", "Elm Drive. The"), kind(Kind::Abbreviations));
+        assert_eq!(ok("tl;dr: yes", "tl;dr: yes", "TLDR: yes"), kind(Kind::Abbreviations));
+        assert_eq!(ok("No. 5", "No. five", "Number five"), kind(Kind::Abbreviations));
+        assert_eq!(
+            ok("on Jan. 5th.", "on Jan. 5th.", "on January fifth."),
+            BTreeSet::from([Kind::Numbers, Kind::Abbreviations])
+        );
+        assert_eq!(ok("find.6 None", "find.6 None", "find. None"), kind(Kind::Footnotes));
+        assert_eq!(ok("Google [2]. And", "Google [two]. And", "Google. And"), kind(Kind::Footnotes));
+        assert_eq!(ok("the end ↩", "the end ↩", "the end"), kind(Kind::Footnotes));
+        assert_eq!(ok("$20/month", "twenty dollars slash month", "twenty dollars a month"), kind(Kind::Rates));
+        assert_eq!(ok("43 tok/s", "forty-three tok slash s", "forty-three tok per second"), kind(Kind::Rates));
+        assert_eq!(ok("$5/seat", "five dollars slash seat", "five dollars per seat"), kind(Kind::Rates));
+        assert_eq!(
+            ok("a $5 bill", "a five dollars bill", "a five dollar bill"),
+            BTreeSet::from([Kind::Numbers, Kind::AttributiveMoney])
+        );
+        let err = |input: &str, a: &str, b: &str| assert!(explain(input, a, b).is_err(), "{a:?} -> {b:?}");
+        // The wrong expansion, or one the input doesn't have.
+        err("St. Louis", "St. Louis", "Doctor Louis");
+        err("St. Louis", "St. Louis", "Saint Lewis");
+        err("Dec. 5", "Dec. five", "November five");
+        err("the cat", "the cat", "the Saint");
+        err("Dr. X", "Doctor X", "Saint X");
+        // Words dropped that aren't a footnote mark, or more than one.
+        err("he has 5 cats", "he has five cats", "he has cats");
+        err("find.6 None", "find.6 None", "find. One");
+        err("find.6 7 None", "find.6 seven None", "find. None");
+        err("Google [2]. And", "Google [two] now. And", "Google. And");
+        // A slash that isn't a rate's.
+        err("he/she", "he slash she", "he per she");
+        err("speed in km/h", "speed in km slash h", "speed in km per minute");
     }
 }

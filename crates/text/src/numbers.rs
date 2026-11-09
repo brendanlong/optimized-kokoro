@@ -176,6 +176,12 @@ fn pairs(n: usize) -> String {
     }
 }
 
+/// A date: "May fifth, twenty twenty", "January first, two thousand and five".
+fn date_words(year: usize, month: usize, day: usize) -> String {
+    let year = if year % 1000 > 9 && year >= 1000 { pairs(year) } else { cardinal(&year.to_string()) };
+    format!("{} {}, {year}", MONTHS[month - 1], ordinal_of(&under_100(day)))
+}
+
 /// The reference's year rule: four digits from 1501 to 9999 are a year unless they end in 000 to
 /// 009 ("two thousand and five").
 fn as_year(digits: &str) -> Option<usize> {
@@ -273,13 +279,18 @@ pub(crate) fn subscript_digit(c: char) -> Option<u8> {
     ('₀'..='₉').contains(&c).then(|| (c as u32 - '₀' as u32) as u8)
 }
 
-/// " squared", " cubed" or " to the power of N" for a run of superscript digits.
+/// " squared", " cubed" or " to the Nth" ("to the sixty-fourth") for an exponent's digits.
 pub(crate) fn power(exponent: &str) -> String {
     match exponent {
         "2" => " squared".to_owned(),
         "3" => " cubed".to_owned(),
-        e => format!(" to the power of {}", cardinal(e)),
+        e => format!(" to the {}", ordinal_of(&cardinal(e))),
     }
+}
+
+/// A negative exponent: " to the minus three".
+fn negative_power(exponent: &str) -> String {
+    format!(" to the minus {}", cardinal(exponent))
 }
 
 /// Circled and otherwise enclosed numbers (①, ⑴, ⒈, ❶, ➀, ➊).
@@ -417,8 +428,165 @@ const UNITS: &[(&str, &str, &str)] = &[
     ("Ω", "ohm", "ohms"),
 ];
 
+/// A unit of time after a slash in a rate ("/s", "/hr", "/month"): its name.
+pub(crate) fn time_unit(word: &str) -> Option<&'static str> {
+    Some(match word.to_ascii_lowercase().as_str() {
+        "s" | "sec" | "second" => "second",
+        "min" | "minute" => "minute",
+        "h" | "hr" | "hour" => "hour",
+        "day" => "day",
+        "wk" | "week" => "week",
+        "mo" | "month" => "month",
+        "yr" | "year" => "year",
+        _ => return None,
+    })
+}
+
+/// A unit's plural name ("km" "kilometers"), for a unit written without a number.
+pub(crate) fn unit_name(key: &str) -> Option<&'static str> {
+    UNITS.iter().find(|(k, _, _)| *k == key).map(|&(_, _, plural)| plural)
+}
+
 /// Multipliers written as words after a number (case-insensitive, as the reference matched them).
 const MULTIPLIER_WORDS: [&str; 6] = ["hundred", "thousand", "million", "billion", "trillion", "quadrillion"];
+
+/// Words that link an amount to what follows rather than name what it buys: prepositions,
+/// conjunctions, determiners, pronouns and scale words ("$5 of", "$5 or $10", "a $5 the").
+/// "five dollars" stays plural before them, even after "a".
+const LINKING_WORDS: &[&str] = &[
+    "of", "in", "to", "for", "from", "and", "or", "nor", "but", "so", "yet", "if", "as", "than", "per", "on", "at",
+    "by", "with", "into", "onto", "over", "under", "about", "after", "before", "since", "until", "upon", "via", "vs",
+    "versus", "within", "without", "across", "against", "among", "between", "through", "toward", "towards", "off",
+    "up", "down", "out", "plus", "minus", "times", "when", "while", "because", "though", "although", "unless",
+    "whereas", "a", "an", "the", "it", "its", "that", "this", "these", "those", "i", "you", "we", "they", "he", "she",
+    "him", "her", "them", "us", "me", "my", "your", "our", "their", "his", "some", "any", "no", "which", "who", "whom",
+    "whose", "what", "where", "hundred", "thousand", "million", "billion", "trillion",
+];
+
+/// Words that follow an amount without being what it buys: quantities, verbs and adverbs ("$5
+/// more", "$5 each", "$5 is", "$5 now"). Together with words ending in "-ed" ("$5 raised"), "-ly"
+/// ("$300 monthly") and "-ing" ("£220 standing to his credit"), "five dollars" stays plural before
+/// them unless "a" comes first ("a $26 million funding round").
+const AFTER_AMOUNT: &[&str] = &[
+    "more",
+    "less",
+    "worth",
+    "apiece",
+    "each",
+    "every",
+    "total",
+    "instead",
+    "once",
+    "twice",
+    "back",
+    "extra",
+    "cash",
+    "net",
+    "gross",
+    "flat",
+    "tops",
+    "max",
+    "min",
+    "is",
+    "was",
+    "were",
+    "are",
+    "be",
+    "been",
+    "being",
+    "will",
+    "would",
+    "can",
+    "could",
+    "should",
+    "shall",
+    "may",
+    "might",
+    "must",
+    "has",
+    "have",
+    "had",
+    "do",
+    "does",
+    "did",
+    "gets",
+    "got",
+    "goes",
+    "went",
+    "buys",
+    "bought",
+    "pays",
+    "paid",
+    "costs",
+    "cost",
+    "makes",
+    "made",
+    "now",
+    "today",
+    "tonight",
+    "yesterday",
+    "tomorrow",
+    "ago",
+    "later",
+    "already",
+    "still",
+    "just",
+    "only",
+    "even",
+    "too",
+    "also",
+    "then",
+    "here",
+    "there",
+    "again",
+    "anyway",
+    "either",
+    "neither",
+    "not",
+    "short",
+    "shy",
+    "cheaper",
+    "higher",
+    "lower",
+    "richer",
+    "poorer",
+    "last",
+    "next",
+    "this",
+    "annually",
+    "daily",
+    "weekly",
+    "monthly",
+    "yearly",
+    "hourly",
+    "etc",
+    "cut",
+    "set",
+    "put",
+    "spent",
+    "left",
+    "lost",
+    "won",
+    "came",
+    "comes",
+    "due",
+    "owed",
+    "saw",
+    "see",
+    "sees",
+    "remains",
+    "remain",
+    "seems",
+    "seem",
+    "stays",
+    "covers",
+    "means",
+    "sits",
+    "buy",
+    "pay",
+    "go",
+    "get",
+];
 
 /// A number as written: integer digits (ASCII, commas removed), whether it had thousands
 /// commas, and its decimals.
@@ -671,8 +839,72 @@ impl Scanner<'_> {
         if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
             return None;
         }
-        let year = if year % 1000 > 9 && year >= 1000 { pairs(year) } else { cardinal(&year.to_string()) };
-        Some(format!("{} {}, {year}", MONTHS[month - 1], ordinal_of(&under_100(day))))
+        Some(date_words(year, month, day))
+    }
+
+    /// A date with slashes at `i`, month first (`7/31/2020`, `4/25/24`), or day first when the
+    /// first part can't be a month (`31/7/2020`): its words and end. When both parts could be the
+    /// month, the month comes first, as in American writing.
+    fn slash_date(&self, i: usize) -> Option<(String, usize)> {
+        let part = |start: usize, lengths: &[usize]| -> Option<(usize, usize)> {
+            let end = self.digits_end(start);
+            lengths.contains(&(end - start)).then(|| Some((self.ascii(start..end).parse().ok()?, end))).flatten()
+        };
+        let (a, a_end) = part(i, &[1, 2])?;
+        let (b, b_end) = part(a_end + 1, &[1, 2]).filter(|_| self.get(a_end) == Some('/'))?;
+        let (year, y_end) = part(b_end + 1, &[2, 4]).filter(|_| self.get(b_end) == Some('/'))?;
+        let after_ok = self.free_at(y_end)
+            && !matches!(self.get(y_end), Some('/' | '-'))
+            && !(matches!(self.get(y_end), Some('.' | ',')) && self.digit(y_end + 1));
+        let before_ok = i == 0 || !matches!(self.t[i - 1], '/' | '-' | '.');
+        if !after_ok || !before_ok {
+            return None;
+        }
+        let (month, day) = match (a, b) {
+            (1..=12, 1..=31) => (a, b),
+            (13..=31, 1..=12) => (b, a),
+            _ => return None,
+        };
+        let words = if y_end - b_end - 1 == 2 {
+            let year = if year < 10 { format!("oh {}", ONES[year]) } else { under_100(year) };
+            format!("{} {}, {year}", MONTHS[month - 1], ordinal_of(&under_100(day)))
+        } else {
+            date_words(year, month, day)
+        };
+        Some((words, y_end))
+    }
+
+    /// Whether the number at `i` is part of a name joined by hyphens ("Llama-3.1-8B",
+    /// "GPT-4", "H-1B"): right after a hyphen, in a run of letters, digits, dots and hyphens that
+    /// starts with a capital. A hyphen after it isn't a range, and a letter glued to it isn't a
+    /// multiplier.
+    fn in_name(&self, i: usize) -> bool {
+        if i < 2 || self.t[i - 1] != '-' {
+            return false;
+        }
+        // At most 32 characters back, so a long run of "a-1a-1a-…" stays linear.
+        let mut k = i - 1;
+        while k > 0 && i - k < 32 && (is_alnum(self.t[k - 1]) || matches!(self.t[k - 1], '.' | '-')) {
+            k -= 1;
+        }
+        self.t[k].is_ascii_uppercase() && (k == 0 || !is_alnum(self.t[k - 1]) && !matches!(self.t[k - 1], '.' | '-'))
+    }
+
+    /// Whether "'s" after the number at `i` is a possessive ("Opus 4's", "GPT-4's", "I-645's"),
+    /// not a plural ("the 1990's", "Londoners 1890's style", "1's and 0's"): the number is part of
+    /// a name, or comes after a capitalised word and isn't a round number (a decade).
+    fn possessive(&self, i: usize, body: &Body) -> bool {
+        if self.in_name(i) {
+            return true;
+        }
+        if i < 3 || self.t[i - 1] != ' ' {
+            return false;
+        }
+        let mut start = i - 1;
+        while start > 0 && self.t[start - 1].is_alphabetic() {
+            start -= 1;
+        }
+        i - 1 - start >= 2 && self.t[start].is_uppercase() && !body.int.ends_with('0')
     }
 
     /// The number expression starting at `i`, if one does: its end and its words.
@@ -681,9 +913,14 @@ impl Scanner<'_> {
         let c = self.t[i];
         let free = plain || self.free_before(i);
         match c {
-            '~' if free && self.number_at(i + 1) => {
+            '~' if free
+                && (self.number_at(i + 1)
+                    || self.get(i + 1).is_some_and(|c| currency(c).is_some()) && self.number_at(i + 2)) =>
+            {
                 let (end, words, after) = self.expression(i + 1, true)?;
-                Some((end, format!("about {words}"), after))
+                // "a ~$100k watch": "a roughly …", as "a about" isn't English.
+                let about = if self.determiner_before(i) { "roughly" } else { "about" };
+                Some((end, format!("{about} {words}"), after))
             }
             '#' if self.digit(i + 1) => {
                 let (end, words, after) = self.expression(i + 1, true)?;
@@ -725,11 +962,13 @@ impl Scanner<'_> {
     }
 
     /// A word multiplier after a number ending at `i` (" million", " hundred thousand"), or a
-    /// glued `k`, `m` or `b` (and `t` for money): its words and end.
+    /// glued `k`, `m`, `b` or `bn` (and `t`, `mn` and `tn`, and a hyphen before the word, for
+    /// money: "$4.8bn", "$5-million"): its words and end. A glued letter may be followed by a slash
+    /// only for money, before a rate ("$1B/year").
     fn multiplier(&self, i: usize, money: bool) -> Option<(String, usize)> {
         let mut words = Vec::new();
         let mut j = i;
-        while self.get(j) == Some(' ') {
+        while self.get(j) == Some(' ') || money && j == i && self.get(j) == Some('-') {
             let Some(word) = MULTIPLIER_WORDS.iter().find(|w| self.at_ignore_case(j + 1, w)) else { break };
             if !self.free_at(j + 1 + word.len()) {
                 break;
@@ -740,6 +979,12 @@ impl Scanner<'_> {
         if !words.is_empty() {
             return Some((words.join(" "), j));
         }
+        let slash_ok = |end: usize| self.get(end) != Some('/') || money && self.rate(end, true).is_some();
+        for (letters, word, any) in [("bn", "billion", true), ("mn", "million", false), ("tn", "trillion", false)] {
+            if (any || money) && self.at_ignore_case(i, letters) && self.free_at(i + 2) && slash_ok(i + 2) {
+                return Some((word.to_owned(), i + 2));
+            }
+        }
         let word = match self.get(i)?.to_ascii_lowercase() {
             'k' => "thousand",
             'm' => "million",
@@ -747,7 +992,99 @@ impl Scanner<'_> {
             't' if money => "trillion",
             _ => return None,
         };
-        (self.free_at(i + 1) && self.get(i + 1) != Some('/')).then(|| (word.to_owned(), i + 1))
+        (self.free_at(i + 1) && slash_ok(i + 1)).then(|| (word.to_owned(), i + 1))
+    }
+
+    /// A rate after an amount ending at `i`: a slash and a word. After money any word ("$20/month"
+    /// as "a month", "$5/seat" as "per seat"; spaces around the slash allowed); after other
+    /// numbers and their units, a unit of time ("GB/s" as "per second").
+    fn rate(&self, i: usize, money: bool) -> Option<(String, usize)> {
+        let spaced = money && self.at(i, " / ");
+        let start = if spaced {
+            i + 3
+        } else if self.get(i) == Some('/') {
+            i + 1
+        } else {
+            return None;
+        };
+        let mut end = start;
+        while self.is(end, |c| c.is_ascii_alphabetic()) {
+            end += 1;
+        }
+        if end == start || end - start > 12 || !self.free_at(end) || self.get(end) == Some('/') {
+            return None;
+        }
+        let word: String = self.t[start..end].iter().collect();
+        let time = match time_unit(&word) {
+            Some(time) => time,
+            None if money && end - start >= 2 => return Some((format!("per {word}"), end)),
+            None => return None,
+        };
+        let words = match (money, time) {
+            (true, "hour") => "an hour".to_owned(),
+            (true, _) => format!("a {time}"),
+            (false, _) => format!("per {time}"),
+        };
+        Some((words, end))
+    }
+
+    /// Whether an amount ending at `end`, whose currency symbol is at `symbol`, names the kind of
+    /// thing after it ("a $5 bill", "a $600M round", "$20-fee"): followed by a hyphen and a word,
+    /// or by a lowercase word that isn't one that follows amounts ([`LINKING_WORDS`],
+    /// [`AFTER_AMOUNT`], a word ending in "-ed" or "-ly"); after "a" or "an", by any word but a
+    /// linking word, capitalised too ("a $10 Casio"). Returns the end of the amount, past a
+    /// hyphen, and whether the word after it is the currency's own name ("$315 million dollar
+    /// deal"), which then isn't read twice.
+    fn attributive(&self, symbol: usize, end: usize, currency: &Currency) -> Option<(usize, bool)> {
+        if self.get(end) == Some('-') && self.is(end + 1, |c| c.is_ascii_alphabetic()) {
+            return Some((end + 1, false));
+        }
+        if self.get(end) != Some(' ') {
+            return None;
+        }
+        let start = end + 1;
+        let mut word_end = start;
+        while self.is(word_end, |c| c.is_ascii_alphabetic()) {
+            word_end += 1;
+        }
+        if word_end == start || self.is(word_end, char::is_alphanumeric) {
+            return None;
+        }
+        let word: String = self.t[start..word_end].iter().collect::<String>().to_ascii_lowercase();
+        if word == currency.one || word == currency.many {
+            return Some((end, true));
+        }
+        if LINKING_WORDS.contains(&word.as_str()) {
+            return None;
+        }
+        let article = self.article_before(if symbol > 0 && self.t[symbol - 1] == '~' { symbol - 1 } else { symbol });
+        let capital = self.t[start].is_uppercase();
+        let after_amount = AFTER_AMOUNT.contains(&word.as_str())
+            || word.len() >= 4 && (word.ends_with("ed") || word.ends_with("ly"))
+            || word.len() >= 5 && word.ends_with("ing");
+        (article || !capital && !after_amount).then_some((end, false))
+    }
+
+    /// Whether the word before `k` (one space before it) is "a" or "an".
+    fn article_before(&self, k: usize) -> bool {
+        self.word_before_is(k, &["a", "an"])
+    }
+
+    /// Whether the word before `k` is a determiner ("a", "the", "their"), after which "about" doesn't
+    /// read as English ("the about one billion dollars").
+    fn determiner_before(&self, k: usize) -> bool {
+        self.word_before_is(k, &["a", "an", "the", "its", "their", "his", "her", "our", "your", "my", "this", "that"])
+    }
+
+    /// Whether the word before `k` (one space before it) is one of `words` (lowercase), in any case.
+    fn word_before_is(&self, k: usize, words: &[&str]) -> bool {
+        words.iter().any(|a| {
+            let n = a.len();
+            k > n
+                && self.t[k - 1] == ' '
+                && self.t[k - 1 - n..k - 1].iter().map(char::to_ascii_lowercase).eq(a.chars())
+                && (k == n + 1 || !self.t[k - n - 2].is_alphanumeric())
+        })
     }
 
     /// Money: a currency symbol and a number, and whether a range's "to" ends it ("$5-10").
@@ -759,33 +1096,68 @@ impl Scanner<'_> {
             // "$1.2.3" isn't money: the symbol and the version are read apart.
             return None;
         }
-        if let Some((multiplier, m_end)) = self.multiplier(end, true) {
-            return Some((m_end, format!("{} {multiplier} {}", body.words_plain(), currency.many), false));
-        }
-        // A range ("$5-10", "$5-$10", "$1-2 million"): the unit once, at the end.
-        if self.get(end) == Some('-') && !self.minus[end] {
-            let second = if self.get(end + 1) == Some(self.t[i]) { end + 2 } else { end + 1 };
-            if self.number_at(second)
-                && let Some((to, to_end)) = self.body(second)
-                && !(self.get(to_end) == Some('.') && self.digit(to_end + 1))
-            {
-                let whole = |b: &Body| b.frac.as_deref().is_none_or(|f| f.bytes().all(|d| d == b'0'));
-                let words = match self.multiplier(to_end, true) {
-                    Some((multiplier, m_end)) => (
-                        m_end,
-                        format!("{} to {} {multiplier} {}", body.words_plain(), to.words_plain(), currency.many),
-                    ),
-                    None if whole(&body) && whole(&to) => {
-                        (to_end, format!("{} to {} {}", cardinal(&body.int), cardinal(&to.int), currency.many))
-                    }
-                    // With cents, each end in full: "one dollar and fifty cents to two dollars".
-                    None => (to_end, format!("{} to {}", money_words(&currency, &body), money_words(&currency, &to))),
-                };
-                return Some((words.0, words.1, false));
+        let whole = |b: &Body| b.frac.as_deref().is_none_or(|f| f.bytes().all(|d| d == b'0'));
+        // The amount: its number in words when it is in whole units or has a multiplier (so it may
+        // name the kind of thing after it), where it ends, and its plural reading.
+        let (number, end, plural) = if let Some((multiplier, m_end)) = self.multiplier(end, true) {
+            (Some(format!("{} {multiplier}", body.words_plain())), m_end, None)
+        } else if self.get(end) == Some('+')
+            && let Some((multiplier, m_end)) = self.multiplier(end + 1, true)
+        {
+            // "$100+M": as written, "one hundred plus million dollars".
+            (Some(format!("{} plus {multiplier}", body.words_plain())), m_end, None)
+        } else if let Some((to, to_end)) = self.money_range(i, end) {
+            // A range ("$5-10", "$5-$10", "$1-2 million"): the unit once, at the end.
+            match self.multiplier(to_end, true) {
+                Some((multiplier, m_end)) => {
+                    (Some(format!("{} to {} {multiplier}", body.words_plain(), to.words_plain())), m_end, None)
+                }
+                None if whole(&body) && whole(&to) => {
+                    (Some(format!("{} to {}", cardinal(&body.int), cardinal(&to.int))), to_end, None)
+                }
+                // With cents, each end in full: "one dollar and fifty cents to two dollars".
+                None => {
+                    let words = format!("{} to {}", money_words(&currency, &body), money_words(&currency, &to));
+                    (None, to_end, Some(words))
+                }
             }
+        } else if whole(&body) {
+            (Some(cardinal(&body.int)), end, Some(money_words(&currency, &body)))
+        } else {
+            (None, end, Some(money_words(&currency, &body)))
+        };
+        let plural = plural.unwrap_or_else(|| format!("{} {}", number.as_deref().expect("a number"), currency.many));
+        if let Some((rate, r_end)) = self.rate(end, true) {
+            // "a $20/month plan": "a twenty dollar a month plan".
+            if let Some(number) = &number
+                && let Some((a_end, false)) = self.attributive(i, r_end, &currency)
+                && a_end == r_end
+            {
+                return Some((r_end, format!("{number} {} {rate}", currency.one), false));
+            }
+            return Some((r_end, format!("{plural} {rate}"), false));
         }
-        let words = money_words(&currency, &body);
-        Some((end, words, false))
+        if let Some(number) = number
+            && let Some((a_end, named)) = self.attributive(i, end, &currency)
+        {
+            let words = if named { number } else { format!("{number} {}", currency.one) };
+            return Some((a_end, words, false));
+        }
+        Some((end, plural, false))
+    }
+
+    /// The second end of a money range whose symbol is at `i` and whose first number ends at
+    /// `end`: "-10" or "-$10".
+    fn money_range(&self, i: usize, end: usize) -> Option<(Body, usize)> {
+        if self.get(end) != Some('-') || self.minus[end] {
+            return None;
+        }
+        let second = if self.get(end + 1) == Some(self.t[i]) { end + 2 } else { end + 1 };
+        if !self.number_at(second) {
+            return None;
+        }
+        let (to, to_end) = self.body(second)?;
+        (!(self.get(to_end) == Some('.') && self.digit(to_end + 1))).then_some((to, to_end))
     }
 
     /// A number at `i`: plain when `free` (nothing glued before it), else as part of a word.
@@ -803,7 +1175,9 @@ impl Scanner<'_> {
         let (body, end) = self.body(i)?;
         let one = body.is_one();
         let integer = body.frac.is_none();
-        if let Some((multiplier, end)) = self.multiplier(end, false) {
+        if !self.in_name(i)
+            && let Some((multiplier, end)) = self.multiplier(end, false)
+        {
             return Some((end, format!("{} {multiplier}", body.words_plain()), false));
         }
         if integer {
@@ -821,6 +1195,9 @@ impl Scanner<'_> {
                 None
             };
             if let Some(after) = plural {
+                if after == end + 2 && self.possessive(i, &body) {
+                    return Some((after, format!("{}'s", body.words()), false));
+                }
                 let reading = match body.integer() {
                     Some(n) if body.int.len() == 4 && !body.commas && n % 1000 > 9 => pairs(n),
                     _ => cardinal(&body.int),
@@ -835,7 +1212,21 @@ impl Scanner<'_> {
             return Some((end, format!("{} {words}", body.words()), false));
         }
         if let Some((words, end)) = self.unit(end, one) {
-            return Some((end, format!("{} {words}", body.words()), false));
+            // "22 GB/s": "twenty-two gigabytes per second".
+            let (rate, end) = self.rate(end, false).map_or((String::new(), end), |(r, e)| (format!(" {r}"), e));
+            return Some((end, format!("{} {words}{rate}", body.words()), false));
+        }
+        // A word and a unit of time after a slash: "43 tok/s", "24g/day".
+        let word_start = if self.get(end) == Some(' ') { end + 1 } else { end };
+        let mut word_end = word_start;
+        while word_end - word_start < 8 && self.is(word_end, |c| c.is_ascii_alphabetic()) {
+            word_end += 1;
+        }
+        if word_end > word_start
+            && let Some((rate, r_end)) = self.rate(word_end, false)
+        {
+            let word: String = self.t[word_start..word_end].iter().collect();
+            return Some((r_end, format!("{} {word} {rate}", body.words()), false));
         }
         if integer {
             // "1½", "1 ½", "1 3/4"
@@ -847,6 +1238,20 @@ impl Scanner<'_> {
                 && let Some((n, d, f_end)) = self.slash_fraction(end + 1)
             {
                 return Some((f_end, format!("{} {}", body.words(), and_fraction(n, d)), false));
+            }
+            if !body.commas
+                && let Some((words, d_end)) = self.slash_date(i)
+            {
+                return Some((d_end, words, false));
+            }
+            // "24/7", as it is said.
+            if body.int == "24"
+                && self.at(end, "/7")
+                && self.free_at(end + 2)
+                && self.get(end + 2) != Some('/')
+                && (i == 0 || self.t[i - 1] != '/')
+            {
+                return Some((end + 2, "twenty-four seven".to_owned(), false));
             }
             if !body.commas
                 && let Some((n, d, f_end)) = self.slash_fraction(i)
@@ -886,7 +1291,8 @@ impl Scanner<'_> {
             }
         }
         // A range or a score: "10-20", "1.5-2", "21-14" (in arithmetic, "minus" below).
-        if self.get(end) == Some('-') && self.number_at(end + 1) && !self.minus[end] {
+        // Not in a name ("Llama-3.1-8B").
+        if self.get(end) == Some('-') && self.number_at(end + 1) && !self.minus[end] && !self.in_name(i) {
             return Some((end + 1, format!("{} to", body.words()), true));
         }
         // "3x faster", "1920x1080"
@@ -912,15 +1318,28 @@ impl Scanner<'_> {
                 return Some((k, format!("{} times", body.words()), true));
             }
         }
-        // Superscript powers: "10²", "10⁶".
-        let mut sup_end = end;
+        // Powers with a caret: "2^64", "10^-3"; not a LaTeX limit ("\int_0^1", "x^{10}").
+        if self.get(end) == Some('^') && (i == 0 || !matches!(self.t[i - 1], '_' | '^' | '{' | '\\')) {
+            let negative = matches!(self.get(end + 1), Some('-' | '−'));
+            let start = end + 1 + usize::from(negative);
+            let e_end = self.digits_end(start);
+            if e_end > start && self.free_at(e_end) && !(self.get(e_end) == Some('.') && self.digit(e_end + 1)) {
+                let exponent = self.ascii(start..e_end);
+                let power = if negative { negative_power(&exponent) } else { power(&exponent) };
+                return Some((e_end, format!("{}{power}", body.words_plain()), false));
+            }
+        }
+        // Superscript powers: "10²", "10⁶", "10⁻³".
+        let negative = self.get(end) == Some('⁻') && self.get(end + 1).and_then(superscript_digit).is_some();
+        let mut sup_end = end + usize::from(negative);
         let mut exponent = String::new();
         while let Some(d) = self.get(sup_end).and_then(superscript_digit) {
             exponent.push(char::from(b'0' + d));
             sup_end += 1;
         }
         if !exponent.is_empty() {
-            return Some((sup_end, format!("{}{}", body.words(), power(&exponent)), false));
+            let power = if negative { negative_power(&exponent) } else { power(&exponent) };
+            return Some((sup_end, format!("{}{power}", body.words()), false));
         }
         // Letters right after: "1080p" reads its four digits in pairs, as misaki did.
         if self.is(end, char::is_alphabetic)
@@ -1018,14 +1437,16 @@ fn push_words(out: &mut String, words: &str, after: &[char], in_word: bool) {
 /// between numbers is a range or score ("2-3" is "two to three"), and a spaced one a dash.
 fn arithmetic_minus(t: &[char]) -> Vec<bool> {
     let mut minus = vec![false; t.len()];
-    let operator = |c: char| matches!(c, '+' | '-' | '−' | '×' | '*' | '/' | '÷');
-    let relation = |c: char| matches!(c, '=' | '<' | '>' | '≤' | '≥' | '≠');
+    // "->" is an arrow, read "to" by the symbol pass: neither a minus nor "greater than".
+    let arrow = |k: usize| t[k] == '-' && t.get(k + 1) == Some(&'>') || t[k] == '>' && k > 0 && t[k - 1] == '-';
+    let operator = |k: usize| matches!(t[k], '+' | '-' | '−' | '×' | '*' | '/' | '÷') && !arrow(k);
+    let relation = |k: usize| matches!(t[k], '=' | '<' | '>' | '≤' | '≥' | '≠') && !arrow(k);
     let letter = |i: usize| t[i].is_ascii_alphabetic();
     let in_expression = |i: usize| {
         let c = t[i];
         digit_value(c).is_some()
-            || operator(c)
-            || relation(c)
+            || operator(i)
+            || relation(i)
             || matches!(c, ' ' | '.' | '(' | ')')
             // A one-letter variable, not part of a word.
             || (letter(i) && (i == 0 || !letter(i - 1)) && (i + 1 == t.len() || !letter(i + 1)))
@@ -1043,11 +1464,11 @@ fn arithmetic_minus(t: &[char]) -> Vec<bool> {
         let span = start..i;
         let spaced = |k: usize| k > 0 && k + 1 < t.len() && t[k - 1] == ' ' && t[k + 1] == ' ';
         let has_digit = span.clone().any(|k| digit_value(t[k]).is_some());
-        let has_relation = span.clone().any(|k| relation(t[k]));
-        let spaced_operators = span.clone().filter(|&k| operator(t[k]) && spaced(k)).count();
+        let has_relation = span.clone().any(relation);
+        let spaced_operators = span.clone().filter(|&k| operator(k) && spaced(k)).count();
         if has_digit && (has_relation || spaced_operators >= 2) {
             for k in span {
-                minus[k] = matches!(t[k], '-' | '−');
+                minus[k] = matches!(t[k], '-' | '−') && !arrow(k);
             }
         }
     }
@@ -1068,7 +1489,7 @@ fn arithmetic_minus(t: &[char]) -> Vec<bool> {
         let inside = start + 1..close;
         if !inside.is_empty() && inside.clone().all(&in_expression) {
             for k in inside {
-                minus[k] |= matches!(t[k], '-' | '−');
+                minus[k] |= matches!(t[k], '-' | '−') && !arrow(k);
             }
         }
     }
@@ -1085,8 +1506,28 @@ pub fn numbers(text: &str) -> String {
     let mut out = String::with_capacity(text.len() * 2);
     let mut i = 0;
     let mut plain_at = usize::MAX;
+    // Where the last number read ended.
+    let mut last_end = usize::MAX;
     while i < t.len() {
         let c = t[i];
+        // A hyphen between two amounts with units, "70%-30%", "10°-15°", "40k-80k", "$5M-$10M": a
+        // range, as between bare numbers (which the number reader reads itself).
+        let unit_before = last_end == i || last_end.checked_add(1) == Some(i) && t[last_end] == '%';
+        if c == '-'
+            && !scanner.minus[i]
+            && unit_before
+            && !scanner.digit(i - 1)
+            && (scanner.number_at(i + 1)
+                || currency(t.get(i + 1).copied().unwrap_or(' ')).is_some() && scanner.number_at(i + 2))
+        {
+            if !out.ends_with(' ') {
+                out.push(' ');
+            }
+            out.push_str("to ");
+            plain_at = i + 1;
+            i += 1;
+            continue;
+        }
         if matches!(c, '-' | '−') && scanner.minus[i] {
             // A minus sign in arithmetic ("3-2=1", "x - 3 = 7", "5 - 3 + 2").
             push_words(&mut out, "minus", &t[i + 1..], false);
@@ -1105,6 +1546,7 @@ pub fn numbers(text: &str) -> String {
                 out.push(' ');
             }
             push_words(&mut out, &words, &t[end..], in_word);
+            last_end = end;
             if operator {
                 // An operator was read ("to", "by", "times"): the next number stands on its own.
                 if !out.ends_with(' ') {
@@ -1303,6 +1745,109 @@ mod tests {
             ("10²", "ten squared"),
             ("COVID-19", "COVID-nineteen"),
             ("1939-1945", "nineteen thirty-nine to nineteen forty-five"),
+        ] {
+            assert_eq!(n(text), expected, "{text}");
+        }
+    }
+
+    #[test]
+    fn money_before_what_it_buys_is_singular() {
+        for (text, expected) in [
+            ("I found a $5 bill.", "I found a five dollar bill."),
+            ("They closed a $600M round.", "They closed a six hundred million dollar round."),
+            ("the $2 bill and $100k iPhones", "the two dollar bill and one hundred thousand dollar iPhones"),
+            ("$20-fee transactions", "twenty dollar fee transactions"),
+            ("a 10-year, $5-million contract", "a ten-year, five million dollar contract"),
+            ("a $315 million dollar deal", "a three hundred and fifteen million dollar deal"),
+            ("a $5-10 fee", "a five to ten dollar fee"),
+            (
+                "a ~$100k Rolex and ~$10 Casio",
+                "a roughly one hundred thousand dollar Rolex and about ten dollars Casio",
+            ),
+            ("a $300 daily allowance", "a three hundred dollar daily allowance"),
+            // Plural: before what links the amount to the rest, a verb, an adverb, a capital or
+            // nothing, and with cents.
+            (
+                "$600M of funding, $5 each and $5 or $10",
+                "six hundred million dollars of funding, five dollars each and five dollars or ten dollars",
+            ),
+            (
+                "raised $600M. It cost $5 now, $5 raised and £220 standing",
+                "raised six hundred million dollars. It cost five dollars now, five dollars raised and two hundred and twenty pounds standing",
+            ),
+            ("$7,000 Mom paid and $300 monthly", "seven thousand dollars Mom paid and three hundred dollars monthly"),
+            ("the regular $1.89 price", "the regular one dollar and eighty-nine cents price"),
+        ] {
+            assert_eq!(n(text), expected, "{text}");
+        }
+    }
+
+    #[test]
+    fn money_suffixes_and_rates() {
+        for (text, expected) in [
+            (
+                "$4.8bn and £1.1BN and $3mn",
+                "four point eight billion dollars and one point one billion pounds and three million dollars",
+            ),
+            ("$30M to $100+M rounds", "thirty million dollars to one hundred plus million dollar rounds"),
+            (
+                "costs $20/month, $1B/year and $3-4B/year",
+                "costs twenty dollars a month, one billion dollars a year and three to four billion dollars a year",
+            ),
+            (
+                "$3.80/hour or $185,000 / year",
+                "three dollars and eighty cents an hour or one hundred and eighty-five thousand dollars a year",
+            ),
+            ("$5/seat and a $20/month plan", "five dollars per seat and a twenty dollar a month plan"),
+            ("~$10", "about ten dollars"),
+        ] {
+            assert_eq!(n(text), expected, "{text}");
+        }
+    }
+
+    #[test]
+    fn units_rates_dates_and_powers() {
+        for (text, expected) in [
+            (
+                "22 GB/s, 43.39 tok/s, 24g/day, 5 hours/day",
+                "twenty-two gigabytes per second, forty-three point three nine tok per second, twenty-four g per day, five hours per day",
+            ),
+            ("5 km/s and 3 and/or 4", "five kilometers per second and three and/or four"),
+            (
+                "on 5/31/2000, 31/7/2020 and 4/25/24",
+                "on May thirty-first, two thousand, July thirty-first, twenty twenty and April twenty-fifth, twenty-four",
+            ),
+            ("13/13/2020 and 1/2/3/2020", "thirteen/thirteen/twenty twenty and one/two/three/twenty twenty"),
+            ("open 24/7, 24/7/365", "open twenty-four seven, twenty-four/seven/three hundred and sixty-five"),
+            ("2^64, 2^16 and 10^-3", "two to the sixty-fourth, two to the sixteenth and ten to the minus three"),
+            ("10⁻³ and 10⁶", "ten to the minus three and ten to the sixth"),
+        ] {
+            assert_eq!(n(text), expected, "{text}");
+        }
+    }
+
+    #[test]
+    fn hyphens_names_and_possessives() {
+        for (text, expected) in [
+            (
+                "70%-30%, 10°-15°, 40k-80k and $5M-$10M",
+                "seventy% to thirty%, ten degrees to fifteen degrees, forty thousand to eighty thousand and five million dollars to ten million dollars",
+            ),
+            ("the 1990s-2000s and 3rd-4th", "the nineteen nineties to two thousands and third to fourth"),
+            (
+                "Llama-3.1-8B, Gemma-3-12B-IT and H-1B",
+                "Llama-three point one-eight B, Gemma-three-twelve B-IT and H-one B",
+            ),
+            (
+                "the 2-3B models, pre-2020-21 and Mid-1990s",
+                "the two to three billion models, pre-twenty twenty to twenty-one and Mid-nineteen nineties",
+            ),
+            ("Opus 4's score, GPT-4's and I-645's", "Opus four's score, GPT-four's and I-six hundred and forty-five's"),
+            (
+                "the 1990's, Londoners 1890's style, 1's and 0's",
+                "the nineteen nineties, Londoners eighteen nineties style, ones and zeros",
+            ),
+            ("from 2048->512 runs", "from twenty forty-eight->five hundred and twelve runs"),
         ] {
             assert_eq!(n(text), expected, "{text}");
         }

@@ -10,3 +10,5 @@ The four lexicons here are unmodified copies of `misaki/data/` from misaki 0.9.4
 | `gb_silver.json` | `48131e2d92ccc41655f4543e87e0f938e71463eb5a54be7f0693bb712ebb6bce` |
 
 They are compiled into the crate with `include_str!` and parsed when a `G2p` is created (about 40–50 ms per accent in a release build). Keys and phonemes borrow from the embedded text; only the case variants `Lexicon.grow_dictionary` adds are allocated.
+
+The files are unchanged; `lexicon.rs` drops the keys "dr" and "mr" after loading them (`GUESSES`, `docs/divergences.md`, "misaki English: lowercase abbreviations").

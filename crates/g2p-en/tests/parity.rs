@@ -95,6 +95,7 @@ fn matches_reference() {
     let (mut calls, mut calls_ok, mut tokens, mut tokens_ok) = (0usize, 0usize, 0usize, 0usize);
     let mut shown = 0;
     let mut numbers = 0;
+    let mut dropped = 0;
     for record in records.iter().filter(|r| r.lang == "a" || r.lang == "b") {
         let g2p = if record.lang == "b" { &gb } else { &us };
         for call in &record.calls {
@@ -102,6 +103,12 @@ fn matches_reference() {
             // those before G2P (docs/divergences.md, "Numbers" and "Symbols").
             if call.input.chars().any(|c| c.is_numeric() || "$£€%&+@".contains(c)) || call.input.contains("](#") {
                 numbers += 1;
+                continue;
+            }
+            // "dr" and "mr" other than "Dr" and "Mr" aren't read "doctor" and "mister"
+            // (docs/divergences.md, "misaki English: lowercase abbreviations").
+            if kokoro_reference::divergence::has_dropped_abbreviation(&call.input) {
+                dropped += 1;
                 continue;
             }
             calls += 1;
@@ -150,7 +157,9 @@ fn matches_reference() {
         }
     }
     let pct = |a: usize, b: usize| 100.0 * a as f64 / b.max(1) as f64;
-    println!("not compared: {numbers} calls with numbers, money or symbols misaki read");
+    println!(
+        "not compared: {numbers} calls with numbers, money or symbols misaki read, {dropped} with \"dr\" or \"mr\" in a case other than \"Dr\" and \"Mr\""
+    );
     println!(
         "calls: {calls_ok}/{calls} exact ({:.3}%); tokens: {tokens_ok}/{tokens} exact ({:.3}%)",
         pct(calls_ok, calls),
