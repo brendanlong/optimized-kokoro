@@ -305,9 +305,10 @@ impl Pipeline for LangRecorder {
         text: &'a str,
         max_phonemes: usize,
         clause_groups: usize,
+        cancelled: &'a (dyn Fn() -> bool + Sync),
     ) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
         self.0.lock().unwrap().push(lang);
-        StubPipeline.chunks(lang, text, max_phonemes, clause_groups)
+        StubPipeline.chunks(lang, text, max_phonemes, clause_groups, cancelled)
     }
 }
 
@@ -566,10 +567,13 @@ async fn sentences_over_the_cap_limit_split_at_clauses_and_join_at_the_comma() {
     assert!(limit == 270 && whole[0].ids.len() > limit);
     // The clauses are packed to the soft size, two of them a chunk.
     let soft = kokoro_server::pack::SOFT_MAX_PHONEMES;
-    let chunks: Vec<_> =
-        kokoro_server::pack::pack(StubPipeline.chunks(Lang::AmericanEnglish, &text, limit, soft), soft, limit)
-            .map(Result::unwrap)
-            .collect();
+    let chunks: Vec<_> = kokoro_server::pack::pack(
+        StubPipeline.chunks(Lang::AmericanEnglish, &text, limit, soft, &|| false),
+        soft,
+        limit,
+    )
+    .map(Result::unwrap)
+    .collect();
     assert_eq!(chunks.len(), 3);
     assert!(chunks.iter().all(|c| c.ids.len() <= soft));
     for (i, c) in chunks.iter().enumerate() {

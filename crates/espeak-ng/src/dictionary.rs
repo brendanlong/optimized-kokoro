@@ -62,6 +62,98 @@ struct MatchRecord {
     del_fwd: Option<isize>,
 }
 
+/// What one step of `translate_rules` read of the word: the last byte it read, the last byte of a
+/// letter it read only for its classes (what `is_letter`, `is_digit` and `isalpha` say of it, and
+/// whether it is a space or NUL), and whether it looked anything up in the dictionary.
+#[derive(Clone, Copy)]
+struct Reads {
+    hi: isize,
+    class_hi: isize,
+    looked_up: bool,
+}
+
+impl Reads {
+    fn new() -> Self {
+        Reads { hi: isize::MIN, class_hi: isize::MIN, looked_up: false }
+    }
+
+    fn at(&mut self, w: &[u8], i: isize) -> u8 {
+        self.exact_to(i);
+        at(w, i)
+    }
+
+    fn sat(&mut self, w: &[u8], i: isize) -> i32 {
+        self.at(w, i) as i8 as i32
+    }
+
+    fn utf8_in(&mut self, w: &[u8], i: isize) -> (i32, isize) {
+        self.utf8_in2(w, i, false)
+    }
+
+    fn utf8_in2(&mut self, w: &[u8], i: isize, backwards: bool) -> (i32, isize) {
+        utf8_in2_with(|k| self.at(w, k), w.len(), i, backwards)
+    }
+
+    /// The letter at `i`, read only for its classes.
+    fn letter(&mut self, w: &[u8], i: isize) -> (i32, isize) {
+        utf8_in2_with(|k| self.class_at(w, k), w.len(), i, false)
+    }
+
+    fn is_nul(&mut self, w: &[u8], i: isize) -> bool {
+        self.class_at(w, i) == 0
+    }
+
+    fn class_at(&mut self, w: &[u8], i: isize) -> u8 {
+        self.class_hi = self.class_hi.max(i);
+        at(w, i)
+    }
+
+    fn exact_to(&mut self, i: isize) {
+        self.hi = self.hi.max(i);
+    }
+
+    /// Counts every letter read so far as read exactly.
+    fn all_exact(&mut self) {
+        self.hi = self.hi.max(self.class_hi);
+    }
+}
+/// The state step `index` of `translate_rules` (one match, at `p`) started from.
+#[derive(Clone, Copy)]
+pub(crate) struct RuleStep {
+    index: usize,
+    p: isize,
+    phonemes_len: usize,
+    vowel_count: i32,
+    stressed_count: i32,
+    digit_count: u32,
+    /// Letters counted in `any_alpha` by the steps before this one.
+    alpha_before: i32,
+    /// Whether a step before this one set `phonemes_repeat_count` to 0.
+    zeroed_repeat: bool,
+    match1: MatchRecord,
+    /// Whether `match1` still holds fields from before the first step: until a rule group
+    /// replaces it, a step without one sets only its points.
+    match1_inherited: bool,
+    /// The last byte the steps before this one read exactly (`Reads::hi`), and for its classes.
+    reach: isize,
+    class_reach: isize,
+}
+
+const RULE_CHECKPOINT_EVERY: usize = 8;
+
+#[cfg(test)]
+thread_local! {
+    /// Makes `translate_rules` start a word again from its first step, as C does.
+    static FULL_RESTARTS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+fn full_restarts() -> bool {
+    #[cfg(test)]
+    return FULL_RESTARTS.with(|f| f.get());
+    #[cfg(not(test))]
+    false
+}
+
 /// The result of `LookupDict2`: where the matched words end in the source buffer.
 type Found = Option<isize>;
 
@@ -363,54 +455,63 @@ impl Espeak {
     }
 
     /// `IsLetterGroup`: the length of the matching string from `.L` group `group`, or -1.
-    fn is_letter_group(&self, dict: &Dict, w: &[u8], word: isize, group: usize, pre: bool) -> i32 {
+    fn is_letter_group(&self, dict: &Dict, w: &[u8], reads: &mut Reads, word: isize, group: usize, pre: bool) -> i32 {
         let Some(Some(start)) = dict.letter_groups.get(group) else { return -1 };
         let d = &dict.data;
         let mut p = *start as isize;
         let mut len = 0i32;
-        while at(d, p) != RULE_GROUP_END {
-            if p as usize >= d.len() {
-                return -1;
-            }
-            if at(d, p) == b'~' {
-                return 0;
-            }
-            let mut wp;
-            let mut skip = false;
-            if pre {
-                len = cstrlen(d, p) as i32;
-                wp = word;
-                for _ in 0..(len - 1).max(0) {
-                    wp -= 1;
-                    if at(w, wp) == 0 {
-                        skip = true;
+        // A group can be a long list of words, so this notes the last byte it read once.
+        let mut hi = isize::MIN;
+        let n = 'matched: {
+            while at(d, p) != RULE_GROUP_END {
+                if p as usize >= d.len() {
+                    break 'matched -1;
+                }
+                if at(d, p) == b'~' {
+                    break 'matched 0;
+                }
+                let mut wp;
+                let mut skip = false;
+                if pre {
+                    len = cstrlen(d, p) as i32;
+                    wp = word;
+                    for _ in 0..(len - 1).max(0) {
+                        wp -= 1;
+                        hi = hi.max(wp);
+                        if at(w, wp) == 0 {
+                            skip = true;
+                            break;
+                        }
+                    }
+                } else {
+                    wp = word;
+                }
+                if !skip {
+                    while at(d, p) == at(w, wp) && at(w, wp) != 0 {
+                        hi = hi.max(wp);
+                        wp += 1;
+                        p += 1;
+                    }
+                    hi = hi.max(wp);
+                    if at(d, p) == 0 {
+                        if pre {
+                            break 'matched len;
+                        }
+                        break 'matched (wp - word) as i32;
+                    }
+                }
+                loop {
+                    let c = at(d, p);
+                    p += 1;
+                    if c == 0 {
                         break;
                     }
                 }
-            } else {
-                wp = word;
             }
-            if !skip {
-                while at(d, p) == at(w, wp) && at(w, wp) != 0 {
-                    wp += 1;
-                    p += 1;
-                }
-                if at(d, p) == 0 {
-                    if pre {
-                        return len;
-                    }
-                    return (wp - word) as i32;
-                }
-            }
-            loop {
-                let c = at(d, p);
-                p += 1;
-                if c == 0 {
-                    break;
-                }
-            }
-        }
-        -1
+            -1
+        };
+        reads.exact_to(hi);
+        n
     }
 
     pub(crate) fn is_letter(&self, tr: Tr, letter: i32, group: i32) -> bool {
@@ -1056,7 +1157,8 @@ impl Espeak {
         &mut self,
         tr: Tr,
         dict: &Dict,
-        w: &mut [u8],
+        w: &[u8],
+        reads: &mut Reads,
         word: &mut isize,
         word_start: isize,
         group_length: i32,
@@ -1071,6 +1173,8 @@ impl Espeak {
             *word += 1;
             return;
         };
+        // The bytes rules compare with their letters, noted once: they are most of what rules read.
+        let mut matched_to = isize::MIN;
         let mut rule = rule0 as isize;
         let mut total_consumed: i32 = 0;
         let mut common_phonemes: Option<isize> = None;
@@ -1164,6 +1268,7 @@ impl Espeak {
 
                 match match_type {
                     0 => {
+                        matched_to = matched_to.max(post_ptr);
                         let letter = at(w, post_ptr);
                         post_ptr += 1;
                         if letter == rb || (letter == REPLACED_E && rb == b'e') {
@@ -1181,13 +1286,12 @@ impl Espeak {
                             distance_right = 19;
                         }
                         last_letter_w = letter_w;
-                        if at(w, post_ptr - 1) == 0 {
+                        if reads.is_nul(w, post_ptr - 1) {
                             failed = 1;
                         } else {
-                            let (lw, n) = utf8_in(w, post_ptr);
+                            let (lw, n) = reads.letter(w, post_ptr);
                             letter_w = lw;
                             let letter_xbytes = n - 1;
-                            let letter = at(w, post_ptr);
                             post_ptr += 1;
                             match rb {
                                 RULE_LETTERGP => {
@@ -1204,7 +1308,8 @@ impl Espeak {
                                 RULE_LETTERGP2 => {
                                     let letter_group = letter_group_no(at(d, rule));
                                     rule += 1;
-                                    let n_bytes = self.is_letter_group(dict, w, post_ptr - 1, letter_group, false);
+                                    let n_bytes =
+                                        self.is_letter_group(dict, w, reads, post_ptr - 1, letter_group, false);
                                     if n_bytes >= 0 {
                                         add_points = 20 - distance_right;
                                         post_ptr += n_bytes as isize - 1;
@@ -1242,6 +1347,7 @@ impl Espeak {
                                     }
                                 }
                                 RULE_DOUBLE => {
+                                    reads.all_exact();
                                     if letter_w == last_letter_w {
                                         add_points = 21 - distance_right;
                                         post_ptr += letter_xbytes;
@@ -1271,6 +1377,7 @@ impl Espeak {
                                         self.dollar_rule(
                                             tr,
                                             w,
+                                            reads,
                                             *word,
                                             word_start,
                                             consumed,
@@ -1282,6 +1389,7 @@ impl Espeak {
                                     }
                                 }
                                 b'-' => {
+                                    let letter = reads.at(w, post_ptr - 1);
                                     if letter == b'-' || (letter == b' ' && word_flags & FLAG_HYPHEN_AFTER != 0) {
                                         add_points = 22 - distance_right;
                                     } else {
@@ -1305,7 +1413,7 @@ impl Espeak {
                                             vowel_count += 1;
                                         }
                                         vowel = self.is_letter(tr, lw, LETTERGP_VOWEL2);
-                                        let (c, n) = utf8_in(w, p);
+                                        let (c, n) = reads.letter(w, p);
                                         lw = c;
                                         p += n;
                                         if lw == 0 && p > w.len() as isize + 4 {
@@ -1327,7 +1435,7 @@ impl Espeak {
                                             failed = 1;
                                             break;
                                         }
-                                        let (c, n) = utf8_in(w, p);
+                                        let (c, n) = reads.letter(w, p);
                                         lw = c;
                                         p += n;
                                         if lw == 0 && p > w.len() as isize + 4 {
@@ -1340,6 +1448,7 @@ impl Espeak {
                                     }
                                 }
                                 RULE_SKIPCHARS => {
+                                    reads.exact_to(post_ptr - 1 + letter_xbytes);
                                     let mut p = post_ptr - 1;
                                     let mut p2 = p;
                                     let rule_w = utf8_in(d, rule).0;
@@ -1350,13 +1459,14 @@ impl Espeak {
                                             g_bytes = self.is_letter_group(
                                                 dict,
                                                 w,
+                                                reads,
                                                 p,
                                                 letter_group_no(at(d, rule + 1)),
                                                 false,
                                             );
                                         }
                                         p2 = p;
-                                        let (c, n) = utf8_in(w, p);
+                                        let (c, n) = reads.utf8_in(w, p);
                                         lw = c;
                                         p += n;
                                     }
@@ -1376,7 +1486,7 @@ impl Espeak {
                                 RULE_DEL_FWD => {
                                     let mut p = *word + group_length as isize;
                                     while p < post_ptr {
-                                        if at(w, p) == b'e' {
+                                        if reads.at(w, p) == b'e' {
                                             m.del_fwd = Some(p);
                                             break;
                                         }
@@ -1407,6 +1517,7 @@ impl Espeak {
                                     }
                                 }
                                 _ => {
+                                    let letter = reads.at(w, post_ptr - 1);
                                     if letter == rb {
                                         if letter & 0xc0 != 0x80 {
                                             add_points = 21 - distance_right;
@@ -1423,15 +1534,15 @@ impl Espeak {
                         if distance_left > 18 {
                             distance_left = 19;
                         }
-                        if at(w, pre_ptr) == 0 {
+                        if reads.at(w, pre_ptr) == 0 {
                             failed = 1;
                         } else {
-                            last_letter_w = utf8_in(w, pre_ptr).0;
+                            last_letter_w = reads.utf8_in(w, pre_ptr).0;
                             pre_ptr -= 1;
-                            let (lw, n) = utf8_in2(w, pre_ptr, true);
+                            let (lw, n) = reads.utf8_in2(w, pre_ptr, true);
                             letter_w = lw;
                             let letter_xbytes = n - 1;
-                            let letter = at(w, pre_ptr);
+                            let letter = reads.at(w, pre_ptr);
                             match rb {
                                 RULE_LETTERGP => {
                                     let letter_group = letter_group_no(at(d, rule)) as i32;
@@ -1447,7 +1558,7 @@ impl Espeak {
                                 RULE_LETTERGP2 => {
                                     let letter_group = letter_group_no(at(d, rule));
                                     rule += 1;
-                                    let n_bytes = self.is_letter_group(dict, w, pre_ptr, letter_group, true);
+                                    let n_bytes = self.is_letter_group(dict, w, reads, pre_ptr, letter_group, true);
                                     if n_bytes >= 0 {
                                         add_points = 20 - distance_right;
                                         pre_ptr -= n_bytes as isize - 1;
@@ -1495,6 +1606,7 @@ impl Espeak {
                                         self.dollar_rule(
                                             tr,
                                             w,
+                                            reads,
                                             *word,
                                             word_start,
                                             consumed,
@@ -1533,7 +1645,7 @@ impl Espeak {
                                             failed = 1;
                                             break;
                                         }
-                                        let (c, n) = utf8_in2(w, p - 1, true);
+                                        let (c, n) = reads.utf8_in2(w, p - 1, true);
                                         lw = c;
                                         p -= n;
                                         if p < -4 {
@@ -1563,8 +1675,8 @@ impl Espeak {
                                 }
                                 b'.' => {
                                     let mut p = pre_ptr;
-                                    while at(w, p) != b' ' {
-                                        if at(w, p) == b'.' {
+                                    while reads.at(w, p) != b' ' {
+                                        if reads.at(w, p) == b'.' {
                                             add_points = 50;
                                             break;
                                         }
@@ -1573,7 +1685,7 @@ impl Espeak {
                                             break;
                                         }
                                     }
-                                    if at(w, p) == b' ' {
+                                    if reads.at(w, p) == b' ' {
                                         failed = 1;
                                     }
                                 }
@@ -1589,20 +1701,25 @@ impl Espeak {
                                     let mut p2 = p;
                                     let mut g_bytes = -1;
                                     let r = at(d, rule);
-                                    while at(w, p) != r && at(w, p) != RULE_SPACE && at(w, p) != 0 && g_bytes == -1 {
+                                    while reads.at(w, p) != r
+                                        && reads.at(w, p) != RULE_SPACE
+                                        && reads.at(w, p) != 0
+                                        && g_bytes == -1
+                                    {
                                         p2 = p;
                                         p -= 1;
                                         if r == RULE_LETTERGP2 {
                                             g_bytes = self.is_letter_group(
                                                 dict,
                                                 w,
+                                                reads,
                                                 p2,
                                                 letter_group_no(at(d, rule + 1)),
                                                 true,
                                             );
                                         }
                                     }
-                                    if at(w, p) == r {
+                                    if reads.at(w, p) == r {
                                         pre_ptr = p2;
                                     }
                                     if g_bytes >= 0 {
@@ -1631,7 +1748,7 @@ impl Espeak {
                 }
             }
 
-            if failed == 2 && unpron_ignore == 0 && (!check_atstart || at(w, pre_ptr - 1) == b' ') {
+            if failed == 2 && unpron_ignore == 0 && (!check_atstart || reads.at(w, pre_ptr - 1) == b' ') {
                 if check_atstart {
                     m.points += 4;
                 }
@@ -1653,6 +1770,22 @@ impl Espeak {
             best.phonemes = None;
         }
         *match_out = best;
+        reads.exact_to(matched_to);
+    }
+
+    /// The state outside the word that a step of `translate_rules` reads without looking anything
+    /// up, which a lookup (that can translate a whole replacement word) can change.
+    fn rule_context(&self, tr: Tr) -> [i32; 4] {
+        let t = self.t(tr);
+        [t.expect_verb, t.dict_condition, self.option_sayas, self.current_phoneme_table]
+    }
+
+    /// Whether a rule reading letters for their classes (see `Reads`) can tell `a` from `b`.
+    fn same_classes(&self, tr: Tr, a: i32, b: i32) -> bool {
+        let groups = self.t(tr).letter_groups.len().max(8) as i32;
+        (0..groups).all(|g| self.is_letter(tr, a, g) == self.is_letter(tr, b, g))
+            && is_digit(a) == is_digit(b)
+            && ucd::isalpha(a) == ucd::isalpha(b)
     }
 
     /// `TranslateRules`: spelling-to-sound rules for the word at `w[p_start]`, appended to
@@ -1660,6 +1793,37 @@ impl Espeak {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn translate_rules(
         &mut self,
+        tr: Tr,
+        w: &mut [u8],
+        p_start: isize,
+        phonemes: &mut [u8],
+        ph_size: usize,
+        end_phonemes: Option<&mut [u8]>,
+        word_flags: u32,
+        dict_flags: Option<&mut [u32; 2]>,
+    ) -> u32 {
+        let mut steps = std::mem::take(&mut self.rule_steps);
+        steps.clear();
+        let end_type = self.translate_rules_with(
+            &mut steps,
+            tr,
+            w,
+            p_start,
+            phonemes,
+            ph_size,
+            end_phonemes,
+            word_flags,
+            dict_flags,
+        );
+        self.rule_steps = steps;
+        end_type
+    }
+
+    /// `translate_rules`, recording its steps in `steps`.
+    #[allow(clippy::too_many_arguments)]
+    fn translate_rules_with(
+        &mut self,
+        steps: &mut Vec<RuleStep>,
         tr: Tr,
         w: &mut [u8],
         p_start: isize,
@@ -1700,84 +1864,155 @@ impl Espeak {
             put(e, 0, 0);
         }
 
-        let mut restarts = 0;
-        loop {
-            let c = at(w, p);
+        // Removing the accent from a letter that has no rules starts the word again in C. Starting
+        // again repeats each earlier step exactly unless its inputs have changed since it ran, so
+        // this resumes before the first step that read a byte changed since (the letter and what
+        // follows, or an `e` that `del_fwd` replaced), that looked something up in the dictionary
+        // (whose result can depend on state other steps change), or whose result depended on
+        // `any_alpha` being small. A step that read the letters after the replaced one only for
+        // their classes, and no further than the end of the word, is unaffected when the
+        // replacement has the same classes. Starting again each time took time quadratic in the
+        // length of the word.
+        let mut steps_done = 0;
+        let mut reach = isize::MIN;
+        let mut class_reach = isize::MIN;
+        let mut first_stale = usize::MAX;
+        let mut word_end = p_start;
+        while at(w, word_end) != b' ' && (word_end as usize) < w.len() {
+            word_end += 1;
+        }
+        let mut first_past_end = usize::MAX;
+        let mut phonemes_len = cstrlen(phonemes, 0);
+        let mut alpha_counted = 0;
+        let mut zeroed_repeat = false;
+        let mut match1_inherited = true;
+        let mut resumed_at: Option<RuleStep> = None;
+        'word: loop {
+            let mut reads = Reads::new();
+            let step = resumed_at.take().unwrap_or(RuleStep {
+                index: steps_done,
+                p,
+                phonemes_len,
+                vowel_count: self.t(tr).word_vowel_count,
+                stressed_count: self.t(tr).word_stressed_count,
+                digit_count,
+                alpha_before: alpha_counted,
+                zeroed_repeat,
+                match1,
+                match1_inherited,
+                reach,
+                class_reach,
+            });
+            let context = self.rule_context(tr);
+            let mut depends_on_alpha = false;
+            let mut del_fwd = None;
+            let c = reads.at(w, p);
             if c == b' ' || c == 0 {
                 break;
             }
-            let (wc, wc_bytes) = utf8_in(w, p);
+            let (wc, wc_bytes) = reads.utf8_in(w, p);
             if is_alpha(wc) {
                 any_alpha += 1;
             }
-            let mut n = dict.groups2_count[c as usize] as usize;
-            if is_digit(wc) && (self.t(tr).langopts.tone_numbers == 0 || any_alpha == 0) {
-                let mut string = vec![b'_'];
-                for k in 0..wc_bytes {
-                    string.push(at(w, p + k));
+            'step: {
+                let mut n = dict.groups2_count[c as usize] as usize;
+                if is_digit(wc) && (self.t(tr).langopts.tone_numbers == 0 || any_alpha == 0) {
+                    let mut string = vec![b'_'];
+                    for k in 0..wc_bytes {
+                        string.push(reads.at(w, p + k));
+                    }
+                    string.push(0);
+                    let mut buf = [0u8; PH_BUF];
+                    self.lookup(tr, &string, &mut buf);
+                    reads.looked_up = true;
+                    digit_count += 1;
+                    if digit_count >= 2 {
+                        cstrcat(&mut buf, &STR_PAUSE[..1]);
+                        digit_count = 0;
+                    }
+                    self.append_phonemes(tr, Some(phonemes), ph_size, &buf);
+                    phonemes_len = cstrlen(phonemes, 0);
+                    p += wc_bytes;
+                    break 'step;
                 }
-                string.push(0);
-                let mut buf = [0u8; PH_BUF];
-                self.lookup(tr, &string, &mut buf);
-                digit_count += 1;
-                if digit_count >= 2 {
-                    cstrcat(&mut buf, &STR_PAUSE[..1]);
-                    digit_count = 0;
-                }
-                self.append_phonemes(tr, Some(phonemes), ph_size, &buf);
-                p += wc_bytes;
-                continue;
-            }
-            digit_count = 0;
-            let mut found = false;
-            let mut match1_local = false;
+                digit_count = 0;
+                let mut found = false;
+                let mut match1_local = false;
 
-            let offset_ix = wc - self.t(tr).letter_bits_offset;
-            if (0..128).contains(&offset_ix) {
-                if let Some(g3) = dict.groups3[offset_ix as usize] {
-                    self.match_rule(
-                        tr,
-                        &dict,
-                        w,
-                        &mut p,
-                        p_start,
-                        wc_bytes as i32,
-                        Some(g3),
-                        &mut match1,
-                        word_flags,
-                        dict_flags0,
-                    );
-                    found = true;
-                }
-            }
-
-            if !found && n > 0 {
-                let c2 = at(w, p + 1);
-                let c12 = c as u32 + ((c2 as u32) << 8);
-                let g1 = dict.groups2_start[c as usize] as usize;
-                for g in g1..(g1 + n) {
-                    if dict.groups2_name.get(g) == Some(&c12) {
-                        found = true;
-                        let mut p2 = p;
+                let offset_ix = wc - self.t(tr).letter_bits_offset;
+                if (0..128).contains(&offset_ix) {
+                    if let Some(g3) = dict.groups3[offset_ix as usize] {
                         self.match_rule(
                             tr,
                             &dict,
                             w,
-                            &mut p2,
+                            &mut reads,
+                            &mut p,
                             p_start,
-                            2,
-                            dict.groups2.get(g).copied(),
-                            &mut match2,
+                            wc_bytes as i32,
+                            Some(g3),
+                            &mut match1,
                             word_flags,
                             dict_flags0,
                         );
-                        if match2.points > 0 {
-                            match2.points += 35;
+                        match1_inherited = false;
+                        found = true;
+                    }
+                }
+
+                if !found && n > 0 {
+                    let c2 = reads.at(w, p + 1);
+                    let c12 = c as u32 + ((c2 as u32) << 8);
+                    let g1 = dict.groups2_start[c as usize] as usize;
+                    for g in g1..(g1 + n) {
+                        if dict.groups2_name.get(g) == Some(&c12) {
+                            found = true;
+                            let mut p2 = p;
+                            self.match_rule(
+                                tr,
+                                &dict,
+                                w,
+                                &mut reads,
+                                &mut p2,
+                                p_start,
+                                2,
+                                dict.groups2.get(g).copied(),
+                                &mut match2,
+                                word_flags,
+                                dict_flags0,
+                            );
+                            if match2.points > 0 {
+                                match2.points += 35;
+                            }
+                            self.match_rule(
+                                tr,
+                                &dict,
+                                w,
+                                &mut reads,
+                                &mut p,
+                                p_start,
+                                1,
+                                dict.groups1[c as usize],
+                                &mut match1,
+                                word_flags,
+                                dict_flags0,
+                            );
+                            if match2.points >= match1.points {
+                                match1 = match2;
+                                p = p2;
+                            }
+                            match1_inherited = false;
                         }
+                    }
+                }
+
+                if !found {
+                    if dict.groups1[c as usize].is_some() {
                         self.match_rule(
                             tr,
                             &dict,
                             w,
+                            &mut reads,
                             &mut p,
                             p_start,
                             1,
@@ -1786,171 +2021,230 @@ impl Espeak {
                             word_flags,
                             dict_flags0,
                         );
-                        if match2.points >= match1.points {
-                            match1 = match2;
-                            p = p2;
-                        }
-                    }
-                }
-            }
-
-            if !found {
-                if dict.groups1[c as usize].is_some() {
-                    self.match_rule(
-                        tr,
-                        &dict,
-                        w,
-                        &mut p,
-                        p_start,
-                        1,
-                        dict.groups1[c as usize],
-                        &mut match1,
-                        word_flags,
-                        dict_flags0,
-                    );
-                } else {
-                    self.match_rule(
-                        tr,
-                        &dict,
-                        w,
-                        &mut p,
-                        p_start,
-                        0,
-                        dict.groups1[0],
-                        &mut match1,
-                        word_flags,
-                        dict_flags0,
-                    );
-                    if match1.points == 0 && (self.option_sayas & 0x10) == 0 {
-                        let (letter, nb) = utf8_in(w, p - 1);
-                        n = (nb - 1) as usize;
-                        if self.t(tr).letter_bits_offset > 0 && letter <= 0x241 && ucd::isalpha(letter) {
-                            cstrcpy(phonemes, 0, &[PHON_SWITCH, b'e', b'n']);
-                            return 0;
-                        }
-                        if letter == 0xe000 + b'(' as i32 {
-                            let v = self.t(tr).langopts.param[LOPT_BRACKET_PAUSE_ANNOUNCED];
-                            if self.pre_pause < v {
-                                self.pre_pause = v;
+                        match1_inherited = false;
+                    } else {
+                        self.match_rule(
+                            tr,
+                            &dict,
+                            w,
+                            &mut reads,
+                            &mut p,
+                            p_start,
+                            0,
+                            dict.groups1[0],
+                            &mut match1,
+                            word_flags,
+                            dict_flags0,
+                        );
+                        match1_inherited &= dict.groups1[0].is_none();
+                        if match1.points == 0 && (self.option_sayas & 0x10) == 0 {
+                            let (letter, nb) = reads.utf8_in(w, p - 1);
+                            n = (nb - 1) as usize;
+                            if self.t(tr).letter_bits_offset > 0 && letter <= 0x241 && ucd::isalpha(letter) {
+                                cstrcpy(phonemes, 0, &[PHON_SWITCH, b'e', b'n']);
+                                return 0;
                             }
-                        }
-                        if is_bracket(letter) {
-                            let v = self.t(tr).langopts.param[LOPT_BRACKET_PAUSE];
-                            if self.pre_pause < v {
-                                self.pre_pause = v;
+                            if letter == 0xe000 + b'(' as i32 {
+                                let v = self.t(tr).langopts.param[LOPT_BRACKET_PAUSE_ANNOUNCED];
+                                if self.pre_pause < v {
+                                    self.pre_pause = v;
+                                }
                             }
-                        }
-                        if (0xc0..N_REMOVE_ACCENT).contains(&letter) {
-                            let ixa = REMOVE_ACCENT[(letter - 0xc0) as usize];
-                            if ixa != 0 && (at(w, p - 2) != b' ' || at(w, p + n as isize) != b' ') {
-                                let p2 = p - 1;
-                                put(w, p - 1, ixa);
-                                loop {
-                                    let v = at(w, p + n as isize);
-                                    put(w, p, v);
-                                    if v == b' ' || p as usize >= w.len() {
-                                        break;
+                            if is_bracket(letter) {
+                                let v = self.t(tr).langopts.param[LOPT_BRACKET_PAUSE];
+                                if self.pre_pause < v {
+                                    self.pre_pause = v;
+                                }
+                            }
+                            if (0xc0..N_REMOVE_ACCENT).contains(&letter) {
+                                let ixa = REMOVE_ACCENT[(letter - 0xc0) as usize];
+                                if ixa != 0 && (reads.at(w, p - 2) != b' ' || reads.at(w, p + n as isize) != b' ') {
+                                    let p2 = p - 1;
+                                    put(w, p - 1, ixa);
+                                    let space = loop {
+                                        let v = at(w, p + n as isize);
+                                        put(w, p, v);
+                                        if v == b' ' {
+                                            break Some(p + n as isize);
+                                        }
+                                        if p as usize >= w.len() {
+                                            break None;
+                                        }
+                                        p += 1;
+                                    };
+                                    for _ in 0..n {
+                                        put(w, p, b' ');
+                                        p += 1;
                                     }
-                                    p += 1;
+                                    // This step isn't recorded, so a lookup in it (a `$list` rule
+                                    // in the default group) that changed what earlier steps read
+                                    // is caught here rather than at the end of the step.
+                                    if (reads.looked_up && self.rule_context(tr) != context) || full_restarts() {
+                                        first_stale = 0;
+                                    }
+                                    // Up to the space that ends the word, the letters after the
+                                    // replaced one are the same letters as before, moved.
+                                    let kept = space.is_some() && self.same_classes(tr, letter, ixa as i32);
+                                    let unaffected = |s: &RuleStep| {
+                                        s.index <= first_stale
+                                            && s.reach < p2
+                                            && if kept { s.index <= first_past_end } else { s.class_reach < p2 }
+                                    };
+                                    let valid = steps.partition_point(unaffected);
+                                    let from =
+                                        if valid == steps.len() && unaffected(&step) { step } else { steps[valid - 1] };
+                                    if word_end > p2 {
+                                        word_end = space.map_or(isize::MAX, |e| e - n as isize);
+                                    }
+                                    if self.t(tr).langopts.param[LOPT_DIERESES] != 0
+                                        && lookupwchar(&DIERESES_LIST, letter) > 0
+                                    {
+                                        // C carries on from the letter here, without starting
+                                        // again; the steps before it are stale from now on.
+                                        first_stale = from.index;
+                                        resumed_at = Some(step);
+                                        p = p2;
+                                        continue 'word;
+                                    }
+                                    // Starting again clears the phonemes, including any the
+                                    // caller passed, which the steps recorded so far counted.
+                                    let first = steps.first().copied().unwrap_or(step);
+                                    let from = if first.phonemes_len != 0 { first } else { from };
+                                    steps.truncate(steps.partition_point(|s| s.index < from.index));
+                                    steps_done = from.index;
+                                    reach = from.reach;
+                                    class_reach = from.class_reach;
+                                    first_stale = usize::MAX;
+                                    if first_past_end >= from.index {
+                                        first_past_end = usize::MAX;
+                                    }
+                                    p = from.p;
+                                    phonemes_len = if from.index == 0 { 0 } else { from.phonemes_len };
+                                    put(phonemes, phonemes_len as isize, 0);
+                                    self.tm(tr).word_vowel_count = from.vowel_count;
+                                    self.tm(tr).word_stressed_count = from.stressed_count;
+                                    digit_count = from.digit_count;
+                                    any_alpha += from.alpha_before;
+                                    alpha_counted = from.alpha_before;
+                                    zeroed_repeat = from.zeroed_repeat;
+                                    if zeroed_repeat {
+                                        self.tm(tr).phonemes_repeat_count = 0;
+                                    }
+                                    match1_inherited = from.match1_inherited;
+                                    if !match1_inherited {
+                                        match1 = from.match1;
+                                    } else if from.index > 0 {
+                                        match1.points = 0;
+                                    }
+                                    continue 'word;
                                 }
-                                for _ in 0..n {
-                                    put(w, p, b' ');
-                                    p += 1;
+                            }
+                            if let Some(alphabet) = alphabet_from_char(letter) {
+                                if alphabet.offset != self.t(tr).letter_bits_offset {
+                                    if self.t(tr).langopts.alt_alphabet == alphabet.offset {
+                                        let mut s = vec![PHON_SWITCH];
+                                        s.extend(word_to_string2(self.t(tr).langopts.alt_alphabet_lang));
+                                        cstrcpy(phonemes, 0, &s);
+                                        return 0;
+                                    }
+                                    if alphabet.flags & AL_WORDS != 0 {
+                                        let mut s = vec![PHON_SWITCH];
+                                        s.extend(word_to_string2(alphabet.language));
+                                        cstrcpy(phonemes, 0, &s);
+                                        return 0;
+                                    }
                                 }
-                                restarts += 1;
-                                if restarts > N_WORD_BYTES * 4 {
-                                    break;
-                                }
-                                if self.t(tr).langopts.param[LOPT_DIERESES] != 0
-                                    && lookupwchar(&DIERESES_LIST, letter) > 0
-                                {
-                                    p = p2;
-                                    continue;
-                                }
+                            }
+                        }
+                    }
+
+                    if match1.points == 0 {
+                        if (0x300..=0x36f).contains(&wc) {
+                        } else if is_alpha(wc) {
+                            if any_alpha > 1 || reads.sat(w, p + wc_bytes - 1) > b' ' as i32 {
                                 put(phonemes, 0, 0);
-                                p = p_start;
-                                self.tm(tr).word_vowel_count = 0;
-                                self.tm(tr).word_stressed_count = 0;
-                                continue;
+                                if let Some(f) = dict_flags.as_deref_mut() {
+                                    f[0] |= FLAG_SPELLWORD;
+                                }
+                                break 'word;
+                            }
+                            depends_on_alpha = true;
+                        } else {
+                            ph_buf[0] = 0;
+                            self.lookup_letter(tr, wc, -1, &mut ph_buf, 0, 0);
+                            reads.looked_up = true;
+                            if ph_buf[0] != 0 {
+                                match1.phonemes = None;
+                                match1_local = true;
+                                match1.points = 1;
                             }
                         }
-                        if let Some(alphabet) = alphabet_from_char(letter) {
-                            if alphabet.offset != self.t(tr).letter_bits_offset {
-                                if self.t(tr).langopts.alt_alphabet == alphabet.offset {
-                                    let mut s = vec![PHON_SWITCH];
-                                    s.extend(word_to_string2(self.t(tr).langopts.alt_alphabet_lang));
-                                    cstrcpy(phonemes, 0, &s);
-                                    return 0;
-                                }
-                                if alphabet.flags & AL_WORDS != 0 {
-                                    let mut s = vec![PHON_SWITCH];
-                                    s.extend(word_to_string2(alphabet.language));
-                                    cstrcpy(phonemes, 0, &s);
-                                    return 0;
-                                }
-                            }
-                        }
+                        p += wc_bytes - 1;
+                    } else {
+                        self.tm(tr).phonemes_repeat_count = 0;
+                        zeroed_repeat = true;
                     }
                 }
 
-                if match1.points == 0 {
-                    if (0x300..=0x36f).contains(&wc) {
-                    } else if is_alpha(wc) {
-                        if any_alpha > 1 || sat(w, p + wc_bytes - 1) > b' ' as i32 {
-                            put(phonemes, 0, 0);
-                            if let Some(f) = dict_flags.as_deref_mut() {
-                                f[0] |= FLAG_SPELLWORD;
+                let m_ph: Vec<u8> = if match1_local {
+                    cstr(&ph_buf, 0).to_vec()
+                } else {
+                    match1.phonemes.map_or(Vec::new(), |o| cstr(d, o as isize).to_vec())
+                };
+
+                if match1.points > 0 {
+                    if word_flags & FLAG_UNPRON_TEST != 0 {
+                        return match1.end_type | 1;
+                    }
+                    if m_ph.first() == Some(&PHON_SWITCH) && (word_flags & FLAG_DONT_SWITCH_TRANSLATOR) == 0 {
+                        cstrcpy(phonemes, 0, &m_ph);
+                        return 0;
+                    }
+                    match1.end_type &= !SUFX_UNPRON;
+                    if match1.end_type != 0 && end_phonemes.is_some() {
+                        if (match1.end_type & SUFX_P) != 0 && (word_flags & FLAG_NO_PREFIX) != 0 {
+                        } else {
+                            if (match1.end_type & SUFX_P) != 0 && (match1.end_type & 0x7f) == 0 {
+                                match1.end_type |= (p - p_start) as u32;
                             }
-                            break;
-                        }
-                    } else {
-                        ph_buf[0] = 0;
-                        self.lookup_letter(tr, wc, -1, &mut ph_buf, 0, 0);
-                        if ph_buf[0] != 0 {
-                            match1.phonemes = None;
-                            match1_local = true;
-                            match1.points = 1;
+                            if let Some(e) = end_phonemes.as_deref_mut() {
+                                cstrcpy(e, 0, &m_ph);
+                            }
+                            let wl = cstrlen(&word_copy, 0);
+                            memcpy(w, p_start, &word_copy, 0, wl);
+                            return match1.end_type;
                         }
                     }
-                    p += wc_bytes - 1;
-                } else {
-                    self.tm(tr).phonemes_repeat_count = 0;
+                    del_fwd = match1.del_fwd;
+                    self.append_phonemes(tr, Some(phonemes), ph_size, &m_ph);
+                    phonemes_len = cstrlen(phonemes, 0);
                 }
             }
-
-            let m_ph: Vec<u8> = if match1_local {
-                cstr(&ph_buf, 0).to_vec()
-            } else {
-                match1.phonemes.map_or(Vec::new(), |o| cstr(d, o as isize).to_vec())
-            };
-
-            if match1.points > 0 {
-                if word_flags & FLAG_UNPRON_TEST != 0 {
-                    return match1.end_type | 1;
-                }
-                if m_ph.first() == Some(&PHON_SWITCH) && (word_flags & FLAG_DONT_SWITCH_TRANSLATOR) == 0 {
-                    cstrcpy(phonemes, 0, &m_ph);
-                    return 0;
-                }
-                match1.end_type &= !SUFX_UNPRON;
-                if match1.end_type != 0 && end_phonemes.is_some() {
-                    if (match1.end_type & SUFX_P) != 0 && (word_flags & FLAG_NO_PREFIX) != 0 {
-                    } else {
-                        if (match1.end_type & SUFX_P) != 0 && (match1.end_type & 0x7f) == 0 {
-                            match1.end_type |= (p - p_start) as u32;
-                        }
-                        if let Some(e) = end_phonemes.as_deref_mut() {
-                            cstrcpy(e, 0, &m_ph);
-                        }
-                        let wl = cstrlen(&word_copy, 0);
-                        memcpy(w, p_start, &word_copy, 0, wl);
-                        return match1.end_type;
-                    }
-                }
-                if let Some(df) = match1.del_fwd {
-                    put(w, df, REPLACED_E);
-                }
-                self.append_phonemes(tr, Some(phonemes), ph_size, &m_ph);
+            let index = steps_done;
+            if reads.looked_up {
+                first_stale = first_stale.min(if self.rule_context(tr) == context { index } else { 0 });
+            }
+            if depends_on_alpha {
+                first_stale = first_stale.min(index);
+            }
+            if reads.class_hi > word_end {
+                first_past_end = first_past_end.min(index);
+            }
+            if is_alpha(wc) {
+                alpha_counted += 1;
+            }
+            // Resuming at a step a few before the first affected one repeats those exactly too, so
+            // only some steps keep the state they started from.
+            if index % RULE_CHECKPOINT_EVERY == 0 {
+                steps.push(step);
+            }
+            steps_done += 1;
+            reach = reach.max(reads.hi);
+            class_reach = class_reach.max(reads.class_hi);
+            if let Some(df) = del_fwd {
+                put(w, df, REPLACED_E);
+                let valid = steps.partition_point(|s| s.reach.max(s.class_reach) < df);
+                first_stale = first_stale.min(steps[valid - 1].index);
             }
         }
 
@@ -2573,6 +2867,7 @@ impl Espeak {
         &mut self,
         tr: Tr,
         w: &[u8],
+        reads: &mut Reads,
         word: isize,
         word_start: isize,
         consumed: i32,
@@ -2581,8 +2876,10 @@ impl Espeak {
         failed: &mut i32,
         add_points: &mut i32,
     ) {
+        reads.looked_up = true;
         let ix = (word - word_start + consumed as isize + group_length as isize + 1).max(0) as usize;
         let mut word_buf = vec![0u8; ix + 2];
+        reads.exact_to(word_start - 2 + ix as isize);
         for k in 0..ix {
             word_buf[k] = at(w, word_start - 1 + k as isize);
         }
@@ -2613,5 +2910,41 @@ mod tests {
             }
             ((hash + 3) & 0x3ff) as usize
         });
+    }
+
+    /// Resuming after removing an accent gives what starting the word again gives.
+    #[test]
+    fn resuming_matches_starting_again() {
+        const PIECES: &[&str] = &[
+            "ı", "ą", "ß", "ə", "ğ", "ő", "ø", "é", "è", "ë", "ü", "ö", "ä", "ï", "ñ", "ç", "ł", "ś", "ž", "č", "ř",
+            "Ä", "Ş", "e", "e", "ed", "es", "a", "i", "o", "s", "c", "g", "t", "n", "'", "'s", "1", "9", "(", ")", "-",
+            " ",
+        ];
+        let data = crate::EspeakData::load(crate::default_data_dir()).unwrap();
+        let mut rng = 0x9e37_79b9_7f4a_7c15u64;
+        let mut next = |n: usize| {
+            rng ^= rng << 13;
+            rng ^= rng >> 7;
+            rng ^= rng << 17;
+            (rng % n as u64) as usize
+        };
+        let texts: Vec<String> = (0..300)
+            .map(|i| {
+                let len = if i % 10 == 0 { 200 } else { 1 + i % 25 };
+                (0..len).map(|_| PIECES[next(PIECES.len())]).collect()
+            })
+            .collect();
+        for voice in ["gmw/en-US", "roa/es", "roa/fr", "gmw/de", "roa/it", "roa/pt-BR", "inc/hi"] {
+            let run = |full: bool| {
+                FULL_RESTARTS.with(|f| f.set(full));
+                let mut e = Espeak::new(data.clone());
+                e.set_voice_by_name(voice).unwrap();
+                texts.iter().map(|t| e.text_to_phonemes(t, crate::PHONEMES_IPA_TIE)).collect::<Vec<_>>()
+            };
+            let (resumed, restarted) = (run(false), run(true));
+            for ((text, a), b) in texts.iter().zip(&resumed).zip(&restarted) {
+                assert_eq!(a, b, "{voice} {text:?}");
+            }
+        }
     }
 }

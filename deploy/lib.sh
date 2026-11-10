@@ -292,31 +292,48 @@ new_key() {
     head -c 24 /dev/urandom | base64 | tr '+/' '-_'
 }
 
-# Adds the runsc-kokoro runtime (gVisor with directfs off and host sockets, see compose.yaml) to
-# daemon.json and reloads Docker, which picks up runtimes without restarting any container.
-ensure_runtime() {
-    local runsc want
+# The gVisor runtimes compose.yaml uses (see there for the flags), so each container gets only the
+# host Unix socket access it needs.
+kokoro_runtimes='{
+    "runsc-kokoro-uds-create": ["--directfs=false", "--host-uds=create"],
+    "runsc-kokoro-uds-open": ["--directfs=false", "--host-uds=open"],
+    "runsc-kokoro-no-uds": ["--directfs=false"]
+}'
+
+# Adds $kokoro_runtimes to daemon.json and removes runsc-kokoro (the single runtime, with
+# --host-uds=all, of releases before the split) once no kept release names it, then reloads Docker,
+# which picks up runtimes without restarting any container. The backup is the daemon.json from
+# before the first change.
+ensure_runtimes() {
+    local runsc clash keep_old=false
     runsc=$(command -v runsc)
-    want=$(jq -cn --arg p "$runsc" '{path: $p, runtimeArgs: ["--directfs=false", "--host-uds=all"]}')
     [ -f "$daemon_json" ] || echo '{}' > "$daemon_json"
     # Any runsc path will do, as long as the flags match.
-    if jq -e --argjson want "$want" '.runtimes["runsc-kokoro"].runtimeArgs == $want.runtimeArgs' "$daemon_json" > /dev/null; then
+    clash=$(jq -r --argjson want "$kokoro_runtimes" \
+        '.runtimes // {} | to_entries[] | select($want[.key] and .value.runtimeArgs != $want[.key]) | .key' "$daemon_json")
+    [ -z "$clash" ] || die "$daemon_json already has different runtimes named ${clash//$'\n'/ }; their runtimeArgs must be: $(jq -c . <<< "$kokoro_runtimes")"
+    ! grep -qsx '    runtime: runsc-kokoro' "$root"/releases/*/compose.yaml || keep_old=true
+    jq --arg path "$runsc" --argjson want "$kokoro_runtimes" --argjson keep_old "$keep_old" '
+        .runtimes = ($want | map_values({path: $path, runtimeArgs: .}))
+            + (.runtimes // {} | if $keep_old then . else del(.["runsc-kokoro"]) end)' \
+        "$daemon_json" > "$daemon_json.new"
+    if jq -e --slurpfile old "$daemon_json" '. == $old[0]' "$daemon_json.new" > /dev/null; then
+        rm "$daemon_json.new"
         return
     fi
-    if jq -e '.runtimes["runsc-kokoro"]' "$daemon_json" > /dev/null; then
-        die "$daemon_json already has a different runsc-kokoro runtime; make it $want"
-    fi
-    echo "== adding the runsc-kokoro runtime to $daemon_json (backup: $daemon_json.bak-kokoro)"
-    cp -p "$daemon_json" "$daemon_json.bak-kokoro"
-    jq --argjson want "$want" '.runtimes["runsc-kokoro"] = $want' "$daemon_json" > "$daemon_json.new"
+    [ -e "$daemon_json.bak-kokoro" ] || cp -p "$daemon_json" "$daemon_json.bak-kokoro"
+    echo "== changing the runtimes in $daemon_json (backup: $daemon_json.bak-kokoro)"
+    jq -r --slurpfile old "$daemon_json" '(.runtimes | keys) as $now | ($old[0].runtimes // {} | keys) as $was
+        | ($now - $was | map("adding " + .)) + ($was - $now | map("removing " + .)) | .[]' "$daemon_json.new"
     chmod --reference="$daemon_json" "$daemon_json.new"
     mv "$daemon_json.new" "$daemon_json"
     systemctl reload docker
     for _ in $(seq 30); do
-        docker info --format '{{json .Runtimes}}' 2> /dev/null | jq -e 'has("runsc-kokoro")' > /dev/null && return
+        docker info --format '{{json .Runtimes}}' 2> /dev/null |
+            jq -e --argjson want "$kokoro_runtimes" '($want | keys) - keys == []' > /dev/null && return
         sleep 1
     done
-    die "Docker didn't pick up runsc-kokoro after a reload; check journalctl -u docker"
+    die "Docker didn't pick up the runtimes after a reload; check journalctl -u docker"
 }
 
 ensure_dirs() {

@@ -152,10 +152,12 @@ pub struct Config {
     /// Longest the worker may go without sending a whole frame while it has work; then it's
     /// disconnected and its requests fail.
     pub worker_progress_timeout_ms: u64,
-    /// Longest one slot may stay outstanding after its Synthesize, queueing included, before the
-    /// connection is reset (a worker answering other slots can't hold one forever). Legitimate
-    /// waits are bounded by the slots ahead of it times the longest render (a 60 s chunk renders
-    /// in a few seconds), so the default, 5 minutes, leaves a wide margin.
+    /// Longest one slot may stay outstanding after its Synthesize, queueing included, before it's
+    /// cancelled and its request fails (a low-priority chunk can starve behind more urgent work,
+    /// and a worker answering other slots mustn't hold one forever). If the slot is still
+    /// outstanding a progress timeout later, the connection is reset. Legitimate waits at
+    /// one priority are bounded by the slots ahead of it times the longest render (a 60 s chunk
+    /// renders in a few seconds), so the default, 5 minutes, leaves a wide margin.
     pub worker_slot_timeout_ms: u64,
     /// Worker slots the server uses: requests on the worker at once, counting cancelled ones until
     /// the worker acknowledges them. Defaults to `max_concurrent_requests × lookahead`; the

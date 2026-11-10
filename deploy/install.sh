@@ -44,7 +44,7 @@ ensure_dirs
 check_cdi
 check_port_free "$KOKORO_LISTEN"
 check_port_free "$KOKORO_DEMO_LISTEN"
-ensure_runtime
+ensure_runtimes
 # Leftovers of a failed install.
 sweep_projects
 prune_releases

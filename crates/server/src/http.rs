@@ -178,6 +178,7 @@ fn voices(state: &AppState) -> Response<Body> {
 fn stream_failure(e: &StreamError) -> Response<Body> {
     match e {
         StreamError::Synth(SynthError::ConnectionLost) => unavailable("Lost the connection to the model worker"),
+        StreamError::Synth(SynthError::TimedOut) => unavailable("The model worker didn't render a chunk in time"),
         StreamError::TooMuchSpeech { .. } => invalid(e.to_string()),
         StreamError::Shed(_) => overloaded(e.to_string()),
         _ => error(StatusCode::INTERNAL_SERVER_ERROR, "processing_error", "server_error", e.to_string()),

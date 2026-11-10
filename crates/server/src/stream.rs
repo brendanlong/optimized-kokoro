@@ -179,7 +179,9 @@ fn produce_units(
     let render_ids = stitch::max_render_ids(max_chunk_samples, speech.speed);
     let mut ids = 0usize;
     let max_phonemes = max_chunk_phonemes(render_ids);
-    let chunks = pipeline.chunks(speech.lang, &speech.text, max_phonemes, SOFT_MAX_PHONEMES);
+    // Once nobody is listening, text processing stops at its next G2P call.
+    let gone = || out.is_closed();
+    let chunks = pipeline.chunks(speech.lang, &speech.text, max_phonemes, SOFT_MAX_PHONEMES, &gone);
     for chunk in pack(chunks, SOFT_MAX_PHONEMES, max_phonemes) {
         let units = match chunk {
             Ok(chunk) => {
@@ -197,10 +199,6 @@ fn produce_units(
         }
         for unit in units {
             out.blocking_send(Produced::Unit(unit)).ok()?;
-        }
-        // Stop before the next sentence once nobody is listening.
-        if out.is_closed() {
-            return None;
         }
     }
     Some(Produced::End)
@@ -419,6 +417,7 @@ mod tests {
             text: &'a str,
             _: usize,
             _: usize,
+            _: &'a (dyn Fn() -> bool + Sync),
         ) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
             Box::new((0..self.0).map(move |_| {
                 Ok(Chunk {

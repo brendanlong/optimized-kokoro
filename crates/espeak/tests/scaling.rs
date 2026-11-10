@@ -48,3 +48,29 @@ fn many_marks_take_linear_time() {
         assert!(ratio < 8.0, "{unit:?}: ×{n} {t1:?}, ×{} {t4:?} ({ratio:.1}×)", 4 * n);
     }
 }
+
+/// Letters with no rules of their own, which espeak reads without their accent: C starts the
+/// word again for each one, which took time quadratic in the length of the word (on the machine
+/// this was measured on, 80-160 ms per KB of `ą` or `ı` against about 1 ms for prose). Words
+/// can't be longer than a clause, so doubling the text doesn't show it; this bounds the time per
+/// KB instead.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "timing test; run with --release")]
+fn accented_letters_take_time_like_prose() {
+    let prose = "The quick brown fox jumps over the lazy dog, and then it runs away. ".repeat(150);
+    for (language, text) in [
+        ("en-us", "ı".repeat(10_000)),
+        ("en-us", "ą".repeat(10_000)),
+        ("en-us", "ő".repeat(10_000)),
+        ("es", "ß".repeat(10_000)),
+        ("fr-fr", "ı".repeat(10_000)),
+        ("en-us", prose.clone()),
+        ("es", prose),
+    ] {
+        let g2p = EspeakG2P::new(language).unwrap();
+        let took = best_of(2, || assert!(!g2p.phonemize(&text).unwrap().is_empty()));
+        let per_kb = took.as_secs_f64() * 1e3 / (text.len() as f64 / 1024.0);
+        let start: String = text.chars().take(4).collect();
+        assert!(per_kb < 40.0, "{language} {start:?}…: {per_kb:.1} ms per KB");
+    }
+}

@@ -23,7 +23,7 @@ fn main() {
         let text: String = serde_json::from_str(&line.unwrap()).unwrap();
         let groups = if soft == 0 { limit } else { soft };
         let all: Vec<Chunk> =
-            pipelines.chunks(Lang::AmericanEnglish, &text, limit, groups).map(Result::unwrap).collect();
+            pipelines.chunks(Lang::AmericanEnglish, &text, limit, groups, &|| false).map(Result::unwrap).collect();
         let speech = |c: &Chunk| c.pause.is_none() && !c.ids.is_empty();
         let units: Vec<Chunk> = all.iter().filter(|c| speech(c)).cloned().collect();
         let packed: Vec<Chunk> = if soft == 0 {

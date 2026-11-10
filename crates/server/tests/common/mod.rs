@@ -69,7 +69,7 @@ pub fn longs(words: &[&str]) -> String {
 /// `pipeline`'s chunks of `text` as the server renders them at speed 1: packed (`pack`).
 pub fn packed_chunks(pipeline: &dyn Pipeline, lang: Lang, text: &str) -> Vec<Chunk> {
     use kokoro_server::pack::{SOFT_MAX_PHONEMES, pack};
-    let chunks = pipeline.chunks(lang, text, DEFAULT_MAX_TOKENS, SOFT_MAX_PHONEMES);
+    let chunks = pipeline.chunks(lang, text, DEFAULT_MAX_TOKENS, SOFT_MAX_PHONEMES, &|| false);
     pack(chunks, SOFT_MAX_PHONEMES, DEFAULT_MAX_TOKENS).map(Result::unwrap).collect()
 }
 
@@ -305,9 +305,10 @@ impl Pipeline for CountingPipeline {
         text: &'a str,
         max_phonemes: usize,
         clause_groups: usize,
+        cancelled: &'a (dyn Fn() -> bool + Sync),
     ) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        StubPipeline.chunks(lang, text, max_phonemes, clause_groups)
+        StubPipeline.chunks(lang, text, max_phonemes, clause_groups, cancelled)
     }
 }
 
@@ -418,15 +419,18 @@ impl Pipeline for BrokenPipeline {
         text: &'a str,
         max_phonemes: usize,
         clause_groups: usize,
+        cancelled: &'a (dyn Fn() -> bool + Sync),
     ) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
-        Box::new(StubPipeline.chunks(lang, text, max_phonemes, clause_groups).enumerate().map(|(i, chunk)| {
-            if i < self.fail_at {
-                chunk
-            } else if self.panic {
-                panic!("pipeline bug")
-            } else {
-                Err(PipelineError("cannot phonemize".into()))
-            }
-        }))
+        Box::new(StubPipeline.chunks(lang, text, max_phonemes, clause_groups, cancelled).enumerate().map(
+            |(i, chunk)| {
+                if i < self.fail_at {
+                    chunk
+                } else if self.panic {
+                    panic!("pipeline bug")
+                } else {
+                    Err(PipelineError("cannot phonemize".into()))
+                }
+            },
+        ))
     }
 }

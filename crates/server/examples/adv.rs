@@ -32,6 +32,7 @@ fn main() {
                 text,
                 kokoro_server::pipeline::DEFAULT_MAX_TOKENS,
                 kokoro_server::pipeline::DEFAULT_MAX_TOKENS,
+                &|| false,
             ) {
                 let now = Instant::now();
                 slowest = slowest.max((now - last).as_secs_f64() * 1e3);

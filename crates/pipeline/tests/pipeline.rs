@@ -408,3 +408,18 @@ fn shared_across_threads() {
         }
     });
 }
+
+/// Cancelling stops at the next G2P call, even inside one sentence cut at its clauses.
+#[test]
+fn cancelling_stops_at_the_next_g2p_call() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let options = NormalizationOptions::default();
+    // One sentence of 40 clauses, far over the chunk limit: one G2P call for it, then one per clause.
+    let text = vec!["the quick brown fox jumps over the lazy dog"; 40].join(", ") + ".";
+    let asked = AtomicUsize::new(0);
+    let cancelled = || asked.fetch_add(1, Ordering::SeqCst) >= 3;
+    let mut chunks = pipeline().chunks_within_groups(&text, &options, 100, 100, &cancelled);
+    assert!(matches!(chunks.next(), Some(Err(Error::Cancelled))));
+    assert_eq!(asked.load(Ordering::SeqCst), 4, "asked once per G2P call, up to the one cancelled");
+    assert!(chunks.all(|c| matches!(c, Err(Error::Cancelled))));
+}
