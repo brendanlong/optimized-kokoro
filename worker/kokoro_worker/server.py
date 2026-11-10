@@ -69,7 +69,7 @@ class Connection:
         self.queue = RequestQueue(slots)
         self.send_lock = threading.Lock()
         self.n_voices = len(synth.voice_names)
-        self.stats = {"batches": 0, "requests": 0, "groups": 0}
+        self.stats = {"batches": 0, "requests": 0, "rows": 0}
 
     def send(self, data: bytes) -> None:
         with self.send_lock:
@@ -128,7 +128,7 @@ class Connection:
                 requests = [Request(list(m.ids), self.synth.style(m.voice, m.style_len), m.speed, bool(m.waiting))
                             for m in batch]
                 for results in self.synth.run(requests):
-                    self.stats["groups"] += 1
+                    self.stats["rows"] += 1
                     for r in results:
                         slot = batch[r.index].slot
                         if r.pcm is None:

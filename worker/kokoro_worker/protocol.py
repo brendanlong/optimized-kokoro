@@ -12,7 +12,7 @@ MAGIC = b"KOKW"
 MAX_PHONEMES = 510
 MIN_SPEED, MAX_SPEED = 25, 400  # hundredths
 SAMPLE_RATE = 24000
-SAMPLES_PER_FRAME = 600
+SAMPLES_PER_FRAME = 600  # Kokoro: 2x upsample in the decoder, then 10 * 6 in the generator, then hop 5
 DURATION_BINS = 50  # Kokoro's max_dur: a duration is a sum of this many sigmoids, over speed
 
 HELLO, RESULT, FAILED = 0x01, 0x02, 0x03
