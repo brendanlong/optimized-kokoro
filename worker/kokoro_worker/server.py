@@ -257,8 +257,8 @@ def main() -> None:
     parser.add_argument("--export-cache", metavar="DIR",
                         help="warm up, write the compile caches to DIR and exit without listening")
     parser.add_argument("--models", required=True, help="directory written by kokoro_worker.convert")
-    # 1 by default. On the 3060 Ti, batching 8 gives more throughput at 16 concurrent requests (173x
-    # vs 161x in gVisor) and about the same at 1; see README.md.
+    # 1 by default. On the 3060 Ti, batching 8 gives more throughput under load (about 210x against
+    # 153x at 16 streams) but longer waits for first audio; see README.md.
     parser.add_argument("--max-batch", type=int, default=1)
     # 60 s (2,400 frames) at any speed, and a packed decoder row is held to the same frame count:
     # about 1.4 GB of GPU memory reserved at most. Real 510-phoneme chunks reach about 44 s at
