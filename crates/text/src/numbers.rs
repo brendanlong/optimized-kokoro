@@ -1341,12 +1341,14 @@ impl Scanner<'_> {
             return Some((r_end, format!("{} {word} {rate}", body.words()), false));
         }
         if integer {
-            // "1½", "1 ½", "1 3/4"
+            // "1½", "1 ½", "1 3/4"; not the number after a slash ("3/4 1/2" isn't "three slash four and a half").
             let gap = usize::from(self.get(end) == Some(' '));
-            if let Some((n, d)) = self.get(end + gap).and_then(vulgar_fraction) {
+            let after_slash = i > 0 && matches!(self.t[i - 1], '/' | '⁄');
+            if !after_slash && let Some((n, d)) = self.get(end + gap).and_then(vulgar_fraction) {
                 return Some((end + gap + 1, format!("{} {}", body.words(), and_fraction(n, d)), false));
             }
             if gap == 1
+                && !after_slash
                 && let Some((n, d, f_end)) = self.slash_fraction(end + 1)
             {
                 return Some((f_end, format!("{} {}", body.words(), and_fraction(n, d)), false));
@@ -1811,6 +1813,7 @@ mod tests {
                 "one third of it, part one slash three of the thread, four slash five stars",
             ),
             ("3/4 and 9/11", "three slash four and nine slash eleven"),
+            ("3/4 1/2 cup, 4/5 ½", "three slash four one slash two cup, four slash five ½"),
             ("1.5-2.5 kg", "one point five to two point five kilograms"),
             ("$5-10", "five to ten dollars"),
             (
