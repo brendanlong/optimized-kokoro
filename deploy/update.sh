@@ -31,7 +31,7 @@ check_cdi
 used=("$(port_of "$(release_setting "$prev" LISTEN)")" "$(port_of "$(release_setting "$prev" DEMO_LISTEN)")")
 check_port_free "$KOKORO_LISTEN" "${used[@]}"
 check_port_free "$KOKORO_DEMO_LISTEN" "${used[@]}"
-ensure_runtime
+ensure_runtimes
 # A worker, network or volume an update killed before it could clean up left (also the previous
 # scheme's project, optimized-kokoro, if an update already moved off it).
 sweep_projects "$(project_of "$prev")"
@@ -83,6 +83,8 @@ echo "== remove $prev's worker"
 compose_rel "$prev" down --volumes --remove-orphans || echo "couldn't take $prev down; the next update removes what's left" >&2
 gpu_watch_stop
 prune_releases "$rel" "$prev"
+# Drops a runtime that only the pruned releases used.
+ensure_runtimes
 echo "up: $rel (previous: $prev, kept for going back)"
 echo "downtime: $(elapsed "$swap_at" "$healthy_at") s from stopping $prev's server to $rel's answering $(health_url)"
 [ -z "$tunnel_at" ] || echo "the tunnel was down for $(elapsed "$swap_at" "$tunnel_at") s"

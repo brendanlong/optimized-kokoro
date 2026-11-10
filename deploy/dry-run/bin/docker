@@ -1,8 +1,9 @@
 #!/bin/bash
 # A fake docker for deploy/dry-run/test.sh: keeps Compose projects (containers, network, volume) as
 # files under $FAKE_STATE/PROJECT, and behaves like Docker where the deploy scripts depend on it:
-# two networks can't share the subnet, two servers can't publish the port, and `up` keeps a
-# container whose service is already running. `compose config` runs the real docker compose.
+# two networks can't share the subnet, two servers can't publish the port, a container's runtime
+# must be in daemon.json (which `docker info` reports), and `up` keeps a container whose service is
+# already running. `compose config` runs the real docker compose.
 # Fault injection, from the environment:
 #   FAIL_BUILD=1         docker build fails
 #   FAKE_WORKER=never    a started worker runs but never logs that it listens
@@ -48,6 +49,16 @@ container_file() {
     grep -lxF -- "$1" "$S"/*/svc/* 2> /dev/null | head -1
 }
 
+# Fails, as Docker does, unless the runtime of service $2 in compose file $1 is in daemon.json.
+check_runtime() {
+    local r
+    r=$(awk -v svc="  $2:" '/^  [a-z]+:$/ { cur = $0 } cur == svc && /^    runtime:/ { print $2; exit }' "$1")
+    jq -e --arg r "$r" '.runtimes[$r]' "$DESTDIR/etc/docker/daemon.json" > /dev/null || {
+        echo "Error response from daemon: unknown or invalid runtime name: $r" >&2
+        return 1
+    }
+}
+
 compose() {
     local p='' f='' cmd P svc services=() flags=() a
     while [ $# -gt 0 ]; do
@@ -71,6 +82,7 @@ compose() {
     done
     case $cmd in
     run)
+        check_runtime "$f" worker || return 1
         # The cache export: writes a seed (with a setuid bit to be dropped) into the -v directory.
         local i src='' rargs=("$@")
         for ((i = 0; i < ${#rargs[@]}; i++)); do
@@ -108,6 +120,7 @@ compose() {
             fi
             [ "$svc" != worker ] && [ "$svc" != server ] || touch "$P/volume"
             if [ ! -e "$P/svc/$svc" ] || [[ " ${flags[*]} " == *" --force-recreate "* ]]; then
+                check_runtime "$f" "$svc" || return 1
                 new_id "$p" "$svc" > "$P/svc/$svc"
                 # A starting worker, for long enough that the GPU sampler sees it.
                 [ "$svc" != worker ] || /usr/bin/sleep 0.6
@@ -182,7 +195,7 @@ compose)
 info)
     case "$*" in
     *CDISpecDirs*) echo '["/etc/cdi","/var/run/cdi"]' ;;
-    *) echo '{"runc":{},"runsc-kokoro":{}}' ;;
+    *) jq -c '{runc: {}} + (.runtimes // {})' "$DESTDIR/etc/docker/daemon.json" ;;
     esac
     ;;
 build) [ -z "${FAIL_BUILD:-}" ] || exit 1 ;;

@@ -129,6 +129,8 @@ ok() {
     [ -z "${SHOW:-}" ] || sed 's/^/     | /' <<< "$out"
 }
 
+not() { ! "$@"; }
+
 # expect MESSAGE COMMAND...: fails the scenario with MESSAGE unless COMMAND succeeds.
 expect() {
     "${@:2}" || {
@@ -257,11 +259,44 @@ $(grep -E 'up -d|rm -sf|network rm|down' "$FAKE_LOG")"
     }
 }
 
+daemon_json=$W/dest/etc/docker/daemon.json
+runtimes() { jq -r '.runtimes // {} | keys | join(" ")' "$daemon_json"; }
+split_runtimes="runsc-kokoro-no-uds runsc-kokoro-uds-create runsc-kokoro-uds-open"
+
 t_install() {
     fresh
     run install.sh "${imports[@]}"
     expect_rc 0 && check_state && expect_out "Up: the server on 127.0.0.1:18880" &&
-        expect "project $(project "$(cur)")" [ "$(project "$(cur)")" = "optimized-kokoro-$(cur | tr '[:upper:]' '[:lower:]')" ]
+        expect "project $(project "$(cur)")" [ "$(project "$(cur)")" = "optimized-kokoro-$(cur | tr '[:upper:]' '[:lower:]')" ] &&
+        expect "runtimes $(runtimes)" [ "$(runtimes)" = "$split_runtimes" ] &&
+        expect "backup $(cat "$daemon_json.bak-kokoro")" [ "$(cat "$daemon_json.bak-kokoro")" = '{}' ] &&
+        expect "didn't reload Docker" grep -q 'reload docker' "$FAKE_LOG"
+}
+# A runtime of ours with other flags is refused, before anything is built or daemon.json changed.
+t_install_runtime_clash() {
+    fresh
+    echo '{"runtimes": {"runsc-kokoro-uds-open": {"path": "/usr/bin/runsc", "runtimeArgs": ["--host-uds=all"]}}}' > "$daemon_json"
+    cp "$daemon_json" "$W/daemon.json.before"
+    run install.sh "${imports[@]}"
+    expect_rc 1 && expect_out "different runtimes named runsc-kokoro-uds-open" &&
+        expect "built anyway" [ -z "$(releases)" ] && expect "daemon.json changed" cmp -s "$daemon_json" "$W/daemon.json.before"
+}
+# An install from before each container had its own runtime: its release uses runsc-kokoro, with
+# --host-uds=all. Updates add the new runtimes, can still go back to it, and drop runsc-kokoro once
+# no kept release uses it.
+t_update_split_runtimes() {
+    installed || return 1
+    sed -i 's/^    runtime: runsc-kokoro-.*/    runtime: runsc-kokoro/' "$D/releases/$before_cur/compose.yaml"
+    jq '.runtimes = {"runsc-kokoro": {path: "/usr/bin/runsc", runtimeArgs: ["--directfs=false", "--host-uds=all"]}}' \
+        "$daemon_json" > "$daemon_json.new" && mv "$daemon_json.new" "$daemon_json"
+    run FAIL_HEALTH=new update.sh
+    expect_rc 1 && check_back && expect "runtimes $(runtimes)" [ "$(runtimes)" = "runsc-kokoro $split_runtimes" ] || return 1
+    run update.sh
+    expect_rc 0 && check_updated && expect "runtimes $(runtimes)" [ "$(runtimes)" = "runsc-kokoro $split_runtimes" ] || return 1
+    run update.sh
+    expect_rc 0 && check_state && expect_out "removing runsc-kokoro" &&
+        expect "runtimes $(runtimes)" [ "$(runtimes)" = "$split_runtimes" ] &&
+        expect "backup $(cat "$daemon_json.bak-kokoro")" [ "$(cat "$daemon_json.bak-kokoro")" = '{}' ]
 }
 # The worker's settings reach both its export run and the release's .env (which compose.yaml
 # reads); a value outside the range is refused before anything is built.
@@ -288,8 +323,11 @@ t_install_fails() {
 }
 t_update() {
     installed || return 1
+    cp "$daemon_json" "$W/daemon.json.before"
     run update.sh
-    expect_rc 0 && check_updated && check_order
+    expect_rc 0 && check_updated && check_order &&
+        expect "daemon.json changed" cmp -s "$daemon_json" "$W/daemon.json.before" &&
+        expect "reloaded Docker" not grep -q "reload docker" "$FAKE_LOG"
 }
 t_update_twice() {
     installed || return 1

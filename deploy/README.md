@@ -14,20 +14,24 @@ Three containers on the host's system Docker, defined by `compose.yaml`:
 - gVisor's `runsc`, recent enough to support your NVIDIA driver: `runsc nvproxy list-supported-drivers` must list the version `nvidia-smi` reports. `install.sh` checks this. nvproxy supports exact driver versions only, so hold the driver and runsc together. Distribution packages of runsc are often too old; gVisor's own apt repository tracks its releases.
 - An NVIDIA GPU with its driver, and the NVIDIA Container Toolkit with a CDI spec (`nvidia-ctk cdi list` shows `nvidia.com/gpu=0`; `sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml` makes one). Docker's CDI support must be on, which is the default from Docker 28 (before that, `"features": {"cdi": true}` in `daemon.json`). `install.sh` checks all of this. The model needs about 2 GB of GPU memory at `--max-batch 1`.
 
-  The worker gets its GPU as a CDI device (`devices: nvidia.com/gpu=N`) with `NVIDIA_VISIBLE_DEVICES=void`, not with `--gpus`. With an image that sets `NVIDIA_VISIBLE_DEVICES=all` (every CUDA base image), `--gpus` takes the NVIDIA legacy hook path. Under runsc release-20261102.0 the sandbox then dies at boot with `Error reading mounts file: error unmarshaling mounts: unexpected end of JSON input`. CDI plus `void` works under `runsc-kokoro`: checked with `docker run --runtime=runsc-kokoro --device nvidia.com/gpu=0 -e NVIDIA_VISIBLE_DEVICES=void nvidia/cuda:12.6.3-base-ubuntu24.04 nvidia-smi`.
+  The worker gets its GPU as a CDI device (`devices: nvidia.com/gpu=N`) with `NVIDIA_VISIBLE_DEVICES=void`, not with `--gpus`. With an image that sets `NVIDIA_VISIBLE_DEVICES=all` (every CUDA base image), `--gpus` takes the NVIDIA legacy hook path. Under runsc release-20261102.0 the sandbox then dies at boot with `Error reading mounts file: error unmarshaling mounts: unexpected end of JSON input`. CDI plus `void` works under gVisor: checked with `docker run --runtime=runsc-kokoro --device nvidia.com/gpu=0 -e NVIDIA_VISIBLE_DEVICES=void nvidia/cuda:12.6.3-base-ubuntu24.04 nvidia-smi` (`runsc-kokoro` was the single runtime of releases before the split, below).
 - `jq`, `curl`, `flock`, `ss` and `sha256sum` on the host. For the converters (unless you import their output, below): uv for the models, and cargo for UniDic.
 - About 16 GB of disk for the images and data, and 12 GB of RAM for the worker (twice that during the cache export and an update, when two workers run).
 
 ## Security model
 
-- Every container runs in gVisor, as nobody (65534:65534), with a read-only root, no capabilities and `no-new-privileges`. They all use a Docker runtime that `install.sh` adds to `/etc/docker/daemon.json` (backing it up to `daemon.json.bak-kokoro`). It then reloads Docker, which picks up new runtimes without restarting any container:
+- Every container runs in gVisor, as nobody (65534:65534), with a read-only root, no capabilities and `no-new-privileges`. They use three Docker runtimes that `install.sh` and `update.sh` add to `/etc/docker/daemon.json` (backing up the file from before their first change to `daemon.json.bak-kokoro`). They then reload Docker, which picks up new runtimes without restarting any container:
 
   ```json
-  "runsc-kokoro": {"path": "/usr/bin/runsc", "runtimeArgs": ["--directfs=false", "--host-uds=all"]}
+  "runsc-kokoro-uds-create": {"path": "/usr/bin/runsc", "runtimeArgs": ["--directfs=false", "--host-uds=create"]},
+  "runsc-kokoro-uds-open": {"path": "/usr/bin/runsc", "runtimeArgs": ["--directfs=false", "--host-uds=open"]},
+  "runsc-kokoro-no-uds": {"path": "/usr/bin/runsc", "runtimeArgs": ["--directfs=false"]}
   ```
 
   - `--directfs=false`: under rootful Docker, runsc's default directfs mode runs the sandbox as root in the host's user namespace. With it off, the sentry runs as nobody in an empty user namespace, and all file access goes through the gofer. It costs metadata-heavy file I/O. That shows in the worker's startup: with the same image and cache seed, 205 s to ready with directfs off against 91 s with it on (measured with rootless podman). Serving isn't affected.
-  - `--host-uds=all`: each container is its own gVisor kernel. The worker's socket reaches the server only as a real host socket in their shared volume. The worker needs `create` and the server `open`.
+  - `--host-uds`: each container is its own gVisor kernel. The worker's socket reaches the server only as a real host socket in their shared volume. The worker binds it, so it gets `create` (`runsc-kokoro-uds-create`); the server connects to it, so it gets `open` (`runsc-kokoro-uds-open`). The demo and the tunnel use no Unix sockets on the host (`runsc-kokoro-no-uds`).
+  - A runtime with one of these names but other flags stops `install.sh` and `update.sh` before they change anything.
+  - Releases from before 2026-11-10 ran every container under one runtime, `runsc-kokoro`, with `--host-uds=all`. `update.sh` keeps it while a kept release uses it (so going back still works), and removes it from `daemon.json` once none does: at the end of the second update after the split.
 - The worker has no network, a 2 GB tmpfs at `/tmp` (mounted `exec` for Triton) and one GPU. It reads the models and its release's compile-cache seed, both read-only. Its limits are 12 GB of RAM and no swap, 4 CPUs and 1024 pids. GPU memory isn't limited.
 - The server reads UniDic and its config. It writes nothing. Its limits are 8192 open files (`max_connections` needs one per connection), 3 GB and 256 pids. The demo gets 512 MB.
 - The socket lives in a named volume: a tmpfs created as `uid=65534,gid=65534,mode=0700` and mounted with `nocopy`, so Docker never copies an image directory's ownership onto it. Only the worker and the server mount it, and the worker replaces a stale `worker.sock` when it starts.
@@ -58,7 +62,7 @@ KOKORO_MAX_CHUNK_SECONDS=60         # the worker's --max-chunk-seconds, 25-60: i
 `KOKORO_MAX_CHUNK_SECONDS` is the most audio one request to the worker may make, at any speed, and the most audio in one of its packed decoder rows, so it sets the worker's peak GPU memory: about 200 MB plus 0.5 MB per frame of 25 ms (40 per second) reserved, packed rows a few percent more, plus about 175 MB for the CUDA context. Measured at `--max-batch 8` under load (`worker/README.md`): 60 s (the default) peaked at 1,336 MiB reserved, 30 s at 816 MiB, about 1 GB on the card, for about 8% less throughput. 30 s suits a GPU shared with a desktop. The server splits chunks that could be longer into overlapping pieces before sending them, sized from a fit to measured durations (`worker/README.md`). So a lower cap mostly costs more stitched sentences, especially at slow speeds: at 30 s, pieces of up to 270 ids at speed 1 and 45 at speed 0.25. A request can still be refused, failing its whole speech request with HTTP 500, when the model predicts more audio than the fit allows. That happened to none of the measured cases (English, and the reference fixtures' Chinese, Japanese and mixed-script chunks), but other text or voices could. The minimum, 25 s, keeps pieces at speed 0.25 to at least 32 ids, about five words. The server refuses a worker that announces more than 60 s (`worker_max_chunk_samples`). The compile-cache export runs with the same value.
 
 What it does:
-1. Checks the checkout, the driver against runsc, the CDI device and the ports. Adds the runtime and creates `/srv/optimized-kokoro`.
+1. Checks the checkout, the driver against runsc, the CDI device and the ports. Adds the runtimes and creates `/srv/optimized-kokoro`.
 2. UniDic: fetches and converts it as you (`crates/g2p-ja/tools/fetch_unidic.sh`), and checks it against that script's checksum once root has the copy.
 3. Models: converts them as you with `uv run python -m kokoro_worker.convert`, from a pinned Hugging Face revision. The conversion is deterministic. Only `config.json`, `model.safetensors` and `voices.safetensors` are taken.
 4. API keys: makes one key for your clients, and a separate key for the demo page. The demo's key is limited to 4 streams, so it can't take all of the clients' capacity.
@@ -166,7 +170,7 @@ sudo docker image ls --filter 'reference=optimized-kokoro-*' -q | sort -u | xarg
 sudo rm -rf /srv/optimized-kokoro
 ```
 
-Then, if nothing else uses it, remove `runsc-kokoro` from `/etc/docker/daemon.json` (the original is in `daemon.json.bak-kokoro`) and run `sudo systemctl reload docker`.
+Then, if nothing else uses them, remove `runsc-kokoro-uds-create`, `runsc-kokoro-uds-open` and `runsc-kokoro-no-uds` from `/etc/docker/daemon.json` (the original is in `daemon.json.bak-kokoro`) and run `sudo systemctl reload docker`.
 
 ## Layout
 
