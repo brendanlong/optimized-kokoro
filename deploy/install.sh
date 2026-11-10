@@ -46,6 +46,7 @@ check_port_free "$KOKORO_LISTEN"
 check_port_free "$KOKORO_DEMO_LISTEN"
 ensure_runtimes
 # Leftovers of a failed install.
+check_releases
 sweep_projects
 prune_releases
 ensure_unidic "$unidic_from"

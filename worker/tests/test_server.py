@@ -235,7 +235,7 @@ def test_stall_mid_frame_closes():
     assert not thread.is_alive()
 
 
-def test_a_front_that_stops_reading_is_closed_with_replies_still_queued():
+def test_a_front_that_stops_reading_is_closed_with_replies_still_to_send():
     synth = FakeSynth()
     a, b = socket.socketpair()
     conn = Connection(a, synth, max_batch=4, frame_timeout=0.5)
@@ -247,6 +247,8 @@ def test_a_front_that_stops_reading_is_closed_with_replies_still_queued():
         b.sendall(P.synthesize(slot, [1] * 500, 0))
     thread.join(5)
     assert not thread.is_alive()
+    while b.recv(1 << 20):  # what was sent, then the worker's close
+        pass
 
 
 def test_idle_front_is_not_a_stall():

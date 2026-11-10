@@ -249,7 +249,7 @@ check_releases() {
     for env in "$root"/releases/*/.env; do
         [ -f "$env" ] || continue
         grep -q '^COMPOSE_PROJECT_NAME=' "$env" ||
-            die "$env has no COMPOSE_PROJECT_NAME: that release is from before per-release Compose projects. Run update.sh from a checkout of commit b2b7bca (or older) until no kept release is, then this one."
+            die "$env has no COMPOSE_PROJECT_NAME: that release is from before per-release Compose projects. Run update.sh from a checkout between commits a1d0768 and b2b7bca until no kept release is (twice if the running one is), then this one."
     done
 }
 
