@@ -771,11 +771,13 @@ impl Pattern {
         })
     }
 
+    #[cfg(test)]
     pub fn is_match(&self, text: &str) -> bool {
         self.captures_at(text, 0).is_some()
     }
 
     /// The first match's span.
+    #[cfg(test)]
     pub fn find(&self, text: &str) -> Option<Range<usize>> {
         self.captures_at(text, 0).map(|c| c.range())
     }

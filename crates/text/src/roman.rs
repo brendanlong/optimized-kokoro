@@ -12,12 +12,14 @@
 //!    or ")": a numbered heading or list item ("IV. Results"; "I. Introduction" can't be told
 //!    from "V. Putin said"). Lines are joined into sentences before the normalizer runs
 //!    (`split::join_lines`), so a sentence start stands in for a line start;
-//! 3. it continues a list of numerals ("Super Bowls XXI and XXIV", "George II and III"; after a
-//!    bare comma the list must then end or go on, so not "World War II, IV drug use").
+//! 3. it continues a list of numerals, after ", ", "and", "or", "&" or "to" ("Super Bowls XXI
+//!    and XXIV", "George II and III", "Henry V & VI"; after a bare comma the list must then end or
+//!    go on, so not "World War II, IV drug use").
 //!
-//! A number is read as a cardinal: "Saturn five", "World War two", and after a name too ("Henry
-//! eight", "Elizabeth two"). An ordinal would need to know a name from another capitalised word,
-//! and Brendan chose the plain reading (2026-11-09).
+//! A number is read as the number pass reads its digits: a cardinal ("Saturn five", "World War
+//! two", and after a name too, "Henry eight", "Elizabeth two"), and from 1501 a year in pairs
+//! ("MCMXCIV" as "nineteen ninety-four"). An ordinal would need to know a name from another
+//! capitalised word, and Brendan chose the plain reading (2026-11-09).
 //!
 //! Some tokens need more: a single letter is a numeral only if it is I or V (a single C, D, L, M
 //! or X is far more often a letter: "Vitamin D", "Type C", "Malcolm X", "Generation X"); a
@@ -458,6 +460,7 @@ mod tests {
         // A list of numerals.
         assert_eq!(r("Super Bowls XXI and XXIV"), "Super Bowls twenty-one and twenty-four");
         assert_eq!(r("George II and III"), "George two and three");
+        assert_eq!(r("Henry V & VI"), "Henry five & six");
         assert_eq!(r("World Wars I and II were"), "World Wars one and two were");
         assert_eq!(r("Super Bowls XXI and XXIV were played"), "Super Bowls twenty-one and twenty-four were played");
         assert_eq!(r("Louis XIV and MCMLXXXIV"), "Louis fourteen and nineteen eighty-four");

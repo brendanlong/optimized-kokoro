@@ -420,12 +420,13 @@ const UNITS: &[(&str, &str, &str)] = &[
     ("hr", "hour", "hours"),
     ("secs", "seconds", "seconds"),
     ("sec", "second", "seconds"),
+    // The Greek capital omega and the ohm sign (U+2126).
     ("kΩ", "kilohm", "kilohms"),
-    ("kΩ", "kilohm", "kilohms"),
+    ("k\u{2126}", "kilohm", "kilohms"),
     ("MΩ", "megohm", "megohms"),
-    ("MΩ", "megohm", "megohms"),
+    ("M\u{2126}", "megohm", "megohms"),
     ("Ω", "ohm", "ohms"),
-    ("Ω", "ohm", "ohms"),
+    ("\u{2126}", "ohm", "ohms"),
 ];
 
 /// A unit of time after a slash in a rate ("/s", "/hr", "/month"): its name.
@@ -462,6 +463,19 @@ pub(crate) fn rate_word(word: &str, time: &str) -> bool {
 pub(crate) fn unit_name(key: &str) -> Option<&'static str> {
     UNITS.iter().find(|(k, _, _)| *k == key).map(|&(_, _, plural)| plural)
 }
+
+/// The word for a slash between two numbers that nothing else explains ("4/5 stars", "80/20",
+/// "9/11", "part 1/3"): "slash", as the symbol pass reads every other slash. Brendan compared it with
+/// "over" by ear and chose "slash" (2026-11-10).
+const NUMBER_SLASH: &str = "slash";
+
+/// Nouns that name the numbered parts of things, before which "1/3 of" is a label ("part 1/3 of the
+/// thread"), not a fraction.
+const NUMBERED_PARTS: &[&str] = &[
+    "act", "appendix", "article", "book", "canto", "chapter", "class", "episode", "grade", "level", "part", "phase",
+    "plate", "psalm", "round", "scene", "season", "section", "series", "stage", "step", "tier", "title", "type",
+    "volume",
+];
 
 /// Multipliers written as words after a number (case-insensitive, as the reference matched them).
 const MULTIPLIER_WORDS: [&str; 6] = ["hundred", "thousand", "million", "billion", "trillion", "quadrillion"];
@@ -889,7 +903,10 @@ impl Scanner<'_> {
             && !matches!(self.get(y_end), Some('/' | '-'))
             && !(matches!(self.get(y_end), Some('.' | ',')) && self.digit(y_end + 1));
         let before_ok = i == 0 || !matches!(self.t[i - 1], '/' | '-' | '.');
-        if !after_ok || !before_ok {
+        // With a two-digit year, three numbers are as often a rule or a split ("the 10/20/30 rule",
+        // "a 5/10/15 minute workout"): a date only after a word that says so ("on 4/25/24").
+        let year_ok = y_end - b_end - 1 == 4 || self.date_word_before(i);
+        if !after_ok || !before_ok || !year_ok {
             return None;
         }
         let (month, day) = match (a, b) {
@@ -907,6 +924,62 @@ impl Scanner<'_> {
             date_words(year, month, day)
         };
         Some((words, y_end))
+    }
+
+    /// Whether the word before the number at `i` (a space, or ": " after it) introduces a date: "on",
+    /// "since", "dated", "Date:", a weekday ("Monday 4/25/24", "Mon, 4/25/24").
+    fn date_word_before(&self, i: usize) -> bool {
+        let mut k = i;
+        while k > 0 && matches!(self.t[k - 1], ' ' | ',' | ':') {
+            k -= 1;
+        }
+        if k == i {
+            return false;
+        }
+        let start = self.t[..k].iter().rposition(|c| !c.is_alphabetic()).map_or(0, |s| s + 1);
+        let word: String = self.t[start..k].iter().collect::<String>().to_lowercase();
+        matches!(
+            word.as_str(),
+            "on" | "since"
+                | "until"
+                | "till"
+                | "dated"
+                | "date"
+                | "born"
+                | "died"
+                | "due"
+                | "expires"
+                | "updated"
+                | "posted"
+                | "published"
+                | "monday"
+                | "tuesday"
+                | "wednesday"
+                | "thursday"
+                | "friday"
+                | "saturday"
+                | "sunday"
+                | "mon"
+                | "tue"
+                | "tues"
+                | "wed"
+                | "thu"
+                | "thurs"
+                | "fri"
+                | "sat"
+                | "sun"
+        )
+    }
+
+    /// The letters right before `k`: "part" in "part 1/3" (with `k` at the space).
+    fn word_ending_at(&self, k: usize) -> String {
+        let start = self.t[..k].iter().rposition(|c| !c.is_alphabetic()).map_or(0, |s| s + 1);
+        self.t[start..k].iter().collect()
+    }
+
+    /// Whether the word of letters at `i` is `word` (lowercase), in any case, as a whole word.
+    fn word_is(&self, i: usize, word: &str) -> bool {
+        self.at_ignore_case(i, word) && self.free_at(i + word.len())
     }
 
     /// Whether the number at `i` is part of a name joined by hyphens ("Llama-3.1-8B",
@@ -1292,8 +1365,16 @@ impl Scanner<'_> {
             {
                 return Some((end + 2, "twenty-four seven".to_owned(), false));
             }
+            // A fraction on its own only before "of" ("3/4 of the vote", not "part 1/3 of the
+            // thread") or with the fraction slash ("3⁄4"); "4/5 stars", "part 1/3" or "7/10" may be
+            // a rating, a part or a score, so the slash is read as written (in `numbers`).
+            let label = i > 0
+                && self.t[i - 1] == ' '
+                && NUMBERED_PARTS.contains(&self.word_ending_at(i - 1).to_lowercase().as_str());
             if !body.commas
                 && let Some((n, d, f_end)) = self.slash_fraction(i)
+                && (self.get(end) == Some('⁄')
+                    || !label && self.get(f_end) == Some(' ') && self.word_is(f_end + 1, "of"))
             {
                 return Some((f_end, fraction(n, d), false));
             }
@@ -1614,6 +1695,13 @@ pub fn numbers(text: &str) -> String {
             i += 1;
             continue;
         }
+        // A slash between numbers that no reading took ("4/5 stars", "80/20"): as written.
+        if c == '/' && last_end == i && scanner.digit(i + 1) {
+            push_words(&mut out, NUMBER_SLASH, &t[i + 1..], false);
+            plain_at = i + 1;
+            i += 1;
+            continue;
+        }
         // A list written with commas ("1,2,3") gets a space after each comma.
         if c == ',' && i > 0 && scanner.digit(i - 1) && scanner.digit(i + 1) {
             out.push_str(", ");
@@ -1625,15 +1713,6 @@ pub fn numbers(text: &str) -> String {
         i += 1;
     }
     out
-}
-
-/// Whether a character is one the number pass reads: a digit, or a number written another way.
-pub fn is_number_char(c: char) -> bool {
-    digit_value(c).is_some()
-        || vulgar_fraction(c).is_some()
-        || superscript_digit(c).is_some()
-        || subscript_digit(c).is_some()
-        || enclosed_number(c).is_some()
 }
 
 #[cfg(test)]
@@ -1717,7 +1796,8 @@ mod tests {
             ("1°", "one degree"),
             ("10 km and 10km, 1 km", "ten kilometers and ten kilometers, one kilometer"),
             ("3.5GHz", "three point five gigahertz"),
-            ("5 Ω", "five ohms"),
+            ("5 Ω, 4.7 kΩ and 1 MΩ", "five ohms, four point seven kilohms and one megohm"),
+            ("5 \u{2126}, 4.7 k\u{2126} and 1 M\u{2126}", "five ohms, four point seven kilohms and one megohm"),
             ("version 2.0.1", "version two point zero point one"),
             ("v1.2", "v-one point two"),
             ("BA123 and A4", "BA one twenty-three and A-four"),
@@ -1725,8 +1805,12 @@ mod tests {
             ("B2B", "B-to-B"),
             ("1080p", "ten eighty p"),
             ("3:1", "three to one"),
-            ("1/2 cup", "one half cup"),
-            ("3/4 and 9/11", "three quarters and nine/eleven"),
+            ("1/2 cup, 3/4 of the vote and 1⁄2", "one slash two cup, three quarters of the vote and one half"),
+            (
+                "1/3 of it, part 1/3 of the thread, 4/5 stars",
+                "one third of it, part one slash three of the thread, four slash five stars",
+            ),
+            ("3/4 and 9/11", "three slash four and nine slash eleven"),
             ("1.5-2.5 kg", "one point five to two point five kilograms"),
             ("$5-10", "five to ten dollars"),
             (
@@ -1853,11 +1937,25 @@ mod tests {
             ),
             ("5 km/s and 3 and/or 4", "five kilometers per second and three and/or four"),
             (
-                "on 5/31/2000, 31/7/2020 and 4/25/24",
-                "on May thirty-first, two thousand, July thirty-first, twenty twenty and April twenty-fifth, twenty-four",
+                "on 5/31/2000, 31/7/2020 and on 4/25/24",
+                "on May thirty-first, two thousand, July thirty-first, twenty twenty and on April twenty-fifth, twenty-four",
             ),
-            ("13/13/2020 and 1/2/3/2020", "thirteen/thirteen/twenty twenty and one/two/three/twenty twenty"),
-            ("open 24/7, 24/7/365", "open twenty-four seven, twenty-four/seven/three hundred and sixty-five"),
+            (
+                "13/13/2020 and 1/2/3/2020",
+                "thirteen slash thirteen slash twenty twenty and one slash two slash three slash twenty twenty",
+            ),
+            (
+                "the 10/20/30 rule, 5/10/15 minutes",
+                "the ten slash twenty slash thirty rule, five slash ten slash fifteen minutes",
+            ),
+            (
+                "Date: 4/25/24, Mon, 4/25/24",
+                "Date: April twenty-fifth, twenty-four, Mon, April twenty-fifth, twenty-four",
+            ),
+            (
+                "open 24/7, 24/7/365",
+                "open twenty-four seven, twenty-four slash seven slash three hundred and sixty-five",
+            ),
             ("2^64, 2^16 and 10^-3", "two to the sixty-fourth, two to the sixteenth and ten to the minus three"),
             ("10⁻³ and 10⁶", "ten to the minus three and ten to the sixth"),
         ] {
