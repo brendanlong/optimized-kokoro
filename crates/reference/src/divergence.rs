@@ -791,6 +791,7 @@ fn abbreviation_part(input: &str, theirs: &[&str], ours: &[&str]) -> Option<(Spa
 }
 
 fn abbreviation_read(input: &str, theirs: &[&str], ours: &[&str]) -> bool {
+    let dotted = theirs.contains(&".");
     let words = |side: &[&str]| -> Vec<String> { side.iter().filter(|&&t| t != ".").map(|t| t.to_string()).collect() };
     let (theirs, ours) = (words(theirs), words(ours));
     let [reading] = ours.as_slice() else { return false };
@@ -803,8 +804,18 @@ fn abbreviation_read(input: &str, theirs: &[&str], ours: &[&str]) -> bool {
         return input.to_lowercase().contains("tldr") || input.to_lowercase().contains("tl;dr");
     }
     let [abbreviation] = theirs.as_slice() else { return false };
-    let in_input = if abbreviation == "Doctor" { input_word(input, "Dr") } else { input_word(input, abbreviation) };
-    in_input && expansions(abbreviation).contains(&reading.as_str())
+    let abbreviation = abbreviation.as_str();
+    // Only "St" and "Dr" are expanded without their period ("St Paul"), and a month before a
+    // number ("Oct 20"): the input must have the abbreviation, then a space and a digit.
+    let month = expansions(abbreviation).first().is_some_and(|m| m.ends_with("ber") || m.ends_with("ary"))
+        || matches!(abbreviation, "Mar" | "Apr" | "Jun" | "Jul" | "Aug");
+    let before_number = input.match_indices(&format!("{abbreviation} ")).any(|(k, m)| {
+        input[k + m.len()..].starts_with(|c: char| c.is_ascii_digit())
+            && input[..k].chars().next_back().is_none_or(|c| !c.is_alphanumeric())
+    });
+    let period_ok = dotted || matches!(abbreviation, "St" | "Dr" | "Doctor") || month && before_number;
+    let in_input = if abbreviation == "Doctor" { input.contains("Dr.") } else { input_word(input, abbreviation) };
+    in_input && period_ok && expansions(abbreviation).contains(&reading.as_str())
 }
 
 /// Whether `ours` drops the reference's run `a[run]` as a footnote or citation mark: a back-link
@@ -820,20 +831,31 @@ fn footnote_dropped(input: &str, a: &[&str], run: std::ops::Range<usize>, ours: 
     let number =
         |t: &&str| (t.chars().all(|c| c.is_ascii_digit()) && t.len() <= 3) || made_of(t, NUMERALS) && has_cardinal(t);
     let mark = |t: &&str| t.chars().all(|c| marks.contains(&c) || matches!(c, '\u{FE0E}' | '\u{FE0F}'));
-    if theirs.iter().any(mark) && theirs.iter().all(|t| mark(t) || number(t)) {
-        return input.contains(marks);
+    // Marks, and the number of a back-link ("↩ 2"); each mark must be in the input.
+    let marks_only = theirs.iter().enumerate().all(|(k, t)| {
+        mark(t) && t.chars().all(|c| input.contains(c) || matches!(c, '\u{FE0E}' | '\u{FE0F}'))
+            || number(t) && k > 0 && theirs[k - 1].contains('↩')
+    });
+    if theirs.iter().any(mark) && marks_only {
+        return true;
     }
     if let ["[", inner @ .., "]"] = theirs {
         let list = |t: &&str| number(t) || matches!(*t, "," | "-" | "–" | "to" | "and");
         return input.contains('[') && !inner.is_empty() && inner.iter().all(list);
     }
-    // A marker glued to a word's punctuation: in the input, a letter, the punctuation and a digit.
-    let glued = input.chars().collect::<Vec<_>>().windows(3).any(|w| {
-        w[0].is_alphabetic() && ".,;!?".contains(w[1]) && w[2].is_ascii_digit()
-            || ".,;!?".contains(w[0]) && ")\"”'’".contains(w[1]) && w[2].is_ascii_digit()
+    // A marker glued to a word's punctuation: the input has that word, the punctuation and a digit
+    // ("find.6"), where the reference has the word, the punctuation and the number.
+    let (Some(punctuation), Some(word)) =
+        (run.start.checked_sub(1).map(|k| a[k]), run.start.checked_sub(2).map(|k| a[k]))
+    else {
+        return false;
+    };
+    let punctuation_ok = !punctuation.is_empty() && punctuation.chars().all(|c| ".,;!?)\"”'’".contains(c));
+    let lowercase_word = word.chars().next_back().is_some_and(char::is_lowercase);
+    let glued = input.match_indices(&format!("{word}{punctuation}")).any(|(k, m)| {
+        input[k + m.len()..].trim_start_matches([')', '"', '”', '\'', '’']).starts_with(|c: char| c.is_ascii_digit())
     });
-    let after_punctuation = run.start > 0 && a[run.start - 1].chars().all(|c| ".,;!?)\"”'’".contains(c));
-    glued && after_punctuation && theirs.len() == 1 && number(&theirs[0])
+    punctuation_ok && lowercase_word && glued && theirs.len() == 1 && number(&theirs[0])
 }
 
 /// A unit of time's abbreviation and its name, as a rate reads it ("s" "second").
@@ -861,12 +883,16 @@ fn rate_read(input: &str, a: &[&str], run: Span, ours: &[&str]) -> bool {
     let (our_before, our_after) = (&ours[..j], &ours[j + 1..]);
     let before_ok = match (before, our_before) {
         ([], []) => true,
-        ([x], [y]) => x == y || x.len() <= 8 && made_of(y, NUMERALS),
+        // A unit read in full ("GB" as "gigabytes"), not a number.
+        ([x], [y]) => x == y || x.len() <= 8 && made_of(y, NUMERALS) && !has_cardinal(y) && !has_cardinal(x),
         _ => false,
     };
     // After the slash, a unit of time ("a month", "per second"), or after money any word ("per
     // seat").
-    let money = input.contains(['$', '£', '€', '¥', '₹']);
+    // Money: the reference's word before the slash is a currency ("dollars slash seat").
+    let before_slash = (run.start + i).checked_sub(1).map(|k| a[k]);
+    let money = input.contains(['$', '£', '€', '¥', '₹'])
+        && before_slash.is_some_and(|w| made_of(w, NUMERALS) && !has_cardinal(w));
     // The word after the run when the run ends at the slash's reading.
     let next = a.get(run.end).copied();
     let (after, our_after) = match (after, our_after, next) {
@@ -1176,5 +1202,16 @@ mod tests {
         // A slash that isn't a rate's.
         err("he/she", "he slash she", "he per she");
         err("speed in km/h", "speed in km slash h", "speed in km per minute");
+        // The review's examples: a word that is also an abbreviation, or a mark or slash elsewhere
+        // in the input.
+        err("say no to 5 deals", "say no to five deals", "say number to five deals");
+        err("p < 0.05", "p less than zero point zero five", "page less than zero point zero five");
+        err("Jan said 5 things", "Jan said five things", "January said five things");
+        err(
+            "Fig.2 shows that, 12 people left",
+            "Fig.2 shows that, twelve people left",
+            "Fig.2 shows that, people left",
+        );
+        err("he/she paid $5", "he slash she paid five dollars", "he per she paid five dollars");
     }
 }

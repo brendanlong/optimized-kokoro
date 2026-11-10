@@ -12,7 +12,8 @@
 //! punctuation Kokoro reads are left.
 
 use crate::numbers::{
-    cardinal, enclosed_number, power, subscript_digit, superscript_digit, time_unit, unit_name, vulgar_fraction_words,
+    cardinal, enclosed_number, power, rate_word, subscript_digit, superscript_digit, time_unit, unit_name,
+    vulgar_fraction_words,
 };
 use crate::py::{is_alnum, is_space};
 use std::collections::{HashMap, HashSet};
@@ -368,7 +369,8 @@ fn rate(t: &[char], i: usize) -> Option<(usize, String, usize)> {
         return None;
     }
     let word: String = t[start..i].iter().collect();
-    let time = time_unit(&t[i + 1..end].iter().collect::<String>())?;
+    let written: String = t[i + 1..end].iter().collect();
+    let time = time_unit(&written).filter(|_| rate_word(&word, &written))?;
     if time_unit(&word).is_some() || matches!(word.to_ascii_lowercase().as_str(), "day" | "night" | "week" | "month") {
         return None;
     }

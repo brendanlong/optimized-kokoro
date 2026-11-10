@@ -118,6 +118,16 @@ fn footnote_mark(t: &[char], i: usize) -> Option<usize> {
     if k == 0 || !matches!(t[k - 1], '.' | ',' | ';' | '!' | '?') {
         return None;
     }
+    // After a sentence's end the next word starts a sentence ("find.6 None"), so "came back.10
+    // minutes later" (a missing space) and "beta.2 is out" keep their numbers.
+    let mut next = end;
+    while t.get(next).is_some_and(|&c| is_space(c)) {
+        next += 1;
+    }
+    let new_sentence = t.get(next).is_none_or(|c| c.is_uppercase() || matches!(c, '"' | '“' | '(' | '['));
+    if matches!(t[k - 1], '.' | '!' | '?') && !new_sentence {
+        return None;
+    }
     let mut start = k - 1;
     while start > 0 && matches!(t[start - 1], ')' | ']' | '"' | '”' | '\'' | '’') && k - 1 - start < 2 {
         start -= 1;
@@ -127,7 +137,7 @@ fn footnote_mark(t: &[char], i: usize) -> Option<usize> {
         start -= 1;
     }
     let word: String = t[start..word_end].iter().collect::<String>();
-    let glued_before = start > 0 && (t[start - 1].is_alphanumeric() || t[start - 1] == '.');
+    let glued_before = start > 0 && (t[start - 1].is_alphanumeric() || matches!(t[start - 1], '.' | '_'));
     let lowercase_end = word.chars().last().is_some_and(char::is_lowercase);
     (word.chars().count() >= 2 && lowercase_end && !glued_before && !NUMBERED.contains(&word.to_lowercase().as_str()))
         .then_some(end)
@@ -151,6 +161,9 @@ fn citation(t: &[char], i: usize) -> Option<usize> {
         if end == k || end - k > 3 {
             return None;
         }
+        if t[k] == '0' {
+            return None;
+        }
         longest = longest.max(end - k);
         count += 1;
         k = end;
@@ -161,7 +174,11 @@ fn citation(t: &[char], i: usize) -> Option<usize> {
             _ => return None,
         }
     }
-    let after_ok = t.get(k + 1).is_none_or(|&c| is_space(c) || ".,;:!?".contains(c));
+    // Before punctuation or the end; or between two sentences ("around. [4] Most").
+    let between_sentences = matches!(before, '.' | '!' | '?')
+        && t.get(k + 1).is_some_and(|&c| is_space(c))
+        && t.get(k + 2).is_some_and(|c| c.is_uppercase());
+    let after_ok = t.get(k + 1).is_none_or(|&c| ".,;:!?".contains(c)) || between_sentences;
     (after_ok && (count == 1 || longest <= 2)).then_some(k + 1)
 }
 
@@ -177,7 +194,13 @@ mod tests {
             ("duc de Saint-Simon.3", "duc de Saint-Simon."),
             ("machine learning accessible,13 for all", "machine learning accessible, for all"),
             ("he said “so.”4 Then", "he said “so.” Then"),
-            ("a paper from Google [2]. And [3, 4] and [5-7]. Also [12–14]", "a paper from Google. And and. Also"),
+            (
+                "a paper from Google [2]. And so [3, 4], then [5-7]. Also [12–14]",
+                "a paper from Google. And so, then. Also",
+            ),
+            // Mid-sentence, before a word, a bracket isn't taken for a citation ("press [1] to").
+            ("press [1] to go and in [0, 1].", "press [1] to go and in [0, 1]."),
+            ("floating around. [4] Most of them. [5] and", "floating around. Most of them. [5] and"),
             ("Dune 1.1.0?¶ and ¶ 12 and ¶3", "Dune 1.1.0? and ¶ 12 and ¶3"),
             ("end. § § § Next ♦♦♦ and. ♦ If you", "end. Next and. If you"),
         ] {

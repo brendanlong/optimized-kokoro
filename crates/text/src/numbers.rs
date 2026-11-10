@@ -442,6 +442,18 @@ pub(crate) fn time_unit(word: &str) -> Option<&'static str> {
     })
 }
 
+/// Whether `word` before a slash and the unit of time `time` (as written) makes a rate. "s", "h"
+/// and "min" are also a plural ("file/s"), a pronoun ("he/she") or "minimum" ("max/min"), so before
+/// them the word must be a unit ("GB/s", "km/h"), have a capital ("Mbit/s"), or count what is done
+/// per second ("tok/s", "req/s").
+pub(crate) fn rate_word(word: &str, time: &str) -> bool {
+    let ambiguous = matches!(time.to_ascii_lowercase().as_str(), "s" | "h" | "min");
+    !ambiguous
+        || unit_name(word).is_some()
+        || word.chars().any(|c| c.is_ascii_uppercase())
+        || matches!(word, "tok" | "tokens" | "req" | "requests" | "ops" | "frames" | "samples" | "steps" | "it")
+}
+
 /// A unit's plural name ("km" "kilometers"), for a unit written without a number.
 pub(crate) fn unit_name(key: &str) -> Option<&'static str> {
     UNITS.iter().find(|(k, _, _)| *k == key).map(|&(_, _, plural)| plural)
@@ -586,6 +598,22 @@ const AFTER_AMOUNT: &[&str] = &[
     "pay",
     "go",
     "get",
+    "says",
+    "say",
+    "upfront",
+    "abroad",
+    "overseas",
+    "overall",
+    "altogether",
+    "whenever",
+    "wherever",
+    "however",
+    "anyway",
+    "apiece",
+    "outright",
+    "instead",
+    "beforehand",
+    "afterwards",
 ];
 
 /// A number as written: integer digits (ASCII, commas removed), whether it had thousands
@@ -865,6 +893,9 @@ impl Scanner<'_> {
             (13..=31, 1..=12) => (b, a),
             _ => return None,
         };
+        if day > [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1] {
+            return None;
+        }
         let words = if y_end - b_end - 1 == 2 {
             let year = if year < 10 { format!("oh {}", ONES[year]) } else { under_100(year) };
             format!("{} {}, {year}", MONTHS[month - 1], ordinal_of(&under_100(day)))
@@ -1061,6 +1092,7 @@ impl Scanner<'_> {
         let capital = self.t[start].is_uppercase();
         let after_amount = AFTER_AMOUNT.contains(&word.as_str())
             || word.len() >= 4 && (word.ends_with("ed") || word.ends_with("ly"))
+            || word.len() >= 6 && word.ends_with("wide")
             || word.len() >= 5 && word.ends_with("ing");
         (article || !capital && !after_amount).then_some((end, false))
     }
@@ -1222,10 +1254,13 @@ impl Scanner<'_> {
         while word_end - word_start < 8 && self.is(word_end, |c| c.is_ascii_alphabetic()) {
             word_end += 1;
         }
+        let word: String = self.t[word_start..word_end].iter().collect();
+        let time: String =
+            self.t[(word_end + 1).min(self.t.len())..].iter().take_while(|c| c.is_ascii_alphabetic()).collect();
         if word_end > word_start
+            && rate_word(&word, &time)
             && let Some((rate, r_end)) = self.rate(word_end, false)
         {
-            let word: String = self.t[word_start..word_end].iter().collect();
             return Some((r_end, format!("{} {word} {rate}", body.words()), false));
         }
         if integer {
