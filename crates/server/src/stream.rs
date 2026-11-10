@@ -21,7 +21,7 @@
 use crate::audio::{Joins, final_clause_mark, keep_range, silence};
 use crate::load::{Admission, Shed};
 use crate::pack::{SOFT_MAX_PHONEMES, pack};
-use crate::pipeline::{Chunk, DEFAULT_MAX_TOKENS, Pipeline, PipelineError};
+use crate::pipeline::{Chunk, DEFAULT_MAX_TOKENS, Lang, Pipeline, PipelineError};
 use crate::request::Speech;
 use crate::stitch::{self, Stitcher};
 use crate::worker::{Connection, HeldAudio, SynthError, SynthRequest, Synthesized};
@@ -102,6 +102,20 @@ pub fn max_chunk_phonemes(render_ids: usize) -> usize {
     render_ids.min(DEFAULT_MAX_TOKENS)
 }
 
+/// The chunks of `text` the server renders: sentences of more than `max_phonemes` phonemes (the
+/// request's [`max_chunk_phonemes`]) cut at clauses, and everything packed to `soft` phonemes
+/// ([`pack`]; the server's is [`SOFT_MAX_PHONEMES`]). `cancelled` is the pipeline's.
+pub fn packed_chunks<'a>(
+    pipeline: &'a dyn Pipeline,
+    lang: Lang,
+    text: &'a str,
+    max_phonemes: usize,
+    soft: usize,
+    cancelled: &'a (dyn Fn() -> bool + Sync),
+) -> impl Iterator<Item = Result<Chunk, PipelineError>> + 'a {
+    pack(pipeline.chunks(lang, text, max_phonemes, soft, cancelled), soft, max_phonemes)
+}
+
 /// A chunk's units. `render_ids` is the most ids one worker request may have
 /// ([`stitch::max_render_ids`]): a chunk over [`max_chunk_phonemes`] is stitched. (Its ids are the
 /// phonemes the vocabulary has, so a chunk within it has at most `render_ids` ids.) Where the chunker cut the chunk's sentence, the first unit starts and the last ends at
@@ -178,11 +192,10 @@ fn produce_units(
 ) -> Option<Produced> {
     let render_ids = stitch::max_render_ids(max_chunk_samples, speech.speed);
     let mut ids = 0usize;
-    let max_phonemes = max_chunk_phonemes(render_ids);
     // Once nobody is listening, text processing stops at its next G2P call.
     let gone = || out.is_closed();
-    let chunks = pipeline.chunks(speech.lang, &speech.text, max_phonemes, SOFT_MAX_PHONEMES, &gone);
-    for chunk in pack(chunks, SOFT_MAX_PHONEMES, max_phonemes) {
+    let max_phonemes = max_chunk_phonemes(render_ids);
+    for chunk in packed_chunks(pipeline, speech.lang, &speech.text, max_phonemes, SOFT_MAX_PHONEMES, &gone) {
         let units = match chunk {
             Ok(chunk) => {
                 *unread += chunk.unread;

@@ -1,6 +1,6 @@
 //! The chunks the server renders for each line of stdin, for listening tests: American English,
-//! cut at clauses above LIMIT phonemes and packed to SOFT (`pack`), as `stream::produce_units`
-//! does. With SOFT 0, the chunks as Kokoro-FastAPI makes them (no packing, clause groups up to
+//! cut at clauses above LIMIT phonemes and packed to SOFT (`stream::packed_chunks`, which the
+//! server runs with `pack::SOFT_MAX_PHONEMES`). With SOFT 0, the chunks as Kokoro-FastAPI makes them (no packing, clause groups up to
 //! LIMIT).
 //!
 //! `cargo run --release -p kokoro-server --example chunks -- LIMIT SOFT < texts.txt`, where a line
@@ -9,8 +9,8 @@
 //! clause groups) packed into it, in order, `after` whether the sentence goes on after it.
 
 use kokoro_server::kokoro::KokoroPipelines;
-use kokoro_server::pack::pack;
 use kokoro_server::pipeline::{Chunk, Lang, Pipeline};
+use kokoro_server::stream;
 use std::io::{BufRead, Write};
 
 fn main() {
@@ -29,8 +29,10 @@ fn main() {
         let packed: Vec<Chunk> = if soft == 0 {
             units.clone()
         } else {
-            // Pauses go through the packing as in the server: nothing packs across them.
-            pack(all.into_iter().map(Ok), soft, limit).map(Result::unwrap).filter(speech).collect()
+            stream::packed_chunks(&pipelines, Lang::AmericanEnglish, &text, limit, soft, &|| false)
+                .map(Result::unwrap)
+                .filter(speech)
+                .collect()
         };
         let mut next = units.iter();
         let chunks: Vec<_> = packed

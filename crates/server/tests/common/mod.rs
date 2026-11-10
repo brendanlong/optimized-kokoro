@@ -6,10 +6,12 @@ use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming;
 use hyper::{Request, Response};
-use kokoro_server::pipeline::{Chunk, DEFAULT_MAX_TOKENS, Lang, Pipeline, PipelineError};
+use kokoro_server::pack::SOFT_MAX_PHONEMES;
+use kokoro_server::pipeline::{Chunk, Lang, Pipeline, PipelineError};
 use kokoro_server::protocol::worker_side::{self, FrontFrame, read_front};
-use kokoro_server::protocol::{FailCode, Hello, Priority};
-use kokoro_server::{Config, StubPipeline, Worker, http, serve};
+use kokoro_server::protocol::{FailCode, Hello, Priority, Speed};
+use kokoro_server::stitch::max_render_ids;
+use kokoro_server::{Config, StubPipeline, Worker, http, serve, stream};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -66,11 +68,11 @@ pub fn longs(words: &[&str]) -> String {
     words.iter().map(|w| long(w)).collect::<Vec<_>>().join(" ")
 }
 
-/// `pipeline`'s chunks of `text` as the server renders them at speed 1: packed (`pack`).
+/// `pipeline`'s chunks of `text` as the server renders them at speed 1 with [`hello`]'s chunk cap.
 pub fn packed_chunks(pipeline: &dyn Pipeline, lang: Lang, text: &str) -> Vec<Chunk> {
-    use kokoro_server::pack::{SOFT_MAX_PHONEMES, pack};
-    let chunks = pipeline.chunks(lang, text, DEFAULT_MAX_TOKENS, SOFT_MAX_PHONEMES, &|| false);
-    pack(chunks, SOFT_MAX_PHONEMES, DEFAULT_MAX_TOKENS).map(Result::unwrap).collect()
+    let render_ids = max_render_ids(hello().max_chunk_samples, Speed::NORMAL);
+    let limit = stream::max_chunk_phonemes(render_ids);
+    stream::packed_chunks(pipeline, lang, text, limit, SOFT_MAX_PHONEMES, &|| false).map(Result::unwrap).collect()
 }
 
 /// The audio the server should produce for `text` in one voice, using the stub pipeline.
