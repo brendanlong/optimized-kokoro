@@ -14,7 +14,8 @@ use crate::protocol::{MAX_PHONEMES, SAMPLES_PER_FRAME, Speed};
 const MODEL_LIMIT: usize = MAX_PHONEMES as usize;
 const CROSSFADE: usize = 480;
 const WORDS_AHEAD: usize = 4;
-const MAX_PIECE: usize = MODEL_LIMIT - 60;
+/// Kokoro-FastAPI's longest piece is its chunk limit.
+const MAX_PIECE: usize = crate::pipeline::DEFAULT_MAX_TOKENS;
 /// The frames to allow for a request of n ids at speed 1 (`frames × speed` is about constant):
 /// `FRAMES_PER_ID_TENTHS / 10 × n + FRAMES_OVERHEAD`. The overhead is the boundary ids and the
 /// pauses at a request's edges, which make short requests longer per id. Measured with

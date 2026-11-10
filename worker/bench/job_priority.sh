@@ -20,7 +20,8 @@ nvidia-smi --query-gpu=name,driver_version,memory.used,utilization.gpu --format=
 echo "host load: $(cat /proc/loadavg)"
 "$PY" -m pytest -q tests/test_scheduler.py tests/test_protocol.py 2>&1 | tail -1
 
-ESPEAK_DATA_LINK=${ESPEAK_DATA_LINK:-$(cat bench/bin/espeak-data-link)}
+ESPEAK_DATA_LINK=${ESPEAK_DATA_LINK:-$(cat bench/bin/espeak-data-link 2> /dev/null)}
+: "${ESPEAK_DATA_LINK:?the espeak-ng-data path the binaries were built with: set ESPEAK_DATA_LINK or write it to bench/bin/espeak-data-link}"
 mkdir -p "$(dirname "$ESPEAK_DATA_LINK")"
 ln -sfn "$(dirname "$KOKORO_SERVER_BIN")/espeak-ng-data" "$ESPEAK_DATA_LINK"
 

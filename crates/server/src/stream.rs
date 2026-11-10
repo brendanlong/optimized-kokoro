@@ -118,8 +118,9 @@ pub fn packed_chunks<'a>(
 
 /// A chunk's units. `render_ids` is the most ids one worker request may have
 /// ([`stitch::max_render_ids`]): a chunk over [`max_chunk_phonemes`] is stitched. (Its ids are the
-/// phonemes the vocabulary has, so a chunk within it has at most `render_ids` ids.) Where the chunker cut the chunk's sentence, the first unit starts and the last ends at
-/// the cut ([`Joins`]).
+/// phonemes the vocabulary has, so a chunk within it has at most `render_ids` ids.) Where the
+/// chunker cut the chunk's sentence, the first unit starts and the last ends at the cut
+/// ([`Joins`]).
 fn units(chunk: Chunk, speech: &Speech, render_ids: usize) -> Vec<Unit> {
     if let Some(pause) = chunk.pause {
         return if pause > 0.0 { vec![Unit::Silence(silence(pause))] } else { Vec::new() };
@@ -161,8 +162,9 @@ fn units(chunk: Chunk, speech: &Speech, render_ids: usize) -> Vec<Unit> {
         .collect()
 }
 
-/// Phonemizes the request and sends its units (packed, [`pack`]), then how it ended. Runs of text with no G2P yet
-/// are logged once per request, as a count, since the text itself mustn't reach the logs.
+/// Phonemizes the request and sends its units (packed, [`pack`]), then how it ended. Runs of text
+/// with no G2P yet are logged once per request, as a count, since the text itself mustn't reach
+/// the logs.
 /// `max_chunk_samples` is the worker's chunk cap.
 fn produce(
     pipeline: &dyn Pipeline,
@@ -451,6 +453,28 @@ mod tests {
         assert_eq!(max_chunk_phonemes(450), 450);
         assert_eq!(max_chunk_phonemes(270), 270);
         assert_eq!(max_chunk_phonemes(0), 0);
+    }
+
+    /// Stitching is decided by the phonemes, as the chunker cuts: a chunk over the limit is
+    /// stitched even when some of its phonemes have no id and its ids would fit one request.
+    #[test]
+    fn chunks_over_the_phoneme_limit_are_stitched() {
+        let speech = Speech { lang: Lang::AmericanEnglish, text: String::new(), voice: 0, speed: Speed::NORMAL };
+        let stitched = |phonemes: usize| {
+            let chunk = Chunk {
+                text: "words.".into(),
+                phonemes: "x".repeat(phonemes),
+                ids: vec![43; 100],
+                pause: None,
+                unread: 0,
+                split: Split::default(),
+            };
+            units(chunk, &speech, 120)
+                .iter()
+                .all(|unit| matches!(unit, Unit::Speech(_, finish) if finish.stitch.is_some()))
+        };
+        assert!(!stitched(120));
+        assert!(stitched(121));
     }
 
     /// A clause too long by itself is stitched; only its first piece starts and its last piece

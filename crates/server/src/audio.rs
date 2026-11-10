@@ -183,7 +183,6 @@ mod tests {
         let trimmed = keep_range(&pcm, "One,", 1.0, Cuts::default());
         // The 50 ms before the speech reaches the 24 samples always cut, and so does the padding after.
         assert_eq!(trimmed, 24..pcm.len() - 24);
-        assert_eq!(keep_range(&pcm, "One,", 1.0, Cuts::default()), trimmed);
         let both = Cuts { start_at_speech: true, end: Some(3000) };
         assert_eq!(keep_range(&pcm, "One,", 1.0, both), 1200..pcm.len() - 3000);
         let end = Cuts { start_at_speech: false, end: Some(3000) };

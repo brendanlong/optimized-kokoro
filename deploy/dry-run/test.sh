@@ -306,6 +306,16 @@ t_update() {
         expect "daemon.json changed" cmp -s "$daemon_json" "$W/daemon.json.before" &&
         expect "reloaded Docker" not grep -q "reload docker" "$FAKE_LOG"
 }
+# A kept release from before per-release Compose projects is refused before anything is built.
+t_update_legacy_release() {
+    installed || return 1
+    sed -i '/^COMPOSE_PROJECT_NAME=/d' "$D/releases/$before_cur/.env"
+    run update.sh
+    expect_rc 1 && expect_out "has no COMPOSE_PROJECT_NAME" &&
+        expect "built anyway" [ "$(releases)" = "$before_cur " ] || return 1
+    run keys.sh list
+    expect_rc 1 && expect_out "has no COMPOSE_PROJECT_NAME"
+}
 t_update_twice() {
     installed || return 1
     run update.sh

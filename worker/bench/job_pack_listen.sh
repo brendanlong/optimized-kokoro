@@ -17,7 +17,8 @@ if [ ! -f "$MODELS/voices.safetensors" ]; then
 fi
 PY=$PWD/.venv/bin/python
 PLAN=bench/pack_listen/plan.json
-ESPEAK_DATA_LINK=${ESPEAK_DATA_LINK:-$(cat bench/bin/espeak-data-link)}
+ESPEAK_DATA_LINK=${ESPEAK_DATA_LINK:-$(cat bench/bin/espeak-data-link 2> /dev/null)}
+: "${ESPEAK_DATA_LINK:?the espeak-ng-data path the binaries were built with: set ESPEAK_DATA_LINK or write it to bench/bin/espeak-data-link}"
 # A link left by an earlier job points into its (deleted) workdir; a real directory is the data.
 if [ -L "$ESPEAK_DATA_LINK" ] || [ ! -e "$ESPEAK_DATA_LINK" ]; then
     mkdir -p "$(dirname "$ESPEAK_DATA_LINK")"

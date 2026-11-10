@@ -242,6 +242,17 @@ project_of() {
     echo "$p"
 }
 
+# Refuses to go on while a kept release is from before per-release Compose projects (2026-11-04),
+# which this deploy/ no longer knows how to stop or remove.
+check_releases() {
+    local env
+    for env in "$root"/releases/*/.env; do
+        [ -f "$env" ] || continue
+        grep -q '^COMPOSE_PROJECT_NAME=' "$env" ||
+            die "$env has no COMPOSE_PROJECT_NAME: that release is from before per-release Compose projects. Run update.sh from a checkout of commit b2b7bca (or older) until no kept release is, then this one."
+    done
+}
+
 # docker compose for release $1. The project is in its .env too, so a plain
 # docker compose -f .../compose.yaml finds it as well; -p only makes it explicit.
 compose_rel() {

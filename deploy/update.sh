@@ -23,6 +23,7 @@ take_lock
 check_checkout
 [ -L "$root/current" ] || die "not installed; run deploy/install.sh first"
 [ -f "$root/secrets/server.toml" ] && [ -f "$root/secrets/demo.key" ] || die "$root/secrets is incomplete"
+check_releases
 prev=$(current_release)
 check_driver
 ensure_dirs

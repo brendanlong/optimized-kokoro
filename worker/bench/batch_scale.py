@@ -54,16 +54,16 @@ def measure(synth, timed, requests, reps):
         timed.text_s = 0.0
         torch.cuda.synchronize()
         t = time.perf_counter()
-        groups, audio, errors = 0, 0, collections.Counter()
+        rows, audio, errors = 0, 0, collections.Counter()
         for results in synth.run(requests):
-            groups += 1
+            rows += 1
             for r in results:
                 if r.pcm is None:
                     errors[r.error] += 1
                 else:
                     audio += len(r.pcm) // 2
         torch.cuda.synchronize()
-        return time.perf_counter() - t, timed.text_s, groups, audio / SAMPLE_RATE, errors
+        return time.perf_counter() - t, timed.text_s, rows, audio / SAMPLE_RATE, errors
 
     torch.cuda.empty_cache()
     torch.cuda.reset_peak_memory_stats()
@@ -80,7 +80,7 @@ def measure(synth, timed, requests, reps):
     return {
         "wall_ms": round(1000 * wall, 1),
         "text_ms": round(1000 * text, 1),
-        "groups": runs[0][2],
+        "rows": runs[0][2],
         "audio_s": round(audio, 2),
         "x_realtime": round(audio / wall, 1),
         "peak_gib": round(torch.cuda.max_memory_allocated() / 2**30, 2),

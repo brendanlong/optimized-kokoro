@@ -1,7 +1,7 @@
 //! The chunks the server renders for each line of stdin, for listening tests: American English,
 //! cut at clauses above LIMIT phonemes and packed to SOFT (`stream::packed_chunks`, which the
-//! server runs with `pack::SOFT_MAX_PHONEMES`). With SOFT 0, the chunks as Kokoro-FastAPI makes them (no packing, clause groups up to
-//! LIMIT).
+//! server runs with `pack::SOFT_MAX_PHONEMES`). With SOFT 0, the chunks as Kokoro-FastAPI makes
+//! them (no packing, clause groups up to LIMIT).
 //!
 //! `cargo run --release -p kokoro-server --example chunks -- LIMIT SOFT < texts.txt`, where a line
 //! is a JSON string. Each output line is `{"chunks": [{"text", "ids", "split": [before, after],
