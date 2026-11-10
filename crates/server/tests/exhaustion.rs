@@ -363,7 +363,7 @@ async fn an_overdue_slot_is_cancelled_and_only_its_request_fails() {
 }
 
 /// A worker that answers other slots but not a cancelled one is disconnected once the progress
-/// timeout has passed since the Cancel.
+/// timeout has passed since the slot timeout.
 #[tokio::test]
 async fn a_cancel_the_worker_never_answers_resets_the_connection() {
     let server = start(
@@ -394,7 +394,8 @@ async fn a_cancel_the_worker_never_answers_resets_the_connection() {
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     };
-    assert!((Duration::from_millis(600)..Duration::from_secs(2)).contains(&closed), "closed after {closed:?}");
+    // Checked every 75 ms: cancelled 300–375 ms after the Synthesize, closed 900–975 ms after.
+    assert!((Duration::from_millis(500)..Duration::from_secs(2)).contains(&closed), "closed after {closed:?}");
 }
 
 /// Finding 7: the request head limit is what the docs say, however the bytes arrive.

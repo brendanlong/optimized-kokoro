@@ -154,8 +154,8 @@ pub struct Config {
     pub worker_progress_timeout_ms: u64,
     /// Longest one slot may stay outstanding after its Synthesize, queueing included, before it's
     /// cancelled and its request fails (a low-priority chunk can starve behind more urgent work,
-    /// and a worker answering other slots mustn't hold one forever). If the worker then doesn't
-    /// answer the slot within the progress timeout, the connection is reset. Legitimate waits at
+    /// and a worker answering other slots mustn't hold one forever). If the slot is still
+    /// outstanding a progress timeout later, the connection is reset. Legitimate waits at
     /// one priority are bounded by the slots ahead of it times the longest render (a 60 s chunk
     /// renders in a few seconds), so the default, 5 minutes, leaves a wide margin.
     pub worker_slot_timeout_ms: u64,

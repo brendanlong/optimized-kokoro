@@ -21,9 +21,8 @@
 //!
 //! A worker that doesn't say hello in time, or makes no progress while it has work, is
 //! disconnected. A slot outstanding for too long (a low-priority chunk starved by more urgent
-//! work, or one the worker lost) is cancelled and its request fails; only if the worker then
-//! doesn't answer that slot within the progress timeout is it disconnected. The same holds for
-//! every Cancel.
+//! work, or one the worker lost) is cancelled and its request fails; only if the slot is still
+//! outstanding a progress timeout after that is the worker disconnected.
 
 use crate::load::Work;
 use crate::protocol::{
@@ -118,36 +117,13 @@ pub struct SynthRequest {
 
 type Reply = oneshot::Sender<Result<Synthesized, SynthError>>;
 
-/// Who a busy slot's terminal reply is for.
-enum Waiter {
-    Reply(Reply),
-    /// Nobody: the slot was cancelled at this time, and the worker still owes its Result or Failed.
-    Cancelled(Instant),
-}
-
-impl Waiter {
-    fn reply(self) -> Option<Reply> {
-        match self {
-            Waiter::Reply(reply) => Some(reply),
-            Waiter::Cancelled(_) => None,
-        }
-    }
-
-    /// Cancels the slot now, handing back whoever was waiting, if anyone was.
-    fn cancel(&mut self) -> Option<Reply> {
-        match self {
-            Waiter::Reply(_) => std::mem::replace(self, Waiter::Cancelled(Instant::now())).reply(),
-            Waiter::Cancelled(_) => None,
-        }
-    }
-}
-
 /// A busy slot.
 struct Pending {
     /// Which submission holds the slot, so a late cancel from an earlier holder can't touch it.
     ticket: u64,
     expected: Expected,
-    waiter: Waiter,
+    /// `None` once cancelled: the worker still owes a Result or Failed for the slot.
+    reply: Option<Reply>,
     /// When the Synthesize was queued.
     submitted: Instant,
     /// The chunk in its request's estimate.
@@ -190,7 +166,7 @@ pub struct Settings {
     /// the cap is what bounds the audio the server holds.
     pub max_chunk_samples: u32,
     /// Longest one slot may stay outstanding after its Synthesize, queueing included, before it's
-    /// cancelled. A cancelled slot must be answered within `progress_timeout`.
+    /// cancelled; `progress_timeout` after that, the connection is reset.
     pub slot_timeout: Duration,
 }
 
@@ -311,7 +287,7 @@ impl Connection {
             max_chunk_samples: self.hello.max_chunk_samples,
         };
         state.slots[usize::from(slot)] =
-            Some(Pending { ticket, expected, waiter: Waiter::Reply(tx), submitted: Instant::now(), work });
+            Some(Pending { ticket, expected, reply: Some(tx), submitted: Instant::now(), work });
         drop(state);
         Ok(Ticket { slot, ticket, connection: self.clone(), reply: rx, finished: false })
     }
@@ -323,7 +299,7 @@ impl Connection {
         }
         if let Some(pending) = state.pending(slot)
             && pending.ticket == ticket
-            && pending.waiter.cancel().is_some()
+            && pending.reply.take().is_some()
             && self.outgoing.try_send(encode_cancel(slot)).is_err()
         {
             drop(state);
@@ -357,14 +333,14 @@ impl Connection {
                 let now = Instant::now();
                 pending.work.rendered(now.saturating_duration_since(state.busy_since));
                 state.busy_since = now;
-                if let Some(reply) = pending.waiter.reply() {
+                if let Some(reply) = pending.reply {
                     let held = self.gauge.hold(2 * pcm.len());
                     let _ = reply.send(Ok(Synthesized { pcm, durations, held }));
                 }
                 Ok(())
             }
             WorkerFrame::Failed { slot, code } => {
-                let cancelled = state.pending(slot).is_some_and(|p| matches!(p.waiter, Waiter::Cancelled(_)));
+                let cancelled = state.pending(slot).is_some_and(|p| p.reply.is_none());
                 if code == FailCode::Cancelled && !cancelled {
                     return Err(format!("slot {slot} reported cancelled, but it wasn't"));
                 }
@@ -373,7 +349,7 @@ impl Connection {
                 if code != FailCode::Cancelled {
                     state.busy_since = Instant::now();
                 }
-                if let Some(reply) = self.finish(&mut state, slot)?.waiter.reply() {
+                if let Some(reply) = self.finish(&mut state, slot)?.reply {
                     let error = match code {
                         FailCode::TooLong => SynthError::Unrenderable,
                         FailCode::Cancelled | FailCode::Internal => SynthError::WorkerFailed,
@@ -387,7 +363,8 @@ impl Connection {
 
     /// Enforces the deadlines: a slot outstanding for `slot_timeout` is cancelled and its request
     /// fails. Says why the worker should be dropped, if it should: it has had work and sent no
-    /// whole frame for `progress_timeout`, or hasn't answered a cancelled slot within it.
+    /// whole frame for `progress_timeout`, or a slot is still outstanding `progress_timeout` after
+    /// that (cancelled at the timeout, or by its client before).
     fn enforce_deadlines(&self, progress_timeout: Duration, slot_timeout: Duration) -> Option<String> {
         let mut state = self.state.lock().unwrap();
         if state.busy() > 0 && state.last_progress.elapsed() >= progress_timeout {
@@ -395,20 +372,18 @@ impl Connection {
         }
         for (slot, pending) in state.slots.iter_mut().enumerate() {
             let Some(pending) = pending else { continue };
-            match &pending.waiter {
-                Waiter::Cancelled(at) if at.elapsed() >= progress_timeout => {
-                    return Some(format!("slot {slot} not answered {progress_timeout:?} after its Cancel"));
+            let age = pending.submitted.elapsed();
+            if age >= slot_timeout + progress_timeout {
+                return Some(format!("slot {slot} outstanding for {age:?}, though cancelled"));
+            }
+            if age >= slot_timeout
+                && let Some(reply) = pending.reply.take()
+            {
+                crate::warn!("cancelling slot {slot}, outstanding for {slot_timeout:?}");
+                let _ = reply.send(Err(SynthError::TimedOut));
+                if self.outgoing.try_send(encode_cancel(slot as u16)).is_err() {
+                    return Some("the outgoing queue is full".into());
                 }
-                Waiter::Reply(_) if pending.submitted.elapsed() >= slot_timeout => {
-                    crate::warn!("cancelling slot {slot}, outstanding for {slot_timeout:?}");
-                    if let Some(reply) = pending.waiter.cancel() {
-                        let _ = reply.send(Err(SynthError::TimedOut));
-                    }
-                    if self.outgoing.try_send(encode_cancel(slot as u16)).is_err() {
-                        return Some("the outgoing queue is full".into());
-                    }
-                }
-                _ => {}
             }
         }
         None
@@ -420,7 +395,7 @@ impl Connection {
         state.open = false;
         self.free_slots.close();
         for pending in state.slots.iter_mut().filter_map(Option::take) {
-            if let Some(reply) = pending.waiter.reply() {
+            if let Some(reply) = pending.reply {
                 let _ = reply.send(Err(SynthError::ConnectionLost));
             }
         }

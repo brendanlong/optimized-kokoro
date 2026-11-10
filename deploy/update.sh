@@ -83,8 +83,9 @@ echo "== remove $prev's worker"
 compose_rel "$prev" down --volumes --remove-orphans || echo "couldn't take $prev down; the next update removes what's left" >&2
 gpu_watch_stop
 prune_releases "$rel" "$prev"
-# Drops a runtime that only the pruned releases used.
-ensure_runtimes
+# Drops a runtime that only the pruned releases used. The update has succeeded by now, so a failure
+# here is only a warning; the next update tries again.
+(ensure_runtimes) || echo "warning: couldn't update the runtimes in $daemon_json; the next update tries again" >&2
 echo "up: $rel (previous: $prev, kept for going back)"
 echo "downtime: $(elapsed "$swap_at" "$healthy_at") s from stopping $prev's server to $rel's answering $(health_url)"
 [ -z "$tunnel_at" ] || echo "the tunnel was down for $(elapsed "$swap_at" "$tunnel_at") s"
