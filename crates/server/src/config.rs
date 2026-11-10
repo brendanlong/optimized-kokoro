@@ -29,7 +29,7 @@ pub fn soft_open_file_limit(limits: &str) -> Option<u64> {
 }
 
 /// An API key, how many speech requests it may have in progress at once, and the highest
-/// priority its requests may ask for.
+/// priority its requests may run at.
 ///
 /// In the TOML file, either a string or a table:
 /// `api_keys = ["k1", { key = "k2", max_streams = 4, max_priority = 100 }]`.
@@ -110,7 +110,7 @@ pub struct Config {
     /// mark requests as more or less urgent than one that doesn't say.
     pub default_priority: u8,
     /// The highest `priority` one API key's requests may ask for, unless the key sets its own
-    /// `max_priority`; a request above it is refused with 400. The default, 255, lets our own
+    /// `max_priority`; a request above it runs at it. The default, 255, lets our own
     /// clients use every level; lower it per key to keep one client below another.
     pub max_priority_per_key: u8,
     /// Shed load when the estimated time to a new request's first audio is over this many

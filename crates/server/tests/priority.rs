@@ -46,12 +46,19 @@ fn speak_task(server: &Server, body: Value) -> JoinHandle<Response<Incoming>> {
     tokio::spawn(speak(server.addr, body))
 }
 
-async fn assert_shed(response: Response<Incoming>) {
+fn priority_used(response: &Response<Incoming>) -> u8 {
+    response.headers()["x-priority"].to_str().unwrap().parse().unwrap()
+}
+
+/// Refused for load, at priority `level`.
+async fn assert_shed(response: Response<Incoming>, level: u8) {
     let (status, retry_after) = (response.status(), response.headers().get("retry-after").cloned());
+    let used = priority_used(&response);
     let body = json_body(response).await;
     assert_eq!(status, 503, "{body}");
     assert_eq!(body["detail"]["error"], "overloaded", "{body}");
     assert_eq!(retry_after.unwrap(), "1");
+    assert_eq!(used, level, "the level it was shed at");
 }
 
 /// The next `n` Synthesize frames as `(slot, priority, ids)`, acknowledging any Cancel between them.
@@ -143,14 +150,14 @@ async fn new_low_priority_requests_over_budget_are_shed_fast() {
     let started = Instant::now();
     let refused = speak(server.addr, at(10, &typical_sentence('d'))).await;
     assert!(started.elapsed() < Duration::from_millis(100), "{:?}", started.elapsed());
-    assert_shed(refused).await;
+    assert_shed(refused, 10).await;
     assert_eq!(worker.quiet(Duration::from_millis(100)).await, None, "the refused request reached the worker");
 
     // A high one is admitted (only its own chunk is ahead of it), and pushes the newest low one
     // out: its queued chunk is cancelled.
     let high = speak_task(&server, at(200, &typical_sentence('z')));
     let newest = lows.pop().unwrap();
-    assert_shed(newest.await.unwrap()).await;
+    assert_shed(newest.await.unwrap(), 10).await;
     let mut cancelled = None;
     let mut high_chunk = None;
     while cancelled.is_none() || high_chunk.is_none() {
@@ -212,7 +219,7 @@ async fn a_stream_that_has_started_is_never_cut() {
     let queued = speak_task(&server, at(10, &typical_sentence('q')));
     worker.synthesize().await;
     let highs: Vec<_> = ['x', 'y', 'z'].map(|l| speak_task(&server, at(200, &typical_sentence(l)))).into();
-    assert_shed(queued.await.unwrap()).await;
+    assert_shed(queued.await.unwrap(), 10).await;
 
     // Everything else is served, the started stream in full.
     for (slot, _, _, _, ids) in chunks {
@@ -242,9 +249,9 @@ async fn high_priority_is_shed_only_when_high_priority_alone_is_over_budget() {
     let chunks = synthesizes(&mut worker, 2).await;
     assert!(chunks.iter().all(|(_, p, _)| p.level == 255));
     // The low request went first, then the high ones filled the budget at their own level.
-    assert_shed(low.await.unwrap()).await;
+    assert_shed(low.await.unwrap(), 0).await;
     let started = Instant::now();
-    assert_shed(speak(server.addr, at(255, &typical_sentence('d'))).await).await;
+    assert_shed(speak(server.addr, at(255, &typical_sentence('d'))).await, 255).await;
     assert!(started.elapsed() < Duration::from_millis(100));
     for (slot, _, ids) in chunks {
         worker.send(respond(slot, &ids));
@@ -256,39 +263,39 @@ async fn high_priority_is_shed_only_when_high_priority_alone_is_over_budget() {
 }
 
 #[tokio::test]
-async fn each_key_has_a_maximum_priority() {
+async fn a_priority_over_the_keys_maximum_runs_at_the_maximum() {
     let (server, mut worker) = with_scripted(|c| {
         c.api_keys = vec![ApiKey { key: KEY.into(), max_streams: None, max_priority: Some(50) }, "other-key".into()];
     })
     .await;
-    for (body, error) in [
-        (at(51, "Hi."), "priority 51 is above this API key's maximum, 50"),
-        (at(256, "Hi."), "priority must be an integer from 0 to 255"),
-        (at(-1, "Hi."), "priority must be an integer from 0 to 255"),
-        (at(1.5, "Hi."), "priority must be an integer from 0 to 255"),
-        (at("high", "Hi."), "priority must be an integer from 0 to 255"),
-    ] {
+    for body in [at(256, "Hi."), at(-1, "Hi."), at(1.5, "Hi."), at("high", "Hi.")] {
         let response = speak(server.addr, body.clone()).await;
         assert_eq!(response.status(), 400, "{body}");
         let message = json_body(response).await["detail"]["message"].as_str().unwrap().to_owned();
-        assert!(message.contains(error), "{message}");
+        assert!(message.contains("priority must be an integer from 0 to 255"), "{message}");
     }
-    let cases = [(KEY, Some(50)), (KEY, Some(0)), (KEY, None), ("other-key", Some(255)), ("other-key", None)];
-    for (key, priority) in cases {
+    // (key, priority asked for, priority used)
+    let cases = [
+        (KEY, Some(240), 50),
+        (KEY, Some(51), 50),
+        (KEY, Some(50), 50),
+        (KEY, Some(0), 0),
+        (KEY, None, 50),
+        ("other-key", Some(255), 255),
+        ("other-key", None, 128),
+    ];
+    for (key, priority, expected) in cases {
         let body = match priority {
             Some(p) => at(p, "Hi."),
             None => pcm("Hi."),
         };
         let client = tokio::spawn(request(server.addr, speech_request(Some(key), body)));
         let (slot, got, _, _, ids) = worker.synthesize().await;
-        let expected = match (key, priority) {
-            (_, Some(p)) => p,
-            (KEY, None) => 50,
-            _ => 128,
-        };
         assert_eq!(got, Priority { level: expected, waiting: true }, "{key} {priority:?}");
         worker.send(respond(slot, &ids));
-        assert_eq!(client.await.unwrap().status(), 200);
+        let response = client.await.unwrap();
+        assert_eq!(response.status(), 200);
+        assert_eq!(priority_used(&response), expected, "{key} {priority:?}");
     }
 }
 
@@ -302,9 +309,9 @@ async fn at_the_request_limit_a_more_urgent_request_displaces_a_queued_one() {
     let low = speak_task(&server, at(10, "Low."));
     worker.synthesize().await;
     // Equal priority doesn't displace.
-    assert_shed(speak(server.addr, at(10, "Same.")).await).await;
+    assert_shed(speak(server.addr, at(10, "Same.")).await, 10).await;
     let high = speak_task(&server, at(20, "High. [pause:0.1s] More."));
-    assert_shed(low.await.unwrap()).await;
+    assert_shed(low.await.unwrap(), 10).await;
     let mut slot_ids = None;
     while slot_ids.is_none() {
         match worker.next().await {
@@ -323,7 +330,7 @@ async fn at_the_request_limit_a_more_urgent_request_displaces_a_queued_one() {
     // A started stream holds its permit: an even more urgent request is refused, not let in.
     let mut body = high.into_body();
     read_at_least(&mut body, 2).await;
-    assert_shed(speak(server.addr, at(255, "Top.")).await).await;
+    assert_shed(speak(server.addr, at(255, "Top.")).await, 255).await;
     drop(body);
 }
 
@@ -339,7 +346,7 @@ async fn at_a_keys_stream_limit_only_that_keys_queued_requests_are_displaced() {
     let first = synthesizes(&mut worker, 2).await;
     let high = speak_task(&server, at(20, "High."));
     // The key's own queued request is shed for it; the other key's, less urgent, is not.
-    assert_shed(low.await.unwrap()).await;
+    assert_shed(low.await.unwrap(), 10).await;
     let chunks = synthesizes(&mut worker, 1).await;
     assert_eq!(chunks[0].1, Priority { level: 20, waiting: true });
     for (slot, _, ids) in chunks {
@@ -368,6 +375,6 @@ async fn the_estimate_learns_the_workers_speed() {
     }
     let first = speak_task(&server, at(10, &typical_sentence('g')));
     tokio::time::sleep(Duration::from_millis(50)).await;
-    assert_shed(speak(server.addr, at(10, &typical_sentence('h'))).await).await;
+    assert_shed(speak(server.addr, at(10, &typical_sentence('h'))).await, 10).await;
     assert_eq!(first.await.unwrap().status(), 200);
 }
