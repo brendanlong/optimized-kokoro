@@ -1,6 +1,6 @@
 //! [`Pipeline`] backed by `kokoro-pipeline`: one loaded pipeline per supported language.
 
-use crate::pipeline::{Chunk, Lang, Pipeline, PipelineError};
+use crate::pipeline::{Chunk, DEFAULT_MAX_TOKENS, Lang, Pipeline, PipelineError};
 use kokoro_pipeline::Error;
 use kokoro_text::Options;
 
@@ -11,9 +11,15 @@ pub struct KokoroPipelines {
 }
 
 impl KokoroPipelines {
+    /// Loads every pipeline, then reads one English sentence, so the statics built on first use
+    /// (the normalizer's patterns, about 20 ms) are built now rather than in the first request.
     pub fn load() -> Result<Self, Error> {
         let pipelines = Lang::ALL.into_iter().map(kokoro_pipeline::Pipeline::new).collect::<Result<_, _>>()?;
-        Ok(Self { pipelines, options: Options::default() })
+        let pipelines = Self { pipelines, options: Options::default() };
+        pipelines
+            .chunks(Lang::AmericanEnglish, "Warm up at 3:30.", DEFAULT_MAX_TOKENS, DEFAULT_MAX_TOKENS, &|| false)
+            .for_each(drop);
+        Ok(pipelines)
     }
 }
 
@@ -47,7 +53,6 @@ impl Pipeline for KokoroPipelines {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pipeline::DEFAULT_MAX_TOKENS;
 
     #[test]
     fn reads_english_and_names_what_it_cant_read() {
