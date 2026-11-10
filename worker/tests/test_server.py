@@ -235,6 +235,20 @@ def test_stall_mid_frame_closes():
     assert not thread.is_alive()
 
 
+def test_a_front_that_stops_reading_is_closed_with_replies_still_queued():
+    synth = FakeSynth()
+    a, b = socket.socketpair()
+    conn = Connection(a, synth, max_batch=4, frame_timeout=0.5)
+    thread = threading.Thread(target=conn.serve, daemon=True)
+    thread.start()
+    b.settimeout(10)
+    b.recv(65536)  # Hello
+    for slot in range(SLOTS):  # 600 KB of audio each, far more than the socket buffers
+        b.sendall(P.synthesize(slot, [1] * 500, 0))
+    thread.join(5)
+    assert not thread.is_alive()
+
+
 def test_idle_front_is_not_a_stall():
     synth = FakeSynth()
     a, b = socket.socketpair()
