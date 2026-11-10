@@ -72,20 +72,25 @@ pub fn utf8_in(b: &[u8], i: isize) -> (i32, isize) {
     utf8_in2(b, i, false)
 }
 
-pub fn utf8_in2(b: &[u8], mut i: isize, backwards: bool) -> (i32, isize) {
+pub fn utf8_in2(b: &[u8], i: isize, backwards: bool) -> (i32, isize) {
+    utf8_in2_with(|k| at(b, k), b.len(), i, backwards)
+}
+
+/// `utf8_in2` over the bytes `at` returns for a buffer of `len` bytes.
+pub fn utf8_in2_with(mut at: impl FnMut(isize) -> u8, len: usize, mut i: isize, backwards: bool) -> (i32, isize) {
     const MASK: [i32; 4] = [0xff, 0x1f, 0x0f, 0x07];
-    while at(b, i) & 0xc0 == 0x80 {
+    while at(i) & 0xc0 == 0x80 {
         if backwards {
             i -= 1
         } else {
             i += 1
         }
-        if i < -1 || i > b.len() as isize {
+        if i < -1 || i > len as isize {
             break;
         }
     }
     let mut n_bytes = 0usize;
-    let mut c1 = sat(b, i);
+    let mut c1 = at(i) as i8 as i32;
     i += 1;
     if c1 & 0x80 != 0 {
         if c1 & 0xe0 == 0xc0 {
@@ -98,10 +103,11 @@ pub fn utf8_in2(b: &[u8], mut i: isize, backwards: bool) -> (i32, isize) {
         c1 &= MASK[n_bytes];
         let mut ix = 0;
         while ix < n_bytes {
-            if at(b, i) == 0 {
+            let c = at(i);
+            if c == 0 {
                 break;
             }
-            c1 = (c1 << 6) + (at(b, i) as i32 & 0x3f);
+            c1 = (c1 << 6) + (c as i32 & 0x3f);
             i += 1;
             ix += 1;
         }

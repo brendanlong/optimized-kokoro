@@ -99,6 +99,8 @@ pub struct Espeak {
     // dictionary.c
     pub(crate) dictionary_skipwords: i32,
     pub(crate) word_replacement: [u8; N_WORD_BYTES],
+    /// `translate_rules`' record of its steps, kept to reuse its allocation.
+    pub(crate) rule_steps: Vec<crate::dictionary::RuleStep>,
 
     // numbers.c
     pub(crate) n_digit_lookup: i32,
@@ -199,6 +201,7 @@ impl Espeak {
             ignore_next_n: 0,
             dictionary_skipwords: 0,
             word_replacement: [0; N_WORD_BYTES],
+            rule_steps: Vec::new(),
             n_digit_lookup: 0,
             digit_lookup: Vec::new(),
             speak_missing_thousands: 0,

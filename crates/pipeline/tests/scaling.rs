@@ -101,6 +101,29 @@ fn grows_linearly() {
     assert!(slow.is_empty(), "{}", slow.join("\n"));
 }
 
+/// Letters espeak reads without their accent (see `accented_letters_take_time_like_prose` in
+/// kokoro-espeak): words can't be longer than a clause, so doubling the text doesn't show the
+/// time quadratic in the length of a word that these took (280 ms per KB of `ı` where this was
+/// measured, against 3 ms for prose); this bounds the time per KB instead.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "timing test; run with --release")]
+fn accented_letters_take_time_like_prose() {
+    let prose = "The quick brown fox jumps over the lazy dog, and then it runs away. ".repeat(150);
+    for (lang, text) in [
+        (Lang::AmericanEnglish, "ı".repeat(10_000)),
+        (Lang::AmericanEnglish, "ą".repeat(10_000)),
+        (Lang::AmericanEnglish, "ő".repeat(10_000)),
+        (Lang::Spanish, "ß".repeat(10_000)),
+        (Lang::AmericanEnglish, prose.clone()),
+        (Lang::Spanish, prose),
+    ] {
+        let took = time(&Pipeline::new(lang).unwrap(), &text);
+        let per_kb = took.as_secs_f64() * 1e3 / (text.len() as f64 / 1024.0);
+        let start: String = text.chars().take(4).collect();
+        assert!(per_kb < 60.0, "{} {start:?}…: {per_kb:.1} ms per KB", lang.code());
+    }
+}
+
 #[test]
 #[cfg_attr(debug_assertions, ignore = "timing test; run with --release")]
 fn chinese_grows_linearly() {
