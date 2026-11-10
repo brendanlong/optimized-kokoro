@@ -47,7 +47,7 @@ pub enum Normalizer {
 
 impl Normalizer {
     pub fn for_lang(lang_code: &str) -> Option<Self> {
-        matches!(lang_code, "a" | "b" | "en-us" | "en-gb").then_some(Self::English)
+        matches!(lang_code, "a" | "b").then_some(Self::English)
     }
 
     pub fn normalize(self, text: &str, options: &Options) -> String {
@@ -71,7 +71,6 @@ struct Patterns {
     url_www: Pattern,
     url_port: Pattern,
     phone: Pattern,
-    non_digit: Pattern,
     mister: Pattern,
     miss: Pattern,
     missus: Pattern,
@@ -99,7 +98,6 @@ static PATTERNS: LazyLock<Patterns> = LazyLock::new(|| Patterns {
     url_www: compile_i(r"^www\."),
     url_port: compile(r":(\d+)(?=/|$)"),
     phone: compile(r"(?:(\+?\d{1,2})[ .-]?)?(\(?\d{3}\)?)[\s.-](\d{3})[\s.-](\d{4})"),
-    non_digit: compile(r"\D"),
     mister: compile(r"\b(?:Mr\.|MR\.(?= [A-Za-z]))"),
     miss: compile(r"\b(?:Ms\.|MS\.(?= [A-Z]))"),
     missus: compile(r"\b(?:Mrs\.|MRS\.(?= [A-Za-z]))"),
@@ -136,7 +134,7 @@ fn pass_order(options: &Options) -> Vec<(&'static str, Pass)> {
         }),
         ("urls", options.url_normalization, |p, t| p.url.sub(t, |c| url(p, &c[0]))),
         ("optional_plurals", options.optional_pluralization_normalization, |_, t| t.replace("(s)", "s")),
-        ("phone_numbers", options.phone_normalization, |p, t| p.phone.sub(t, |c| phone(p, c))),
+        ("phone_numbers", options.phone_normalization, |p, t| p.phone.sub(t, phone)),
         ("quotes", true, |_, t| quotes(t)),
         ("cjk_punctuation", true, |_, t| cjk_punctuation(t)),
         ("times", true, |_, t| {
@@ -262,13 +260,8 @@ fn url(p: &Patterns, url: &str) -> String {
     url.split(py::is_space).filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" ")
 }
 
-fn phone(p: &Patterns, c: &Captures) -> String {
-    c.groups()
-        .flatten()
-        .filter(|g| !g.is_empty())
-        .map(|g| numbers::digits(&p.non_digit.sub_str(g, "")))
-        .collect::<Vec<_>>()
-        .join(", ")
+fn phone(c: &Captures) -> String {
+    c.groups().flatten().filter(|g| !g.is_empty()).map(numbers::digits).collect::<Vec<_>>().join(", ")
 }
 
 /// Python's `int()` on ASCII digits with optional surrounding spaces.
@@ -396,7 +389,6 @@ mod tests {
             &p.url_www,
             &p.url_port,
             &p.phone,
-            &p.non_digit,
             &p.mister,
             &p.miss,
             &p.missus,
