@@ -141,6 +141,19 @@ pub(crate) struct RuleStep {
 
 const RULE_CHECKPOINT_EVERY: usize = 8;
 
+#[cfg(test)]
+thread_local! {
+    /// Makes `translate_rules` start a word again from its first step, as C does.
+    static FULL_RESTARTS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+fn full_restarts() -> bool {
+    #[cfg(test)]
+    return FULL_RESTARTS.with(|f| f.get());
+    #[cfg(not(test))]
+    false
+}
+
 /// The result of `LookupDict2`: where the matched words end in the source buffer.
 type Found = Option<isize>;
 
@@ -2063,6 +2076,12 @@ impl Espeak {
                                         put(w, p, b' ');
                                         p += 1;
                                     }
+                                    // This step isn't recorded, so a lookup in it (a `$list` rule
+                                    // in the default group) that changed what earlier steps read
+                                    // is caught here rather than at the end of the step.
+                                    if (reads.looked_up && self.rule_context(tr) != context) || full_restarts() {
+                                        first_stale = 0;
+                                    }
                                     // Up to the space that ends the word, the letters after the
                                     // replaced one are the same letters as before, moved.
                                     let kept = space.is_some() && self.same_classes(tr, letter, ixa as i32);
@@ -2891,5 +2910,41 @@ mod tests {
             }
             ((hash + 3) & 0x3ff) as usize
         });
+    }
+
+    /// Resuming after removing an accent gives what starting the word again gives.
+    #[test]
+    fn resuming_matches_starting_again() {
+        const PIECES: &[&str] = &[
+            "ı", "ą", "ß", "ə", "ğ", "ő", "ø", "é", "è", "ë", "ü", "ö", "ä", "ï", "ñ", "ç", "ł", "ś", "ž", "č", "ř",
+            "Ä", "Ş", "e", "e", "ed", "es", "a", "i", "o", "s", "c", "g", "t", "n", "'", "'s", "1", "9", "(", ")", "-",
+            " ",
+        ];
+        let data = crate::EspeakData::load(crate::default_data_dir()).unwrap();
+        let mut rng = 0x9e37_79b9_7f4a_7c15u64;
+        let mut next = |n: usize| {
+            rng ^= rng << 13;
+            rng ^= rng >> 7;
+            rng ^= rng << 17;
+            (rng % n as u64) as usize
+        };
+        let texts: Vec<String> = (0..300)
+            .map(|i| {
+                let len = if i % 10 == 0 { 200 } else { 1 + i % 25 };
+                (0..len).map(|_| PIECES[next(PIECES.len())]).collect()
+            })
+            .collect();
+        for voice in ["gmw/en-US", "roa/es", "roa/fr", "gmw/de", "roa/it", "roa/pt-BR", "inc/hi"] {
+            let run = |full: bool| {
+                FULL_RESTARTS.with(|f| f.set(full));
+                let mut e = Espeak::new(data.clone());
+                e.set_voice_by_name(voice).unwrap();
+                texts.iter().map(|t| e.text_to_phonemes(t, crate::PHONEMES_IPA_TIE)).collect::<Vec<_>>()
+            };
+            let (resumed, restarted) = (run(false), run(true));
+            for ((text, a), b) in texts.iter().zip(&resumed).zip(&restarted) {
+                assert_eq!(a, b, "{voice} {text:?}");
+            }
+        }
     }
 }
