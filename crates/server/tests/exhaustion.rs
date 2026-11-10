@@ -35,16 +35,19 @@ impl Pipeline for SlowSecondChunk {
         text: &'a str,
         max_phonemes: usize,
         clause_groups: usize,
+        cancelled: &'a (dyn Fn() -> bool + Sync),
     ) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
-        Box::new(StubPipeline.chunks(lang, text, max_phonemes, clause_groups).enumerate().map(move |(i, chunk)| {
-            if i == 2
-                && let Some(release) = self.release.lock().unwrap().take()
-            {
-                self.entered.store(true, Ordering::SeqCst);
-                let _ = release.recv();
-            }
-            chunk
-        }))
+        Box::new(StubPipeline.chunks(lang, text, max_phonemes, clause_groups, cancelled).enumerate().map(
+            move |(i, chunk)| {
+                if i == 2
+                    && let Some(release) = self.release.lock().unwrap().take()
+                {
+                    self.entered.store(true, Ordering::SeqCst);
+                    let _ = release.recv();
+                }
+                chunk
+            },
+        ))
     }
 }
 
@@ -83,6 +86,76 @@ async fn permits_cover_phonemizing_after_the_client_leaves() {
         assert!(Instant::now() < deadline, "permits never came back");
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
+}
+
+/// The text "Slow." takes 1,000 G2P calls of 10 ms each before its first chunk, as a long
+/// sentence cut at its clauses takes many, each asking `cancelled` first as the real pipeline does.
+#[derive(Default)]
+struct ManyG2pCalls {
+    calls: std::sync::atomic::AtomicUsize,
+}
+
+impl Pipeline for ManyG2pCalls {
+    fn chunks<'a>(
+        &'a self,
+        lang: Lang,
+        text: &'a str,
+        max_phonemes: usize,
+        clause_groups: usize,
+        cancelled: &'a (dyn Fn() -> bool + Sync),
+    ) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
+        let mut slow = text == "Slow.";
+        let slow_calls = std::iter::from_fn(move || {
+            if !std::mem::take(&mut slow) {
+                return None;
+            }
+            for _ in 0..1000 {
+                if cancelled() {
+                    return Some(Err(PipelineError("cancelled".into())));
+                }
+                self.calls.fetch_add(1, Ordering::SeqCst);
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            None
+        });
+        Box::new(slow_calls.chain(StubPipeline.chunks(lang, text, max_phonemes, clause_groups, cancelled)))
+    }
+}
+
+/// A client that leaves before its first audio stops its text processing within a G2P call, not
+/// at the end of the sentence, and its permits come back.
+#[tokio::test]
+async fn text_processing_stops_soon_after_the_client_leaves() {
+    let pipeline = Arc::new(ManyG2pCalls::default());
+    let server = start(one_stream, pipeline.clone()).await;
+    let _worker = AutoWorker::listen(&server.socket, Duration::from_millis(1));
+    server.worker.connected().await;
+
+    let body = pcm("Slow.").to_string();
+    let mut client = TcpStream::connect(server.addr).await.unwrap();
+    let head = format!(
+        "POST /v1/audio/speech HTTP/1.1\r\nHost: test\r\nAuthorization: Bearer {KEY}\r\nContent-Length: {}\r\n\r\n",
+        body.len()
+    );
+    client.write_all((head + &body).as_bytes()).await.unwrap();
+    while pipeline.calls.load(Ordering::SeqCst) < 5 {
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    drop(client);
+    let left = Instant::now();
+    loop {
+        let response = speak(server.addr, pcm("Again.")).await;
+        if response.status() == 200 {
+            break;
+        }
+        assert_eq!(response.status(), 429);
+        assert!(left.elapsed() < Duration::from_secs(2), "permits held after the client left");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let calls = pipeline.calls.load(Ordering::SeqCst);
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(pipeline.calls.load(Ordering::SeqCst), calls, "still processing");
+    assert!(calls < 200, "{calls} of the sentence's 1,000 calls");
 }
 
 /// Finding 2: a client that stops reading is disconnected once a write has stalled for the

@@ -220,6 +220,7 @@ fn main() {
                                 &text,
                                 kokoro_server::pipeline::DEFAULT_MAX_TOKENS,
                                 kokoro_server::pipeline::DEFAULT_MAX_TOKENS,
+                                &|| false,
                             )
                             .flatten()
                         {

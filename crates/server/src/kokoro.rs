@@ -24,20 +24,23 @@ impl Pipeline for KokoroPipelines {
         text: &'a str,
         max_phonemes: usize,
         clause_groups: usize,
+        cancelled: &'a (dyn Fn() -> bool + Sync),
     ) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
         let pipeline = self.pipelines.iter().find(|p| p.lang() == lang).expect("a pipeline for every language");
-        Box::new(pipeline.chunks_within_groups(text, &self.options, max_phonemes, clause_groups).map(|chunk| {
-            chunk
-                .map(|c| Chunk {
-                    text: c.text,
-                    phonemes: c.phonemes,
-                    ids: c.ids,
-                    pause: c.pause,
-                    unread: c.unread,
-                    split: c.split,
-                })
-                .map_err(|e| PipelineError(e.to_string()))
-        }))
+        Box::new(pipeline.chunks_within_groups(text, &self.options, max_phonemes, clause_groups, cancelled).map(
+            |chunk| {
+                chunk
+                    .map(|c| Chunk {
+                        text: c.text,
+                        phonemes: c.phonemes,
+                        ids: c.ids,
+                        pause: c.pause,
+                        unread: c.unread,
+                        split: c.split,
+                    })
+                    .map_err(|e| PipelineError(e.to_string()))
+            },
+        ))
     }
 }
 
@@ -55,6 +58,7 @@ mod tests {
                 "Hello there. [pause:0.5s] 東京 is big. カナ too.",
                 DEFAULT_MAX_TOKENS,
                 DEFAULT_MAX_TOKENS,
+                &|| false,
             )
             .map(Result::unwrap)
             .collect();
@@ -74,7 +78,7 @@ mod tests {
     fn chinese_voices_get_chinese_phonemes() {
         let pipelines = KokoroPipelines::load().unwrap();
         let chunks: Vec<_> = pipelines
-            .chunks(Lang::Chinese, "银行行长在长城上。", DEFAULT_MAX_TOKENS, DEFAULT_MAX_TOKENS)
+            .chunks(Lang::Chinese, "银行行长在长城上。", DEFAULT_MAX_TOKENS, DEFAULT_MAX_TOKENS, &|| false)
             .map(Result::unwrap)
             .collect();
         assert_eq!(chunks[0].phonemes, "i↗nxa↗ŋxa↗ŋꭧa↓ŋ ʦai↘ ꭧʰa↗ŋꭧʰə↗ŋ ʂa↘ŋ.");
@@ -88,13 +92,15 @@ mod tests {
         }
         let pipelines = KokoroPipelines::load().unwrap();
         let chunk = pipelines
-            .chunks(Lang::Japanese, "東京へ行きます。", DEFAULT_MAX_TOKENS, DEFAULT_MAX_TOKENS)
+            .chunks(Lang::Japanese, "東京へ行きます。", DEFAULT_MAX_TOKENS, DEFAULT_MAX_TOKENS, &|| false)
             .next()
             .unwrap()
             .unwrap();
         assert_eq!((chunk.phonemes.as_str(), chunk.unread), ("toːkʲoː e ikʲimasɨ", 0));
         let chunk = pipelines
-            .chunks(Lang::AmericanEnglish, "She said こんにちは.", DEFAULT_MAX_TOKENS, DEFAULT_MAX_TOKENS)
+            .chunks(Lang::AmericanEnglish, "She said こんにちは.", DEFAULT_MAX_TOKENS, DEFAULT_MAX_TOKENS, &|| {
+                false
+            })
             .next()
             .unwrap()
             .unwrap();
@@ -111,7 +117,11 @@ mod tests {
             (Lang::Italian, "Ciao mondo.", "ʧˈao mˈondo."),
             (Lang::BrazilianPortuguese, "Olá, mundo.", "olˈa, mˈu\u{303}ŋdʊ."),
         ] {
-            let chunk = pipelines.chunks(lang, text, DEFAULT_MAX_TOKENS, DEFAULT_MAX_TOKENS).next().unwrap().unwrap();
+            let chunk = pipelines
+                .chunks(lang, text, DEFAULT_MAX_TOKENS, DEFAULT_MAX_TOKENS, &|| false)
+                .next()
+                .unwrap()
+                .unwrap();
             assert_eq!((chunk.phonemes.as_str(), chunk.unread), (phonemes, 0), "{lang:?}");
             assert_eq!(chunk.ids.len(), chunk.phonemes.chars().count(), "{lang:?}");
         }
@@ -121,7 +131,12 @@ mod tests {
     fn british_voices_get_british_phonemes() {
         let pipelines = KokoroPipelines::load().unwrap();
         let phonemes = |lang| {
-            pipelines.chunks(lang, "tomato", DEFAULT_MAX_TOKENS, DEFAULT_MAX_TOKENS).next().unwrap().unwrap().phonemes
+            pipelines
+                .chunks(lang, "tomato", DEFAULT_MAX_TOKENS, DEFAULT_MAX_TOKENS, &|| false)
+                .next()
+                .unwrap()
+                .unwrap()
+                .phonemes
         };
         assert_ne!(phonemes(Lang::AmericanEnglish), phonemes(Lang::BritishEnglish));
     }

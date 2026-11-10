@@ -50,12 +50,15 @@ pub trait Pipeline: Send + Sync + 'static {
     /// (Kokoro-FastAPI's limit is [`DEFAULT_MAX_TOKENS`]), its clauses packed into groups of at
     /// most `clause_groups` phonemes (Kokoro-FastAPI's are `max_phonemes`). Runs on a blocking
     /// thread. An error stands in for the sentence it happened in; later sentences still follow.
+    /// `cancelled` is asked before each G2P call: once it says yes, the rest are errors, so a
+    /// request whose client has gone stops within one call, even in the middle of a sentence.
     fn chunks<'a>(
         &'a self,
         lang: Lang,
         text: &'a str,
         max_phonemes: usize,
         clause_groups: usize,
+        cancelled: &'a (dyn Fn() -> bool + Sync),
     ) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a>;
 }
 
@@ -89,18 +92,16 @@ impl Pipeline for StubPipeline {
         text: &'a str,
         max_phonemes: usize,
         clause_groups: usize,
+        cancelled: &'a (dyn Fn() -> bool + Sync),
     ) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
         static LIMITS: std::sync::LazyLock<Limits> = std::sync::LazyLock::new(Limits::default);
         static OPTIONS: std::sync::LazyLock<Options> = std::sync::LazyLock::new(Options::default);
         let split = kokoro_text::try_smart_split(text, lang.code(), &OPTIONS, &LIMITS, max_phonemes, |t: &str| {
-            Ok::<_, std::convert::Infallible>(stub_g2p(t))
+            if cancelled() { Err(PipelineError("cancelled".into())) } else { Ok(stub_g2p(t)) }
         })
-        .with_clause_groups(clause_groups)
-        .map(|chunk| match chunk {
-            Ok(chunk) => chunk,
-        });
+        .with_clause_groups(clause_groups);
         Box::new(split.map(|chunk| {
-            Ok(match chunk {
+            Ok(match chunk? {
                 kokoro_text::Chunk::Speech(Piece { text, phonemes, split }) => {
                     let ids = phonemes.chars().map(stub_id).collect();
                     Chunk { text, phonemes, ids, pause: None, unread: 0, split }

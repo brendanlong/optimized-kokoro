@@ -196,13 +196,19 @@ const PROBES: &[&str] = &[
 ];
 
 fn run(p: &KokoroPipelines, lang: Lang, text: &str) -> String {
-    p.chunks(lang, text, kokoro_server::pipeline::DEFAULT_MAX_TOKENS, kokoro_server::pipeline::DEFAULT_MAX_TOKENS)
-        .map(|c| match c {
-            Ok(c) => format!("{}|{:?}", c.phonemes, c.pause),
-            Err(e) => format!("ERR {e}"),
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
+    p.chunks(
+        lang,
+        text,
+        kokoro_server::pipeline::DEFAULT_MAX_TOKENS,
+        kokoro_server::pipeline::DEFAULT_MAX_TOKENS,
+        &|| false,
+    )
+    .map(|c| match c {
+        Ok(c) => format!("{}|{:?}", c.phonemes, c.pause),
+        Err(e) => format!("ERR {e}"),
+    })
+    .collect::<Vec<_>>()
+    .join("\n")
 }
 
 fn main() {

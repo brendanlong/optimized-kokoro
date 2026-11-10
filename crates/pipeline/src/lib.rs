@@ -144,6 +144,9 @@ pub enum Error {
     Foreign { language: Language, message: String },
     /// The Japanese G2P's dictionary couldn't be loaded.
     Dictionary(String),
+    /// The caller's `cancelled` returned true before a G2P call
+    /// ([`Pipeline::chunks_within_groups`]).
+    Cancelled,
 }
 
 impl fmt::Display for Error {
@@ -153,6 +156,7 @@ impl fmt::Display for Error {
             Error::Espeak(e) => write!(f, "espeak: {e}"),
             Error::Foreign { language, message } => write!(f, "{} G2P: {message}", language.code()),
             Error::Dictionary(message) => write!(f, "Japanese dictionary: {message}"),
+            Error::Cancelled => f.write_str("cancelled"),
         }
     }
 }
@@ -347,21 +351,29 @@ impl Pipeline {
         options: &'a NormalizationOptions,
         max_tokens: usize,
     ) -> impl Iterator<Item = Result<Chunk, Error>> + Send + use<'a> {
-        self.chunks_within_groups(text, options, max_tokens, max_tokens)
+        self.chunks_within_groups(text, options, max_tokens, max_tokens, &|| false)
     }
 
     /// [`chunks_within`](Self::chunks_within), with the clauses of a sentence cut at clauses packed
     /// into groups of at most `clause_groups` phonemes rather than `max_tokens`
     /// (`kokoro_text::SmartSplit::with_clause_groups`): the server packs its chunks to a soft size.
+    ///
+    /// `cancelled` is asked before each G2P call (a sentence can take several: itself, its clauses
+    /// and their groups); once it says yes, every chunk still to come is [`Error::Cancelled`]. The
+    /// server stops processing a request this way once its client has gone.
     pub fn chunks_within_groups<'a>(
         &'a self,
         text: &str,
         options: &'a NormalizationOptions,
         max_tokens: usize,
         clause_groups: usize,
+        cancelled: &'a (dyn Fn() -> bool + Sync),
     ) -> impl Iterator<Item = Result<Chunk, Error>> + Send + use<'a> {
         let mut request = Request::new(self);
         kokoro_text::try_smart_split(text, self.lang.code(), options, &self.limits, max_tokens, move |t: &str| {
+            if cancelled() {
+                return Err(Error::Cancelled);
+            }
             request.phonemize(t)
         })
         .with_clause_groups(clause_groups)
