@@ -30,7 +30,7 @@ use kokoro_spacy_en::Nlp;
 use std::collections::HashMap;
 use std::fmt;
 use std::ops::Range;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, LazyLock, OnceLock};
 
 pub use kokoro_g2p_en::Token;
 #[doc(hidden)]
@@ -201,18 +201,33 @@ pub struct Chunk {
     /// Kokoro phonemes, as the reference server hands them to the model.
     pub phonemes: String,
     /// `phonemes` as Kokoro-82M input ids, without the padding id 0 at either end. Phonemes the
-    /// vocabulary lacks are dropped, as `KModel` does; `dropped` counts them.
+    /// vocabulary lacks are dropped, as `KModel` does ([`Chunk::dropped`]).
     pub ids: Vec<u8>,
-    pub dropped: usize,
     /// Seconds of silence, for a pause chunk.
     pub pause: Option<f64>,
-    /// The words with phonemes, for word timestamps.
-    pub words: Vec<Word>,
     /// How many runs with no G2P for their language or script were read as "<name> text".
     pub unread: usize,
     /// Which sides of the chunk were cut from its sentence at clause punctuation, for a sentence
     /// longer than the chunk limit.
     pub split: Split,
+    /// misaki's tokens (English only), for [`Chunk::words`].
+    tokens: Option<Vec<Token>>,
+}
+
+impl Chunk {
+    /// Phonemes the vocabulary lacks, left out of `ids`.
+    pub fn dropped(&self) -> usize {
+        self.phonemes.chars().count() - self.ids.len()
+    }
+
+    /// The words with phonemes, for word timestamps (Kokoro-FastAPI's `_word_spans`).
+    pub fn words(&self) -> Vec<Word> {
+        let (_, kept) = vocab::ids(&self.phonemes);
+        match &self.tokens {
+            Some(tokens) => word_spans(tokens, &kept),
+            None => text_word_spans(&self.text, &self.phonemes, &kept),
+        }
+    }
 }
 
 /// A word of a chunk, located in its phonemes (Kokoro-FastAPI's `_word_spans`). A run of another
@@ -237,8 +252,6 @@ pub struct Pipeline {
     foreign: HashMap<Language, Box<dyn ForeignG2p>>,
     /// The tokens of each language's "<name> text", read once on first use.
     placeholders: Box<[OnceLock<Vec<Token>>]>,
-    limits: Limits,
-    max_tokens: usize,
 }
 
 /// spaCy's tagger, loaded once per process and shared by every pipeline: nine pipelines take
@@ -302,8 +315,6 @@ impl Pipeline {
             espeak,
             foreign,
             placeholders: (0..2 + Script::COUNT).map(|_| OnceLock::new()).collect(),
-            limits: Limits::default(),
-            max_tokens: DEFAULT_MAX_TOKENS,
         })
     }
 
@@ -314,49 +325,28 @@ impl Pipeline {
         self
     }
 
-    /// Pause limits (default: the deployed server's).
-    pub fn with_limits(mut self, limits: Limits) -> Self {
-        self.limits = limits;
-        self
-    }
-
-    /// Phonemes per chunk before a sentence is cut at clauses (default [`DEFAULT_MAX_TOKENS`]).
-    pub fn with_max_tokens(mut self, max_tokens: usize) -> Self {
-        self.max_tokens = max_tokens;
-        self
-    }
-
     pub fn lang(&self) -> Lang {
         self.lang
     }
 
-    /// `smart_split(text, lang)`: lazy, so each sentence's G2P runs as its chunks are taken. An
-    /// error stands in for the sentence it happened in, and later sentences still follow.
-    ///
-    /// Voice and rate tags aren't supported: they're read as text.
+    /// `smart_split(text, lang)` as the reference runs it: sentences of more than
+    /// [`DEFAULT_MAX_TOKENS`] phonemes cut at clauses, packed into groups of up to that.
+    /// See [`chunks_within_groups`](Self::chunks_within_groups).
     pub fn chunks<'a>(
         &'a self,
         text: &str,
         options: &'a NormalizationOptions,
     ) -> impl Iterator<Item = Result<Chunk, Error>> + Send + use<'a> {
-        self.chunks_within(text, options, self.max_tokens)
+        self.chunks_within_groups(text, options, DEFAULT_MAX_TOKENS, DEFAULT_MAX_TOKENS, &|| false)
     }
 
-    /// [`chunks`](Self::chunks) with sentences of more than `max_tokens` phonemes cut at clauses,
-    /// whatever [`with_max_tokens`](Self::with_max_tokens) set: the server's limit depends on the
-    /// request's speed.
-    pub fn chunks_within<'a>(
-        &'a self,
-        text: &str,
-        options: &'a NormalizationOptions,
-        max_tokens: usize,
-    ) -> impl Iterator<Item = Result<Chunk, Error>> + Send + use<'a> {
-        self.chunks_within_groups(text, options, max_tokens, max_tokens, &|| false)
-    }
-
-    /// [`chunks_within`](Self::chunks_within), with the clauses of a sentence cut at clauses packed
-    /// into groups of at most `clause_groups` phonemes rather than `max_tokens`
-    /// (`kokoro_text::SmartSplit::with_clause_groups`): the server packs its chunks to a soft size.
+    /// `smart_split(text, lang)`: lazy, so each sentence's G2P runs as its chunks are taken. An
+    /// error stands in for the sentence it happened in, and later sentences still follow. Voice
+    /// and rate tags aren't supported: they're read as text.
+    ///
+    /// Sentences of more than `max_tokens` phonemes are cut at clauses, and the clauses packed into
+    /// groups of at most `clause_groups` phonemes (`kokoro_text::SmartSplit::with_clause_groups`):
+    /// the server's limit depends on the request's speed, and it packs its chunks to a soft size.
     ///
     /// `cancelled` is asked before each G2P call (a sentence can take several: itself, its clauses
     /// and their groups); once it says yes, every chunk still to come is [`Error::Cancelled`]. The
@@ -369,8 +359,9 @@ impl Pipeline {
         clause_groups: usize,
         cancelled: &'a (dyn Fn() -> bool + Sync),
     ) -> impl Iterator<Item = Result<Chunk, Error>> + Send + use<'a> {
+        static LIMITS: LazyLock<Limits> = LazyLock::new(Limits::default);
         let mut request = Request::new(self);
-        kokoro_text::try_smart_split(text, self.lang.code(), options, &self.limits, max_tokens, move |t: &str| {
+        kokoro_text::try_smart_split(text, self.lang.code(), options, &LIMITS, max_tokens, move |t: &str| {
             if cancelled() {
                 return Err(Error::Cancelled);
             }
@@ -384,11 +375,10 @@ impl Pipeline {
                     text: String::new(),
                     phonemes: String::new(),
                     ids: Vec::new(),
-                    dropped: 0,
                     pause: Some(seconds),
-                    words: Vec::new(),
                     unread: 0,
                     split: Split::default(),
+                    tokens: None,
                 },
             })
         })
@@ -427,13 +417,8 @@ impl kokoro_text::Phonemes for Phonemes {
 }
 
 fn speech(text: String, p: Phonemes, split: Split) -> Chunk {
-    let (ids, kept) = vocab::ids(&p.phonemes);
-    let words = match &p.tokens {
-        Some(tokens) => word_spans(tokens, &kept),
-        None => text_word_spans(&text, &p.phonemes, &kept),
-    };
-    let dropped = kept.len() - 1 - ids.len();
-    Chunk { text, phonemes: p.phonemes, ids, dropped, pause: None, words, unread: p.unread, split }
+    let (ids, _) = vocab::ids(&p.phonemes);
+    Chunk { text, phonemes: p.phonemes, ids, pause: None, unread: p.unread, split, tokens: p.tokens }
 }
 
 /// `_word_spans` without misaki's tokens (every pipeline but English): the text's words paired

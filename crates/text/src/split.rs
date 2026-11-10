@@ -119,7 +119,7 @@ pub struct Piece<P> {
     pub split: Split,
 }
 
-/// Which sides of a chunk [`sentence_chunks`] cut at clause punctuation (see [`Piece::split`]).
+/// Which sides of a chunk the chunker cut at clause punctuation (see [`Piece::split`]).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Split {
     pub before: bool,
@@ -146,35 +146,15 @@ fn phonemize<P, E, F: FnMut(&str) -> Result<P, E>>(g2p: &mut F, text: &str) -> R
 /// clause (a divergence, `docs/divergences.md`).
 pub const MIN_CLAUSE_CHUNK: usize = 25;
 
-/// `sentence_chunks`: the sentence whole, or cut at clause punctuation and repacked when its
-/// phonemes are longer than `max_tokens`. Each piece says where it was cut ([`Piece::split`]).
+/// `sentence_chunks`: the sentence whole, or cut at clause punctuation when its phonemes are longer
+/// than `max_tokens`, its clauses packed into groups of at most `groups` phonemes (the reference's
+/// are `max_tokens`; the server packs chunks to a smaller size, `SmartSplit::with_clause_groups`).
+/// The first G2P error ends the sentence.
 ///
 /// Unlike the reference, no chunk cut from a sentence has fewer than [`MIN_CLAUSE_CHUNK`] phonemes
 /// (see [`group`]). The reference reads each group as soon as the clause after it doesn't fit; this
 /// reads every clause first, then the groups, so the G2P calls come in another order.
-pub fn sentence_chunks<P: Phonemes, F: FnMut(&str) -> P>(
-    sentence: &str,
-    max_tokens: usize,
-    g2p: &mut F,
-) -> Vec<Piece<P>> {
-    let Ok(pieces) = try_sentence_chunks(sentence, max_tokens, &mut |text: &str| Ok::<_, Infallible>(g2p(text)));
-    pieces
-}
-
-/// [`sentence_chunks`] with a G2P that can fail; the first error ends the sentence.
-pub fn try_sentence_chunks<P: Phonemes, E, F: FnMut(&str) -> Result<P, E>>(
-    sentence: &str,
-    max_tokens: usize,
-    g2p: &mut F,
-) -> Result<Vec<Piece<P>>, E> {
-    try_sentence_chunks_grouped(sentence, max_tokens, max_tokens, g2p)
-}
-
-/// [`try_sentence_chunks`] packing the clauses of a sentence longer than `max_tokens` into groups
-/// of at most `groups` phonemes instead of `max_tokens` (the server packs chunks to a smaller size
-/// than the most a chunk may have, `SmartSplit::with_clause_groups`). A sentence of at most
-/// `max_tokens` phonemes is still one piece.
-pub fn try_sentence_chunks_grouped<P: Phonemes, E, F: FnMut(&str) -> Result<P, E>>(
+fn sentence_chunks<P: Phonemes, E, F: FnMut(&str) -> Result<P, E>>(
     sentence: &str,
     max_tokens: usize,
     groups: usize,
@@ -194,7 +174,6 @@ pub fn try_sentence_chunks_grouped<P: Phonemes, E, F: FnMut(&str) -> Result<P, E
     for range in group(&lens, groups.min(max_tokens), max_tokens) {
         out.push(join(pieces.by_ref().take(range.len()).collect(), g2p)?);
     }
-    mark_splits(&mut out);
     Ok(out)
 }
 
@@ -377,12 +356,11 @@ impl<P: Phonemes, E, F: FnMut(&str) -> Result<P, E>> Iterator for SmartSplit<'_,
             if let Some(sentence) = self.sentences.pop_front() {
                 let sentence = py::strip(&sentence);
                 if !sentence.is_empty() {
-                    let mut pieces =
-                        match try_sentence_chunks_grouped(sentence, self.max_tokens, self.clause_groups, &mut self.g2p)
-                        {
-                            Ok(pieces) => pieces,
-                            Err(e) => return Some(Err(e)),
-                        };
+                    let mut pieces = match sentence_chunks(sentence, self.max_tokens, self.clause_groups, &mut self.g2p)
+                    {
+                        Ok(pieces) => pieces,
+                        Err(e) => return Some(Err(e)),
+                    };
                     // A piece without phonemes has no audio, so its neighbours' audio meets.
                     pieces.retain(|p| !p.phonemes.phonemes().is_empty());
                     mark_splits(&mut pieces);
