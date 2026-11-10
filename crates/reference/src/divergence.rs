@@ -807,8 +807,10 @@ fn abbreviation_read(input: &str, theirs: &[&str], ours: &[&str]) -> bool {
     let abbreviation = abbreviation.as_str();
     // Only "St" and "Dr" are expanded without their period ("St Paul"), and a month before a
     // number ("Oct 20"): the input must have the abbreviation, then a space and a digit.
-    let month = expansions(abbreviation).first().is_some_and(|m| m.ends_with("ber") || m.ends_with("ary"))
-        || matches!(abbreviation, "Mar" | "Apr" | "Jun" | "Jul" | "Aug");
+    let month = matches!(
+        abbreviation,
+        "Jan" | "Feb" | "Mar" | "Apr" | "Jun" | "Jul" | "Aug" | "Sep" | "Sept" | "Oct" | "Nov" | "Dec"
+    );
     let before_number = input.match_indices(&format!("{abbreviation} ")).any(|(k, m)| {
         input[k + m.len()..].starts_with(|c: char| c.is_ascii_digit())
             && input[..k].chars().next_back().is_none_or(|c| !c.is_alphanumeric())
@@ -845,16 +847,19 @@ fn footnote_dropped(input: &str, a: &[&str], run: std::ops::Range<usize>, ours: 
     }
     // A marker glued to a word's punctuation: the input has that word, the punctuation and a digit
     // ("find.6"), where the reference has the word, the punctuation and the number.
-    let (Some(punctuation), Some(word)) =
-        (run.start.checked_sub(1).map(|k| a[k]), run.start.checked_sub(2).map(|k| a[k]))
-    else {
-        return false;
-    };
-    let punctuation_ok = !punctuation.is_empty() && punctuation.chars().all(|c| ".,;!?)\"”'’".contains(c));
+    // The punctuation (one mark and maybe closing quotes or brackets: ". ”") and the word before.
+    let is_mark = |t: &str| !t.is_empty() && t.chars().all(|c| ".,;!?)\"”'’".contains(c));
+    let mut start = run.start;
+    while start > 0 && run.start - start < 3 && is_mark(a[start - 1]) {
+        start -= 1;
+    }
+    let Some(word) = start.checked_sub(1).map(|k| a[k]) else { return false };
+    let punctuation: String = a[start..run.start].concat();
+    let punctuation_ok = punctuation.starts_with(['.', ',', ';', '!', '?']);
     let lowercase_word = word.chars().next_back().is_some_and(char::is_lowercase);
-    let glued = input.match_indices(&format!("{word}{punctuation}")).any(|(k, m)| {
-        input[k + m.len()..].trim_start_matches([')', '"', '”', '\'', '’']).starts_with(|c: char| c.is_ascii_digit())
-    });
+    let glued = input
+        .match_indices(&format!("{word}{punctuation}"))
+        .any(|(k, m)| input[k + m.len()..].starts_with(|c: char| c.is_ascii_digit()));
     punctuation_ok && lowercase_word && glued && theirs.len() == 1 && number(&theirs[0])
 }
 
@@ -1180,6 +1185,11 @@ mod tests {
         assert_eq!(ok("find.6 None", "find.6 None", "find. None"), kind(Kind::Footnotes));
         assert_eq!(ok("Google [2]. And", "Google [two]. And", "Google. And"), kind(Kind::Footnotes));
         assert_eq!(ok("the end ↩", "the end ↩", "the end"), kind(Kind::Footnotes));
+        assert_eq!(ok("he said “so.”4 Then", "he said “so.”4 Then", "he said “so.” Then"), kind(Kind::Footnotes));
+        assert_eq!(
+            ok("on Oct 20, 2022", "on Oct twenty, twenty twenty-two", "on October twenty, twenty twenty-two"),
+            kind(Kind::Abbreviations)
+        );
         assert_eq!(ok("$20/month", "twenty dollars slash month", "twenty dollars a month"), kind(Kind::Rates));
         assert_eq!(ok("43 tok/s", "forty-three tok slash s", "forty-three tok per second"), kind(Kind::Rates));
         assert_eq!(ok("$5/seat", "five dollars slash seat", "five dollars per seat"), kind(Kind::Rates));
@@ -1207,6 +1217,7 @@ mod tests {
         err("say no to 5 deals", "say no to five deals", "say number to five deals");
         err("p < 0.05", "p less than zero point zero five", "page less than zero point zero five");
         err("Jan said 5 things", "Jan said five things", "January said five things");
+        err("no 5 star reviews", "no five star reviews", "number five star reviews");
         err(
             "Fig.2 shows that, 12 people left",
             "Fig.2 shows that, twelve people left",

@@ -444,13 +444,17 @@ pub(crate) fn time_unit(word: &str) -> Option<&'static str> {
 
 /// Whether `word` before a slash and the unit of time `time` (as written) makes a rate. "s", "h"
 /// and "min" are also a plural ("file/s"), a pronoun ("he/she") or "minimum" ("max/min"), so before
-/// them the word must be a unit ("GB/s", "km/h"), have a capital ("Mbit/s"), or count what is done
-/// per second ("tok/s", "req/s").
+/// them the word must be a unit ("GB/s", "km/h"), an acronym or bits ("MB/s", "Mbit/s"), or count
+/// what is done per second ("tok/s", "req/s").
 pub(crate) fn rate_word(word: &str, time: &str) -> bool {
     let ambiguous = matches!(time.to_ascii_lowercase().as_str(), "s" | "h" | "min");
     !ambiguous
         || unit_name(word).is_some()
-        || word.chars().any(|c| c.is_ascii_uppercase())
+        // A capital after the first letter ("GB", "kB"), or bits ("Mbit"); not a capitalised word
+        // ("Max/min", "Name/s").
+        || word.chars().skip(1).any(|c| c.is_ascii_uppercase())
+        || word.ends_with("bit")
+        || word.ends_with("bits")
         || matches!(word, "tok" | "tokens" | "req" | "requests" | "ops" | "frames" | "samples" | "steps" | "it")
 }
 
