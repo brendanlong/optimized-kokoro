@@ -3,8 +3,8 @@
 # serves the demo set's server binaries, one at 60 s the default set's; then every chunk is rendered
 # alone for its durations, decode time is measured at batch 1, and Whisper small.en reads every
 # rendering. Inputs: bench/pack_listen/plan.json (pack_listen.py plan), bench/bin/kokoro-server-VARIANT
-# for each variant, and bench/bin/espeak-ng-data, with ESPEAK_DATA_LINK the espeak-ng-data path the
-# binaries were built with. Results in results/pack_listen/.
+# for each variant, and bench/bin/espeak-ng-data, with the espeak-ng-data path the binaries were
+# built with in ESPEAK_DATA_LINK or bench/bin/espeak-data-link. Results in results/pack_listen/.
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit
 OUT=results/pack_listen
@@ -17,6 +17,8 @@ if [ ! -f "$MODELS/voices.safetensors" ]; then
 fi
 PY=$PWD/.venv/bin/python
 PLAN=bench/pack_listen/plan.json
+ESPEAK_DATA_LINK=${ESPEAK_DATA_LINK:-$(cat bench/bin/espeak-data-link 2> /dev/null)}
+: "${ESPEAK_DATA_LINK:?the espeak-ng-data path the binaries were built with: set ESPEAK_DATA_LINK or write it to bench/bin/espeak-data-link}"
 # A link left by an earlier job points into its (deleted) workdir; a real directory is the data.
 if [ -L "$ESPEAK_DATA_LINK" ] || [ ! -e "$ESPEAK_DATA_LINK" ]; then
     mkdir -p "$(dirname "$ESPEAK_DATA_LINK")"

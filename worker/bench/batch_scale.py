@@ -4,7 +4,7 @@
 
 equal    B copies of one real chunk of about L phonemes.
 mixed    B chunks drawn from the corpus, packed into decoder rows of at most --frame-budget
-         frames (the worker's is 9,600).
+         frames (the worker's is its chunk cap: 2,400 at the default 60 s).
 profile  torch.profiler at a few batch sizes: GPU time by kind of kernel, and GPU busy time as a
          share of unprofiled wall time (what is left is the GPU waiting on the host).
 
@@ -54,16 +54,16 @@ def measure(synth, timed, requests, reps):
         timed.text_s = 0.0
         torch.cuda.synchronize()
         t = time.perf_counter()
-        groups, audio, errors = 0, 0, collections.Counter()
+        rows, audio, errors = 0, 0, collections.Counter()
         for results in synth.run(requests):
-            groups += 1
+            rows += 1
             for r in results:
                 if r.pcm is None:
                     errors[r.error] += 1
                 else:
                     audio += len(r.pcm) // 2
         torch.cuda.synchronize()
-        return time.perf_counter() - t, timed.text_s, groups, audio / SAMPLE_RATE, errors
+        return time.perf_counter() - t, timed.text_s, rows, audio / SAMPLE_RATE, errors
 
     torch.cuda.empty_cache()
     torch.cuda.reset_peak_memory_stats()
@@ -80,7 +80,7 @@ def measure(synth, timed, requests, reps):
     return {
         "wall_ms": round(1000 * wall, 1),
         "text_ms": round(1000 * text, 1),
-        "groups": runs[0][2],
+        "rows": runs[0][2],
         "audio_s": round(audio, 2),
         "x_realtime": round(audio / wall, 1),
         "peak_gib": round(torch.cuda.max_memory_allocated() / 2**30, 2),
@@ -203,7 +203,7 @@ def main():
     ap.add_argument("--max-frames", type=int, default=200_000, help="skip equal points beyond B x frames")
     ap.add_argument("--profile-batches", type=int, nargs="+", default=[1, 8, 64])
     # 75,000 frames is about 2**31 / 28,800 (the widest tensor's elements per frame), which the
-    # Triton conv1d's int32 offsets can still address; the worker's own budget is 9,600.
+    # Triton conv1d's int32 offsets can still address; the worker's own budget is its chunk cap.
     ap.add_argument("--frame-budget", type=int, default=75_000)
     ap.add_argument("--reps", type=int, default=3)
     ap.add_argument("--no-compile", action="store_true")

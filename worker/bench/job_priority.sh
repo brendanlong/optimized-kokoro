@@ -4,8 +4,8 @@
 # workload (WORKLOADS: bench/priority_load.py arguments) and server configuration (SERVER_CONFIGS:
 # server.toml settings), a fresh server at RUST_LOG=debug and bench/priority_load.py against it:
 # many low-priority streams plus occasional high-priority requests. Needs KOKORO_SERVER_BIN (a
-# kokoro-server binary, with its espeak-ng-data next to it) and ESPEAK_DATA_LINK (the
-# espeak-ng-data path the binary was built with).
+# kokoro-server binary, with its espeak-ng-data next to it) and the espeak-ng-data path the binary
+# was built with, in ESPEAK_DATA_LINK or bench/bin/espeak-data-link.
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit
 mkdir -p results
@@ -20,6 +20,8 @@ nvidia-smi --query-gpu=name,driver_version,memory.used,utilization.gpu --format=
 echo "host load: $(cat /proc/loadavg)"
 "$PY" -m pytest -q tests/test_scheduler.py tests/test_protocol.py 2>&1 | tail -1
 
+ESPEAK_DATA_LINK=${ESPEAK_DATA_LINK:-$(cat bench/bin/espeak-data-link 2> /dev/null)}
+: "${ESPEAK_DATA_LINK:?the espeak-ng-data path the binaries were built with: set ESPEAK_DATA_LINK or write it to bench/bin/espeak-data-link}"
 mkdir -p "$(dirname "$ESPEAK_DATA_LINK")"
 ln -sfn "$(dirname "$KOKORO_SERVER_BIN")/espeak-ng-data" "$ESPEAK_DATA_LINK"
 

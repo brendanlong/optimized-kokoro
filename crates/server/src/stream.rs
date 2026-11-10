@@ -21,9 +21,9 @@
 use crate::audio::{Joins, final_clause_mark, keep_range, silence};
 use crate::load::{Admission, Shed};
 use crate::pack::{SOFT_MAX_PHONEMES, pack};
-use crate::pipeline::{Chunk, DEFAULT_MAX_TOKENS, Pipeline, PipelineError};
+use crate::pipeline::{Chunk, DEFAULT_MAX_TOKENS, Lang, Pipeline, PipelineError};
 use crate::request::Speech;
-use crate::stitch::{self, STITCH_ABOVE, Stitcher};
+use crate::stitch::{self, Stitcher};
 use crate::worker::{Connection, HeldAudio, SynthError, SynthRequest, Synthesized};
 use bytes::Bytes;
 use futures_util::StreamExt;
@@ -102,10 +102,25 @@ pub fn max_chunk_phonemes(render_ids: usize) -> usize {
     render_ids.min(DEFAULT_MAX_TOKENS)
 }
 
+/// The chunks of `text` the server renders: sentences of more than `max_phonemes` phonemes (the
+/// request's [`max_chunk_phonemes`]) cut at clauses, and everything packed to `soft` phonemes
+/// ([`pack`]; the server's is [`SOFT_MAX_PHONEMES`]). `cancelled` is the pipeline's.
+pub fn packed_chunks<'a>(
+    pipeline: &'a dyn Pipeline,
+    lang: Lang,
+    text: &'a str,
+    max_phonemes: usize,
+    soft: usize,
+    cancelled: &'a (dyn Fn() -> bool + Sync),
+) -> impl Iterator<Item = Result<Chunk, PipelineError>> + 'a {
+    pack(pipeline.chunks(lang, text, max_phonemes, soft, cancelled), soft, max_phonemes)
+}
+
 /// A chunk's units. `render_ids` is the most ids one worker request may have
-/// ([`stitch::max_render_ids`]): a chunk with more, or with more than `STITCH_ABOVE` phonemes, is
-/// stitched. Where the chunker cut the chunk's sentence, the first unit starts and the last ends at
-/// the cut ([`Joins`]).
+/// ([`stitch::max_render_ids`]): a chunk over [`max_chunk_phonemes`] is stitched. (Its ids are the
+/// phonemes the vocabulary has, so a chunk within it has at most `render_ids` ids.) Where the
+/// chunker cut the chunk's sentence, the first unit starts and the last ends at the cut
+/// ([`Joins`]).
 fn units(chunk: Chunk, speech: &Speech, render_ids: usize) -> Vec<Unit> {
     if let Some(pause) = chunk.pause {
         return if pause > 0.0 { vec![Unit::Silence(silence(pause))] } else { Vec::new() };
@@ -132,7 +147,7 @@ fn units(chunk: Chunk, speech: &Speech, render_ids: usize) -> Vec<Unit> {
             end_after_id: if last && split.after { final_clause_mark(&ids[own..]).map(|i| own + i) } else { None },
         },
     };
-    if chunk.phonemes.chars().count() <= STITCH_ABOVE && chunk.ids.len() <= render_ids {
+    if chunk.phonemes.chars().count() <= max_chunk_phonemes(render_ids) {
         let n = chunk.ids.len();
         let finish = finish(None, &chunk.ids, 0, true, true);
         return vec![Unit::Speech(request(chunk.ids, n), finish)];
@@ -147,8 +162,9 @@ fn units(chunk: Chunk, speech: &Speech, render_ids: usize) -> Vec<Unit> {
         .collect()
 }
 
-/// Phonemizes the request and sends its units (packed, [`pack`]), then how it ended. Runs of text with no G2P yet
-/// are logged once per request, as a count, since the text itself mustn't reach the logs.
+/// Phonemizes the request and sends its units (packed, [`pack`]), then how it ended. Runs of text
+/// with no G2P yet are logged once per request, as a count, since the text itself mustn't reach
+/// the logs.
 /// `max_chunk_samples` is the worker's chunk cap.
 fn produce(
     pipeline: &dyn Pipeline,
@@ -178,11 +194,10 @@ fn produce_units(
 ) -> Option<Produced> {
     let render_ids = stitch::max_render_ids(max_chunk_samples, speech.speed);
     let mut ids = 0usize;
-    let max_phonemes = max_chunk_phonemes(render_ids);
     // Once nobody is listening, text processing stops at its next G2P call.
     let gone = || out.is_closed();
-    let chunks = pipeline.chunks(speech.lang, &speech.text, max_phonemes, SOFT_MAX_PHONEMES, &gone);
-    for chunk in pack(chunks, SOFT_MAX_PHONEMES, max_phonemes) {
+    let max_phonemes = max_chunk_phonemes(render_ids);
+    for chunk in packed_chunks(pipeline, speech.lang, &speech.text, max_phonemes, SOFT_MAX_PHONEMES, &gone) {
         let units = match chunk {
             Ok(chunk) => {
                 *unread += chunk.unread;
@@ -438,6 +453,28 @@ mod tests {
         assert_eq!(max_chunk_phonemes(450), 450);
         assert_eq!(max_chunk_phonemes(270), 270);
         assert_eq!(max_chunk_phonemes(0), 0);
+    }
+
+    /// Stitching is decided by the phonemes, as the chunker cuts: a chunk over the limit is
+    /// stitched even when some of its phonemes have no id and its ids would fit one request.
+    #[test]
+    fn chunks_over_the_phoneme_limit_are_stitched() {
+        let speech = Speech { lang: Lang::AmericanEnglish, text: String::new(), voice: 0, speed: Speed::NORMAL };
+        let stitched = |phonemes: usize| {
+            let chunk = Chunk {
+                text: "words.".into(),
+                phonemes: "x".repeat(phonemes),
+                ids: vec![43; 100],
+                pause: None,
+                unread: 0,
+                split: Split::default(),
+            };
+            units(chunk, &speech, 120)
+                .iter()
+                .all(|unit| matches!(unit, Unit::Speech(_, finish) if finish.stitch.is_some()))
+        };
+        assert!(!stitched(120));
+        assert!(stitched(121));
     }
 
     /// A clause too long by itself is stitched; only its first piece starts and its last piece

@@ -168,27 +168,75 @@ def test_neighbours_dont_change_a_sentence(decoder):
         assert not torch.allclose(before[(i + 1) % len(FRAMES)], after[(i + 1) % len(FRAMES)], atol=1e-3)
 
 
-def _groups(frames, waiting, budget=100):
+def _packed_rows(frames, waiting, budget=100):
     from kokoro_worker.model import Synth
 
     synth = Synth.__new__(Synth)
     synth.frame_budget = budget
-    return synth._groups(frames, waiting)
+    return synth._rows(frames, waiting)
 
 
 def test_rows_fill_to_the_frame_budget():
     span = 30 + masked.GAP
-    assert _groups([30, 30, 30, 30], [True] * 4, budget=3 * span) == [[0, 1, 2], [3]]
-    assert _groups([30, 30, 30, 30], [False] * 4, budget=3 * span) == [[0, 1, 2], [3]]
-    assert _groups([200, 10], [True, True]) == [[0], [1]]  # a long one still gets a row
+    assert _packed_rows([30, 30, 30, 30], [True] * 4, budget=3 * span) == [[0, 1, 2], [3]]
+    assert _packed_rows([30, 30, 30, 30], [False] * 4, budget=3 * span) == [[0, 1, 2], [3]]
+    assert _packed_rows([200, 10], [True, True]) == [[0], [1]]  # a long one still gets a row
 
 
 def test_waiting_chunks_dont_share_a_row_with_prefetch_after_them():
     # most urgent first: waiting, waiting, then prefetch
-    assert _groups([10, 10, 10, 10], [True, True, False, False]) == [[0, 1], [2, 3]]
+    assert _packed_rows([10, 10, 10, 10], [True, True, False, False]) == [[0, 1], [2, 3]]
     # a more urgent prefetch, then less urgent waiting chunks: rows stay in order, and only a
     # prefetch after a waiting chunk starts a row
-    assert _groups([10, 10, 10, 10], [False, True, False, True]) == [[0, 1], [2, 3]]
-    assert _groups([10, 10, 10], [False, False, True]) == [[0, 1, 2]]
+    assert _packed_rows([10, 10, 10, 10], [False, True, False, True]) == [[0, 1], [2, 3]]
+    assert _packed_rows([10, 10, 10], [False, False, True]) == [[0, 1, 2]]
     # the budget still splits waiting chunks
-    assert _groups([40, 40, 40, 10], [True, True, True, False]) == [[0, 1], [2], [3]]
+    assert _packed_rows([40, 40, 40, 10], [True, True, True, False]) == [[0, 1], [2], [3]]
+
+
+class _FailingRows:
+    """Synth._decode for a stub: a packed row (more than one item) fails as `failure` says; alone,
+    every item decodes except `bad`, whose audio is non-finite."""
+
+    def __init__(self, failure, bad=None):
+        self.failure, self.bad, self.calls = failure, bad, []
+
+    def __call__(self, idx, frames, *args):
+        from kokoro_worker.model import Result
+
+        self.calls.append(list(idx))
+        if len(idx) > 1 and self.failure == "oom":
+            raise torch.OutOfMemoryError("row too big")
+        return [Result(i, None, None, "non_finite") if i == self.bad or (len(idx) > 1 and self.failure == "nan")
+                else Result(i, bytes([i]) * 2, [f]) for i, f in zip(idx, frames)]
+
+
+def _contained(decode, idx, frames):
+    from kokoro_worker.model import Synth
+
+    synth = Synth.__new__(Synth)
+    synth._decode = decode
+    return [r for results in synth._decode_contained(idx, frames) for r in results]
+
+
+@pytest.mark.parametrize("failure", ["oom", "nan"])
+def test_a_failed_row_is_decoded_one_at_a_time_and_only_the_culprit_fails(failure):
+    decode = _FailingRows(failure, bad=5)
+    results = _contained(decode, [3, 5, 7], [10, 20, 30])
+    assert decode.calls == [[3, 5, 7], [3], [5], [7]]
+    assert [(r.index, r.pcm, r.durations, r.error) for r in results] == [
+        (3, b"\x03\x03", [10], None), (5, None, None, "non_finite"), (7, b"\x07\x07", [30], None)]
+
+
+def test_a_row_that_decodes_is_not_split():
+    decode = _FailingRows(None)
+    assert [r.index for r in _contained(decode, [4, 6], [10, 20])] == [4, 6]
+    assert decode.calls == [[4, 6]]
+
+
+def test_one_item_out_of_memory_fails_alone():
+    def decode(idx, frames, *args):
+        raise torch.OutOfMemoryError("too big")
+
+    [result] = _contained(decode, [2], [10])
+    assert (result.index, result.pcm, result.error) == (2, None, "out_of_memory")

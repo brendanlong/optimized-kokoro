@@ -18,7 +18,7 @@ class FakeSynth:
     vocab_ids = frozenset([1, 2, 3, 16])
     max_phonemes = 510
     voice_names = ["af_heart", "am_adam"]
-    max_chunk_samples = 2_880_000
+    max_chunk_samples = 1_440_000
 
     def __init__(self):
         self.gate = threading.Event()
@@ -79,7 +79,7 @@ def test_hello(worker):
     assert client.hello.voices == ["af_heart", "am_adam"]
     assert client.hello.max_batch == 4
     assert client.hello.slots == SLOTS
-    assert client.hello.max_chunk_samples == 2_880_000
+    assert client.hello.max_chunk_samples == 1_440_000
 
 
 def test_synthesize(worker):
@@ -233,6 +233,22 @@ def test_stall_mid_frame_closes():
     assert time.monotonic() - t < 5
     thread.join(5)
     assert not thread.is_alive()
+
+
+def test_a_front_that_stops_reading_is_closed_with_replies_still_to_send():
+    synth = FakeSynth()
+    a, b = socket.socketpair()
+    conn = Connection(a, synth, max_batch=4, frame_timeout=0.5)
+    thread = threading.Thread(target=conn.serve, daemon=True)
+    thread.start()
+    b.settimeout(10)
+    b.recv(65536)  # Hello
+    for slot in range(SLOTS):  # 600 KB of audio each, far more than the socket buffers
+        b.sendall(P.synthesize(slot, [1] * 500, 0))
+    thread.join(5)
+    assert not thread.is_alive()
+    while b.recv(1 << 20):  # what was sent, then the worker's close
+        pass
 
 
 def test_idle_front_is_not_a_stall():

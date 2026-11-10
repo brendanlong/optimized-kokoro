@@ -12,7 +12,7 @@ Three containers on the host's system Docker, defined by `compose.yaml`:
 - Linux on x86-64-v3 (AVX2: Intel Haswell, AMD Zen or newer; `.cargo/config.toml`).
 - Docker Engine (rootful, the system daemon) with the Compose plugin.
 - gVisor's `runsc`, recent enough to support your NVIDIA driver: `runsc nvproxy list-supported-drivers` must list the version `nvidia-smi` reports. `install.sh` checks this. nvproxy supports exact driver versions only, so hold the driver and runsc together. Distribution packages of runsc are often too old; gVisor's own apt repository tracks its releases.
-- An NVIDIA GPU with its driver, and the NVIDIA Container Toolkit with a CDI spec (`nvidia-ctk cdi list` shows `nvidia.com/gpu=0`; `sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml` makes one). Docker's CDI support must be on, which is the default from Docker 28 (before that, `"features": {"cdi": true}` in `daemon.json`). `install.sh` checks all of this. The model needs about 2 GB of GPU memory at `--max-batch 1`.
+- An NVIDIA GPU with its driver, and the NVIDIA Container Toolkit with a CDI spec (`nvidia-ctk cdi list` shows `nvidia.com/gpu=0`; `sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml` makes one). Docker's CDI support must be on, which is the default from Docker 28 (before that, `"features": {"cdi": true}` in `daemon.json`). `install.sh` checks all of this. The model needs about 2 GB of GPU memory at the default chunk cap, at any `--max-batch` (the decoder's rows are held to the cap).
 
   The worker gets its GPU as a CDI device (`devices: nvidia.com/gpu=N`) with `NVIDIA_VISIBLE_DEVICES=void`, not with `--gpus`. With an image that sets `NVIDIA_VISIBLE_DEVICES=all` (every CUDA base image), `--gpus` takes the NVIDIA legacy hook path. Under runsc release-20261102.0 the sandbox then dies at boot with `Error reading mounts file: error unmarshaling mounts: unexpected end of JSON input`. CDI plus `void` works under gVisor: checked with `docker run --runtime=runsc-kokoro --device nvidia.com/gpu=0 -e NVIDIA_VISIBLE_DEVICES=void nvidia/cuda:12.6.3-base-ubuntu24.04 nvidia-smi` (`runsc-kokoro` was the single runtime of releases before the split, below).
 - `jq`, `curl`, `flock`, `ss` and `sha256sum` on the host. For the converters (unless you import their output, below): uv for the models, and cargo for UniDic.
@@ -55,11 +55,13 @@ It fails before building anything if the server's or the demo's port is already 
 KOKORO_GPU=0                        # a CDI device name from nvidia-ctk cdi list (an index or UUID; not all)
 KOKORO_LISTEN=127.0.0.1:8880        # the server (IPv4:port); 0.0.0.0 exposes it everywhere
 KOKORO_DEMO_LISTEN=127.0.0.1:25436  # the demo page
-KOKORO_MAX_BATCH=1                  # the worker's --max-batch, 1-64 (worker/README.md)
+KOKORO_MAX_BATCH=8                  # the worker's --max-batch, 1-64 (below)
 KOKORO_MAX_CHUNK_SECONDS=60         # the worker's --max-chunk-seconds, 25-60: its GPU memory (below)
 ```
 
 `KOKORO_MAX_CHUNK_SECONDS` is the most audio one request to the worker may make, at any speed, and the most audio in one of its packed decoder rows, so it sets the worker's peak GPU memory: about 200 MB plus 0.5 MB per frame of 25 ms (40 per second) reserved, packed rows a few percent more, plus about 175 MB for the CUDA context. Measured at `--max-batch 8` under load (`worker/README.md`): 60 s (the default) peaked at 1,336 MiB reserved, 30 s at 816 MiB, about 1 GB on the card, for about 8% less throughput. 30 s suits a GPU shared with a desktop. The server splits chunks that could be longer into overlapping pieces before sending them, sized from a fit to measured durations (`worker/README.md`). So a lower cap mostly costs more stitched sentences, especially at slow speeds: at 30 s, pieces of up to 270 ids at speed 1 and 45 at speed 0.25. A request can still be refused, failing its whole speech request with HTTP 500, when the model predicts more audio than the fit allows. That happened to none of the measured cases (English, and the reference fixtures' Chinese, Japanese and mixed-script chunks), but other text or voices could. The minimum, 25 s, keeps pieces at speed 0.25 to at least 32 ids, about five words. The server refuses a worker that announces more than 60 s (`worker_max_chunk_samples`). The compile-cache export runs with the same value.
+
+`KOKORO_MAX_BATCH` defaults to 8: with many listeners it renders more audio per second than batch 1 (about 210x against 153x at 16 streams on a 3060 Ti), and the packed decoder rows keep its GPU memory to the chunk cap's. A single request's latency is about the same, but under load a chunk a listener is waiting for waits for the batch ahead of it, which isn't preempted (median 290 ms against 69 ms at 16 streams; `worker/README.md`). Set 1 if first audio under load matters more than throughput. Its compile cache takes longer to build (about 10 minutes cold against 4-6 at batch 1), which the export run pays.
 
 What it does:
 1. Checks the checkout, the driver against runsc, the CDI device and the ports. Adds the runtimes and creates `/srv/optimized-kokoro`.
@@ -123,8 +125,6 @@ sudo ln -sfn releases/PREVIOUS /srv/optimized-kokoro/current
 sudo docker compose -f /srv/optimized-kokoro/current/compose.yaml up -d
 ```
 
-Installs from before per-release projects run as the single project `optimized-kokoro`. The first `update.sh` moves off it like any other release: the new worker starts in its own project, and once the new release is healthy, the old project's worker and socket volume are removed. Its server, demo, tunnel and network go at the swap.
-
 To change a setting, edit `/srv/optimized-kokoro/settings.env` and run `update.sh`. A new port must be free; a port the running release holds is fine (for example 127.0.0.1:8880 to 0.0.0.0:8880).
 
 ## API keys
@@ -185,7 +185,7 @@ Then, if nothing else uses them, remove `runsc-kokoro-uds-create`, `runsc-kokoro
 
 The scripts ignore inherited `KOKORO_*`, `COMPOSE_*` and `DOCKER_*` variables (except `KOKORO_BUILD_USER`), so `sudo -E` can't change what Compose sees. If either script is interrupted (Ctrl-C) or fails after swapping, it puts the previous release back, or takes a first install down again.
 
-`deploy/dry-run/test.sh` runs `install.sh`, `update.sh` and `keys.sh` as any user, without Docker or a GPU, against fakes (`deploy/dry-run/bin`), through success, failures, Ctrl-C at each step of an update, and the move off `optimized-kokoro`. CI runs it.
+`deploy/dry-run/test.sh` runs `install.sh`, `update.sh` and `keys.sh` as any user, without Docker or a GPU, against fakes (`deploy/dry-run/bin`), through success, failures, and Ctrl-C at each step of an update. CI runs it.
 
 ## Notes
 

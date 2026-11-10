@@ -68,7 +68,6 @@ pub trait Pipeline: Send + Sync + 'static {
 pub struct StubPipeline;
 
 const STUB_PUNCTUATION: &str = ";:,.!?";
-const SPACE_ID: u8 = 16;
 
 fn stub_g2p(text: &str) -> String {
     text.chars()
@@ -79,7 +78,7 @@ fn stub_g2p(text: &str) -> String {
 
 fn stub_id(c: char) -> u8 {
     match c {
-        ' ' => SPACE_ID,
+        ' ' => crate::stitch::SPACE_ID,
         'a'..='z' => 43 + (c as u8 - b'a'),
         _ => 1 + STUB_PUNCTUATION.find(c).expect("stub phonemes only") as u8,
     }

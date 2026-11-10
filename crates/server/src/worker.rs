@@ -470,6 +470,11 @@ impl Worker {
         Self { current: rx, gauge }
     }
 
+    /// The connected worker's largest batch (1 when none is), without taking its lock.
+    pub fn max_batch(&self) -> u16 {
+        self.current.borrow().as_ref().map_or(1, |c| c.max_batch())
+    }
+
     pub fn current(&self) -> Option<Arc<Connection>> {
         self.current.borrow().clone().filter(|c| c.is_open())
     }

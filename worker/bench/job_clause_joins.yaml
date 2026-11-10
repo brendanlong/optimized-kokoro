@@ -1,6 +1,6 @@
 # gpuc submit bench/job_clause_joins.yaml --host local   (from worker/). Untracked inputs it expects:
 # bench/bin/kokoro-server-LABEL for each label in SERVERS, and bench/bin/espeak-ng-data, with
-# ESPEAK_DATA_LINK the espeak-ng-data path the binaries were built with.
+# bench/bin/espeak-data-link holding the espeak-ng-data path the binaries were built with.
 name: kokoro-clause-joins
 setup: uv sync --frozen
 command: bash bench/job_clause_joins.sh
@@ -8,7 +8,6 @@ python: .venv/bin/python
 gpus: 1
 env:
   REQUIRE_CUDA: "1"
-  ESPEAK_DATA_LINK: /home/claude/worktrees/decf45d1-3ba3-4e7a-b872-21145ffc217e/optimized-kokoro/.claude/worktrees/agent-ac24fffb42220096b/crates/espeak-ng/espeak-ng-data
 outputs:
   - path: results
 priority: 40

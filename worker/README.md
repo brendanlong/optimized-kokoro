@@ -62,7 +62,15 @@ The peak came from the corpus's packed rows both times; the longest requests run
 
 ## Batching
 
-`--max-batch` defaults to 1. On the RTX 3060 Ti with real sentences in gVisor, `--max-batch 8` gives 173x at 16 concurrent requests against 161x at batch 1, and about the same single-request latency (36 vs 34 ms median at 1 stream). Single requests used to be slower at batch 8 (44 vs 37 ms); that was first-time shapes (see [Kernels](#kernels)). Use 8 when many listeners share the worker.
+`--max-batch` defaults to 1. On the RTX 3060 Ti (2026-11-10, outside gVisor, `bench/job_ab.sh`: closed-loop streams shaped like the server's lookahead, `bench/lookahead_load.py`), batch 8 gives more throughput under load, and the chunks a listener is waiting for take longer, since a batch isn't preempted:
+
+| streams | throughput, batch 1 | throughput, batch 8 | waiting p50 / p95, batch 1 | waiting p50 / p95, batch 8 |
+|---|---|---|---|---|
+| 1 | 150x | 153-156x | 35 / 66 ms | 34 / 62-64 ms |
+| 16 | 153x | 200-216x | 69 / 284 ms | 282-305 / 436-451 ms |
+| 64 | 154x | 188-211x | 73 / 947 ms | 325-368 / 769-946 ms |
+
+Use 8 when many listeners share the worker and throughput matters more than first audio.
 
 When the GPU is free the worker takes up to `--max-batch` queued requests, most urgent first, and never waits for more. The text side (ALBERT, text encoder, duration predictor) runs on the whole batch with attention masks, zeroed padding and packed LSTMs, so durations match a batch of one (exactly in fp32; in fp16 about one sentence in 16 gets one duration a frame off). Then the decoder runs on the batch's sentences packed end to end into one row, with two frames of zeros between them (`masked.py`), in rows of at most the frame budget, most urgent first; each row's audio goes out as soon as it's done. A row that holds a chunk a listener is waiting for ends before the next prefetch chunk, so waiting chunks (from any number of streams) share rows with each other but not with the prefetches behind them, and come back without waiting for those to decode. At mixed priorities a row of more urgent prefetches may still take a less urgent waiting chunk after them, and the frame budget may still split waiting chunks across rows.
 
@@ -74,6 +82,8 @@ Measured on the 3060 Ti at `--max-batch 8`, main's worker and this one up at onc
 | 64 | 377-396 ms | 307-330 ms | 506-521 ms | 465-504 ms | 213-220x | 203-215x |
 
 Waiting chunks came back 9-19% sooner at the median. Decoder rows went from about 1.08 to 1.31 per batch. Throughput was within 2% in rounds 2 and 3; in round 1 it was 12% lower at 16 streams and 5% lower at 64, with prefetch slower too, so probably other load on the shared GPU, but a small cost from the extra rows can't be ruled out. With exactly one waiting and two prefetch chunks out per stream (`--model fixed`), every batch is all waiting chunks and both workers matched within 2%, an A/A check.
+
+The GPU thread also copies each row's audio to the host, builds its Result frames and writes them before it starts the next row. Handing the frames and writes to a sender thread (2026-11-10, `bench/job_ab.sh`, three rounds against main at `--max-batch 8`) gave no more throughput (187-216x against 188-216x at 16 and 64 streams), and waiting chunks took longer: p50 353-411 ms against 282-305 at 16 streams, 406-420 against 325-368 at 64. So the worker writes from the GPU thread.
 
 Packing replaces grouping by length, which split a batch of real sentences into 4-6 decoder runs on the H100. The convolutions run once over the row, and none reaches across a gap, which is zeroed again before each one. What isn't local is done per sentence: the instance norm statistics and the style, the harmonic source's phase (summed in float64, restarting at each sentence, and upsampled in the sentence's own positions). At a sentence's edges the STFTs see the gap's zeros instead of a row's reflect padding, which the generator spreads over a few hundred samples of mostly near-silence; the spectrograms were the same with and without per-sentence edge handling (0.99772 mean, 0.99455 worst, against 0.99772 and 0.99457). With the noise off, a packed sentence's spectrogram correlates 0.998 with the sentence alone (0.995 worst, fp32; `bench/check_packing.py`). Samples still differ: the generator magnifies rounding in the harmonic phase, the same rounding batch 1 has. In fp16 any batch differs from batch 1 a little more than seed noise (0.99 vs 0.996), as it did with grouping; that's fp16 numerics depending on batch size, and copies of one sentence show the same.
 

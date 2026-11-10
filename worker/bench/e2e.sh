@@ -47,9 +47,6 @@ text="The quick brown fox jumps over the lazy dog. Optimized Kokoro speaks this 
 speak warmup '{"model": "kokoro", "voice": "af_heart", "input": "Warming up.", "response_format": "pcm", "stream": true}'
 speak lion-reader "{\"model\": \"kokoro\", \"voice\": \"af_heart\", \"input\": \"$text\", \"response_format\": \"pcm\", \"stream\": true}"
 speak clawed-abode "{\"model\": \"kokoro\", \"input\": \"$text\", \"voice\": \"bm_george\", \"speed\": 1.25, \"response_format\": \"pcm\"}"
-curl -sS -w " HTTP %{http_code}\n" -H "Authorization: Bearer e2e-key" -H "Content-Type: application/json" \
-    -d '{"input": "Hi.", "voice": "af_heart(2)+af_sky", "response_format": "pcm"}' \
-    "http://127.0.0.1:$port/v1/audio/speech" | tee -a results/e2e.txt
 
 uv run --no-sync python - << 'EOF' 2>&1 | tee -a results/e2e.txt
 import numpy as np

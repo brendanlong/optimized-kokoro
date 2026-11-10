@@ -18,8 +18,7 @@
 # Images are tagged optimized-kokoro-{worker,server,demo}:REL. Each release is its own Compose
 # project, optimized-kokoro-rel (REL in lower case, COMPOSE_PROJECT_NAME in its .env), with its own
 # socket volume and network, so update.sh can start a new release's worker next to the running
-# release. Releases from before that have no COMPOSE_PROJECT_NAME and share the project
-# optimized-kokoro (compose.yaml's name then); update.sh moves off it like any other release.
+# release.
 
 # Compose gives the environment priority over a release's .env, so nothing inherited (sudo -E, say)
 # may set what the scripts decide. The only inputs are KOKORO_BUILD_USER and SUDO_USER (and DESTDIR,
@@ -230,8 +229,8 @@ new_project() {
     echo "optimized-kokoro-${1,,}"
 }
 
-# The Compose project of release $1: COMPOSE_PROJECT_NAME in its .env, or optimized-kokoro for a
-# release from before per-release projects (whose .env has none); new_project before it has a .env.
+# The Compose project of release $1: COMPOSE_PROJECT_NAME in its .env, or new_project before it
+# has a .env.
 project_of() {
     local env=$root/releases/$1/.env p
     [ -f "$env" ] || {
@@ -239,7 +238,19 @@ project_of() {
         return
     }
     p=$(sed -n 's/^COMPOSE_PROJECT_NAME=//p' "$env")
-    echo "${p:-optimized-kokoro}"
+    [ -n "$p" ] || die "$env has no COMPOSE_PROJECT_NAME"
+    echo "$p"
+}
+
+# Refuses to go on while a kept release is from before per-release Compose projects (2026-11-04),
+# which this deploy/ no longer knows how to stop or remove.
+check_releases() {
+    local env
+    for env in "$root"/releases/*/.env; do
+        [ -f "$env" ] || continue
+        grep -q '^COMPOSE_PROJECT_NAME=' "$env" ||
+            die "$env has no COMPOSE_PROJECT_NAME: that release is from before per-release Compose projects. Run update.sh from a checkout between commits a1d0768 and b2b7bca until no kept release is (twice if the running one is), then this one."
+    done
 }
 
 # docker compose for release $1. The project is in its .env too, so a plain
@@ -271,16 +282,16 @@ remove_project() {
     return 0
 }
 
-# Removes every project of ours (optimized-kokoro and optimized-kokoro-REL) except $1: what an
-# update or install that was killed before it could clean up left, such as a new worker holding
-# GPU memory, or a network holding the subnet.
+# Removes every project of ours (optimized-kokoro-REL) except $1: what an update or install that
+# was killed before it could clean up left, such as a new worker holding GPU memory, or a network
+# holding the subnet.
 sweep_projects() {
     local p
     for p in $({
         docker ps -a --format '{{.Label "com.docker.compose.project"}}'
         docker network ls --format '{{.Label "com.docker.compose.project"}}'
         docker volume ls --format '{{.Label "com.docker.compose.project"}}'
-    } | grep -xE 'optimized-kokoro(-[0-9]{8}t[0-9]{6}z)?' | sort -u); do
+    } | grep -xE 'optimized-kokoro-[0-9]{8}t[0-9]{6}z' | sort -u); do
         [ "$p" != "${1:-}" ] || continue
         echo "== removing the Compose project $p, left by an interrupted install or update"
         remove_project "$p"
@@ -349,8 +360,10 @@ ensure_dirs() {
 #KOKORO_LISTEN=127.0.0.1:8880
 # Where the demo page listens (IPv4:port).
 #KOKORO_DEMO_LISTEN=127.0.0.1:25436
-# The worker's --max-batch (8 for many listeners: worker/README.md). The cache seed depends on it.
-#KOKORO_MAX_BATCH=1
+# The worker's --max-batch, 1-64. 8 renders more audio per second than 1 with many listeners, in no
+# more GPU memory, though first audio waits longer under load (worker/README.md). The cache seed
+# depends on it.
+#KOKORO_MAX_BATCH=8
 # The worker's --max-chunk-seconds, 25-60: the most audio one request to the worker may make, at
 # any speed. It sets the worker's peak GPU memory (deploy/README.md); the server splits longer chunks.
 #KOKORO_MAX_CHUNK_SECONDS=60
@@ -368,7 +381,7 @@ EOF
 # error, not dropped.
 load_settings() {
     local line n=0 key value
-    KOKORO_GPU=0 KOKORO_LISTEN=127.0.0.1:8880 KOKORO_DEMO_LISTEN=127.0.0.1:25436 KOKORO_MAX_BATCH=1 KOKORO_MAX_CHUNK_SECONDS=60
+    KOKORO_GPU=0 KOKORO_LISTEN=127.0.0.1:8880 KOKORO_DEMO_LISTEN=127.0.0.1:25436 KOKORO_MAX_BATCH=8 KOKORO_MAX_CHUNK_SECONDS=60
     KOKORO_CLOUDFLARED=0
     while IFS= read -r line || [ -n "$line" ]; do
         n=$((n + 1))
@@ -866,12 +879,11 @@ wait_tunnel() {
 }
 
 # Removes a release's Compose project, images and directory, and the dictionaries no release names
-# any more. The project only if it's the release's own (not the shared optimized-kokoro of releases
-# from before per-release projects, which sweep_projects removes) and not the running one.
+# any more. The project only if it isn't the running one.
 remove_release() {
     local i p
     p=$(project_of "$1")
-    if [ "$p" != optimized-kokoro ] && { [ ! -L "$root/current" ] || [ "$p" != "$(project_of "$(current_release)")" ]; }; then
+    if [ ! -L "$root/current" ] || [ "$p" != "$(project_of "$(current_release)")" ]; then
         remove_project "$p"
     fi
     for i in "${images[@]}"; do docker image rm "optimized-kokoro-$i:$1" > /dev/null 2>&1 || true; done

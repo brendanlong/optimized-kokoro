@@ -41,7 +41,7 @@ def stats(xs):
     if not xs:
         return {"n": 0}
     return {"n": len(xs), "p50": round(1000 * pct(xs, 50), 1), "p90": round(1000 * pct(xs, 90), 1),
-            "max": round(1000 * max(xs), 1)}
+            "p95": round(1000 * pct(xs, 95), 1), "max": round(1000 * max(xs), 1)}
 
 
 class Stream:

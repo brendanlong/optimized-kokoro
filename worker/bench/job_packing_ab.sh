@@ -22,7 +22,7 @@ if [[ " $STEPS " == *" scale "* ]]; then
             if [ "$which" = main ]; then dir=$MAIN; else dir=$PWD; fi
             cache "$which"
             echo "== scale $which, round $round"
-            "$PY" "$dir/bench/batch_scale.py" "$MODELS" --steps mixed profile --max-batch 32 --frame-budget 9600 \
+            "$PY" "$dir/bench/batch_scale.py" "$MODELS" --steps mixed profile --max-batch 32 --frame-budget 2400 \
                 --profile-batches 8 --json "results/scale-$which-$round.json" 2>&1 | quiet
         done
     done

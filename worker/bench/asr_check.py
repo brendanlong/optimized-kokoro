@@ -1,8 +1,10 @@
 """Word error rate of WAV files against their texts, with Whisper small.en.
 
-    uv run python bench/asr_check.py PASSAGES_JSON DIR
+    uv run python bench/asr_check.py ITEMS_JSON DIR
 
-PASSAGES_JSON is window_context.py's passages.json; prints the WER per variant.
+ITEMS_JSON is a list of {"text": TEXT, "files": {VARIANT: WAV, ...}}, where TEXT is a string or a
+list of strings read in order and each WAV is in DIR, or an object holding that list under
+"pairs" (make_pairs.py's pairs.json). Prints the WER per variant.
 """
 
 import json
@@ -32,12 +34,15 @@ def wer(ref, hyp):
 
 
 def main():
-    meta = json.load(open(sys.argv[1], encoding="utf-8"))
+    items = json.load(open(sys.argv[1], encoding="utf-8"))
+    if isinstance(items, dict):
+        items = items["pairs"]
     asr = pipeline("automatic-speech-recognition", "openai/whisper-small.en", device=0, torch_dtype=torch.float16)
     totals = {}
-    for p in meta:
-        ref = words(" ".join(p["text"]))
-        for variant, fn in p["files"].items():
+    for item in items:
+        text = item["text"]
+        ref = words(text if isinstance(text, str) else " ".join(text))
+        for variant, fn in item["files"].items():
             w = wave.open(os.path.join(sys.argv[2], fn))
             x = np.frombuffer(w.readframes(w.getnframes()), dtype="<i2").astype(np.float32) / 32767
             at_16k = np.interp(np.arange(0, len(x), 1.5), np.arange(len(x)), x).astype(np.float32)

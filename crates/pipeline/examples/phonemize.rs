@@ -22,7 +22,7 @@ fn main() {
         let text = serde_json::from_str::<String>(&line).unwrap_or(line);
         let mut chunks = Vec::new();
         let mut error = None;
-        for chunk in pipeline.chunks_within(&text, &options, max_tokens) {
+        for chunk in pipeline.chunks_within_groups(&text, &options, max_tokens, max_tokens, &|| false) {
             match chunk {
                 Ok(c) if c.pause.is_none() => chunks.push(serde_json::json!({
                     "text": c.text, "phonemes": c.phonemes, "ids": c.ids,

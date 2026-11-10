@@ -338,12 +338,13 @@ fn pauses_ids_and_words() {
     let hello = &chunks[0];
     assert_eq!(hello.phonemes, "həlˈO wˈɜɹld!");
     assert_eq!(hello.ids, hello.phonemes.chars().map(|c| kokoro_pipeline::id(c).unwrap()).collect::<Vec<_>>());
-    assert_eq!(hello.dropped, 0);
-    let words: Vec<_> = hello.words.iter().map(|w| (w.text.as_str(), w.phonemes.clone(), w.ids.clone())).collect();
+    assert_eq!(hello.dropped(), 0);
+    let words = hello.words();
+    let words: Vec<_> = words.iter().map(|w| (w.text.as_str(), w.phonemes.clone(), w.ids.clone())).collect();
     assert_eq!(words, [("Hello", 0..5, 0..5), ("world", 6..12, 6..12), ("!", 12..13, 12..13)]);
     let russian = &chunks[2];
-    assert_eq!(russian.dropped, russian.phonemes.chars().filter(|&c| kokoro_pipeline::id(c).is_none()).count());
-    assert_eq!(russian.ids.len() + russian.dropped, russian.phonemes.chars().count());
+    assert_eq!(russian.dropped(), russian.phonemes.chars().filter(|&c| kokoro_pipeline::id(c).is_none()).count());
+    assert_eq!(russian.ids.len() + russian.dropped(), russian.phonemes.chars().count());
 }
 
 /// The reference fails the whole request with `OverflowError` on a number of 400 digits, after
@@ -367,7 +368,7 @@ fn links_with_blank_phonemes_at_chunk_ends() {
     let words = |text: &str| -> Vec<Vec<(String, usize, usize)>> {
         pipeline()
             .chunks(text, &options)
-            .map(|c| c.unwrap().words.into_iter().map(|w| (w.text, w.ids.start, w.ids.end)).collect())
+            .map(|c| c.unwrap().words().into_iter().map(|w| (w.text, w.ids.start, w.ids.end)).collect())
             .collect()
     };
     let say = vec![("Say".to_owned(), 0, 3)];

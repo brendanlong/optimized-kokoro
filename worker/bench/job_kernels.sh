@@ -82,7 +82,8 @@ start_worker() {  # label dir flags... -> sets WORKER_PID; logs to results/$labe
     done
 }
 
-if [[ " $STEPS " == *" serve "* ]] && [ -n "${KOKORO_SERVER_BIN:-}" ] && [ -n "${ESPEAK_DATA_LINK:-}" ]; then
+ESPEAK_DATA_LINK=${ESPEAK_DATA_LINK:-$(cat bench/bin/espeak-data-link 2> /dev/null)}
+if [[ " $STEPS " == *" serve "* ]] && [ -n "${KOKORO_SERVER_BIN:-}" ] && [ -n "$ESPEAK_DATA_LINK" ]; then
     # The server binary reads espeak-ng-data from the path it was built at.
     mkdir -p "$(dirname "$ESPEAK_DATA_LINK")"
     ln -sfn "$(dirname "$KOKORO_SERVER_BIN")/espeak-ng-data" "$ESPEAK_DATA_LINK"

@@ -16,8 +16,6 @@ use tokio::sync::Semaphore;
 
 /// hyper's default write-buffer limit: it polls the body for more frames until this much is queued.
 const HYPER_QUEUE_BYTES: usize = 8192 + 4096 * 100;
-/// The longest pause one request may ask for (`kokoro_text::Limits`), as samples.
-const MAX_PAUSE_SAMPLES: u64 = 60 * crate::protocol::SAMPLE_RATE as u64;
 
 /// The soft "Max open files" limit from Linux's `/proc/self/limits`; `u64::MAX` if unlimited.
 pub fn soft_open_file_limit(limits: &str) -> Option<u64> {
@@ -344,7 +342,9 @@ impl Config {
     /// the worst case is about 875 MB, well inside the container's 3 GiB (`deploy/compose.yaml`).
     /// Real sentences are around 5 s (240 KB), so typical use holds a few MB.
     pub fn audio_bound(&self, max_chunk_samples: u32) -> usize {
-        let chunk_samples = u64::from(max_chunk_samples).max(MAX_PAUSE_SAMPLES);
+        // A pause is one chunk of silence, at most the text limits' longest.
+        let max_pause = crate::audio::silence(kokoro_text::Limits::default().max_pause_duration_s) as u64;
+        let chunk_samples = u64::from(max_chunk_samples).max(max_pause);
         let chunk = usize::try_from(2 * chunk_samples).unwrap_or(usize::MAX);
         let per_stream = (self.lookahead + 2).saturating_mul(chunk).saturating_add(HYPER_QUEUE_BYTES);
         self.max_concurrent_requests.saturating_mul(per_stream).saturating_add(chunk)

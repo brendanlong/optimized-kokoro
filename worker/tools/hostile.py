@@ -1,7 +1,10 @@
 """Hostile front for the worker: malformed and extreme frames, slot misuse, cancellation, slow and
 stalled frames, and 300 mutations. Usage: python tools/hostile.py SOCKET WORKER_PID (from the PR #11
-review; updated for protocol v3: slots, and the priority and waiting bytes)."""
+review)."""
 import os, random, socket, struct, sys, time
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+from kokoro_worker import protocol as P
 
 SOCK, PID = sys.argv[1], int(sys.argv[2])
 VOICE_COUNT = SLOTS = None
@@ -27,7 +30,7 @@ def connect():
     s.settimeout(20)
     s.connect(SOCK)
     hello = read_frame(s)
-    assert hello[0] == 1 and struct.unpack_from("<H", hello, 5)[0] == 3, hello[:7]
+    assert hello[0] == 1 and struct.unpack_from("<H", hello, 5)[0] == P.VERSION, hello[:7]
     global VOICE_COUNT, SLOTS
     SLOTS = struct.unpack_from("<H", hello, 13)[0]
     VOICE_COUNT = struct.unpack_from("<H", hello, 23)[0]

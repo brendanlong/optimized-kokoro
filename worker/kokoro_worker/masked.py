@@ -18,7 +18,7 @@ spectrograms (bench/check_packing.py) were the same with and without per-segment
 The generator magnifies rounding in the harmonic phase (a 1e-3 change in the source moves samples
 by about 0.06), so "up to float rounding" is judged on the spectrogram, not sample by sample.
 
-Rates, as samples per frame (and an extra sample per sentence); audio is 600 samples per frame:
+Rates, as samples per frame (and an extra sample per sentence); audio is SAMPLES_PER_FRAME (600) per frame:
     "f"   decoder frames             1
     "2f"  after the 2x upsample      2
     "20f" after the generator's first transposed conv          20
@@ -29,6 +29,8 @@ import math
 
 import torch
 import torch.nn.functional as F
+
+from .protocol import SAMPLES_PER_FRAME
 
 # Frames of zeros between sentences. The widest reach is the generator's kernel-11, dilation-5
 # convolutions at 20 samples per frame: 25 samples, 1.25 frames.
@@ -73,7 +75,7 @@ class Packing:
                 m = F.pad(m, (0, extra))
             t["m_" + key] = m[None, None, :].to(dtype)
             t["count_" + key] = t["count_base"] * r + extra
-        t["m_samples"] = t["real"].repeat_interleave(600).to(torch.float32)[None]
+        t["m_samples"] = t["real"].repeat_interleave(SAMPLES_PER_FRAME).to(torch.float32)[None]
         for unused in ("real", "first_gap", "count_base"):  # only for building the others
             del t[unused]
         self.tensors = t
@@ -86,8 +88,9 @@ class Packing:
         return flat[:, idx.to(x.device, non_blocking=True)][None]
 
     def unpack_audio(self, audio: torch.Tensor) -> list[torch.Tensor]:
-        """[1, 1, 600 * total] -> each sentence's samples."""
-        return [audio[0, 0, s * 600 : (s + f) * 600] for s, f in zip(self.starts, self.frames)]
+        """[1, 1, SAMPLES_PER_FRAME * total] -> each sentence's samples."""
+        spf = SAMPLES_PER_FRAME
+        return [audio[0, 0, s * spf : (s + f) * spf] for s, f in zip(self.starts, self.frames)]
 
 
 def _segment_sum(pk, key, x):

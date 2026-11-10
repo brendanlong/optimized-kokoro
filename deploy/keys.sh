@@ -31,6 +31,7 @@ check_checkout
 [ -L "$root/current" ] || die "not installed; run deploy/install.sh first"
 dir=$root/secrets
 [ -f "$dir/server.toml" ] && [ -f "$dir/demo.key" ] || die "$dir is incomplete"
+check_releases
 ensure_keys_file
 # The running release's address, not settings.env's, which may hold a change update.sh hasn't applied.
 KOKORO_LISTEN=$(release_setting "$(basename "$(readlink "$root/current")")" LISTEN)

@@ -128,11 +128,11 @@ fn requests_match_the_reference() {
                 Ok(c) => match c.pause {
                     Some(pause) => Expected::Pause { pause },
                     None => Expected::Speech {
+                        dropped: c.dropped(),
+                        words: c.words().into_iter().map(|w| (w.text, w.ids.start, w.ids.end)).collect(),
                         text: c.text,
                         phonemes: c.phonemes,
                         ids: c.ids,
-                        dropped: c.dropped,
-                        words: c.words.into_iter().map(|w| (w.text, w.ids.start, w.ids.end)).collect(),
                     },
                 },
                 Err(e) => Expected::Error { error: e.to_string() },

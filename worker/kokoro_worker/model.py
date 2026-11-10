@@ -31,11 +31,10 @@ import torch.nn.functional as F
 from safetensors.torch import load_file
 
 from . import kernels, masked
-from .protocol import max_duration
+from .protocol import SAMPLES_PER_FRAME, max_duration
 
 log = logging.getLogger(__name__)
 
-SAMPLES_PER_FRAME = 600  # 2x upsample in the decoder, then 10 * 6 in the generator, then hop 5
 VOICE_NAME = re.compile(r"[a-z0-9_]{1,64}")
 
 
@@ -245,26 +244,26 @@ class Synth:
         pred_dur = torch.round(duration).long().clamp(min=1).minimum(max_dur).masked_fill(mask, 0)
         return pred_dur, d, t_en
 
-    def _groups(self, frames: list[int], waiting: list[bool]) -> list[list[int]]:
+    def _rows(self, frames: list[int], waiting: list[bool]) -> list[list[int]]:
         """Split items, most urgent first, into packed rows of at most frame_budget frames.
 
         A row that holds a chunk a listener is waiting for takes no prefetch after it, so waiting
         chunks decode together, ahead of prefetches, and don't wait for them."""
-        groups, group, size, has_waiting = [], [], 0, False
+        rows, row, size, has_waiting = [], [], 0, False
         for i, (f, w) in enumerate(zip(frames, waiting, strict=True)):
-            if group and (size + f + masked.GAP > self.frame_budget or (has_waiting and not w)):
-                groups.append(group)
-                group, size, has_waiting = [], 0, False
-            group.append(i)
+            if row and (size + f + masked.GAP > self.frame_budget or (has_waiting and not w)):
+                rows.append(row)
+                row, size, has_waiting = [], 0, False
+            row.append(i)
             size += f + masked.GAP
             has_waiting |= w
-        if group:
-            groups.append(group)
-        return groups
+        if row:
+            rows.append(row)
+        return rows
 
     @torch.inference_mode()
     def run(self, requests: list[Request]) -> Iterator[list[Result]]:
-        """Synthesize a batch; yields results group by group as each finishes, most urgent first.
+        """Synthesize a batch; yields results row by row as each finishes, most urgent first.
 
         `requests` must already be validated, and listed most urgent first (as the queue orders
         them: priority, then waiting before prefetch, then arrival)."""
@@ -301,8 +300,8 @@ class Synth:
         d_t = F.pad(d.transpose(1, 2), (0, 1))  # [B, 640, T + 1]; column T is zeros, for padding
         t_en = F.pad(t_en, (0, 1))
         cum = pred_dur.cumsum(1)
-        for group in self._groups([frames[i] for i in ok], [requests[i].waiting for i in ok]):
-            idx = [ok[g] for g in group]
+        for row in self._rows([frames[i] for i in ok], [requests[i].waiting for i in ok]):
+            idx = [ok[r] for r in row]
             yield from self._decode_contained(idx, [frames[i] for i in idx], durations, cum, d_t, t_en, ref)
 
     def _decode_contained(self, idx, frames, *args) -> Iterator[list[Result]]:

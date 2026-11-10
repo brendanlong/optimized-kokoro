@@ -148,7 +148,7 @@ def pause_at(q, sample):
 
 
 def trim(pcm, speed):
-    """Kokoro-FastAPI's trimming of a sentence end (audio.rs trim_range, text ending in '.')."""
+    """Kokoro-FastAPI's trimming of a sentence end (audio.rs keep_range without cuts, text ending in '.')."""
     a = pcm[24:-24]
     loud = np.nonzero(np.abs(a.astype(np.int32)) > THRESHOLD)[0]
     start = max(0, loud[0] - 1200)
