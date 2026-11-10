@@ -145,27 +145,29 @@ struct Inner {
     live: Vec<Arc<Tracked>>,
     cost: Cost,
     log: crate::log::RateLimit,
-    /// The worker's largest batch, from its hello.
-    max_batch: u16,
 }
 
 /// The server's load: every live request, and the learned cost. One per server.
 pub struct Load {
     /// `None` turns latency-based shedding off.
     budget: Option<Duration>,
+    /// The connected worker's largest batch, how much other work may be rendering at once.
+    max_batch: Box<dyn Fn() -> u16 + Send + Sync>,
     inner: Mutex<Inner>,
 }
 
 impl Load {
-    pub fn new(budget: Option<Duration>) -> Arc<Self> {
+    /// `max_batch` reads the connected worker's largest batch. It's called with the load's lock
+    /// held, so it mustn't take a lock the worker connection holds while it reports to the load.
+    pub fn new(budget: Option<Duration>, max_batch: impl Fn() -> u16 + Send + Sync + 'static) -> Arc<Self> {
         Arc::new(Self {
             budget,
+            max_batch: Box::new(max_batch),
             inner: Mutex::new(Inner {
                 next_seq: 0,
                 live: Vec::new(),
                 cost: Cost::default(),
                 log: crate::log::RateLimit::new(Duration::from_secs(10)),
-                max_batch: 1,
             }),
         })
     }
@@ -198,7 +200,7 @@ impl Load {
         }
         crate::debug!(
             "admitted a request at priority {level}: estimated first audio {} ms",
-            Self::estimate_locked(&inner, level).as_millis()
+            self.estimate_locked(&inner, level).as_millis()
         );
         Ok(Admission { load: self.clone(), tracked })
     }
@@ -241,17 +243,12 @@ impl Load {
         let Some(budget) = self.budget else { return false };
         let inner = self.inner.lock().unwrap();
         let own = Duration::from_secs_f64(inner.cost.chunk_ids * inner.cost.secs_per_id());
-        Self::estimate_locked(&inner, level) + own > budget
+        self.estimate_locked(&inner, level) + own > budget
     }
 
     /// The estimated time until a new request at `level` would get its first audio.
     pub fn estimate(&self, level: u8) -> Duration {
-        Self::estimate_locked(&self.inner.lock().unwrap(), level)
-    }
-
-    /// Notes the connected worker's `max_batch`, how much other work may be rendering at once.
-    pub fn set_max_batch(&self, max_batch: u16) {
-        self.inner.lock().unwrap().max_batch = max_batch.max(1);
+        self.estimate_locked(&self.inner.lock().unwrap(), level)
     }
 
     /// The learned render cost per phoneme id.
@@ -259,7 +256,7 @@ impl Load {
         self.inner.lock().unwrap().cost.secs_per_id()
     }
 
-    fn estimate_locked(inner: &Inner, level: u8) -> Duration {
+    fn estimate_locked(&self, inner: &Inner, level: u8) -> Duration {
         let mut ids = 0.0;
         // Work that doesn't count here, which the worker may be rendering already.
         let mut behind = 0.0;
@@ -287,7 +284,7 @@ impl Load {
         }
         // A batch that is already rendering finishes first, whatever its priority: on average,
         // half of it is left. It holds at most `max_batch` typical chunks of that other work.
-        ids += behind.min(f64::from(inner.max_batch) * inner.cost.chunk_ids) / 2.0;
+        ids += behind.min(f64::from((self.max_batch)().max(1)) * inner.cost.chunk_ids) / 2.0;
         Duration::from_secs_f64(ids * inner.cost.secs_per_id())
     }
 
@@ -301,7 +298,7 @@ impl Load {
         levels.dedup();
         for level in levels {
             loop {
-                let estimate = Self::estimate_locked(inner, level);
+                let estimate = self.estimate_locked(inner, level);
                 if estimate <= budget {
                     break;
                 }
@@ -437,6 +434,7 @@ impl Drop for Work {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::AtomicU16;
 
     const MS: Duration = Duration::from_millis(1);
 
@@ -451,7 +449,7 @@ mod tests {
 
     #[test]
     fn new_requests_past_the_budget_are_refused() {
-        let load = Load::new(budget(3.0));
+        let load = Load::new(budget(3.0), || 1);
         let kept: Vec<_> = (0..3).map(|_| load.admit(10, 0).unwrap()).collect();
         let refused = load.admit(10, 0).unwrap_err();
         assert!(refused.estimate > budget(3.0).unwrap(), "{refused:?}");
@@ -462,7 +460,7 @@ mod tests {
 
     #[test]
     fn higher_levels_shed_the_newest_of_the_lowest_first() {
-        let load = Load::new(budget(4.0));
+        let load = Load::new(budget(4.0), || 1);
         let low: Vec<_> = [5, 5, 7, 7].map(|level| load.admit(level, 0).unwrap()).into();
         // Each more urgent request pushes one queued request out, from the bottom up.
         let high = load.admit(200, 0).unwrap();
@@ -476,7 +474,7 @@ mod tests {
 
     #[test]
     fn high_priority_is_shed_only_when_it_alone_is_over_budget() {
-        let load = Load::new(budget(2.0));
+        let load = Load::new(budget(2.0), || 1);
         let low = load.admit(1, 0).unwrap();
         let high: Vec<_> = (0..2).map(|_| load.admit(9, 0).unwrap()).collect();
         assert!(low.is_shed());
@@ -488,7 +486,7 @@ mod tests {
 
     #[test]
     fn started_requests_are_never_shed_but_still_count() {
-        let load = Load::new(budget(2.0));
+        let load = Load::new(budget(2.0), || 1);
         let a = load.admit(1, 0).unwrap();
         let w = a.work(true, PRIOR_CHUNK_IDS as usize);
         assert!(a.start());
@@ -505,7 +503,7 @@ mod tests {
 
     #[test]
     fn a_request_shed_before_it_starts_cannot_start() {
-        let load = Load::new(budget(1.0));
+        let load = Load::new(budget(1.0), || 1);
         let a = load.admit(1, 0).unwrap();
         let _high = load.admit(2, 0).unwrap();
         assert!(a.is_shed());
@@ -516,7 +514,7 @@ mod tests {
 
     #[test]
     fn displacing_frees_the_least_urgent_queued_request() {
-        let load = Load::new(None);
+        let load = Load::new(None, || 1);
         let a = load.admit(3, 0).unwrap();
         let b = load.admit(3, 0).unwrap();
         let c = load.admit(1, 0).unwrap();
@@ -532,7 +530,7 @@ mod tests {
 
     #[test]
     fn displacing_waits_for_a_request_already_shed() {
-        let load = Load::new(budget(2.0));
+        let load = Load::new(budget(2.0), || 1);
         let a = load.admit(1, 0).unwrap();
         let b = load.admit(1, 0).unwrap();
         let _high = load.admit(9, 0).unwrap();
@@ -548,34 +546,36 @@ mod tests {
 
     #[test]
     fn what_may_be_rendering_counts_up_to_a_batch() {
-        let load = Load::new(None);
+        let max_batch = Arc::new(AtomicU16::new(1));
+        let batch = max_batch.clone();
+        let load = Load::new(None, move || batch.load(Ordering::SeqCst));
         let low = load.admit(1, 0).unwrap();
         let high = load.admit(5, 0).unwrap();
         let _w = (low.work(true, 20 * PRIOR_CHUNK_IDS as usize), high.work(true, 1));
         let chunk = load.inner.lock().unwrap().cost.chunk_ids;
         let at_high = || load.estimate(5).as_secs_f64() / load.secs_per_id();
         assert!((at_high() - 1.0 - chunk / 2.0).abs() < 1e-6, "one chunk at batch 1");
-        load.set_max_batch(8);
+        max_batch.store(8, Ordering::SeqCst);
         assert!((at_high() - 1.0 - 4.0 * chunk).abs() < 1e-6, "eight chunks at batch 8");
-        load.set_max_batch(64);
+        max_batch.store(64, Ordering::SeqCst);
         assert!((at_high() - 1.0 - 10.0 * PRIOR_CHUNK_IDS).abs() < 1e-6, "half of it, when that's less");
     }
 
     #[test]
     fn would_refuse_matches_admission() {
-        let load = Load::new(budget(2.0));
+        let load = Load::new(budget(2.0), || 1);
         let _a = load.admit(1, 0).unwrap();
         assert!(!load.would_refuse(1));
         let _b = load.admit(1, 0).unwrap();
         assert!(load.would_refuse(1));
         assert!(load.admit(1, 0).is_err());
         assert!(!load.would_refuse(2));
-        assert!(!Load::new(None).would_refuse(0));
+        assert!(!Load::new(None, || 1).would_refuse(0));
     }
 
     #[test]
     fn the_cost_per_id_is_learned_from_renders() {
-        let load = Load::new(None);
+        let load = Load::new(None, || 1);
         let a = load.admit(1, 0).unwrap();
         for _ in 0..200 {
             a.work(true, 100).rendered(Duration::from_millis(10));
@@ -590,7 +590,7 @@ mod tests {
 
     #[test]
     fn work_is_counted_by_level_and_kind() {
-        let load = Load::new(None);
+        let load = Load::new(None, || 1);
         let low = load.admit(1, 0).unwrap();
         let high = load.admit(5, 0).unwrap();
         let work = (low.work(true, 1000), low.work(false, 1000), high.work(true, 10), high.work(false, 20));

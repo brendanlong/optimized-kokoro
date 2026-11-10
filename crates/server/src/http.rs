@@ -49,7 +49,8 @@ struct KeyIndex(usize);
 pub fn router(config: Config, worker: Worker, pipeline: Arc<dyn Pipeline>) -> App {
     let slots = Arc::new(Semaphore::new(config.max_concurrent_requests));
     let key_slots = (0..config.api_keys.len()).map(|i| Arc::new(Semaphore::new(config.max_streams(i)))).collect();
-    let load = Load::new(config.latency_budget());
+    let batch_of = worker.clone();
+    let load = Load::new(config.latency_budget(), move || batch_of.max_batch());
     App(Arc::new(AppState { config, worker, pipeline, slots, key_slots, load }))
 }
 
@@ -263,7 +264,6 @@ async fn speak_at(state: &Arc<AppState>, key: KeyIndex, request: SpeechRequest, 
     let Some(connection) = state.worker.current() else {
         return unavailable("The model worker is not connected");
     };
-    state.load.set_max_batch(connection.max_batch());
     // Refused at once if over budget, before it can displace anything (`admit` decides for sure).
     if state.load.would_refuse(level) {
         return overloaded(StreamError::Shed(Shed { estimate: state.load.estimate(level) }).to_string());

@@ -31,12 +31,8 @@ fn end_padding(text: &str, speed: f64) -> usize {
 }
 
 /// `AudioService.trim_audio` for a chunk that isn't the stream's last (the reference never marks
-/// one as last): the part of `pcm` kept, as a range.
-pub fn trim_range(pcm: &[i16], text: &str, speed: f64) -> std::ops::Range<usize> {
-    trim(pcm, text, speed, PAD_START)
-}
-
-/// [`trim_range`] keeping `lead` samples before the first loud one.
+/// one as last), keeping `lead` samples before the first loud one (the reference's `PAD_START`):
+/// the part of `pcm` kept, as a range.
 fn trim(pcm: &[i16], text: &str, speed: f64, lead: usize) -> std::ops::Range<usize> {
     let (offset, len) = if pcm.len() > 2 * EDGE_TRIM { (EDGE_TRIM, pcm.len() - 2 * EDGE_TRIM) } else { (0, pcm.len()) };
     let audio = &pcm[offset..offset + len];
@@ -106,7 +102,7 @@ impl Joins {
     }
 }
 
-/// The part of a chunk's audio kept: [`trim_range`], with either end replaced by its join cut.
+/// The part of a chunk's audio kept: [`trim`], with either end replaced by its join cut.
 pub fn keep_range(pcm: &[i16], text: &str, speed: f64, cuts: Cuts) -> std::ops::Range<usize> {
     let mut range = trim(pcm, text, speed, if cuts.start_at_speech { 0 } else { PAD_START });
     if let Some(end) = cuts.end {
@@ -144,7 +140,7 @@ mod tests {
             serde_json::from_str(include_str!("../tests/fixtures/postprocess.json")).expect("fixture parses");
         for case in fixture.trim {
             let pcm = build(&case.runs);
-            let range = trim_range(&pcm, &case.text, case.speed);
+            let range = keep_range(&pcm, &case.text, case.speed, Cuts::default());
             assert_eq!(range.len(), case.len, "{:?} {:?} {}", case.runs, case.text, case.speed);
             if case.len > 0 {
                 assert_eq!(&pcm[range], &pcm[case.start..case.start + case.len]);
@@ -184,7 +180,7 @@ mod tests {
     fn join_cuts_replace_the_trimmed_ends() {
         // 1,200 silent samples, 6,000 loud, 4,800 silent.
         let pcm = build(&[(1200, 0), (6000, 1000), (4800, 0)]);
-        let trimmed = trim_range(&pcm, "One,", 1.0);
+        let trimmed = keep_range(&pcm, "One,", 1.0, Cuts::default());
         // The 50 ms before the speech reaches the 24 samples always cut, and so does the padding after.
         assert_eq!(trimmed, 24..pcm.len() - 24);
         assert_eq!(keep_range(&pcm, "One,", 1.0, Cuts::default()), trimmed);

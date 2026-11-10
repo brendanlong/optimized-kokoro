@@ -23,7 +23,7 @@ use crate::load::{Admission, Shed};
 use crate::pack::{SOFT_MAX_PHONEMES, pack};
 use crate::pipeline::{Chunk, DEFAULT_MAX_TOKENS, Pipeline, PipelineError};
 use crate::request::Speech;
-use crate::stitch::{self, STITCH_ABOVE, Stitcher};
+use crate::stitch::{self, Stitcher};
 use crate::worker::{Connection, HeldAudio, SynthError, SynthRequest, Synthesized};
 use bytes::Bytes;
 use futures_util::StreamExt;
@@ -103,8 +103,8 @@ pub fn max_chunk_phonemes(render_ids: usize) -> usize {
 }
 
 /// A chunk's units. `render_ids` is the most ids one worker request may have
-/// ([`stitch::max_render_ids`]): a chunk with more, or with more than `STITCH_ABOVE` phonemes, is
-/// stitched. Where the chunker cut the chunk's sentence, the first unit starts and the last ends at
+/// ([`stitch::max_render_ids`]): a chunk over [`max_chunk_phonemes`] is stitched. (Its ids are the
+/// phonemes the vocabulary has, so a chunk within it has at most `render_ids` ids.) Where the chunker cut the chunk's sentence, the first unit starts and the last ends at
 /// the cut ([`Joins`]).
 fn units(chunk: Chunk, speech: &Speech, render_ids: usize) -> Vec<Unit> {
     if let Some(pause) = chunk.pause {
@@ -132,7 +132,7 @@ fn units(chunk: Chunk, speech: &Speech, render_ids: usize) -> Vec<Unit> {
             end_after_id: if last && split.after { final_clause_mark(&ids[own..]).map(|i| own + i) } else { None },
         },
     };
-    if chunk.phonemes.chars().count() <= STITCH_ABOVE && chunk.ids.len() <= render_ids {
+    if chunk.phonemes.chars().count() <= max_chunk_phonemes(render_ids) {
         let n = chunk.ids.len();
         let finish = finish(None, &chunk.ids, 0, true, true);
         return vec![Unit::Speech(request(chunk.ids, n), finish)];

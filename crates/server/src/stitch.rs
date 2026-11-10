@@ -9,11 +9,9 @@
 //! at clause punctuation to that size first (`stream::max_chunk_phonemes`), so only a clause too
 //! long by itself is stitched.
 
-use crate::protocol::{SAMPLES_PER_FRAME, Speed};
+use crate::protocol::{MAX_PHONEMES, SAMPLES_PER_FRAME, Speed};
 
-/// `settings.absolute_max_tokens`: chunks with more phonemes than this are stitched.
-pub const STITCH_ABOVE: usize = 450;
-const MODEL_LIMIT: usize = 510;
+const MODEL_LIMIT: usize = MAX_PHONEMES as usize;
 const CROSSFADE: usize = 480;
 const WORDS_AHEAD: usize = 4;
 const MAX_PIECE: usize = MODEL_LIMIT - 60;
