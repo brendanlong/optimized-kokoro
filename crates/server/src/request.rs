@@ -26,8 +26,8 @@ pub struct SpeechRequest {
     response_format: Option<String>,
     /// Only `true` is accepted: the response is always streamed.
     stream: Option<bool>,
-    /// 0..=255, higher more urgent, at most the key's `max_priority` (above it is a 400). Absent:
-    /// the server's `default_priority`, capped at the key's maximum.
+    /// 0..=255, higher more urgent, lowered to the key's `max_priority` if above it. Absent: the
+    /// server's `default_priority`, capped at the key's maximum.
     #[serde(default, deserialize_with = "priority")]
     pub priority: Option<u8>,
 }

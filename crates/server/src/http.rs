@@ -247,14 +247,18 @@ where
     if let Err(message) = request::check_fields(&request, &state.config) {
         return invalid(message);
     }
-    let max_priority = state.config.max_priority(key.0);
+    // A priority over the key's maximum is lowered to it, not refused, so lowering a key's cap
+    // can't make every request from it fail. Every response from here on says the level used.
     let level = match request.priority {
-        Some(p) if p > max_priority => {
-            return invalid(format!("priority {p} is above this API key's maximum, {max_priority}"));
-        }
-        Some(p) => p,
+        Some(p) => p.min(state.config.max_priority(key.0)),
         None => state.config.default_priority(key.0),
     };
+    let mut response = speak_at(state, key, request, level).await;
+    response.headers_mut().insert(header::HeaderName::from_static("x-priority"), HeaderValue::from(u16::from(level)));
+    response
+}
+
+async fn speak_at(state: &Arc<AppState>, key: KeyIndex, request: SpeechRequest, level: u8) -> Response<Body> {
     let Some(connection) = state.worker.current() else {
         return unavailable("The model worker is not connected");
     };
