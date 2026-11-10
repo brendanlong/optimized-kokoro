@@ -10,9 +10,9 @@
 # speech requests in progress (default: the server's max_streams_per_key, 48). --max-priority, 0-255,
 # is the highest request priority the key's requests run at (default: the server's
 # max_priority_per_key, 255): a request above it runs at it, and one that doesn't set one runs at
-# the lower of 128 and this. Changes go to
-# /srv/optimized-kokoro/secrets/keys (NAME, KEY, MAX_STREAMS and MAX_PRIORITY, tab-separated, - for
-# the default; lines from before MAX_PRIORITY have three fields, which means its default),
+# the lower of 128 and this. Changes go to /srv/optimized-kokoro/secrets/keys (NAME, KEY,
+# MAX_STREAMS and MAX_PRIORITY, tab-separated, - for the default; lines from before MAX_PRIORITY
+# have three fields, which means its default),
 # server.toml is made from it, and only the server container of the current release (in its
 # Compose project) is recreated; the worker keeps running. If the server doesn't come back healthy,
 # the old keys are put back (also on Ctrl-C).
