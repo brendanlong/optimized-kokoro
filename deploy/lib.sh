@@ -360,8 +360,9 @@ ensure_dirs() {
 #KOKORO_LISTEN=127.0.0.1:8880
 # Where the demo page listens (IPv4:port).
 #KOKORO_DEMO_LISTEN=127.0.0.1:25436
-# The worker's --max-batch, 1-64. 8 serves many listeners faster than 1 at about the same latency for
-# one, in no more GPU memory (worker/README.md). The cache seed depends on it.
+# The worker's --max-batch, 1-64. 8 renders more audio per second than 1 with many listeners, in no
+# more GPU memory, though first audio waits longer under load (worker/README.md). The cache seed
+# depends on it.
 #KOKORO_MAX_BATCH=8
 # The worker's --max-chunk-seconds, 25-60: the most audio one request to the worker may make, at
 # any speed. It sets the worker's peak GPU memory (deploy/README.md); the server splits longer chunks.
