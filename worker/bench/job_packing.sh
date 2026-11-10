@@ -34,7 +34,7 @@ fi
 
 if [[ " $STEPS " == *" scale "* ]]; then
     # shellcheck disable=SC2086
-    "$PY" bench/batch_scale.py "$MODELS" --steps mixed profile --max-batch 64 --frame-budget 9600 \
+    "$PY" bench/batch_scale.py "$MODELS" --steps mixed profile --max-batch 64 --frame-budget 2400 \
         --profile-batches 8 32 ${SCALE_ARGS:-} --json results/scale.json 2>&1 | quiet | tee results/scale.txt
 fi
 

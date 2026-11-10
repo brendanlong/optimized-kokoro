@@ -3,8 +3,6 @@
 #
 #   deploy/dry-run/test.sh [SCENARIO...]     # all of them by default; -l lists them
 #   SHOW=1 deploy/dry-run/test.sh update      # and shows the last script's output
-#   LEGACY_DEPLOY=DIR deploy/dry-run/test.sh  # the migration scenarios install with DIR/install.sh,
-#                                             # a deploy/ from before per-release projects (83b4b9c)
 #
 # The scripts run from a copy of deploy/ with DESTDIR set (so /srv/optimized-kokoro and
 # /etc/docker/daemon.json are under a temporary directory), and with the fakes in bin/ first on
@@ -33,12 +31,6 @@ co=$W/repo
 mkdir -p "$co/deploy" "$co/crates/g2p-ja/tools" "$W/in/models" "$TMPDIR"
 cp -a "$src/deploy/." "$co/deploy/"
 cp -a "$src/crates/g2p-ja/tools/fetch_unidic.sh" "$co/crates/g2p-ja/tools/"
-if [ -n "${LEGACY_DEPLOY:-}" ]; then
-    mkdir -p "$W/legacy/deploy" "$W/legacy/crates/g2p-ja/tools"
-    cp -a "$LEGACY_DEPLOY/." "$W/legacy/deploy/"
-    cp -a "$src/crates/g2p-ja/tools/fetch_unidic.sh" "$W/legacy/crates/g2p-ja/tools/"
-    chmod -R go-w "$W/legacy"
-fi
 chmod -R go-w "$co"
 export PATH=$co/deploy/dry-run/bin:$PATH
 echo dry-run-client-key-0123456789 > "$W/in/keys"
@@ -72,7 +64,7 @@ fresh() {
 }
 
 cur() { basename "$(readlink "$D/current")"; }
-project() { sed -n 's/^COMPOSE_PROJECT_NAME=//p' "$D/releases/$1/.env" | grep . || echo optimized-kokoro; }
+project() { sed -n 's/^COMPOSE_PROJECT_NAME=//p' "$D/releases/$1/.env"; }
 # The projects that have anything left (containers, network or volume), and what.
 projects() {
     local d what
@@ -153,11 +145,8 @@ expect_out() {
     }
 }
 
-# The installed state for each update scenario: a fresh install, or with $1 = legacy, an install
-# made to look like one from before per-release projects (project optimized-kokoro, no
-# COMPOSE_PROJECT_NAME, and compose.yaml's name: optimized-kokoro).
+# The installed state for each update scenario: a fresh install, with the tunnel if $1 = cloudflared.
 installed() {
-    local r p
     fresh
     if [ "${1:-}" = cloudflared ]; then
         echo token > "$D/secrets.token.tmp"
@@ -165,23 +154,11 @@ installed() {
         mv "$D/secrets.token.tmp" "$D/secrets/cloudflared.token"
         echo KOKORO_CLOUDFLARED=1 >> "$D/settings.env"
     fi
-    if [ "${1:-}" = legacy ] && [ -n "${LEGACY_DEPLOY:-}" ]; then
-        run "$W/legacy/deploy/install.sh" "${imports[@]}"
-    else
-        run install.sh "${imports[@]}"
-    fi
+    run install.sh "${imports[@]}"
     [ "$rc" = 0 ] || {
         failed "install failed"
         return 1
     }
-    if [ "${1:-}" = legacy ] && [ -z "${LEGACY_DEPLOY:-}" ]; then
-        r=$(cur)
-        p=$(project "$r")
-        sed -i '/^COMPOSE_PROJECT_NAME=/d' "$D/releases/$r/.env"
-        sed -i '0,/^x-hardening/s//name: optimized-kokoro\n\n&/' "$D/releases/$r/compose.yaml"
-        mv "$S/$p" "$S/optimized-kokoro"
-        sed -i "s/^$p-/optimized-kokoro-/" "$S"/optimized-kokoro/svc/*
-    fi
     before_cur=$(cur)
     before_project=$(project "$before_cur")
     before_ids=$(ids "$before_project")
@@ -302,10 +279,10 @@ t_update_split_runtimes() {
 # reads); a value outside the range is refused before anything is built.
 t_install_worker_settings() {
     fresh
-    printf 'KOKORO_MAX_BATCH=8\nKOKORO_MAX_CHUNK_SECONDS=30\n' >> "$D/settings.env"
+    printf 'KOKORO_MAX_BATCH=4\nKOKORO_MAX_CHUNK_SECONDS=30\n' >> "$D/settings.env"
     run install.sh "${imports[@]}"
     expect_rc 0 && check_state || return 1
-    expect "no --max-chunk-seconds 30 in the export" grep -q -- "--max-batch 8 --max-chunk-seconds 30 --export-cache" "$FAKE_LOG" &&
+    expect "no --max-chunk-seconds 30 in the export" grep -q -- "--max-batch 4 --max-chunk-seconds 30 --export-cache" "$FAKE_LOG" &&
         expect "not in .env" grep -qx KOKORO_MAX_CHUNK_SECONDS=30 "$D/releases/$(cur)/.env" || return 1
     for bad in 24 61; do
         fresh
@@ -441,42 +418,6 @@ t_leftover_project() {
     run update.sh
     expect_rc 0 && check_updated && expect_out "removing the Compose project optimized-kokoro-20290101t000000z"
 }
-t_migrate() {
-    installed legacy || return 1
-    run update.sh
-    expect_rc 0 && check_updated && check_order && expect "optimized-kokoro is left" [ ! -e "$S/optimized-kokoro" ]
-}
-t_migrate_tunnel() {
-    installed cloudflared || return 1
-    # As legacy, with the tunnel.
-    local r=$before_cur
-    sed -i '/^COMPOSE_PROJECT_NAME=/d' "$D/releases/$r/.env"
-    sed -i '0,/^x-hardening/s//name: optimized-kokoro\n\n&/' "$D/releases/$r/compose.yaml"
-    mv "$S/$before_project" "$S/optimized-kokoro"
-    before_project=optimized-kokoro
-    run update.sh
-    expect_rc 0 && check_updated cloudflared && check_order && expect "optimized-kokoro is left" [ ! -e "$S/optimized-kokoro" ]
-}
-t_migrate_health_fails() {
-    installed legacy || return 1
-    run FAIL_HEALTH=new update.sh
-    expect_rc 1 && check_back && expect "not back on optimized-kokoro" [ "$(project "$(cur)")" = optimized-kokoro ]
-}
-t_migrate_int_worker_wait() {
-    installed legacy || return 1
-    run 'INT_AT=docker compose * logs --no-log-prefix worker' update.sh
-    expect_rc 130 && check_untouched
-}
-t_migrate_int_health() {
-    installed legacy || return 1
-    run 'INT_AT=curl *' update.sh
-    expect_rc 130 && check_back
-}
-t_migrate_worker_never_ready() {
-    installed legacy || return 1
-    run FAKE_WORKER=never update.sh
-    expect_rc 1 && check_untouched
-}
 # keys.sh recreates only the current release's server, in its project.
 keys_add() {
     local p w s
@@ -491,11 +432,6 @@ t_keys_after_update() {
     run update.sh
     expect_rc 0 && keys_add
 }
-t_keys_legacy() {
-    installed legacy || return 1
-    keys_add && expect "not optimized-kokoro" [ "$(project "$(cur)")" = optimized-kokoro ]
-}
-
 all=$(declare -F | sed -n 's/^declare -f t_//p')
 if [ "${1:-}" = -l ]; then
     echo "$all"

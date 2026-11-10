@@ -1,7 +1,8 @@
 #!/bin/bash
 # gpuc job: the clause-split listening comparison (bench/clause_joins.py). A worker at
 # --max-chunk-seconds 30 serves each server binary in SERVERS in turn (bench/bin/kokoro-server-LABEL,
-# with espeak-ng-data in bench/bin/ and ESPEAK_DATA_LINK the path the binaries were built with);
+# with espeak-ng-data in bench/bin/ and the path the binaries were built with in ESPEAK_DATA_LINK or
+# bench/bin/espeak-data-link);
 # then a worker at 60 s renders every sentence whole, and short clauses alone and in context. Results in
 # results/clause/.
 set -uo pipefail
@@ -14,6 +15,7 @@ if [ ! -f "$MODELS/voices.safetensors" ]; then
     .venv/bin/python -m kokoro_worker.convert "$MODELS" || exit 1
 fi
 PY=$PWD/.venv/bin/python
+ESPEAK_DATA_LINK=${ESPEAK_DATA_LINK:-$(cat bench/bin/espeak-data-link)}
 # A link left by an earlier job points into its (deleted) workdir; a real directory is the data.
 if [ -L "$ESPEAK_DATA_LINK" ] || [ ! -e "$ESPEAK_DATA_LINK" ]; then
     mkdir -p "$(dirname "$ESPEAK_DATA_LINK")"

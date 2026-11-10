@@ -4,7 +4,7 @@
 
 equal    B copies of one real chunk of about L phonemes.
 mixed    B chunks drawn from the corpus, packed into decoder rows of at most --frame-budget
-         frames (the worker's is 9,600).
+         frames (the worker's is its chunk cap: 2,400 at the default 60 s).
 profile  torch.profiler at a few batch sizes: GPU time by kind of kernel, and GPU busy time as a
          share of unprofiled wall time (what is left is the GPU waiting on the host).
 
@@ -203,7 +203,7 @@ def main():
     ap.add_argument("--max-frames", type=int, default=200_000, help="skip equal points beyond B x frames")
     ap.add_argument("--profile-batches", type=int, nargs="+", default=[1, 8, 64])
     # 75,000 frames is about 2**31 / 28,800 (the widest tensor's elements per frame), which the
-    # Triton conv1d's int32 offsets can still address; the worker's own budget is 9,600.
+    # Triton conv1d's int32 offsets can still address; the worker's own budget is its chunk cap.
     ap.add_argument("--frame-budget", type=int, default=75_000)
     ap.add_argument("--reps", type=int, default=3)
     ap.add_argument("--no-compile", action="store_true")

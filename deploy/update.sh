@@ -32,8 +32,7 @@ used=("$(port_of "$(release_setting "$prev" LISTEN)")" "$(port_of "$(release_set
 check_port_free "$KOKORO_LISTEN" "${used[@]}"
 check_port_free "$KOKORO_DEMO_LISTEN" "${used[@]}"
 ensure_runtimes
-# A worker, network or volume an update killed before it could clean up left (also the previous
-# scheme's project, optimized-kokoro, if an update already moved off it).
+# A worker, network or volume an update killed before it could clean up left.
 sweep_projects "$(project_of "$prev")"
 # An update killed during its swap can leave the previous release's worker without its server: put
 # the server, demo and tunnel back now (the worker is warm), rather than be down until the next swap.
