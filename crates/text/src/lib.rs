@@ -21,6 +21,7 @@ pub mod split;
 mod symbols;
 mod tables;
 pub mod tags;
+mod words;
 
 pub use normalize::{Normalizer, Options};
 pub use split::{

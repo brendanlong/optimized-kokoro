@@ -435,9 +435,12 @@ pub fn symbols(text: &str) -> String {
                 // would tag it (misaki only pauses for one tagged `:`).
                 '-' if i > 0 && t[i - 1] == ' ' && next == Some(' ') => "—",
                 // A range of letters, "A-Z" or "a–z": "A to Z" (capitals, so "a" isn't the article).
-                // Only standing alone: not spelled out ("a-h-o-y") or in a formula ("(xy)z-x(yz)").
+                // Only from A to C or past it, as other pairs name axes, tests and curves ("x-y
+                // plane", "A-B test", "K-T boundary", "I-V curve"), and only standing alone: not
+                // spelled out ("a-h-o-y") or in a formula ("(xy)z-x(yz)").
                 '-' if i >= 1
-                    && t[i - 1].is_ascii_alphabetic()
+                    && matches!(t[i - 1], 'A' | 'a')
+                    && next.is_some_and(|c| c.to_ascii_uppercase() >= 'C')
                     && (i < 2 || t[i - 2].is_whitespace() || "(\"'“‘".contains(t[i - 2]))
                     && next.is_some_and(|c| c.is_ascii_alphabetic())
                     && t.get(i + 2).is_none_or(|&c| c.is_whitespace() || ",.;:!?)\"'”’".contains(c)) =>
@@ -616,6 +619,7 @@ mod tests {
             ("think of - a well-made A - B", "think of — a well-made A — B"),
             ("a-z, A-Z list, X-ray, T-shirt and A-list", "A to Z, A to Z list, X-ray, T-shirt and A-list"),
             ("a-h-o-y, (xy)z-x(yz)", "a-h-o-y, (xy)z-x(yz)"),
+            ("A-F and a-c, but x-y, A-B, K-T and I-V", "A to F and A to C, but x-y, A-B, K-T and I-V"),
             ("★★★☆", ""),
             ("ℇ and ℏ", "Euler's constant and h bar"),
             ("Ω and \u{2126}", "Ω and ohm"),

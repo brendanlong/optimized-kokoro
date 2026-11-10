@@ -355,7 +355,10 @@ mod tests {
             ),
             ("Roe v. Wade, esp. later", "Roe versus Wade, especially later"),
             ("we're going to find.6 None of it ↩", "we're going to find. None of it"),
-            ("a paper from Google [2]. Then ¶ 12 and Title¶", "a paper from Google. Then paragraph twelve and Title"),
+            (
+                "a paper from Google [2]. Then ¶ 12 and Title¶",
+                "a paper from Google [two]. Then paragraph twelve and Title",
+            ),
             ("4:20.91 in Monaco", "four twenty point nine one in Monaco"),
             (
                 "21.22 output tok/s, km/h and GB/s",

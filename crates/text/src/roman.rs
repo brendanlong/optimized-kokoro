@@ -7,14 +7,20 @@
 //! or "IC") is a number when:
 //! 1. the word right before it, with only spaces between, is a capitalised word that isn't a
 //!    function word ("The", "His", "Then", …), a contraction ("Aren't I?") or a possessive
-//!    ("Vuitton's LV"): "World War II", "Super Bowl LV", "Louis XIV";
+//!    ("Vuitton's LV"): "World War II", "Super Bowl LV", "Louis XIV". A word that starts the
+//!    sentence is capitalised for that alone, so there it must be a name, not a common word
+//!    (`words::is_common_word`: "Give IV fluids", "Buy XL shirts" and "Join LIV Golf" stay
+//!    letters, "Henry VIII was" reads), unless it is a noun that names numbered parts ("Chapter
+//!    XII ends", "Type II diabetes": `words::names_numbered_parts`) or the numeral ends the sentence or a heading
+//!    ("Mark IV.", "Part IV: Data");
 //! 2. it has two letters or more, starts a line, the text or a sentence, and is followed by "."
 //!    or ")": a numbered heading or list item ("IV. Results"; "I. Introduction" can't be told
 //!    from "V. Putin said"). Lines are joined into sentences before the normalizer runs
 //!    (`split::join_lines`), so a sentence start stands in for a line start;
 //! 3. it continues a list of numerals, after ", ", "and", "or", "&" or "to" ("Super Bowls XXI
 //!    and XXIV", "George II and III", "Henry V & VI"; after a bare comma the list must then end or
-//!    go on, so not "World War II, IV drug use").
+//!    go on, so not "World War II, IV drug use"), or a range after a hyphen or en dash, read "to"
+//!    ("Phases I-III" as "Phases one to three").
 //!
 //! A number is read as the number pass reads its digits: a cardinal ("Saturn five", "World War
 //! two", and after a name too, "Henry eight", "Elizabeth two"), and from 1501 a year in pairs
@@ -33,179 +39,8 @@
 //! I.").
 
 use crate::numbers::numbers;
+use crate::words::{is_common_word, is_function_word, names_numbered_parts};
 use std::ops::Range;
-
-/// Closed-class words: a capitalised one before a numeral is no evidence that it is a number
-/// ("The IV", "His CD", "Then I").
-const FUNCTION_WORDS: &[&str] = &[
-    "a",
-    "about",
-    "above",
-    "across",
-    "after",
-    "against",
-    "all",
-    "also",
-    "although",
-    "am",
-    "among",
-    "an",
-    "and",
-    "another",
-    "any",
-    "are",
-    "as",
-    "at",
-    "be",
-    "because",
-    "been",
-    "before",
-    "behind",
-    "being",
-    "below",
-    "beside",
-    "between",
-    "beyond",
-    "both",
-    "but",
-    "by",
-    "can",
-    "could",
-    "did",
-    "do",
-    "does",
-    "during",
-    "each",
-    "either",
-    "even",
-    "every",
-    "except",
-    "few",
-    "for",
-    "from",
-    "had",
-    "has",
-    "have",
-    "he",
-    "hence",
-    "her",
-    "here",
-    "hers",
-    "him",
-    "his",
-    "how",
-    "however",
-    "i",
-    "if",
-    "in",
-    "including",
-    "inside",
-    "into",
-    "is",
-    "it",
-    "its",
-    "just",
-    "least",
-    "less",
-    "like",
-    "many",
-    "may",
-    "maybe",
-    "me",
-    "might",
-    "mine",
-    "more",
-    "most",
-    "much",
-    "must",
-    "my",
-    "near",
-    "neither",
-    "no",
-    "nor",
-    "not",
-    "now",
-    "of",
-    "off",
-    "often",
-    "oh",
-    "on",
-    "once",
-    "only",
-    "onto",
-    "or",
-    "other",
-    "our",
-    "ours",
-    "out",
-    "over",
-    "per",
-    "perhaps",
-    "please",
-    "same",
-    "several",
-    "shall",
-    "she",
-    "should",
-    "since",
-    "so",
-    "some",
-    "still",
-    "such",
-    "than",
-    "that",
-    "the",
-    "their",
-    "theirs",
-    "them",
-    "then",
-    "there",
-    "these",
-    "they",
-    "this",
-    "those",
-    "though",
-    "through",
-    "thus",
-    "to",
-    "too",
-    "toward",
-    "towards",
-    "under",
-    "unless",
-    "unlike",
-    "until",
-    "up",
-    "upon",
-    "us",
-    "very",
-    "via",
-    "was",
-    "we",
-    "well",
-    "were",
-    "what",
-    "when",
-    "whenever",
-    "where",
-    "whether",
-    "which",
-    "while",
-    "who",
-    "whom",
-    "whose",
-    "why",
-    "will",
-    "with",
-    "within",
-    "without",
-    "would",
-    "yes",
-    "yet",
-    "you",
-    "your",
-    "yours",
-];
 
 /// The value of a numeral in standard form (each power of ten as I, II, III, IV, V, …, IX), up to
 /// 3999; `None` for anything else ("IIII", "VV", "IC", "XM").
@@ -274,8 +109,9 @@ fn is_space(c: char) -> bool {
 /// The evidence of the word before (rule 1): whether the numeral after it is a number. For
 /// "I" before a comma, semicolon, "?" or "!", a word that starts a sentence is capitalised for
 /// that alone ("Thinks I, I'll wait", "Dare I?"; "BOOK I." and "Elizabeth I of England" still
-/// read).
-fn word_before(before: &str, pronoun: bool) -> bool {
+/// read). A word that starts the sentence must be a name, unless the numeral `closes` the sentence
+/// or a heading.
+fn word_before(before: &str, pronoun: bool, closes: bool) -> bool {
     let trimmed = before.trim_end_matches(is_space);
     if trimmed.len() == before.len() {
         return false;
@@ -293,13 +129,17 @@ fn word_before(before: &str, pronoun: bool) -> bool {
     }
     // A contraction is a verb or pronoun with its auxiliary ("Aren't I?", "I'm II").
     let contraction = word.contains(['\'', '’']);
-    if contraction || FUNCTION_WORDS.binary_search(&word.to_lowercase().as_str()).is_ok() {
+    if contraction || is_function_word(word) {
         return false;
     }
     // Here any period ends a sentence, even one after a letter ("Haven't I. Dare I?").
     let opening = trimmed[..start].trim_end_matches(['"', '“', '\'', '‘', '(', '[']);
     let sentence = opening.trim_end_matches(char::is_whitespace);
-    !(pronoun && (sentence.is_empty() || sentence.ends_with(['.', '!', '?', ':']) && sentence.len() < opening.len()))
+    let closed = sentence.trim_end_matches(['"', '”', '\'', '’', ')', ']']);
+    let first = sentence.is_empty()
+        || opening.ends_with(['\n', '\r'])
+        || closed.ends_with(['.', '!', '?', ':']) && sentence.len() < opening.len();
+    !(first && (pronoun || !closes && is_common_word(word) && !names_numbered_parts(word)))
 }
 
 /// Whether `before` ends where a line, the text or a sentence starts (rule 2). A period after a
@@ -345,9 +185,14 @@ fn i_may_be_numeral(after: &str) -> bool {
     rest.is_empty() || matches!(word.as_str(), "and" | "or" | "of" | "&") && followed
 }
 
-/// Separators that continue a list of numerals (rule 3).
+/// Separators that continue a list of numerals (rule 3), and a range's hyphen or en dash.
 fn continues_list(between: &str) -> bool {
-    matches!(between, ", " | " and " | " or " | " & " | ", and " | ", or " | " to ")
+    matches!(between, ", " | " and " | " or " | " & " | ", and " | ", or " | " to ") || is_range(between)
+}
+
+/// A hyphen or en dash between two numerals: a range, read "to" ("I-III").
+fn is_range(between: &str) -> bool {
+    matches!(between, "-" | "–")
 }
 
 /// Whether a numeral after a comma in a list ends it or goes on with it: punctuation, the end, or
@@ -383,8 +228,11 @@ fn is_number(text: &str, start: usize, end: usize, previous: Option<usize>) -> b
         // After a bare comma the list must go on or end ("II, IV drug use" isn't one); a
         // conjunction already closes it ("World Wars I and II were").
         list && continues_list(between) && (between != ", " || ends_list(after))
-    }) || word_before(before, token == "I" && after.starts_with([',', ';', '?', '!']))
-        || heading
+    }) || word_before(
+        before,
+        token == "I" && after.starts_with([',', ';', '?', '!']),
+        after.trim_start_matches(['"', '”', '\'', '’']).is_empty() || after.starts_with(['.', ')', ':']),
+    ) || heading
 }
 
 /// Each numeral the context shows to be a number, as its span in `text` and its words.
@@ -413,7 +261,11 @@ pub fn readings(text: &str) -> Vec<(Range<usize>, String)> {
             continue;
         }
         let n = value(&text[start..end]).expect("is_number checks the value");
-        out.push((start..end, numbers(&n.to_string())));
+        match previous.filter(|&p| is_range(&text[p..start])) {
+            // "I-III": the dash is the range's "to".
+            Some(p) => out.push((p..end, format!(" to {}", numbers(&n.to_string())))),
+            None => out.push((start..end, numbers(&n.to_string()))),
+        }
         previous = Some(end);
     }
     out
@@ -436,7 +288,6 @@ mod tests {
         for bad in ["IIII", "VV", "IC", "XM", "IIV", "VX", "LL", "DD", "MMMM", "IL", "XXL", ""] {
             assert_eq!(value(bad), None, "{bad}");
         }
-        assert!(FUNCTION_WORDS.windows(2).all(|w| w[0] < w[1]), "FUNCTION_WORDS is sorted");
     }
 
     #[test]
@@ -453,14 +304,13 @@ mod tests {
         assert_eq!(r("World War I-era"), "World War one-era");
         assert_eq!(r("Final Fantasy VII is"), "Final Fantasy seven is");
         assert_eq!(r("Super Bowl LV was"), "Super Bowl fifty-five was");
-        assert_eq!(r("Part IV of"), "Part four of");
+        assert_eq!(r("in Part IV of"), "in Part four of");
         assert_eq!(r("CHAPTER XXXV."), "CHAPTER thirty-five.");
         assert_eq!(r("Copyright MCMXCIV"), "Copyright nineteen ninety-four");
-        assert_eq!(r("Class I or Class II"), "Class one or Class two");
+        assert_eq!(r("in Class I or Class II"), "in Class one or Class two");
         // A list of numerals.
         assert_eq!(r("Super Bowls XXI and XXIV"), "Super Bowls twenty-one and twenty-four");
         assert_eq!(r("George II and III"), "George two and three");
-        assert_eq!(r("Henry V & VI"), "Henry five & six");
         assert_eq!(r("World Wars I and II were"), "World Wars one and two were");
         assert_eq!(r("Super Bowls XXI and XXIV were played"), "Super Bowls twenty-one and twenty-four were played");
         assert_eq!(r("Louis XIV and MCMLXXXIV"), "Louis fourteen and nineteen eighty-four");
@@ -471,6 +321,16 @@ mod tests {
         assert_eq!(r("World Wars I and II."), "World Wars one and two.");
         assert_eq!(r("Methods. II) Data"), "Methods. two) Data");
         assert_eq!(r("Intro\nIII. Data"), "Intro\nthree. Data");
+        // A name or an unknown word starting the sentence; a common one before a heading's end.
+        assert_eq!(r("Henry VIII was king."), "Henry eight was king.");
+        assert_eq!(r("Saturn V launched."), "Saturn five launched.");
+        assert_eq!(r("The end. Chapter XII. Then"), "The end. Chapter twelve. Then");
+        assert_eq!(r("Part IV: Data"), "Part four: Data");
+        assert_eq!(r("Type II diabetes. Chapter XII ends."), "Type two diabetes. Chapter twelve ends.");
+        // Ranges, both ends or neither.
+        assert_eq!(r("Phases I-III were"), "Phases one to three were");
+        assert_eq!(r("in Phases II–IV of"), "in Phases two to four of");
+        assert_eq!(r("Henry V & VI"), "Henry five & six");
     }
 
     #[test]
@@ -516,5 +376,10 @@ mod tests {
         same("Pop V.9221");
         same("Mark IV/V");
         same("Rocky II2");
+        // A common word that only starts the sentence.
+        same("Give IV fluids. Buy XL shirts. Join LIV Golf today. Start VI with no arguments. Joined LIV Golf.");
+        same("\"Remember LIV, the Saudi league.\" Watch XX tonight.");
+        same("the I-V curve and an XI-IV game");
+        same("Configuration III testing");
     }
 }

@@ -10,14 +10,14 @@
 //!   Wade").
 //! - "tl;dr" and "tldr" are the letters "TLDR".
 
-/// Words that start sentences more often than they are names: after "St." or "Dr.", they say the
+use crate::words::{is_common_word, is_function_word};
+
+/// Whether a capitalised word starts sentences more often than it is a name: a closed-class word
+/// ("The", "But", "Then"; `words::is_function_word`). After "St." or "Dr.", it says the
 /// abbreviation ended a sentence ("on Main St. The next day").
-const SENTENCE_STARTERS: &[&str] = &[
-    "The", "A", "An", "In", "On", "At", "He", "She", "It", "They", "We", "I", "You", "This", "That", "These", "Those",
-    "There", "His", "Her", "Its", "Our", "Their", "My", "Your", "But", "And", "Or", "So", "If", "When", "While",
-    "After", "Before", "Since", "As", "For", "From", "To", "With", "By", "Then", "Now", "Was", "Is", "Are", "Were",
-    "What", "Who", "Where", "Why", "How", "Some", "Many", "Most", "All", "One", "Two", "Its",
-];
+fn starts_sentences(word: &str) -> bool {
+    word.chars().next().is_some_and(char::is_uppercase) && is_function_word(word)
+}
 
 const MONTHS: &[(&str, &str)] = &[
     ("Jan", "January"),
@@ -104,6 +104,20 @@ impl Text<'_> {
         }
     }
 
+    /// Whether a sentence starts at `i`: the text's start, or after `.`, `!`, `?` or `:` (and maybe
+    /// an opening quote or bracket) and spaces.
+    fn sentence_start(&self, i: usize) -> bool {
+        let mut k = i;
+        while k > 0 && matches!(self.t[k - 1], '"' | '“' | '\'' | '‘' | '(' | '[') {
+            k -= 1;
+        }
+        let spaces = k;
+        while k > 0 && self.t[k - 1].is_whitespace() {
+            k -= 1;
+        }
+        k == 0 || k < spaces && matches!(self.t[k - 1], '.' | '!' | '?' | ':')
+    }
+
     fn digit(&self, i: usize) -> bool {
         self.get(i).is_some_and(|c| c.is_ascii_digit())
     }
@@ -113,10 +127,7 @@ impl Text<'_> {
 fn is_name(token: &[char]) -> bool {
     let word: String = token.iter().take_while(|c| c.is_alphabetic() || matches!(c, '\'' | '-')).collect();
     let initial = token.len() == 2 && token[0].is_uppercase() && token[1] == '.';
-    initial
-        || token.first().is_some_and(|c| c.is_uppercase())
-            && word.chars().count() >= 2
-            && !SENTENCE_STARTERS.contains(&word.as_str())
+    initial || token.first().is_some_and(|c| c.is_uppercase()) && word.chars().count() >= 2 && !starts_sentences(&word)
 }
 
 /// The word before a street's "St." or "Dr.": a capitalised word ("Main", "King Jr."), or a
@@ -188,14 +199,33 @@ fn reading(x: &Text, start: usize, end: usize, word: &str) -> Option<(String, us
             let caps = word.chars().all(|c| c.is_uppercase());
             let street_before = !caps && x.previous_token(start).is_some_and(is_street_name);
             // Before a capital, the title, as the reference read "Dr." ("Dr. Who"); but after a
-            // street's name, a word that starts sentences starts the next one ("on Main St. The").
-            // Without the period, only before a name ("St Paul", "Dr Smith").
-            let starter = next.is_some_and(|n| {
-                let word: String = n.iter().take_while(|c| c.is_alphabetic()).collect();
-                SENTENCE_STARTERS.contains(&word.as_str())
-            });
+            // street's name, a word that starts sentences starts the next one ("on Main St. The"),
+            // unless the street's name itself starts the sentence ("Ask Dr. Will Smith"). For
+            // "St." after "the" or "a" and a street's name, a common word goes on with the name
+            // ("the Wall St. Journal", "the Main St. Bridge"; not "on Main St. Traffic was", nor
+            // "Dr." before names that are words, "Dr. Green"). Without the period, only before a
+            // name ("St Paul", "Dr Smith").
+            let next_word: String =
+                next.map_or(String::new(), |n| n.iter().take_while(|c| c.is_alphabetic()).collect());
+            let starter = starts_sentences(&next_word);
             let capital = next.is_some_and(|n| n.first().is_some_and(|c| c.is_uppercase()));
-            if dot && capital && !(street_before && starter) || !dot && !caps && next.is_some_and(is_name) {
+            let street_start = start - 1 - x.previous_token(start).map_or(0, <[char]>::len);
+            let street_first = street_before && x.sentence_start(street_start);
+            let in_name = street_before
+                && x.previous_token(street_start)
+                    .is_some_and(|t| matches!(t.iter().collect::<String>().to_lowercase().as_str(), "the" | "a"));
+            if in_name && title == "Saint" && dot && capital && !starter && is_common_word(&next_word) {
+                return Some((street.to_owned(), after));
+            }
+            // After a street's name the word ends it when it starts sentences, unless the street's
+            // name starts this one and a capitalised word follows ("Ask Dr. Will Smith"), or for
+            // "St." when it is a common word ("on Main St. Traffic was" as "Street. Traffic").
+            let name_follows = next
+                .and_then(|n| x.next_token(after + 1 + n.len()))
+                .is_some_and(|n| n.first().is_some_and(|c| c.is_uppercase()));
+            let ends_street = starter && !(street_first && name_follows)
+                || title == "Saint" && !starter && !street_first && is_common_word(&next_word);
+            if dot && capital && !(street_before && ends_street) || !dot && !caps && next.is_some_and(is_name) {
                 return Some((title.to_owned(), after));
             }
             // "DR. SMITH", whose name the caps pass has lowercased.
@@ -270,6 +300,16 @@ mod tests {
             ("on 42nd St. near", "on 42nd Street near"),
             ("on Main St. The next day", "on Main Street. The next day"),
             ("He lives on Elm St", "He lives on Elm Street"),
+            // A common word after the street's name goes on with it.
+            ("the Wall St. Journal and the Main St. Bridge", "the Wall Street Journal and the Main Street Bridge"),
+            (
+                "Visit St. Cloud. Call Dr. Green. Then Elm Dr. Pepper",
+                "Visit Saint Cloud. Call Doctor Green. Then Elm Doctor Pepper",
+            ),
+            (
+                "We met on Main St. Traffic was heavy. Ask Dr. Will Smith. Rodeo Dr. The shops",
+                "We met on Main Street. Traffic was heavy. Ask Doctor Will Smith. Rodeo Drive. The shops",
+            ),
             // No name after it and no street before it: as written.
             ("the dr. said and the St. was", "the dr. said and the St. was"),
             ("Ask the Dr.", "Ask the Dr."),

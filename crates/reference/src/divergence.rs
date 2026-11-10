@@ -470,6 +470,17 @@ fn glued(word: &str, other: &str) -> bool {
             || word.strip_suffix(other).is_some_and(|rest| made_of(rest, NUMERALS)))
 }
 
+/// Whether `word` is a `k`, `m` or `b` that the input has glued to a number ("5k", "Figure 3b"):
+/// the reference read it as a multiplier ("thousand"), and the number reader reads it as the letter
+/// outside money ("five k").
+fn glued_letter(input: &str, word: &str) -> bool {
+    matches!(word, "k" | "K" | "m" | "M" | "b" | "B")
+        && input.match_indices(word).any(|(k, _)| {
+            input[..k].chars().next_back().is_some_and(|c| c.is_ascii_digit())
+                && input[k + 1..].chars().next().is_none_or(|c| !c.is_alphanumeric())
+        })
+}
+
 /// The cardinal number words: a changed run of number words must hold one of these (or a digit)
 /// on both sides, so a changed "first" or "hour" alone isn't taken for a number.
 const CARDINALS: &[&str] = &[
@@ -656,15 +667,23 @@ fn readings_of(v: u32) -> Vec<String> {
 
 /// Whether `ours` is `theirs` with Roman numerals read as their numbers (one of
 /// [`readings_of`], keeping the numeral's "'s": "Louis XIV's" against "Louis fourteen's"),
-/// and nothing else changed. Each numeral must be a word of the input.
-fn roman_read(input: &str, theirs: &[&str], ours: &[&str]) -> bool {
+/// and nothing else changed. Each numeral must be a word of the input. `previous` is the numeral
+/// just read, if the token before `theirs` was one.
+fn roman_read(input: &str, theirs: &[&str], ours: &[&str], previous: Option<&str>) -> bool {
     let Some((&first, rest)) = theirs.split_first() else {
         return ours.is_empty();
     };
     let core = first.strip_suffix("'s").or_else(|| first.strip_suffix("’s")).unwrap_or(first);
     let in_input = || input.split(|c: char| !c.is_alphanumeric()).any(|w| w == core);
     let Some(v) = roman_value(first).filter(|_| in_input()) else {
-        return ours.first() == Some(&first) && roman_read(input, rest, &ours[1..]);
+        // A range's dash between two numerals read "to" ("Phases I-III" as "one to three"): the
+        // numeral before it was read, and the input has the two around the dash.
+        let range = matches!(first, "-" | "–")
+            && ours.first() == Some(&"to")
+            && previous.zip(rest.first()).is_some_and(|(p, n)| {
+                roman_value(n).is_some() && [format!("{p}-{n}"), format!("{p}–{n}")].iter().any(|s| input.contains(s))
+            });
+        return (ours.first() == Some(&first) || range) && roman_read(input, rest, &ours[1..], None);
     };
     let suffix = &first[core.len()..];
     // The readings of a value start with different words, so at most one matches: no backtracking.
@@ -673,7 +692,7 @@ fn roman_read(input: &str, theirs: &[&str], ours: &[&str]) -> bool {
         let words = tokens(&reading);
         ours.len() >= words.len()
             && ours.iter().zip(&words).all(|(a, b)| a == b)
-            && roman_read(input, rest, &ours[words.len()..])
+            && roman_read(input, rest, &ours[words.len()..], Some(first))
     })
 }
 
@@ -688,7 +707,9 @@ fn with_roman_read<'a>(input: &str, a: &[&'a str], b: &[&'a str]) -> (Vec<&'a st
     };
     let (mut out, mut last, mut roman) = (Vec::new(), 0, false);
     for (ra, rb) in align(&wrap(a), &wrap(b)).hunks {
-        if a[ra.clone()].iter().any(|w| roman_value(w).is_some()) && roman_read(input, &a[ra.clone()], &b[rb.clone()]) {
+        if a[ra.clone()].iter().any(|w| roman_value(w).is_some())
+            && roman_read(input, &a[ra.clone()], &b[rb.clone()], None)
+        {
             out.extend_from_slice(&a[last..ra.start]);
             out.extend_from_slice(&b[rb]);
             last = ra.end;
@@ -1024,10 +1045,13 @@ pub fn explain(input: &str, reference: &str, ours: &str) -> Result<BTreeSet<Kind
         }
         // Words other than numbers must be letters a number was glued to, and number runs must
         // hold a number.
-        let other_ok = |side: &[Masked], across: &[Masked]| {
-            side.iter()
-                .filter(|m| m.class() == Class::Other)
-                .all(|m| across.iter().any(|x| glued(&m.text, &x.text) || glued(&x.text, &m.text)))
+        // A letter the input glued to a number may be read after that number's words ("five k").
+        let other_ok = |full: &[Masked], run: std::ops::Range<usize>, across: &[Masked]| {
+            run.filter(|&k| full[k].class() == Class::Other).all(|k| {
+                let m = &full[k];
+                across.iter().any(|x| glued(&m.text, &x.text) || glued(&x.text, &m.text))
+                    || k > 0 && full[k - 1].token == "<n>" && glued_letter(input, &m.text)
+            })
         };
         let numbers_ok =
             theirs.iter().chain(mine).filter(|m| m.token == "<n>").all(|m| has_cardinal_or_ordinal(&m.text));
@@ -1038,7 +1062,10 @@ pub fn explain(input: &str, reference: &str, ours: &str) -> Result<BTreeSet<Kind
         let near_changed =
             ra.start.checked_sub(1).is_some_and(|i| changed_numbers.contains(&i)) || changed_numbers.contains(&ra.end);
         if squeezed(theirs) == squeezed(mine)
-            || (other_ok(theirs, mine) && other_ok(mine, theirs) && numbers_ok && (has_number || near_changed))
+            || (other_ok(&ma, ra.clone(), mine)
+                && other_ok(&mb, rb.clone(), theirs)
+                && numbers_ok
+                && (has_number || near_changed))
         {
             kinds.insert(Kind::Numbers);
             if attributive_money(&show(theirs), &show(mine)) {
@@ -1087,6 +1114,15 @@ mod tests {
             numbers
         );
         assert_eq!(ok("same", "same", "same"), BTreeSet::new());
+        // A glued letter read as a letter, where the reference read a multiplier.
+        assert_eq!(
+            ok(
+                "5k, 3m and Figure 3b",
+                "five thousand, three million and Figure three billion",
+                "five k, three m and Figure three b"
+            ),
+            numbers
+        );
         let err = |input: &str, a: &str, b: &str| assert!(explain(input, a, b).is_err(), "{a:?} -> {b:?}");
         err("They're here at 5.", "They're here at five.", "They are here at five.");
         err("1900 apples", "nineteen zero apples", "nineteen hundred pears");
@@ -1100,6 +1136,9 @@ mod tests {
         err("5! Run", "five! Run", "five? Run");
         err("Tom © Jerry Smith", "Tom © Jerry Smith", "Tom copyright Gerry Smyth");
         err("no numbers here", "nineteen zero", "nineteen hundred");
+        err("Plan B at 5", "Plan B at five", "Plan b at five");
+        err("Plan B at 5", "Plan billion at five", "Plan B at five");
+        err("Plan b and 3b", "Plan be and three billion", "Plan b and three billion");
         assert_eq!(
             ok("think of - a, US–China", "think of - a, US- China", "think of — a, US-China"),
             BTreeSet::from([Kind::Dashes])
@@ -1122,9 +1161,12 @@ mod tests {
         assert_eq!(ok("MCM.", "MCM.", "nineteen hundred."), roman);
         assert_eq!(ok("MMXXIV", "MMXXIV", "two thousand and twenty-four"), roman);
         assert_eq!(ok("II-era", "II-era", "two-era"), roman);
+        assert_eq!(ok("Phases I-III were", "Phases I - III were", "Phases one to three were"), roman);
         let err = |input: &str, a: &str, b: &str| assert!(explain(input, a, b).is_err(), "{a:?} -> {b:?}");
         // The wrong number, or anything else changed.
         err("World War II", "World War II", "World War three");
+        err("Wait - I know", "Wait - I know", "Wait to one know");
+        err("Phases I and III", "Phases I - III", "Phases one to three");
         err("Henry VIII", "Henry VIII", "Henry the seventh");
         err("Henry VIII", "Henry VIII", "Henry eighth");
         err("Super Bowl LV", "Super Bowl LV", "Super Bowl fifty");
