@@ -122,8 +122,19 @@ fn grow(raw: Vec<(&'static str, Entry)>) -> Dict {
     dict
 }
 
+/// Lowercase abbreviations the lexicons expand without the period or capital that would say
+/// which word they stand for (`docs/divergences.md`, "misaki English: lowercase abbreviations"):
+/// "dr" is "doctor" in misaki, but also "tl;dr", drams and drives, and "mr" (which also reads
+/// "MR") is "mister" but also a merge request or magnetic resonance. Without them, the word is
+/// spelled out. "Dr" and "Mr" stay, as do "mrs" and "vs", which have one reading.
+const GUESSES: [&str; 2] = ["dr", "mr"];
+
 fn load(json: &'static str) -> Dict {
-    grow(parse(json))
+    let mut dict = grow(parse(json));
+    for key in GUESSES {
+        dict.remove(key);
+    }
+    dict
 }
 
 static US_GOLD: &str = include_str!("../data/us_gold.json");
@@ -575,6 +586,16 @@ mod tests {
         for british in [false, true] {
             let lexicon = Lexicon::new(british);
             assert!(lexicon.golds.keys().chain(lexicon.silvers.keys()).all(|k| k.is_ascii()));
+        }
+    }
+
+    #[test]
+    fn guessed_abbreviations_are_dropped() {
+        for british in [false, true] {
+            let lexicon = Lexicon::new(british);
+            let known = |w: &str| lexicon.golds.contains_key(w) || lexicon.silvers.contains_key(w);
+            assert!(!known("dr") && !known("mr"));
+            assert!(known("Dr") && known("Mr") && known("Dr.") && known("mrs"));
         }
     }
 

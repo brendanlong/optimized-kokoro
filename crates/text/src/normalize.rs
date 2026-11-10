@@ -7,7 +7,7 @@ use crate::english_data::VALID_TLDS;
 use crate::numbers::{self, cardinal};
 use crate::py;
 use crate::pyre::{Captures, Pattern, compile, compile_i};
-use crate::{roman, scan, symbols};
+use crate::{footnotes, roman, scan, symbols};
 use std::ops::Range;
 use std::sync::LazyLock;
 
@@ -72,7 +72,6 @@ struct Patterns {
     url_port: Pattern,
     phone: Pattern,
     non_digit: Pattern,
-    doctor: Pattern,
     mister: Pattern,
     miss: Pattern,
     missus: Pattern,
@@ -101,10 +100,9 @@ static PATTERNS: LazyLock<Patterns> = LazyLock::new(|| Patterns {
     url_port: compile(r":(\d+)(?=/|$)"),
     phone: compile(r"(?:(\+?\d{1,2})[ .-]?)?(\(?\d{3}\)?)[\s.-](\d{3})[\s.-](\d{4})"),
     non_digit: compile(r"\D"),
-    doctor: compile(r"\bD[Rr]\.(?= [A-Z])"),
-    mister: compile(r"\b(?:Mr\.|MR\.(?= [A-Z]))"),
+    mister: compile(r"\b(?:Mr\.|MR\.(?= [A-Za-z]))"),
     miss: compile(r"\b(?:Ms\.|MS\.(?= [A-Z]))"),
-    missus: compile(r"\b(?:Mrs\.|MRS\.(?= [A-Z]))"),
+    missus: compile(r"\b(?:Mrs\.|MRS\.(?= [A-Za-z]))"),
     etc: compile(r"\betc\.(?! [A-Z])"),
     yeah: compile_i(r"\b(y)eah?\b"),
     dashes: compile(r" ?-{2,} ?"),
@@ -116,7 +114,9 @@ type Pass = fn(&Patterns, &str) -> String;
 
 /// `EnglishNormalizer.pass_order`: the passes the options enable, in order.
 fn pass_order(options: &Options) -> Vec<(&'static str, Pass)> {
-    let all: [(&str, bool, Pass); 16] = [
+    let all: [(&str, bool, Pass); 17] = [
+        // Footnote marks go first, before other passes read their digits ("4:20.91" as a time).
+        ("footnotes", true, |_, t| footnotes::footnotes(t)),
         // Roman numerals are read where the caps pass runs: on the text before it, replaced after.
         (
             "roman_numerals_and_caps_words",
@@ -301,7 +301,8 @@ fn time(time: &str, half: Option<&str>) -> String {
 }
 
 fn abbreviations(p: &Patterns, text: &str) -> String {
-    let text = p.doctor.sub_str(text, "Doctor");
+    // "Dr." is "Doctor" before a name (the reference's rule) and "Drive" after a street's name.
+    let text = crate::abbreviations::abbreviations(text);
     let text = p.mister.sub_str(&text, "Mister");
     let text = p.miss.sub_str(&text, "Miss");
     let text = p.missus.sub_str(&text, "Mrs");
@@ -346,6 +347,39 @@ mod tests {
     }
 
     #[test]
+    fn abbreviations_footnotes_and_rates() {
+        let n = |t: &str| english(t, &Options::default());
+        for (text, expected) in [
+            ("tl;dr: it works. TL;DR and tldr", "TLDR: it works. TLDR and TLDR"),
+            (
+                "Dr. Who on Mulholland Dr. and St. Louis on Main St.",
+                "Doctor Who on Mulholland Drive and Saint Louis on Main Street.",
+            ),
+            ("DR. SMITH and MR. JONES", "Doctor smith and Mister jones"),
+            (
+                "No. 5 in Dec. 2025, see pp. 230-232",
+                "Number five in December twenty twenty-five, see pages two hundred and thirty to two hundred and thirty-two",
+            ),
+            ("Roe v. Wade, esp. later", "Roe versus Wade, especially later"),
+            ("we're going to find.6 None of it ↩", "we're going to find. None of it"),
+            ("a paper from Google [2]. Then ¶ 12 and Title¶", "a paper from Google. Then paragraph twelve and Title"),
+            ("4:20.91 in Monaco", "four twenty point nine one in Monaco"),
+            (
+                "21.22 output tok/s, km/h and GB/s",
+                "twenty-one point two two output tok per second, kilometers per hour and gigabytes per second",
+            ),
+            ("he/she and the month/year field", "he slash she and the month slash year field"),
+            (
+                "from 2048->512 and 3-2=1",
+                "from twenty forty-eight to five hundred and twelve and three minus two equals one",
+            ),
+            ("I found a $5 bill.", "I found a five dollar bill."),
+        ] {
+            assert_eq!(n(text), expected, "{text}");
+        }
+    }
+
+    #[test]
     fn patterns_match_the_backtracker() {
         let p = &*PATTERNS;
         let patterns = [
@@ -363,7 +397,6 @@ mod tests {
             &p.url_port,
             &p.phone,
             &p.non_digit,
-            &p.doctor,
             &p.mister,
             &p.miss,
             &p.missus,

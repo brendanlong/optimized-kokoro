@@ -11,7 +11,10 @@
 //! anything else in the symbol blocks is silent, so only letters, digits' words and the
 //! punctuation Kokoro reads are left.
 
-use crate::numbers::{cardinal, enclosed_number, power, subscript_digit, superscript_digit, vulgar_fraction_words};
+use crate::numbers::{
+    cardinal, enclosed_number, power, rate_word, subscript_digit, superscript_digit, time_unit, unit_name,
+    vulgar_fraction_words,
+};
 use crate::py::{is_alnum, is_space};
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
@@ -348,6 +351,33 @@ fn between_words(t: &[char], i: usize) -> bool {
     before.is_some_and(is_alnum) && after.is_some_and(is_alnum)
 }
 
+/// A rate written without a number at the slash at `i`: a word or unit of up to eight letters
+/// and a unit of time ("tok/s", "GB/s", "km/h", "calories/day"; not "month/year"). Returns how
+/// many characters of the word to take back, the words ("tok per second", "kilometers per
+/// hour") and the end.
+fn rate(t: &[char], i: usize) -> Option<(usize, String, usize)> {
+    let mut start = i;
+    while start > 0 && t[start - 1].is_ascii_alphabetic() {
+        start -= 1;
+    }
+    let mut end = i + 1;
+    while t.get(end).is_some_and(char::is_ascii_alphabetic) {
+        end += 1;
+    }
+    let glued = |k: Option<&char>| k.is_some_and(|&c| is_alnum(c) || matches!(c, '/' | '-' | '.'));
+    if start == i || i - start > 8 || glued(start.checked_sub(1).and_then(|k| t.get(k))) || glued(t.get(end)) {
+        return None;
+    }
+    let word: String = t[start..i].iter().collect();
+    let written: String = t[i + 1..end].iter().collect();
+    let time = time_unit(&written).filter(|_| rate_word(&word, &written))?;
+    if time_unit(&word).is_some() || matches!(word.to_ascii_lowercase().as_str(), "day" | "night" | "week" | "month") {
+        return None;
+    }
+    let word = unit_name(&word).map_or(word, str::to_owned);
+    Some((i - start, format!("{word} per {time}"), end))
+}
+
 /// The symbol pass.
 pub fn symbols(text: &str) -> String {
     let t: Vec<char> = text.chars().collect();
@@ -367,6 +397,17 @@ pub fn symbols(text: &str) -> String {
                 i = end + 1;
                 continue;
             }
+        }
+        if c == '/'
+            && let Some((before, words, end)) = rate(&t, i)
+        {
+            // "tok/s", "GB/s", "calories/day": a rate, "per second".
+            for _ in 0..before {
+                out.text.pop();
+            }
+            out.text.push_str(&words);
+            i = end;
+            continue;
         }
         if c.is_ascii() {
             // The reference's replacements, with their spacing.
@@ -562,7 +603,7 @@ mod tests {
             ("x² and H₂O and CO₂.", "x squared and H-two-O and CO-two."),
             ("Smith² said, E=mc²", "Smith said, E equals mc squared"),
             ("m², x², km² and 3 m/s²", "m squared, x squared, km squared and 3 m slash s squared"),
-            ("word², end.², Smith³ and [²] and x²³", "word, end., Smith and and x to the power of twenty-three"),
+            ("word², end.², Smith³ and [²] and x²³", "word, end., Smith and and x to the twenty-third"),
             ("(a+b)², (x-one)³ and [two n]²", "(a plus b) squared, (x-one) cubed and [two n] squared"),
             ("(x minus one)³", "(x minus one) cubed"),
             ("(see Smith)² and (end.)²", "(see Smith) and (end.)"),
