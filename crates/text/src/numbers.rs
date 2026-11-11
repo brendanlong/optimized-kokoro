@@ -9,6 +9,9 @@
 //! (units, degrees, fractions, ISO dates, codes, ratios), without the reference's quirks.
 
 use crate::py::{digit_value, is_alnum};
+use crate::words::{is_function_word, names_numbered_parts};
+use std::collections::HashSet;
+use std::sync::LazyLock;
 
 const ONES: [&str; 20] = [
     "zero",
@@ -359,7 +362,9 @@ fn money_words(currency: &Currency, body: &Body) -> String {
 }
 
 /// Units read after a number, written right after it or after one space. Only unambiguous ones:
-/// no single letters, nothing that is also a common word.
+/// no single letters, nothing that is also a common word, and no unit that stands for two
+/// ("nm", nanometers or nautical miles, is left as written). "TB", "ms" and "mi" after a number
+/// are terabytes, milliseconds and miles far more often than anything else.
 const UNITS: &[(&str, &str, &str)] = &[
     ("km/h", "kilometer per hour", "kilometers per hour"),
     ("km²", "square kilometer", "square kilometers"),
@@ -371,7 +376,6 @@ const UNITS: &[(&str, &str, &str)] = &[
     ("mm", "millimeter", "millimeters"),
     ("µm", "micrometer", "micrometers"),
     ("μm", "micrometer", "micrometers"),
-    ("nm", "nanometer", "nanometers"),
     ("m²", "square meter", "square meters"),
     ("m2", "square meter", "square meters"),
     ("m³", "cubic meter", "cubic meters"),
@@ -464,175 +468,30 @@ pub(crate) fn unit_name(key: &str) -> Option<&'static str> {
     UNITS.iter().find(|(k, _, _)| *k == key).map(|&(_, _, plural)| plural)
 }
 
+/// Multipliers written as words after a number (case-insensitive, as the reference matched them),
+/// and the Indian scale words ("₹5 crore" as "five crore rupees"), plurals before singulars.
+const MULTIPLIER_WORDS: [&str; 10] =
+    ["hundred", "thousand", "million", "billion", "trillion", "quadrillion", "crores", "crore", "lakhs", "lakh"];
+
+/// The numbers in words below a hundred, which count what an amount after them is ("two $3
+/// coffees"), and their ordinals ("the first $10 payment").
+static CARDINAL_WORDS: LazyLock<HashSet<String>> = LazyLock::new(|| (1..100).map(under_100).collect());
+static ORDINAL_WORDS: LazyLock<HashSet<String>> =
+    LazyLock::new(|| (1..100).map(|n| ordinal_of(&under_100(n))).collect());
+
+/// Determiners before an amount that make it count something, so that it names the kind of thing
+/// after it ("a $5 bill", "the $20 fee", "my $48,000 fund"). Not "that", which is as often a
+/// conjunction ("know that $5 goes far"), "her", as often an object ("I gave her $20 yesterday"), nor
+/// "some" ("some $5 million", about).
+const DETERMINERS: &[&str] = &[
+    "a", "an", "the", "this", "these", "those", "my", "your", "his", "its", "our", "their", "each", "every", "another",
+    "no",
+];
+
 /// The word for a slash between two numbers that nothing else explains ("4/5 stars", "80/20",
 /// "9/11", "part 1/3"): "slash", as the symbol pass reads every other slash. Brendan compared it with
 /// "over" by ear and chose "slash" (2026-11-10).
 const NUMBER_SLASH: &str = "slash";
-
-/// Nouns that name the numbered parts of things, before which "1/3 of" is a label ("part 1/3 of the
-/// thread"), not a fraction.
-const NUMBERED_PARTS: &[&str] = &[
-    "act", "appendix", "article", "book", "canto", "chapter", "class", "episode", "grade", "level", "part", "phase",
-    "plate", "psalm", "round", "scene", "season", "section", "series", "stage", "step", "tier", "title", "type",
-    "volume",
-];
-
-/// Multipliers written as words after a number (case-insensitive, as the reference matched them).
-const MULTIPLIER_WORDS: [&str; 6] = ["hundred", "thousand", "million", "billion", "trillion", "quadrillion"];
-
-/// Words that link an amount to what follows rather than name what it buys: prepositions,
-/// conjunctions, determiners, pronouns and scale words ("$5 of", "$5 or $10", "a $5 the").
-/// "five dollars" stays plural before them, even after "a".
-const LINKING_WORDS: &[&str] = &[
-    "of", "in", "to", "for", "from", "and", "or", "nor", "but", "so", "yet", "if", "as", "than", "per", "on", "at",
-    "by", "with", "into", "onto", "over", "under", "about", "after", "before", "since", "until", "upon", "via", "vs",
-    "versus", "within", "without", "across", "against", "among", "between", "through", "toward", "towards", "off",
-    "up", "down", "out", "plus", "minus", "times", "when", "while", "because", "though", "although", "unless",
-    "whereas", "a", "an", "the", "it", "its", "that", "this", "these", "those", "i", "you", "we", "they", "he", "she",
-    "him", "her", "them", "us", "me", "my", "your", "our", "their", "his", "some", "any", "no", "which", "who", "whom",
-    "whose", "what", "where", "hundred", "thousand", "million", "billion", "trillion",
-];
-
-/// Words that follow an amount without being what it buys: quantities, verbs and adverbs ("$5
-/// more", "$5 each", "$5 is", "$5 now"). Together with words ending in "-ed" ("$5 raised"), "-ly"
-/// ("$300 monthly") and "-ing" ("£220 standing to his credit"), "five dollars" stays plural before
-/// them unless "a" comes first ("a $26 million funding round").
-const AFTER_AMOUNT: &[&str] = &[
-    "more",
-    "less",
-    "worth",
-    "apiece",
-    "each",
-    "every",
-    "total",
-    "instead",
-    "once",
-    "twice",
-    "back",
-    "extra",
-    "cash",
-    "net",
-    "gross",
-    "flat",
-    "tops",
-    "max",
-    "min",
-    "is",
-    "was",
-    "were",
-    "are",
-    "be",
-    "been",
-    "being",
-    "will",
-    "would",
-    "can",
-    "could",
-    "should",
-    "shall",
-    "may",
-    "might",
-    "must",
-    "has",
-    "have",
-    "had",
-    "do",
-    "does",
-    "did",
-    "gets",
-    "got",
-    "goes",
-    "went",
-    "buys",
-    "bought",
-    "pays",
-    "paid",
-    "costs",
-    "cost",
-    "makes",
-    "made",
-    "now",
-    "today",
-    "tonight",
-    "yesterday",
-    "tomorrow",
-    "ago",
-    "later",
-    "already",
-    "still",
-    "just",
-    "only",
-    "even",
-    "too",
-    "also",
-    "then",
-    "here",
-    "there",
-    "again",
-    "anyway",
-    "either",
-    "neither",
-    "not",
-    "short",
-    "shy",
-    "cheaper",
-    "higher",
-    "lower",
-    "richer",
-    "poorer",
-    "last",
-    "next",
-    "this",
-    "annually",
-    "daily",
-    "weekly",
-    "monthly",
-    "yearly",
-    "hourly",
-    "etc",
-    "cut",
-    "set",
-    "put",
-    "spent",
-    "left",
-    "lost",
-    "won",
-    "came",
-    "comes",
-    "due",
-    "owed",
-    "saw",
-    "see",
-    "sees",
-    "remains",
-    "remain",
-    "seems",
-    "seem",
-    "stays",
-    "covers",
-    "means",
-    "sits",
-    "buy",
-    "pay",
-    "go",
-    "get",
-    "says",
-    "say",
-    "upfront",
-    "abroad",
-    "overseas",
-    "overall",
-    "altogether",
-    "whenever",
-    "wherever",
-    "however",
-    "anyway",
-    "apiece",
-    "outright",
-    "instead",
-    "beforehand",
-    "afterwards",
-];
 
 /// A number as written: integer digits (ASCII, commas removed), whether it had thousands
 /// commas, and its decimals.
@@ -674,8 +533,10 @@ impl Body {
 
 struct Scanner<'a> {
     t: &'a [char],
-    /// Hyphens inside arithmetic ([`arithmetic_minus`]): "minus", not a range's "to".
+    /// Hyphens inside arithmetic ([`arithmetic`]): "minus", not a range's "to".
     minus: Vec<bool>,
+    /// The characters of arithmetic ("y = 2x + 3"), where "2x" is a coefficient, not "two times".
+    arithmetic: Vec<bool>,
 }
 
 impl Scanner<'_> {
@@ -971,17 +832,6 @@ impl Scanner<'_> {
         )
     }
 
-    /// The letters right before `k`: "part" in "part 1/3" (with `k` at the space).
-    fn word_ending_at(&self, k: usize) -> String {
-        let start = self.t[..k].iter().rposition(|c| !c.is_alphabetic()).map_or(0, |s| s + 1);
-        self.t[start..k].iter().collect()
-    }
-
-    /// Whether the word of letters at `i` is `word` (lowercase), in any case, as a whole word.
-    fn word_is(&self, i: usize, word: &str) -> bool {
-        self.at_ignore_case(i, word) && self.free_at(i + word.len())
-    }
-
     /// Whether the number at `i` is part of a name joined by hyphens ("Llama-3.1-8B",
     /// "GPT-4", "H-1B"): right after a hyphen, in a run of letters, digits, dots and hyphens that
     /// starts with a capital. A hyphen after it isn't a range, and a letter glued to it isn't a
@@ -1070,9 +920,11 @@ impl Scanner<'_> {
     }
 
     /// A word multiplier after a number ending at `i` (" million", " hundred thousand"), or a
-    /// glued `k`, `m`, `b` or `bn` (and `t`, `mn` and `tn`, and a hyphen before the word, for
-    /// money: "$4.8bn", "$5-million"): its words and end. A glued letter may be followed by a slash
-    /// only for money, before a rate ("$1B/year").
+    /// glued `bn`, and for money a glued `k`, `m`, `b`, `t`, `mn` or `tn` and a hyphen before the
+    /// word ("$4.8bn", "$100M", "$5-million"): its words and end. Outside money a glued letter is
+    /// as often a label or a unit ("Figure 3b", "Apartment 5B", "100m", "a 5K", "4K", "3M"), so it
+    /// stays a letter ([`Scanner::number`]). A glued letter may be followed by a slash only for
+    /// money, before a rate ("$1B/year").
     fn multiplier(&self, i: usize, money: bool) -> Option<(String, usize)> {
         let mut words = Vec::new();
         let mut j = i;
@@ -1094,9 +946,9 @@ impl Scanner<'_> {
             }
         }
         let word = match self.get(i)?.to_ascii_lowercase() {
-            'k' => "thousand",
-            'm' => "million",
-            'b' => "billion",
+            'k' if money => "thousand",
+            'm' if money => "million",
+            'b' if money => "billion",
             't' if money => "trillion",
             _ => return None,
         };
@@ -1137,46 +989,88 @@ impl Scanner<'_> {
     }
 
     /// Whether an amount ending at `end`, whose currency symbol is at `symbol`, names the kind of
-    /// thing after it ("a $5 bill", "a $600M round", "$20-fee"): followed by a hyphen and a word,
-    /// or by a lowercase word that isn't one that follows amounts ([`LINKING_WORDS`],
-    /// [`AFTER_AMOUNT`], a word ending in "-ed" or "-ly"); after "a" or "an", by any word but a
-    /// linking word, capitalised too ("a $10 Casio"). Returns the end of the amount, past a
-    /// hyphen, and whether the word after it is the currency's own name ("$315 million dollar
-    /// deal"), which then isn't read twice.
-    fn attributive(&self, symbol: usize, end: usize, currency: &Currency) -> Option<(usize, bool)> {
+    /// thing after it, so it is read in the singular ("a five dollar bill"). Plural is the default
+    /// ("$5 doesn't buy much", "That $50 sounds fair"): no one reading is right for every amount
+    /// before a word, and the plural is less wrong. Singular only with evidence: a hyphen after the
+    /// amount ("$20-fee", `hyphenated` for "$5-million contract"), or a determiner, a possessive or
+    /// a number right before it and a word after it that may be a noun ([`Scanner::counted_before`],
+    /// [`Scanner::noun_after`]: "a $5 bill", "my $48,000 fund", "the first $10 payment", "two $3
+    /// coffees", "a $10 Casio"). Returns the end of the amount, past a hyphen, and whether the word
+    /// after it is the currency's own name ("$315 million dollar deal"), which then isn't read
+    /// twice.
+    fn attributive(&self, symbol: usize, end: usize, currency: &Currency, hyphenated: bool) -> Option<(usize, bool)> {
         if self.get(end) == Some('-') && self.is(end + 1, |c| c.is_ascii_alphabetic()) {
             return Some((end + 1, false));
         }
-        if self.get(end) != Some(' ') {
-            return None;
-        }
-        let start = end + 1;
-        let mut word_end = start;
-        while self.is(word_end, |c| c.is_ascii_alphabetic()) {
-            word_end += 1;
-        }
-        if word_end == start || self.is(word_end, char::is_alphanumeric) {
-            return None;
-        }
-        let word: String = self.t[start..word_end].iter().collect::<String>().to_ascii_lowercase();
+        let word = self.get(end).filter(|&c| c == ' ').and_then(|_| self.word_at(end + 1))?;
         if word == currency.one || word == currency.many {
             return Some((end, true));
         }
-        if LINKING_WORDS.contains(&word.as_str()) {
-            return None;
-        }
-        let article = self.article_before(if symbol > 0 && self.t[symbol - 1] == '~' { symbol - 1 } else { symbol });
-        let capital = self.t[start].is_uppercase();
-        let after_amount = AFTER_AMOUNT.contains(&word.as_str())
-            || word.len() >= 4 && (word.ends_with("ed") || word.ends_with("ly"))
-            || word.len() >= 6 && word.ends_with("wide")
-            || word.len() >= 5 && word.ends_with("ing");
-        (article || !capital && !after_amount).then_some((end, false))
+        let counted = if hyphenated { Some(true) } else { self.counted_before(symbol) };
+        counted.is_some_and(|any| self.noun_after(end, any)).then_some((end, false))
     }
 
-    /// Whether the word before `k` (one space before it) is "a" or "an".
-    fn article_before(&self, k: usize) -> bool {
-        self.word_before_is(k, &["a", "an"])
+    /// The word of ASCII letters at `i`, in lowercase, if it is a whole word: not glued to digits
+    /// nor cut at an apostrophe (a contraction, "$20 isn't", is no noun).
+    fn word_at(&self, i: usize) -> Option<String> {
+        let mut end = i;
+        while self.is(end, |c| c.is_ascii_alphabetic()) {
+            end += 1;
+        }
+        let apostrophe = matches!(self.get(end), Some('\'' | '’')) && self.is(end + 1, char::is_alphabetic);
+        (end > i && !self.is(end, char::is_alphanumeric) && !apostrophe)
+            .then(|| self.t[i..end].iter().collect::<String>().to_ascii_lowercase())
+    }
+
+    /// The letters right before `k`: "part" in "part 1/3" (with `k` at the space).
+    fn word_ending_at(&self, k: usize) -> String {
+        let start = self.t[..k].iter().rposition(|c| !c.is_alphabetic()).map_or(0, |s| s + 1);
+        self.t[start..k].iter().collect()
+    }
+
+    /// Whether a word that may be a noun follows the space at `end`: any word but a closed-class one
+    /// ("of", "the", "is", "I") or a number word ("$5 plus tax"). Unless `strong`, not a capitalised
+    /// word ("a $10 Casio"; "the $7,000 Mom paid" is a relative clause) nor a past tense ("the $5
+    /// million raised will fund").
+    fn noun_after(&self, end: usize, strong: bool) -> bool {
+        self.get(end) == Some(' ')
+            && (strong || !self.is(end + 1, char::is_uppercase))
+            && self.word_at(end + 1).is_some_and(|w| {
+                !is_function_word(&w) && !is_number_word(&w) && (strong || w.len() < 4 || !w.ends_with("ed"))
+            })
+    }
+
+    /// Whether the word right before the amount starting at `k` (after "~": "a ~$100k Rolex") makes it
+    /// count something: a determiner ([`DETERMINERS`]), a possessive ("John's"), a number ("two",
+    /// "2") or an ordinal ("first", "21st"). `Some(true)` after "a", "an" or a number, which can't
+    /// have the amount itself as what they count ("a $5 is"), so any word after it is what it buys;
+    /// `Some(false)` after the others, where a capitalised word may start a relative clause ("the
+    /// $7,000 Mom paid").
+    fn counted_before(&self, k: usize) -> Option<bool> {
+        let k = if k > 0 && self.t[k - 1] == '~' { k - 1 } else { k };
+        if k < 2 || self.t[k - 1] != ' ' {
+            return None;
+        }
+        // At most 32 characters back, so a long run without spaces stays linear.
+        let from = (k - 1).saturating_sub(32);
+        let start = self.t[from..k - 1].iter().rposition(|c| c.is_whitespace()).map_or(from, |s| from + s + 1);
+        let word: String = self.t[start..k - 1].iter().collect::<String>().to_lowercase();
+        // "2", "1,000"; not "2023," ending a clause ("In 2023, $4.5 billion went").
+        let digits = !word.is_empty()
+            && word.split(',').enumerate().all(|(n, g)| {
+                g.bytes().all(|b| b.is_ascii_digit())
+                    && if n == 0 { (1..=3).contains(&g.len()) || !word.contains(',') } else { g.len() == 3 }
+            });
+        let ordinal = word.len() > 2
+            && ["st", "nd", "rd", "th"].iter().any(|s| word.ends_with(s))
+            && word[..word.len() - 2].bytes().all(|b| b.is_ascii_digit());
+        let article = matches!(word.as_str(), "a" | "an");
+        let number = digits || CARDINAL_WORDS.contains(word.as_str());
+        let counts = DETERMINERS.contains(&word.as_str())
+            || ["'s", "’s"].iter().any(|s| word.strip_suffix(s).is_some_and(|stem| !is_function_word(stem)))
+            || ordinal
+            || ORDINAL_WORDS.contains(word.as_str());
+        (article || number || counts).then_some(article || number)
     }
 
     /// Whether the word before `k` is a determiner ("a", "the", "their"), after which "about" doesn't
@@ -1208,6 +1102,8 @@ impl Scanner<'_> {
         let whole = |b: &Body| b.frac.as_deref().is_none_or(|f| f.bytes().all(|d| d == b'0'));
         // The amount: its number in words when it is in whole units or has a multiplier (so it may
         // name the kind of thing after it), where it ends, and its plural reading.
+        // "$5-million contract": the hyphen says the amount names the kind of thing after it.
+        let hyphenated = self.get(end) == Some('-') && self.multiplier(end, true).is_some();
         let (number, end, plural) = if let Some((multiplier, m_end)) = self.multiplier(end, true) {
             (Some(format!("{} {multiplier}", body.words_plain())), m_end, None)
         } else if self.get(end) == Some('+')
@@ -1239,7 +1135,7 @@ impl Scanner<'_> {
         if let Some((rate, r_end)) = self.rate(end, true) {
             // "a $20/month plan": "a twenty dollar a month plan".
             if let Some(number) = &number
-                && let Some((a_end, false)) = self.attributive(i, r_end, &currency)
+                && let Some((a_end, false)) = self.attributive(i, r_end, &currency, hyphenated)
                 && a_end == r_end
             {
                 return Some((r_end, format!("{number} {} {rate}", currency.one), false));
@@ -1247,7 +1143,7 @@ impl Scanner<'_> {
             return Some((r_end, format!("{plural} {rate}"), false));
         }
         if let Some(number) = number
-            && let Some((a_end, named)) = self.attributive(i, end, &currency)
+            && let Some((a_end, named)) = self.attributive(i, end, &currency, hyphenated)
         {
             let words = if named { number } else { format!("{number} {}", currency.one) };
             return Some((a_end, words, false));
@@ -1289,6 +1185,31 @@ impl Scanner<'_> {
         {
             return Some((end, format!("{} {multiplier}", body.words_plain()), false));
         }
+        // A `k`, `m` or `b` glued to a number outside money: the letter, as written ("Figure three
+        // b", "four K", "one hundred m"); it is a multiplier only in money.
+        if self.is(end, |c| matches!(c, 'k' | 'K' | 'm' | 'M' | 'b' | 'B'))
+            && self.free_at(end + 1)
+            && self.get(end + 1) != Some('/')
+            && !self.in_name(i)
+        {
+            return Some((end + 1, format!("{} {}", body.words(), self.t[end]), false));
+        }
+        // A hexadecimal literal, "0x1F": "zero x one F", each digit as written.
+        if body.int == "0" && end == i + 1 && self.get(end) == Some('x') {
+            let mut hex_end = end + 1;
+            while self.is(hex_end, |c| c.is_ascii_hexdigit()) {
+                hex_end += 1;
+            }
+            if hex_end > end + 1 && self.free_at(hex_end) {
+                let digits: Vec<String> = self.t[end + 1..hex_end]
+                    .iter()
+                    .map(|&c| {
+                        c.to_digit(10).map_or_else(|| c.to_ascii_uppercase().to_string(), |d| ONES[d as usize].into())
+                    })
+                    .collect();
+                return Some((hex_end, format!("zero x {}", digits.join(" ")), false));
+            }
+        }
         if integer {
             for suffix in ["st", "nd", "rd", "th"] {
                 if self.at_ignore_case(end, suffix) && self.free_at(end + 2) {
@@ -1320,10 +1241,18 @@ impl Scanner<'_> {
         if let Some((words, end)) = self.degrees(end, one) {
             return Some((end, format!("{} {words}", body.words()), false));
         }
-        if let Some((words, end)) = self.unit(end, one) {
+        if let Some((words, u_end)) = self.unit(end, one) {
             // "22 GB/s": "twenty-two gigabytes per second".
-            let (rate, end) = self.rate(end, false).map_or((String::new(), end), |(r, e)| (format!(" {r}"), e));
-            return Some((end, format!("{} {words}{rate}", body.words()), false));
+            let (rate, u_end) = self.rate(u_end, false).map_or((String::new(), u_end), |(r, e)| (format!(" {r}"), e));
+            // Before what it measures, with the evidence money needs, singular: "a five minute walk",
+            // "the two gigabyte file"; otherwise plural ("five minutes walk", "the five km of road").
+            let words = match self.unit(end, true) {
+                Some((singular, _)) if self.counted_before(i).is_some_and(|any| self.noun_after(u_end, any)) => {
+                    singular
+                }
+                _ => words,
+            };
+            return Some((u_end, format!("{} {words}{rate}", body.words()), false));
         }
         // A word and a unit of time after a slash: "43 tok/s", "24g/day".
         let word_start = if self.get(end) == Some(' ') { end + 1 } else { end };
@@ -1370,13 +1299,11 @@ impl Scanner<'_> {
             // A fraction on its own only before "of" ("3/4 of the vote", not "part 1/3 of the
             // thread") or with the fraction slash ("3⁄4"); "4/5 stars", "part 1/3" or "7/10" may be
             // a rating, a part or a score, so the slash is read as written (in `numbers`).
-            let label = i > 0
-                && self.t[i - 1] == ' '
-                && NUMBERED_PARTS.contains(&self.word_ending_at(i - 1).to_lowercase().as_str());
+            let label = i > 0 && self.t[i - 1] == ' ' && names_numbered_parts(&self.word_ending_at(i - 1));
             if !body.commas
                 && let Some((n, d, f_end)) = self.slash_fraction(i)
                 && (self.get(end) == Some('⁄')
-                    || !label && self.get(f_end) == Some(' ') && self.word_is(f_end + 1, "of"))
+                    || !label && self.get(f_end) == Some(' ') && self.word_at(f_end + 1).as_deref() == Some("of"))
             {
                 return Some((f_end, fraction(n, d), false));
             }
@@ -1417,8 +1344,11 @@ impl Scanner<'_> {
         if self.get(end) == Some('-') && self.number_at(end + 1) && !self.minus[end] && !self.in_name(i) {
             return Some((end + 1, format!("{} to", body.words()), true));
         }
-        // "3x faster", "1920x1080"
+        // "3x faster", "1920x1080"; in arithmetic a coefficient, "2x" as "two x" ("y = 2x + 3").
         if self.get(end) == Some('x') {
+            if self.arithmetic[end] && self.free_at(end + 1) {
+                return Some((end, body.words(), false));
+            }
             if self.free_at(end + 1) {
                 return Some((end + 1, format!("{} times", body.words()), false));
             }
@@ -1557,8 +1487,10 @@ fn push_words(out: &mut String, words: &str, after: &[char], in_word: bool) {
 /// one-letter variables, operators, brackets and spaces that has an `=` (or `<`, `>`, `≤`, `≥`,
 /// `≠`), or at least two operators with spaces around them ("5 - 3 + 2"). Elsewhere a hyphen
 /// between numbers is a range or score ("2-3" is "two to three"), and a spaced one a dash.
-fn arithmetic_minus(t: &[char]) -> Vec<bool> {
+/// Returns those minus signs, and the characters of the stretches that are arithmetic.
+fn arithmetic(t: &[char]) -> (Vec<bool>, Vec<bool>) {
     let mut minus = vec![false; t.len()];
+    let mut expression = vec![false; t.len()];
     // "->" is an arrow, read "to" by the symbol pass: neither a minus nor "greater than".
     let arrow = |k: usize| t[k] == '-' && t.get(k + 1) == Some(&'>') || t[k] == '>' && k > 0 && t[k - 1] == '-';
     let operator = |k: usize| matches!(t[k], '+' | '-' | '−' | '×' | '*' | '/' | '÷') && !arrow(k);
@@ -1591,6 +1523,7 @@ fn arithmetic_minus(t: &[char]) -> Vec<bool> {
         if has_digit && (has_relation || spaced_operators >= 2) {
             for k in span {
                 minus[k] = matches!(t[k], '-' | '−') && !arrow(k);
+                expression[k] = true;
             }
         }
     }
@@ -1615,7 +1548,7 @@ fn arithmetic_minus(t: &[char]) -> Vec<bool> {
             }
         }
     }
-    minus
+    (minus, expression)
 }
 
 /// The number pass: every number in the text as words.
@@ -1624,7 +1557,8 @@ pub fn numbers(text: &str) -> String {
         return text.to_owned();
     }
     let t: Vec<char> = text.chars().collect();
-    let scanner = Scanner { t: &t, minus: arithmetic_minus(&t) };
+    let (minus, arithmetic) = arithmetic(&t);
+    let scanner = Scanner { t: &t, minus, arithmetic };
     let mut out = String::with_capacity(text.len() * 2);
     let mut i = 0;
     let mut plain_at = usize::MAX;
@@ -1798,8 +1732,7 @@ mod tests {
             ("1°", "one degree"),
             ("10 km and 10km, 1 km", "ten kilometers and ten kilometers, one kilometer"),
             ("3.5GHz", "three point five gigahertz"),
-            ("5 Ω, 4.7 kΩ and 1 MΩ", "five ohms, four point seven kilohms and one megohm"),
-            ("5 \u{2126}, 4.7 k\u{2126} and 1 M\u{2126}", "five ohms, four point seven kilohms and one megohm"),
+            ("5 Ω", "five ohms"),
             ("version 2.0.1", "version two point zero point one"),
             ("v1.2", "v-one point two"),
             ("BA123 and A4", "BA one twenty-three and A-four"),
@@ -1808,10 +1741,7 @@ mod tests {
             ("1080p", "ten eighty p"),
             ("3:1", "three to one"),
             ("1/2 cup, 3/4 of the vote and 1⁄2", "one slash two cup, three quarters of the vote and one half"),
-            (
-                "1/3 of it, part 1/3 of the thread, 4/5 stars",
-                "one third of it, part one slash three of the thread, four slash five stars",
-            ),
+            ("1/3 of it, part 1/3 of the thread", "one third of it, part one slash three of the thread"),
             ("3/4 and 9/11", "three slash four and nine slash eleven"),
             ("3/4 1/2 cup, 4/5 ½", "three slash four one slash two cup, four slash five ½"),
             ("1.5-2.5 kg", "one point five to two point five kilograms"),
@@ -1832,7 +1762,7 @@ mod tests {
                 "1,00,000 rupees and 12,34,56,789",
                 "one hundred thousand rupees and one hundred and twenty-three million, four hundred and fifty-six thousand, seven hundred and eighty-nine",
             ),
-            ("0,000 and 10m/s and 5m", "zero, zero zero zero and ten meters per second and five million"),
+            ("0,000 and 10m/s and 5m", "zero, zero zero zero and ten meters per second and five m"),
             ("Wait...5 more", "Wait...five more"),
             (
                 "It sold for $3,450,000 last year.",
@@ -1867,7 +1797,7 @@ mod tests {
             ("~5 minutes", "about five minutes"),
             ("±0.3 mm", "plus or minus zero point three millimeters"),
             ("6'2\" tall", "six feet two inches tall"),
-            ("4K TV", "four thousand TV"),
+            ("4K TV", "four K TV"),
             ("10²", "ten squared"),
             ("COVID-19", "COVID-nineteen"),
             ("1939-1945", "nineteen thirty-nine to nineteen forty-five"),
@@ -1881,7 +1811,7 @@ mod tests {
         for (text, expected) in [
             ("I found a $5 bill.", "I found a five dollar bill."),
             ("They closed a $600M round.", "They closed a six hundred million dollar round."),
-            ("the $2 bill and $100k iPhones", "the two dollar bill and one hundred thousand dollar iPhones"),
+            ("the $2 bill and $100k iPhones", "the two dollar bill and one hundred thousand dollars iPhones"),
             ("$20-fee transactions", "twenty dollar fee transactions"),
             ("a 10-year, $5-million contract", "a ten-year, five million dollar contract"),
             ("a $315 million dollar deal", "a three hundred and fifteen million dollar deal"),
@@ -1915,7 +1845,7 @@ mod tests {
                 "$4.8bn and £1.1BN and $3mn",
                 "four point eight billion dollars and one point one billion pounds and three million dollars",
             ),
-            ("$30M to $100+M rounds", "thirty million dollars to one hundred plus million dollar rounds"),
+            ("$30M to $100+M rounds", "thirty million dollars to one hundred plus million dollars rounds"),
             (
                 "costs $20/month, $1B/year and $3-4B/year",
                 "costs twenty dollars a month, one billion dollars a year and three to four billion dollars a year",
@@ -1971,7 +1901,7 @@ mod tests {
         for (text, expected) in [
             (
                 "70%-30%, 10°-15°, 40k-80k and $5M-$10M",
-                "seventy% to thirty%, ten degrees to fifteen degrees, forty thousand to eighty thousand and five million dollars to ten million dollars",
+                "seventy% to thirty%, ten degrees to fifteen degrees, forty k to eighty k and five million dollars to ten million dollars",
             ),
             ("the 1990s-2000s and 3rd-4th", "the nineteen nineties to two thousands and third to fourth"),
             (
@@ -1980,7 +1910,7 @@ mod tests {
             ),
             (
                 "the 2-3B models, pre-2020-21 and Mid-1990s",
-                "the two to three billion models, pre-twenty twenty to twenty-one and Mid-nineteen nineties",
+                "the two to three B models, pre-twenty twenty to twenty-one and Mid-nineteen nineties",
             ),
             ("Opus 4's score, GPT-4's and I-645's", "Opus four's score, GPT-four's and I-six hundred and forty-five's"),
             (
@@ -1988,6 +1918,91 @@ mod tests {
                 "the nineteen nineties, Londoners eighteen nineties style, ones and zeros",
             ),
             ("from 2048->512 runs", "from twenty forty-eight->five hundred and twelve runs"),
+        ] {
+            assert_eq!(n(text), expected, "{text}");
+        }
+    }
+
+    #[test]
+    fn money_before_a_word_is_plural_without_evidence() {
+        for (text, expected) in [
+            ("Give me $5 please.", "Give me five dollars please."),
+            ("$20 isn't much, $5 doesn't buy much", "twenty dollars isn't much, five dollars doesn't buy much"),
+            (
+                "That $50 sounds fair. $100 feels like a lot",
+                "That fifty dollars sounds fair. one hundred dollars feels like a lot",
+            ),
+            (
+                "He spent $40 despite it, for $15 around noon",
+                "He spent forty dollars despite it, for fifteen dollars around noon",
+            ),
+            (
+                "Make $500 fast. He won $5 fair and square.",
+                "Make five hundred dollars fast. He won five dollars fair and square.",
+            ),
+            ("The fine was ₹5 crore, ₹2 lakhs", "The fine was five crore rupees, two lakhs rupees"),
+            // Evidence: a determiner, a possessive or a number before the amount.
+            ("my $48,000 fund, John's $5 bill", "my forty-eight thousand dollar fund, John's five dollar bill"),
+            ("the first $10 payment, two $3 coffees", "the first ten dollar payment, two three dollar coffees"),
+            (
+                "a $5 or so and the $5 is mine and the $5 I owe",
+                "a five dollars or so and the five dollars is mine and the five dollars I owe",
+            ),
+            ("It's $5 total", "It's five dollars total"),
+            ("the $7,000 Mom paid, a $10 Casio", "the seven thousand dollars Mom paid, a ten dollar Casio"),
+            (
+                "In 2023, $4 went far. I gave her $20 yesterday",
+                "In twenty twenty-three, four dollars went far. I gave her twenty dollars yesterday",
+            ),
+            (
+                "the $5 million raised will fund it, in 2019, 10 km south",
+                "the five million dollars raised will fund it, in twenty nineteen, ten kilometers south",
+            ),
+        ] {
+            assert_eq!(n(text), expected, "{text}");
+        }
+    }
+
+    #[test]
+    fn letters_glued_outside_money_are_letters() {
+        for (text, expected) in [
+            (
+                "the 100m in 9.58 s, a 30m drop, the 3M company",
+                "the one hundred m in nine point five eight s, a thirty m drop, the three M company",
+            ),
+            ("Figure 3b, Apartment 5B, a 2b pencil", "Figure three b, Apartment five B, a two b pencil"),
+            ("a 5K, in 4K, 2020b and 3bn people", "a five K, in four K, twenty twenty b and three billion people"),
+            ("$100M, €3bn and $5k", "one hundred million dollars, three billion euros and five thousand dollars"),
+        ] {
+            assert_eq!(n(text), expected, "{text}");
+        }
+    }
+
+    #[test]
+    fn units_before_a_noun_and_ohms() {
+        for (text, expected) in [
+            (
+                "A 5 min walk, the 2 GB file, the 5 mm bolt",
+                "A five minute walk, the two gigabyte file, the five millimeter bolt",
+            ),
+            (
+                "5 min walk, the 5 km of road, the 3 kg were",
+                "five minutes walk, the five kilometers of road, the three kilograms were",
+            ),
+            ("300 nm", "three hundred nm"),
+            ("5 \u{2126}, 4.7 k\u{2126} and 1 M\u{2126}", "five ohms, four point seven kilohms and one megohm"),
+            ("5 Ω, 4.7 kΩ and 1 MΩ", "five ohms, four point seven kilohms and one megohm"),
+        ] {
+            assert_eq!(n(text), expected, "{text}");
+        }
+    }
+
+    #[test]
+    fn code_and_math() {
+        for (text, expected) in [
+            ("Set x = 0x1F, 0xff and 0x10.", "Set x = zero x one F, zero x F F and zero x one zero."),
+            ("y = 2x + 3 and x^2 - 4x + 4", "y = two x + three and x^two minus four x + four"),
+            ("3x faster, 1920x1080", "three times faster, nineteen twenty by one thousand and eighty"),
         ] {
             assert_eq!(n(text), expected, "{text}");
         }
