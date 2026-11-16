@@ -73,18 +73,10 @@ impl Espeak {
         let Some(tr) = self.translator.as_deref_mut() else { return };
         let vb: Vec<u8> = value.bytes().chain(std::iter::once(0)).collect();
         match key {
-            "dict_min" => {
-                if let Some(&n) = scan_ints(value, 1).first() {
-                    tr.dict_min_size = n;
-                }
-            }
             "dictrules" => read_numbers(&vb, &mut tr.dict_condition, 32),
             "intonation" => {
                 if let Some(&n) = scan_ints(value, 1).first() {
                     self.option_tone_flags = n;
-                    if (n & 0xff) != 0 {
-                        tr.langopts.intonation_group = n & 0xff;
-                    }
                 }
             }
             "numbers" => {

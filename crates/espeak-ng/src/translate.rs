@@ -399,7 +399,6 @@ impl Espeak {
                 pre_pause -= 1;
             }
             let t = self.tm(tr);
-            t.end_stressed_vowel = 0;
             t.prev_dict_flags = [0, 0];
         }
         let plist2 = self.n_ph_list2 as usize;
@@ -525,12 +524,6 @@ impl Espeak {
 
         if (word_flags & FLAG_HYPHEN) == 0 {
             self.ph_list2[plist2].sourceix = source_ix;
-        }
-
-        self.tm(tr).end_stressed_vowel = 0;
-        let last = (self.n_ph_list2 - 1).max(0) as usize;
-        if stress >= 4 && self.phz(self.ph_list2[last].phcode).typ == PH_VOWEL {
-            self.tm(tr).end_stressed_vowel = 1;
         }
 
         if switch_phonemes >= 0 {
@@ -969,14 +962,12 @@ impl Espeak {
         self.n_ph_list2 = 1;
         {
             let t = self.tm(tr);
-            t.prev_last_stress = 0;
             t.prepause_timeout = 0;
             t.expect_verb = 0;
             t.expect_noun = 0;
             t.expect_past = 0;
             t.expect_verb_s = 0;
             t.phonemes_repeat_count = 0;
-            t.end_stressed_vowel = 0;
             t.prev_dict_flags = [0, 0];
         }
 

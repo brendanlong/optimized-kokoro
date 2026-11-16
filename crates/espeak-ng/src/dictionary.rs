@@ -1032,11 +1032,10 @@ impl Espeak {
             }
             let Some(ph) = self.ph(phcode) else { continue };
             let next = phonetic.get(p).copied().unwrap_or(0);
-            if ph.typ == PH_PAUSE {
-                self.tm(tr).prev_last_stress = 0;
-            } else if (ph.typ == PH_VOWEL && (ph.phflags & PH_NONSYLLABIC) == 0) || next == PHON_SYLLABIC {
+            if ph.typ != PH_PAUSE
+                && ((ph.typ == PH_VOWEL && (ph.phflags & PH_NONSYLLABIC) == 0) || next == PHON_SYLLABIC)
+            {
                 let mut v_stress = vs(&vowel_stress, v);
-                self.tm(tr).prev_last_stress = v_stress;
                 if v_stress <= STRESS_IS_UNSTRESSED {
                     if v > 1 && max_stress >= 2 && stressflags & S_FINAL_DIM != 0 && v == vowel_count - 1 {
                         v_stress = STRESS_IS_DIMINISHED;
