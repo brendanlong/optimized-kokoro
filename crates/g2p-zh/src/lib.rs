@@ -18,8 +18,6 @@ mod pinyin;
 
 use std::fmt;
 
-pub use cn2an::transform as an2cn;
-
 /// misaki raises: a character in U+4E00-U+9FFF that pypinyin has no reading for (`兙`), where
 /// `pinyin_to_ipa` finds no final.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -100,17 +98,10 @@ impl ZhG2p {
         }
         Ok(out)
     }
-
-    /// jieba's `lcut` of a run of U+4E00-U+9FFF, for tests.
-    pub fn cut<'a>(&self, text: &'a str) -> Vec<&'a str> {
-        let mut words = Vec::new();
-        self.jieba.cut(text, &mut words);
-        words.into_iter().map(|(s, e)| &text[s..e]).collect()
-    }
 }
 
 /// `ZHG2P.map_punctuation`.
-pub fn map_punctuation(text: &str) -> String {
+fn map_punctuation(text: &str) -> String {
     const MAP: [(char, &str); 18] = [
         ('、', ", "),
         ('，', ", "),
