@@ -16,11 +16,6 @@ use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
-fn one_stream(c: &mut kokoro_server::Config) {
-    c.max_concurrent_requests = 1;
-    c.max_streams_per_key = 1;
-}
-
 /// The stub pipeline, except that the first request blocks before its third chunk until the
 /// test releases it, as a long adversarial sentence keeps the phonemizer busy. (Its first chunk is
 /// handed out once the second is read: the server holds a chunk until it knows the next won't join it.)
@@ -132,13 +127,7 @@ async fn text_processing_stops_soon_after_the_client_leaves() {
     let _worker = AutoWorker::listen(&server.socket, Duration::from_millis(1));
     server.worker.connected().await;
 
-    let body = pcm("Slow.").to_string();
-    let mut client = TcpStream::connect(server.addr).await.unwrap();
-    let head = format!(
-        "POST /v1/audio/speech HTTP/1.1\r\nHost: test\r\nAuthorization: Bearer {KEY}\r\nContent-Length: {}\r\n\r\n",
-        body.len()
-    );
-    client.write_all((head + &body).as_bytes()).await.unwrap();
+    let client = raw_speech(server.addr, "Slow.").await;
     while pipeline.calls.load(Ordering::SeqCst) < 5 {
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
@@ -173,16 +162,8 @@ async fn a_client_that_stops_reading_is_disconnected() {
     .await;
     let _worker = AutoWorker::listen(&server.socket, Duration::from_millis(1));
     server.worker.connected().await;
-    let socket = tokio::net::TcpSocket::new_v4().unwrap();
-    socket.set_recv_buffer_size(4096).unwrap();
-    let mut stalled = socket.connect(server.addr).await.unwrap();
     // A minute of silence (2.88 MB) can't fit in the socket buffers.
-    let body = pcm("Hi. [pause:60s]").to_string();
-    let head = format!(
-        "POST /v1/audio/speech HTTP/1.1\r\nHost: test\r\nAuthorization: Bearer {KEY}\r\nContent-Length: {}\r\n\r\n",
-        body.len()
-    );
-    stalled.write_all(format!("{head}{body}").as_bytes()).await.unwrap();
+    let mut stalled = raw_speech(server.addr, "Hi. [pause:60s]").await;
     tokio::time::sleep(Duration::from_millis(150)).await;
     assert_eq!(speak(server.addr, pcm("Second.")).await.status(), 429);
 
@@ -211,7 +192,7 @@ async fn keys_can_have_their_own_stream_limits() {
     let first = worker.synthesize().await;
     let refused = speak(server.addr, pcm("Hi.")).await;
     assert_eq!(refused.status(), 429);
-    assert!(json_body(refused).await["detail"]["message"].as_str().unwrap().contains("already has 1 speech"));
+    assert_eq!(json_body(refused).await["detail"]["error"], "rate_limited");
     let others: Vec<_> =
         (0..3).map(|_| tokio::spawn(request(server.addr, speech_request(Some("other-key"), pcm("Hi."))))).collect();
     let mut pending = vec![first];

@@ -1077,7 +1077,6 @@ impl Espeak {
         !(is_digit09(at(w, word + group_len) as i32) || is_digit09(sat(w, word - 1)))
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn translate_number_1(
         &mut self,
         tr: Tr,
@@ -1149,9 +1148,6 @@ impl Espeak {
                 return false;
             }
         }
-        let this_value = value;
-        let _ = this_value;
-
         let group_len: isize = if self.t(tr).langopts.numbers2 & NUM2_MYRIADS != 0 { 4 } else { 3 };
         let thousands_sep = self.t(tr).langopts.thousands_sep;
         let decimal_sep = self.t(tr).langopts.decimal_sep;
@@ -1506,7 +1502,6 @@ impl Espeak {
     }
 
     /// `TranslateNumber`.
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn translate_number(
         &mut self,
         tr: Tr,

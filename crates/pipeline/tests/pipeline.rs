@@ -3,7 +3,7 @@
 use kokoro_espeak::{EspeakFallback, EspeakG2P};
 use kokoro_g2p_en::{Fallback, G2p, TaggedToken, Tagger, kokoro};
 use kokoro_pipeline::foreign::{Language, Script};
-use kokoro_pipeline::{Chunk, Error, ForeignG2p, Lang, NormalizationOptions, Pipeline};
+use kokoro_pipeline::{Chunk, Error, ForeignG2p, Lang, Pipeline};
 use kokoro_spacy_en::Nlp;
 use std::sync::OnceLock;
 
@@ -41,9 +41,7 @@ fn japanese_runs_are_read_by_the_japanese_g2p() {
     ] {
         assert_eq!(pipeline.phonemize(text).unwrap().0, expected, "{text}");
     }
-    let options = NormalizationOptions::default();
-    let unread: Vec<usize> =
-        pipeline.chunks("ありがとう, Goodbye 你好. ゃ", &options).map(|c| c.unwrap().unread).collect();
+    let unread: Vec<usize> = pipeline.chunks("ありがとう, Goodbye 你好. ゃ").map(|c| c.unwrap().unread).collect();
     assert_eq!(unread, [0]);
 }
 
@@ -52,7 +50,7 @@ fn phonemize(text: &str) -> String {
 }
 
 fn espeak(language: &str, text: &str) -> String {
-    EspeakG2P::new(language).unwrap().phonemize(text).unwrap()
+    EspeakG2P::new(language).unwrap().phonemize(text)
 }
 
 struct Spacy(Nlp);
@@ -71,7 +69,7 @@ struct Espeak(EspeakFallback);
 
 impl Fallback for Espeak {
     fn phonemize(&mut self, word: &str) -> Option<String> {
-        self.0.phonemize(word).unwrap()
+        self.0.phonemize(word)
     }
 }
 
@@ -213,8 +211,7 @@ fn scripts_a_voices_alphabet_holds_but_it_doesnt_read_are_unread() {
         ("ϢϤϦ", "kˈɑptɪk"),
         ("ⴂⴀⴋⴀ", "ʤˈɔɹʤᵊn"),
     ] {
-        let options = NormalizationOptions::default();
-        let chunks: Vec<_> = pipeline().chunks(text, &options).map(Result::unwrap).collect();
+        let chunks: Vec<_> = pipeline().chunks(text).map(Result::unwrap).collect();
         assert_eq!((chunks[0].phonemes.as_str(), chunks[0].unread), (format!("{name} tˈɛkst").as_str(), 1), "{text}");
     }
 }
@@ -304,6 +301,18 @@ fn han_without_mandarin_reading_is_chinese_text() {
     assert_eq!(ps, "ˈni ʧˌInˈiz tˈɛkst ˈni");
 }
 
+#[test]
+fn the_chinese_pipeline_reads_unread_runs_as_the_english_ones_do() {
+    let pipeline = Pipeline::new(Lang::Chinese).unwrap().with_foreign_g2p(Language::Japanese, Box::new(NoDictionary));
+    for (text, expected) in
+        [("カナ カナ", "ʤˌæpənˈiz tˈɛkst"), ("カナ\u{200b}カナ", "ʤˌæpənˈiz tˈɛkst"), ("，カナ", ", ʤˌæpənˈiz tˈɛkst")]
+    {
+        assert_eq!(pipeline.phonemize(text).unwrap().0, expected, "{text:?}");
+    }
+    let unread: Vec<usize> = pipeline.chunks("他说カナ カナ。").map(|c| c.unwrap().unread).collect();
+    assert_eq!(unread, [1]);
+}
+
 fn speech(chunks: &[Result<Chunk, Error>]) -> Vec<Result<&str, String>> {
     chunks
         .iter()
@@ -317,9 +326,7 @@ fn speech(chunks: &[Result<Chunk, Error>]) -> Vec<Result<&str, String>> {
 
 #[test]
 fn placeholders_are_counted_and_a_sentence_of_one_is_spoken() {
-    let options = NormalizationOptions::default();
-    let chunks: Vec<_> =
-        pipeline().chunks("Hello there. 東京。 [pause:0.5s] ありがとう, Goodbye 你好. สวัสดี", &options).collect();
+    let chunks: Vec<_> = pipeline().chunks("Hello there. 東京。 [pause:0.5s] ありがとう, Goodbye 你好. สวัสดี").collect();
     assert_eq!(
         speech(&chunks),
         [Ok("Hello there."), Ok("東京."), Ok("<pause>"), Ok("ありがとう, Goodbye 你好."), Ok("สวัสดี")]
@@ -330,9 +337,7 @@ fn placeholders_are_counted_and_a_sentence_of_one_is_spoken() {
 
 #[test]
 fn pauses_ids_and_words() {
-    let options = NormalizationOptions::default();
-    let chunks: Vec<_> =
-        pipeline().chunks("Hello world! [pause:1.5s] ¡Привет!", &options).map(Result::unwrap).collect();
+    let chunks: Vec<_> = pipeline().chunks("Hello world! [pause:1.5s] ¡Привет!").map(Result::unwrap).collect();
     assert_eq!(chunks.len(), 3);
     assert_eq!(chunks[1].pause, Some(1.5));
     let hello = &chunks[0];
@@ -351,9 +356,8 @@ fn pauses_ids_and_words() {
 /// "Hello there."; the number reader reads numbers past the decillions digit by digit.
 #[test]
 fn a_number_too_large_to_name_is_read_digit_by_digit() {
-    let options = NormalizationOptions::default();
     let text = format!("Hello there. I owe 1{} things. Bye now.", "0".repeat(59));
-    let texts: Vec<String> = pipeline().chunks(&text, &options).map(|c| c.unwrap().text).collect();
+    let texts: Vec<String> = pipeline().chunks(&text).map(|c| c.unwrap().text).collect();
     assert_eq!(
         texts,
         ["Hello there.".to_owned(), format!("I owe one{} things.", " zero".repeat(59)), "Bye now.".to_owned()]
@@ -364,10 +368,9 @@ fn a_number_too_large_to_name_is_read_digit_by_digit() {
 /// dropped, as Python's `inside` list is empty for it (this used to index past the end).
 #[test]
 fn links_with_blank_phonemes_at_chunk_ends() {
-    let options = NormalizationOptions::default();
     let words = |text: &str| -> Vec<Vec<(String, usize, usize)>> {
         pipeline()
-            .chunks(text, &options)
+            .chunks(text)
             .map(|c| c.unwrap().words().into_iter().map(|w| (w.text, w.ids.start, w.ids.end)).collect())
             .collect()
     };
@@ -386,18 +389,16 @@ fn links_with_blank_phonemes_at_chunk_ends() {
 fn shared_across_threads() {
     fn check<T: Send + Sync>() {}
     check::<Pipeline>();
-    let options = NormalizationOptions::default();
     let texts = ["One sentence here.", "Another, with Привет.", "And qzxv, a third."];
     let expected: Vec<Vec<String>> =
-        texts.iter().map(|t| pipeline().chunks(t, &options).map(|c| c.unwrap().phonemes).collect()).collect();
+        texts.iter().map(|t| pipeline().chunks(t).map(|c| c.unwrap().phonemes).collect()).collect();
     std::thread::scope(|s| {
         let handles: Vec<_> = (0..4)
             .map(|_| {
                 s.spawn(|| {
                     for _ in 0..20 {
                         for (t, e) in texts.iter().zip(&expected) {
-                            let got: Vec<String> =
-                                pipeline().chunks(t, &options).map(|c| c.unwrap().phonemes).collect();
+                            let got: Vec<String> = pipeline().chunks(t).map(|c| c.unwrap().phonemes).collect();
                             assert_eq!(&got, e);
                         }
                     }
@@ -414,12 +415,11 @@ fn shared_across_threads() {
 #[test]
 fn cancelling_stops_at_the_next_g2p_call() {
     use std::sync::atomic::{AtomicUsize, Ordering};
-    let options = NormalizationOptions::default();
     // One sentence of 40 clauses, far over the chunk limit: one G2P call for it, then one per clause.
     let text = vec!["the quick brown fox jumps over the lazy dog"; 40].join(", ") + ".";
     let asked = AtomicUsize::new(0);
     let cancelled = || asked.fetch_add(1, Ordering::SeqCst) >= 3;
-    let mut chunks = pipeline().chunks_within_groups(&text, &options, 100, 100, &cancelled);
+    let mut chunks = pipeline().chunks_within_groups(&text, 100, 100, &cancelled);
     assert!(matches!(chunks.next(), Some(Err(Error::Cancelled))));
     assert_eq!(asked.load(Ordering::SeqCst), 4, "asked once per G2P call, up to the one cancelled");
     assert!(chunks.all(|c| matches!(c, Err(Error::Cancelled))));

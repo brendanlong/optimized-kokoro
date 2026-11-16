@@ -206,9 +206,6 @@ static TRANSPOSE_MAP_LATIN: [i8; 288] = [
 #[allow(clippy::field_reassign_with_default)] // keeps the C's assignment order
 fn new_translator() -> Translator {
     let mut langopts = LanguageOptions::default();
-    langopts.max_lengthmod = 500;
-    langopts.lengthen_tonic = 20;
-
     langopts.stress_rule = STRESSPOSN_2R;
     langopts.unstressed_wd1 = 1;
     langopts.unstressed_wd2 = 3;
@@ -224,8 +221,6 @@ fn new_translator() -> Translator {
     langopts.alt_alphabet_lang = l2(b'e', b'n');
     langopts.roman_suffix = &UTF8_NULL;
     langopts.lowercase_sentence = false;
-
-    langopts.long_stop = 100;
 
     langopts.max_roman = 49;
     langopts.min_roman = 2;
@@ -246,7 +241,6 @@ fn new_translator() -> Translator {
         phonemes_repeat_count: 0,
         phoneme_tab_ix: 0,
         dict_condition: 0,
-        dict_min_size: 0,
         char_plus_apostrophe: &EMPTY_WSTRING,
         punct_within_word: &PUNCT_IN_WORD,
         chars_ignore: &CHARS_IGNORE_DEFAULT,
@@ -260,14 +254,12 @@ fn new_translator() -> Translator {
         expect_past: 0,
         expect_verb_s: 0,
         expect_noun: 0,
-        prev_last_stress: 0,
         clause_end: 0,
         word_vowel_count: 0,
         word_stressed_count: 0,
         clause_upper_count: 0,
         clause_lower_count: 0,
         prepause_timeout: 0,
-        end_stressed_vowel: 0,
         prev_dict_flags: [0, 0],
         clause_terminator: 0,
     };
@@ -726,8 +718,6 @@ pub fn select_translator(name: &[u8]) -> Translator {
         }
         b"et" | b"fi" => {
             // Estonian (only sets the encoding, then falls through), Finnish
-            tr.langopts.long_stop = 130;
-
             tr.langopts.numbers = NUM_DECIMAL_COMMA | NUM_ALLOW_SPACE | NUM_DFRACTION_2 | NUM_ORDINAL_DOT;
             set_letter_vowel(&mut tr, b'y' as usize);
         }
@@ -765,7 +755,6 @@ pub fn select_translator(name: &[u8]) -> Translator {
         b"hak" => {
             // Hakka Chinese
             tr.langopts.stress_flags = S_NO_DIM; // don't automatically set diminished stress (may be set in the intonation module)
-            tr.langopts.tone_language = 1; // Tone language, use  CalcPitches_Tone() rather than CalcPitches()
             tr.langopts.tone_numbers = 1; // a number after letters indicates a tone number (eg. pinyin or jyutping)
             tr.langopts.ideographs = 1;
         }
@@ -953,7 +942,6 @@ pub fn select_translator(name: &[u8]) -> Translator {
             tr.punct_within_word = &JBO_PUNCT_WITHIN_WORD;
             tr.langopts.param[LOPT_CAPS_IN_WORD] = 1; // capitals indicate stressed syllables
             set_letter_vowel(&mut tr, b'y' as usize);
-            tr.langopts.max_lengthmod = 368;
             tr.langopts.numbers = 0; // disable numbers until the definition are complete in _list file
         }
         b"ka" => {
@@ -990,7 +978,6 @@ pub fn select_translator(name: &[u8]) -> Translator {
 
             tr.langopts.stress_rule = STRESSPOSN_1RU; // stress on the last syllable, before any explicitly unstressed syllable
             tr.langopts.stress_flags = S_NO_AUTO_2 + S_NO_EOC_LENGTHEN; // no automatic secondary stress, don't lengthen at end-of-clause
-            tr.langopts.lengthen_tonic = 0;
             tr.langopts.param[LOPT_SUFFIX] = 1;
 
             tr.langopts.numbers = NUM_OMIT_1_HUNDRED | NUM_DFRACTION_6;
@@ -1231,7 +1218,6 @@ pub fn select_translator(name: &[u8]) -> Translator {
             // Lule Saami
             tr.langopts.stress_rule = STRESSPOSN_1L;
             tr.langopts.stress_flags = S_FINAL_DIM_ONLY | S_FINAL_NO_2 | S_2_TO_HEAVY; // move secondary stress from light to a following heavy syllable
-            tr.langopts.long_stop = 130;
 
             tr.langopts.numbers = NUM_DECIMAL_COMMA
                 | NUM_ALLOW_SPACE
@@ -1241,7 +1227,6 @@ pub fn select_translator(name: &[u8]) -> Translator {
                 | NUM_ORDINAL_DOT;
             set_letter_vowel(&mut tr, b'y' as usize);
             tr.langopts.spelling_stress = true;
-            tr.langopts.intonation_group = 3; // less intonation, don't raise pitch at comma
         }
         b"sq" => {
             // Albanian
@@ -1357,7 +1342,6 @@ pub fn select_translator(name: &[u8]) -> Translator {
             tr.langopts.word_gap = 0x21; // length of a final vowel is less dependent on the next consonant, don't merge consonant with next word
             tr.letter_groups[0] = Some(&VOWELS_VI);
             tr.letter_groups[7] = Some(&VOWELS_VI);
-            tr.langopts.tone_language = 1; // Tone language, use  CalcPitches_Tone() rather than CalcPitches()
             tr.langopts.unstressed_wd1 = 2;
             tr.langopts.numbers = NUM_DECIMAL_COMMA | NUM_HUNDRED_AND_DIGIT | NUM_DFRACTION_4 | NUM_ZERO_HUNDRED;
         }
@@ -1370,7 +1354,6 @@ pub fn select_translator(name: &[u8]) -> Translator {
             tr.punct_within_word = &XEX_PUNCT_WITHIN_WORD;
         }
         b"shn" => {
-            tr.langopts.tone_language = 1; // Tone language, use  CalcPitches_Tone() rather than CalcPitches()
             tr.langopts.numbers = NUM_DEFAULT;
             tr.langopts.break_numbers = BREAK_INDIVIDUAL;
         }
@@ -1379,13 +1362,11 @@ pub fn select_translator(name: &[u8]) -> Translator {
             tr.langopts.stress_rule = STRESSPOSN_1R; // stress on final syllable of a "word"
             tr.langopts.stress_flags = S_NO_DIM; // don't automatically set diminished stress (may be set in the intonation module)
             tr.langopts.vowel_pause = 0;
-            tr.langopts.tone_language = 1; // Tone language, use  CalcPitches_Tone() rather than CalcPitches()
             tr.langopts.tone_numbers = 1; // a number after letters indicates a tone number (eg. pinyin or jyutping)
             tr.langopts.ideographs = 1;
             tr.langopts.our_alphabet = 0x3100;
             tr.langopts.word_gap = 0x21; // length of a final vowel is less dependent on the next consonant, don't merge consonant with next word
             tr.langopts.textmode = true;
-            tr.langopts.listx = 1; // compile *_listx after *_list
             if name2 == l3(b'y', b'u', b'e') {
                 tr.langopts.numbers = NUM_DEFAULT;
                 tr.langopts.numbers2 = NUM2_ZERO_TENS;

@@ -12,7 +12,7 @@ enum Target {
     PrevVowel,
 }
 
-pub(crate) fn pl(list: &[PhonemeList], i: isize) -> PhonemeList {
+fn pl(list: &[PhonemeList], i: isize) -> PhonemeList {
     if i < 0 { PhonemeList::default() } else { list.get(i as usize).copied().unwrap_or_default() }
 }
 
@@ -63,10 +63,7 @@ impl Espeak {
 
     pub(crate) fn lookup_phoneme_table(&mut self, name: &[u8]) -> i32 {
         match self.data.phoneme_tab_list.iter().position(|t| t.name == name) {
-            Some(ix) => {
-                self.phoneme_tab_number = ix as i32;
-                ix as i32
-            }
+            Some(ix) => ix as i32,
             None => -1,
         }
     }
@@ -176,7 +173,6 @@ impl Espeak {
         count
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn interpret_condition(
         &self,
         tr: Option<Tr>,
@@ -604,18 +600,5 @@ impl Espeak {
                 p.std_length = phdata.pd_param[I_SET_LENGTH] as u8;
             }
         }
-    }
-
-    /// `InterpretPhoneme2`: an isolated phoneme between pauses.
-    pub(crate) fn interpret_phoneme2(&self, phcode: u8, phdata: &mut PhonemeData) {
-        let mut plist = [PhonemeList::default(); 4];
-        for p in &mut plist {
-            p.phcode = PHON_PAUSE;
-            p.ph = self.ph(PHON_PAUSE);
-        }
-        plist[1].phcode = phcode;
-        plist[1].ph = self.ph(phcode);
-        plist[2].sourceix = 1;
-        self.interpret_phoneme(None, 0, &mut plist, 1, phdata, None);
     }
 }

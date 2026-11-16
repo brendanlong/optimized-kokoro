@@ -44,7 +44,6 @@ fn concat3(out: &mut [u8; N_WORD_PHONEMES], a: &[u8], b: &[u8], c: &[u8]) {
 
 impl Espeak {
     /// `TranslateWord3`. The word starts at `w[word_start]` and ends at a space.
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn translate_word3(
         &mut self,
         tr: Tr,

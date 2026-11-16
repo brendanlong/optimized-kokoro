@@ -12,9 +12,9 @@ impl Tagger for OneToken {
 /// here, and no number is too large to read.
 #[test]
 fn numbers_have_no_reading() {
-    let g2p = G2p::new(false).with_unk("?");
+    let g2p = G2p::new(false);
     let (ps, tokens) = g2p.phonemize(&"9".repeat(400), &mut OneToken("CD"), None).unwrap();
-    assert_eq!(ps, "?");
+    assert_eq!(ps, "");
     assert_eq!(tokens[0].phonemes, None);
 }
 
@@ -31,8 +31,8 @@ fn empty_tokens_are_errors() {
 
 #[test]
 fn unknown_words_without_fallback_have_no_phonemes() {
-    let g2p = G2p::new(false).with_unk("?");
+    let g2p = G2p::new(false);
     let (ps, tokens) = g2p.phonemize("Qzxjv", &mut OneToken("NNP"), None).unwrap();
-    assert_eq!(ps, "?");
+    assert_eq!(ps, "");
     assert_eq!(tokens[0].phonemes, None);
 }

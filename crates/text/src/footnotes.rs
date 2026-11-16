@@ -18,10 +18,6 @@ const NUMBERED: &[&str] = &[
     "table", "chapter", "section", "version", "appendix", "rule", "note", "ss", "approx", "ca", "al",
 ];
 
-fn is_space(c: char) -> bool {
-    c.is_whitespace()
-}
-
 /// The footnote pass.
 pub fn footnotes(text: &str) -> String {
     if !text.contains(|c: char| c.is_ascii_digit() || matches!(c, '↩' | '¶' | '§' | '♦' | '◆')) {
@@ -34,7 +30,7 @@ pub fn footnotes(text: &str) -> String {
         let c = t[i];
         if let Some(end) = debris(&t, i) {
             // A mark standing between spaces goes with the space before it.
-            if out.ends_with(' ') && t.get(end).is_none_or(|&c| is_space(c)) {
+            if out.ends_with(' ') && t.get(end).is_none_or(|c| c.is_whitespace()) {
                 out.pop();
             }
             i = end;
@@ -57,7 +53,7 @@ fn digits_end(t: &[char], i: usize) -> usize {
 /// Whether a sentence starts at `i`: the text's start, or after `.`, `!`, `?` or `:` and spaces.
 fn sentence_start(t: &[char], i: usize) -> bool {
     let mut k = i;
-    while k > 0 && is_space(t[k - 1]) {
+    while k > 0 && t[k - 1].is_whitespace() {
         k -= 1;
     }
     k == 0 || matches!(t[k - 1], '.' | '!' | '?' | ':')
@@ -108,7 +104,7 @@ fn debris(t: &[char], i: usize) -> Option<usize> {
 /// and followed by a space or the end. Returns the digits' end.
 fn footnote_mark(t: &[char], i: usize) -> Option<usize> {
     let end = digits_end(t, i);
-    if end - i > 2 || t.get(end).is_some_and(|&c| !is_space(c)) {
+    if end - i > 2 || t.get(end).is_some_and(|c| !c.is_whitespace()) {
         return None;
     }
     let mut k = i;
@@ -121,7 +117,7 @@ fn footnote_mark(t: &[char], i: usize) -> Option<usize> {
     // After a sentence's end the next word starts a sentence ("find.6 None"), so "came back.10
     // minutes later" (a missing space) and "beta.2 is out" keep their numbers.
     let mut next = end;
-    while t.get(next).is_some_and(|&c| is_space(c)) {
+    while t.get(next).is_some_and(|c| c.is_whitespace()) {
         next += 1;
     }
     let new_sentence = t.get(next).is_none_or(|c| c.is_uppercase() || matches!(c, '"' | '“' | '(' | '['));
@@ -176,7 +172,7 @@ fn citation(t: &[char], i: usize) -> Option<usize> {
     }
     // Before punctuation or the end; or between two sentences ("around. [4] Most").
     let between_sentences = matches!(before, '.' | '!' | '?')
-        && t.get(k + 1).is_some_and(|&c| is_space(c))
+        && t.get(k + 1).is_some_and(|c| c.is_whitespace())
         && t.get(k + 2).is_some_and(|c| c.is_uppercase());
     let after_ok = t.get(k + 1).is_none_or(|&c| ".,;:!?".contains(c)) || between_sentences;
     (after_ok && (count == 1 || longest <= 2)).then_some(k + 1)

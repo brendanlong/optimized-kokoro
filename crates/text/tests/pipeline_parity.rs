@@ -2,7 +2,7 @@
 //! chunks from `smart_split` with a G2P that answers from the recorded calls.
 
 use kokoro_reference::Record;
-use kokoro_text::{Chunk, DEFAULT_MAX_TOKENS, Limits, Options, join_lines, sentences, smart_split, split};
+use kokoro_text::{Chunk, DEFAULT_MAX_TOKENS, Options, join_lines, sentences, smart_split, split};
 use std::cell::Cell;
 use std::collections::HashMap;
 
@@ -66,7 +66,7 @@ fn chunks(record: &Record, calls: &mut Vec<String>) -> Vec<(String, String)> {
     };
     let options = Options::default();
     let mut out = Vec::new();
-    for chunk in smart_split(&record.text, &record.lang, &options, &Limits::default(), DEFAULT_MAX_TOKENS, g2p) {
+    for chunk in smart_split(&record.text, &record.lang, options, DEFAULT_MAX_TOKENS, g2p) {
         if failed.get() {
             break;
         }

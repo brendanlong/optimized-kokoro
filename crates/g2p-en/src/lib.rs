@@ -141,14 +141,13 @@ struct MToken {
     whitespace: String,
     phonemes: Option<String>,
     is_head: bool,
-    alias: Option<String>,
     stress: Option<f64>,
     prespace: bool,
 }
 
 impl MToken {
     fn lex(&self) -> LexToken<'_> {
-        LexToken { text: self.alias.as_deref().unwrap_or(&self.text), tag: &self.tag, stress: self.stress }
+        LexToken { text: &self.text, tag: &self.tag, stress: self.stress }
     }
 
     fn into_token(self) -> Token {
@@ -160,8 +159,19 @@ fn tag_weight(text: &str) -> usize {
     text.chars().map(|c| if text::char_is_lower(c) { 1 } else { 2 }).sum()
 }
 
-/// `merge_tokens`; phonemes are joined only when `unk` is given.
-fn merge_tokens(tokens: &[MToken], unk: Option<&str>) -> MToken {
+/// Appends `tk`'s phonemes (kokoro's `unk=''` if it has none), after a space if it is `prespace`.
+fn push_phonemes(ps: &mut String, tk: &MToken) {
+    if tk.prespace
+        && ps.chars().next_back().is_some_and(|c| !text::is_space(c))
+        && tk.phonemes.as_deref().is_some_and(|p| !p.is_empty())
+    {
+        ps.push(' ');
+    }
+    ps.push_str(tk.phonemes.as_deref().unwrap_or_default());
+}
+
+/// `merge_tokens`, with `unk=''` if `join_phonemes` and `unk=None` otherwise.
+fn merge_tokens(tokens: &[MToken], join_phonemes: bool) -> MToken {
     let first = &tokens[0];
     let last = tokens.last().expect("non-empty");
     let mut stresses: Vec<f64> = Vec::new();
@@ -170,16 +180,10 @@ fn merge_tokens(tokens: &[MToken], unk: Option<&str>) -> MToken {
             stresses.push(s);
         }
     }
-    let phonemes = unk.map(|unk| {
+    let phonemes = join_phonemes.then(|| {
         let mut ps = String::new();
         for tk in tokens {
-            if tk.prespace
-                && ps.chars().next_back().is_some_and(|c| !text::is_space(c))
-                && tk.phonemes.as_deref().is_some_and(|p| !p.is_empty())
-            {
-                ps.push(' ');
-            }
-            ps.push_str(tk.phonemes.as_deref().unwrap_or(unk));
+            push_phonemes(&mut ps, tk);
         }
         ps
     });
@@ -204,7 +208,6 @@ fn merge_tokens(tokens: &[MToken], unk: Option<&str>) -> MToken {
         whitespace: last.whitespace.clone(),
         phonemes,
         is_head: first.is_head,
-        alias: None,
         stress: if stresses.len() == 1 { Some(stresses[0]) } else { None },
         prespace: first.prespace,
     }
@@ -335,19 +338,12 @@ const MAX_SPAN: usize = 16;
 /// misaki's English `G2P` as kokoro configures it (`version=None`, so `ɾ` and `ʔ` become `T` and `t`).
 pub struct G2p {
     lexicon: Lexicon,
-    unk: String,
 }
 
 impl G2p {
     /// American (`british = false`, kokoro's `a`) or British (`b`) English, with kokoro's `unk=''`.
     pub fn new(british: bool) -> Self {
-        G2p { lexicon: Lexicon::new(british), unk: String::new() }
-    }
-
-    /// Replaces the text of words without phonemes in the joined output (misaki's default is `❓`).
-    pub fn with_unk(mut self, unk: impl Into<String>) -> Self {
-        self.unk = unk.into();
-        self
+        G2p { lexicon: Lexicon::new(british) }
     }
 
     /// `G2P.__call__`: the phoneme string and the tokens.
@@ -370,7 +366,7 @@ impl G2p {
         mut fallback: Option<&mut dyn Fallback>,
     ) -> Result<(String, Vec<Token>), Error> {
         let tokens = self.tokenize(pre, tagged)?;
-        let tokens = self.fold_left(tokens);
+        let tokens = Self::fold_left(tokens);
         let mut words = retokenize(tokens)?;
         let mut ctx = TokenContext::default();
         for word in words.iter_mut().rev() {
@@ -395,12 +391,12 @@ impl G2p {
             .map(|w| {
                 let mut tk = match w {
                     Word::One(tk) => tk,
-                    Word::Many(tks) => merge_tokens(&tks, Some(&self.unk)),
+                    Word::Many(tks) => merge_tokens(&tks, true),
                 };
                 if let Some(ps) = tk.phonemes.as_mut().filter(|p| p.contains(['ɾ', 'ʔ'])) {
                     *ps = ps.replace('ɾ', "T").replace('ʔ', "t");
                 }
-                out.push_str(tk.phonemes.as_deref().unwrap_or(&self.unk));
+                out.push_str(tk.phonemes.as_deref().unwrap_or_default());
                 out.push_str(&tk.whitespace);
                 tk.into_token()
             })
@@ -420,10 +416,10 @@ impl G2p {
         let mut should_fallback = false;
         while left < right {
             let span = &w[left..right];
-            let found = if span.iter().any(|t| t.alias.is_some() || t.phonemes.is_some()) {
+            let found = if span.iter().any(|t| t.phonemes.is_some()) {
                 None
             } else {
-                let tk = merge_tokens(span, None);
+                let tk = merge_tokens(span, false);
                 self.lexicon.get(&tk.lex(), ctx).map(|ps| (ps, tk))
             };
             if let Some((ps, tk)) = found {
@@ -452,7 +448,7 @@ impl G2p {
         }
         match fallback.filter(|_| should_fallback) {
             Some(fb) => {
-                let tk = merge_tokens(w, None);
+                let tk = merge_tokens(w, false);
                 w[0].phonemes = fb.phonemize(&tk.text);
                 for x in &mut w[1..] {
                     x.phonemes = Some(String::new());
@@ -472,7 +468,6 @@ impl G2p {
                 whitespace: t.whitespace,
                 phonemes: None,
                 is_head: true,
-                alias: None,
                 stress: None,
                 prespace: false,
             })
@@ -503,8 +498,8 @@ impl G2p {
 
     /// `fold_left`: each non-head token is merged into the token before it. Merging one pair at a time
     /// re-copies the growing prefix, so this extends it in place with the same result as
-    /// `merge_tokens([prev, tk], unk)`.
-    fn fold_left(&self, tokens: Vec<MToken>) -> Vec<MToken> {
+    /// `merge_tokens([prev, tk], unk='')`.
+    fn fold_left(tokens: Vec<MToken>) -> Vec<MToken> {
         let mut result: Vec<MToken> = Vec::with_capacity(tokens.len());
         let mut weight = 0;
         for tk in tokens {
@@ -513,6 +508,9 @@ impl G2p {
                 result.push(tk);
                 continue;
             };
+            let mut ps = acc.phonemes.take().unwrap_or_default();
+            push_phonemes(&mut ps, &tk);
+            acc.phonemes = Some(ps);
             let tk_weight = tag_weight(&tk.text);
             if tk_weight > weight {
                 acc.tag = tk.tag;
@@ -521,20 +519,10 @@ impl G2p {
             acc.text.push_str(&acc.whitespace);
             acc.text.push_str(&tk.text);
             acc.whitespace = tk.whitespace;
-            let mut ps = acc.phonemes.take().unwrap_or_else(|| self.unk.clone());
-            if tk.prespace
-                && ps.chars().next_back().is_some_and(|c| !text::is_space(c))
-                && tk.phonemes.as_deref().is_some_and(|p| !p.is_empty())
-            {
-                ps.push(' ');
-            }
-            ps.push_str(tk.phonemes.as_deref().unwrap_or(&self.unk));
-            acc.phonemes = Some(ps);
             acc.stress = match (acc.stress, tk.stress) {
                 (Some(a), Some(b)) if a != b => None,
                 (a, b) => a.or(b),
             };
-            acc.alias = None;
         }
         result
     }
@@ -543,7 +531,7 @@ impl G2p {
 fn retokenize(tokens: Vec<MToken>) -> Result<Vec<Word>, Error> {
     let mut words: Vec<Word> = Vec::with_capacity(tokens.len());
     for token in tokens {
-        let mut tks: Vec<MToken> = if token.alias.is_none() && token.phonemes.is_none() {
+        let mut tks: Vec<MToken> = if token.phonemes.is_none() {
             subtokenize(&token.text)
                 .into_iter()
                 .map(|t| MToken {
@@ -552,7 +540,6 @@ fn retokenize(tokens: Vec<MToken>) -> Result<Vec<Word>, Error> {
                     whitespace: String::new(),
                     phonemes: None,
                     is_head: true,
-                    alias: None,
                     stress: token.stress,
                     prespace: false,
                 })
@@ -562,7 +549,7 @@ fn retokenize(tokens: Vec<MToken>) -> Result<Vec<Word>, Error> {
         };
         tks.last_mut().ok_or(Error::EmptyToken)?.whitespace = token.whitespace;
         for tk in &mut tks {
-            if tk.alias.is_some() || tk.phonemes.is_some() {
+            if tk.phonemes.is_some() {
             } else if tk.tag == ":" && (tk.text == "-" || tk.text == "–") {
                 tk.phonemes = Some("—".to_string());
             } else if is_punct_tag(&tk.tag) && !all_ascii_letters(&tk.text) {
@@ -573,7 +560,7 @@ fn retokenize(tokens: Vec<MToken>) -> Result<Vec<Word>, Error> {
             }
         }
         for mut tk in tks {
-            if tk.alias.is_some() || tk.phonemes.is_some() {
+            if tk.phonemes.is_some() {
                 words.push(Word::One(tk));
             } else if let Some(Word::Many(group)) = words
                 .last_mut()

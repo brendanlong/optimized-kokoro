@@ -10,20 +10,11 @@ use std::borrow::Cow;
 use std::fmt::Write;
 use std::sync::LazyLock;
 
-/// The server settings these checks read, with the deployed defaults.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Limits {
-    /// Longest single pause; longer ones are shortened to this.
-    pub max_pause_duration_s: f64,
-    /// Most silence one request may ask for in total.
-    pub max_total_pause_s: f64,
-}
-
-impl Default for Limits {
-    fn default() -> Self {
-        Self { max_pause_duration_s: 60.0, max_total_pause_s: 300.0 }
-    }
-}
+/// Longest single pause, in seconds (the deployed `max_pause_duration_s`); longer ones are
+/// shortened to this.
+pub const MAX_PAUSE_S: f64 = 60.0;
+/// Most silence one request may ask for in total, in seconds (`max_total_pause_s`).
+pub const MAX_TOTAL_PAUSE_S: f64 = 300.0;
 
 pub(crate) static PAUSE_TAG: LazyLock<Pattern> = LazyLock::new(|| compile_i(r"\[pause:(\d+(?:\.\d+)?)s\]"));
 
@@ -78,11 +69,11 @@ pub fn check_speakable(text: &str, options: &Options) -> Result<(), Rejected> {
 }
 
 /// `check_pause_budget`: refuses a request whose pauses, each capped, add up past the limit.
-pub fn check_pause_budget(text: &str, limits: &Limits) -> Result<(), Rejected> {
-    let pauses = PAUSE_TAG.captures_iter(text).map(|c| parse_float(&c[1]).min(limits.max_pause_duration_s));
+pub fn check_pause_budget(text: &str) -> Result<(), Rejected> {
+    let pauses = PAUSE_TAG.captures_iter(text).map(|c| parse_float(&c[1]).min(MAX_PAUSE_S));
     let total_s = fsum(pauses);
-    if total_s > limits.max_total_pause_s {
-        return Err(Rejected::TooMuchSilence { total_s, limit_s: limits.max_total_pause_s });
+    if total_s > MAX_TOTAL_PAUSE_S {
+        return Err(Rejected::TooMuchSilence { total_s, limit_s: MAX_TOTAL_PAUSE_S });
     }
     Ok(())
 }
@@ -144,8 +135,8 @@ mod tests {
 
     #[test]
     fn pause_budget() {
-        assert!(check_pause_budget("[pause:60s] [pause:500s]", &Limits::default()).is_ok());
-        let err = check_pause_budget(&"[pause:61s]".repeat(6), &Limits::default()).unwrap_err();
+        assert!(check_pause_budget("[pause:60s] [pause:500s]").is_ok());
+        let err = check_pause_budget(&"[pause:61s]".repeat(6)).unwrap_err();
         assert_eq!(err.to_string(), "Total pause duration 360.0s exceeds the 300.0s limit");
     }
 }

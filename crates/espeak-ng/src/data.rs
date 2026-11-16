@@ -221,9 +221,6 @@ pub struct VoiceInfo {
     pub name: String,
     /// `(priority, language)` pairs, in file order.
     pub languages: Vec<(u8, String)>,
-    pub gender: i32,
-    pub age: i32,
-    pub variants: i32,
 }
 
 /// espeak-ng's data directory, loaded once and shared between threads.
@@ -292,10 +289,6 @@ impl EspeakData {
         }))
     }
 
-    pub fn dir(&self) -> &Path {
-        &self.dir
-    }
-
     /// The parsed `<name>_dict`, or `None` if it can't be read or is malformed.
     pub(crate) fn dict(&self, name: &str) -> Option<Arc<Dict>> {
         let mut dicts = self.dicts.lock().unwrap_or_else(|e| e.into_inner());
@@ -331,7 +324,7 @@ impl EspeakData {
     }
 
     /// `espeak_ListVoices(NULL)`'s full sorted list (`voices_list`), including variants.
-    pub fn voices_list(&self) -> &[VoiceInfo] {
+    pub(crate) fn voices_list(&self) -> &[VoiceInfo] {
         self.voices.get_or_init(|| {
             let mut out = Vec::new();
             for sub in ["voices", "lang"] {
@@ -389,11 +382,8 @@ pub(crate) fn strip_line(line: &str) -> &str {
 /// `ReadVoiceFile`.
 fn read_voice_file(text: &str, fname: &str) -> Option<VoiceInfo> {
     let mut name = String::new();
-    let mut gender = String::new();
-    let mut age = 0;
     let mut languages = Vec::new();
     let mut langix = 0usize;
-    let mut variants = 4;
     for raw in text.split_inclusive('\n') {
         let line = strip_line(&raw[..raw.len().min(119)]);
         let (key, rest) = split_key(line);
@@ -412,12 +402,6 @@ fn read_voice_file(text: &str, fname: &str) -> Option<VoiceInfo> {
                     langix += len;
                 }
             }
-            "gender" => {
-                let mut it = rest.split_ascii_whitespace();
-                gender = it.next().unwrap_or("").to_string();
-                age = it.next().and_then(parse_c_int).unwrap_or(0);
-            }
-            "variants" => variants = rest.split_ascii_whitespace().next().and_then(parse_c_int).unwrap_or(4),
             _ => {}
         }
     }
@@ -428,12 +412,6 @@ fn read_voice_file(text: &str, fname: &str) -> Option<VoiceInfo> {
         identifier: fname.to_string(),
         name: if name.is_empty() { fname.to_string() } else { name },
         languages,
-        gender: match gender.as_str() {
-            "female" => 2,
-            _ => 1,
-        },
-        age,
-        variants,
     })
 }
 

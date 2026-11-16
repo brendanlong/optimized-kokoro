@@ -7,7 +7,6 @@
 //! relay in `docs/plan.md`), so only our clients reach it. Without that, the connection cap and
 //! the header timeout only make such a flood expensive (see [`Config::max_connections`]).
 
-use crate::worker;
 use serde::Deserialize;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -88,13 +87,9 @@ pub struct Config {
     pub default_voice: String,
     /// Longest `input`, in characters, checked before any text processing.
     pub max_input_chars: usize,
-    /// Largest request body. Defaults to enough for `max_input_chars` characters, each written as
-    /// a JSON escaped surrogate pair, plus 16 KiB.
-    pub max_body_bytes: Option<usize>,
     /// Speech requests served at once; more get 503, unless a more urgent request can displace a
     /// queued one. With `lookahead`, this bounds the audio the server can hold: see
-    /// [`Config::audio_bound`]. The default, 48 (16 until 2026-11-04, Brendan's decision on PR
-    /// #38), leans on latency-based shedding to keep first audio fast, and keeps the worst case
+    /// [`Config::audio_bound`]. The default, 48 (Brendan's decision on PR #38), leans on latency-based shedding to keep first audio fast, and keeps the worst case
     /// inside the server container's 3 GiB with room to spare.
     pub max_concurrent_requests: usize,
     /// Speech requests one API key may have in progress, unless the key sets its own
@@ -163,7 +158,7 @@ pub struct Config {
     pub worker_slots: Option<u16>,
     /// The largest per-chunk audio cap (samples, at any speed) a worker may announce in its hello.
     /// It bounds the audio the server holds (see [`Config::audio_bound`]); a worker announcing
-    /// more is refused. Default 60 s, the worker's own default since 2026-11-04 (it was 120 s).
+    /// more is refused. Default 60 s, the worker's own default.
     pub worker_max_chunk_samples: u32,
     /// On shutdown, how long open connections get to finish before they're dropped.
     pub shutdown_grace_ms: u64,
@@ -177,7 +172,6 @@ impl Default for Config {
             api_keys: Vec::new(),
             default_voice: "af_heart".into(),
             max_input_chars: 20_000,
-            max_body_bytes: None,
             max_concurrent_requests: 48,
             max_streams_per_key: 48,
             default_priority: 128,
@@ -279,10 +273,6 @@ impl Config {
         (self.max_estimated_latency_ms > 0).then(|| Duration::from_millis(self.max_estimated_latency_ms))
     }
 
-    pub fn response_write_timeout(&self) -> Duration {
-        Duration::from_millis(self.response_write_timeout_ms)
-    }
-
     /// File descriptors the server needs besides client connections: the listener, the worker
     /// socket, stdio, the runtime's own, with room to spare.
     pub const RESERVED_FDS: u64 = 64;
@@ -300,20 +290,10 @@ impl Config {
         Ok(())
     }
 
+    /// Largest request body: enough for `max_input_chars` characters, each written as a JSON
+    /// escaped surrogate pair, plus 16 KiB.
     pub fn body_limit(&self) -> usize {
-        self.max_body_bytes.unwrap_or(self.max_input_chars * 12 + 16 * 1024)
-    }
-
-    pub fn header_read_timeout(&self) -> Duration {
-        Duration::from_millis(self.header_read_timeout_ms)
-    }
-
-    pub fn request_body_timeout(&self) -> Duration {
-        Duration::from_millis(self.request_body_timeout_ms)
-    }
-
-    pub fn reconnect_interval(&self) -> Duration {
-        Duration::from_millis(self.reconnect_interval_ms)
+        self.max_input_chars * 12 + 16 * 1024
     }
 
     pub fn worker_slots(&self) -> u16 {
@@ -336,14 +316,13 @@ impl Config {
     /// Result arrives, and its audio then counts against its request.
     ///
     /// Defaults (48 requests, lookahead 3, the 60 s ceiling): a chunk is at most 2.88 MB, so
-    /// 48 × (5 × 2.88 MB + 0.42 MB) + 2.88 MB = 714,134,016 bytes. (Until protocol v4 the cap
-    /// scaled with 1/speed, and the worst case, at speed 0.25, was 2.80 GB.) The server's other
+    /// 48 × (5 × 2.88 MB + 0.42 MB) + 2.88 MB = 714,134,016 bytes. The server's other
     /// memory is about 160 MB (measured: the nine text pipelines loaded, 32 requests in flight), so
     /// the worst case is about 875 MB, well inside the container's 3 GiB (`deploy/compose.yaml`).
     /// Real sentences are around 5 s (240 KB), so typical use holds a few MB.
     pub fn audio_bound(&self, max_chunk_samples: u32) -> usize {
         // A pause is one chunk of silence, at most the text limits' longest.
-        let max_pause = crate::audio::silence(kokoro_text::Limits::default().max_pause_duration_s) as u64;
+        let max_pause = crate::audio::silence(kokoro_text::MAX_PAUSE_S) as u64;
         let chunk_samples = u64::from(max_chunk_samples).max(max_pause);
         let chunk = usize::try_from(2 * chunk_samples).unwrap_or(usize::MAX);
         let per_stream = (self.lookahead + 2).saturating_mul(chunk).saturating_add(HYPER_QUEUE_BYTES);
@@ -352,18 +331,6 @@ impl Config {
 
     pub fn shutdown_grace(&self) -> Duration {
         Duration::from_millis(self.shutdown_grace_ms)
-    }
-
-    pub fn worker_settings(&self) -> worker::Settings {
-        worker::Settings {
-            socket: self.worker_socket.clone(),
-            retry_interval: self.reconnect_interval(),
-            hello_timeout: Duration::from_millis(self.worker_hello_timeout_ms),
-            progress_timeout: Duration::from_millis(self.worker_progress_timeout_ms),
-            slots: self.worker_slots(),
-            max_chunk_samples: self.worker_max_chunk_samples,
-            slot_timeout: Duration::from_millis(self.worker_slot_timeout_ms),
-        }
     }
 }
 
@@ -431,7 +398,7 @@ mod tests {
     fn defaults_resist_connection_exhaustion() {
         let config = Config::default();
         assert!(config.max_connections >= 4096);
-        assert!(config.header_read_timeout() <= Duration::from_secs(5));
+        assert!(config.header_read_timeout_ms <= 5_000);
         assert!(config.check_fd_limit(1024).is_err());
         assert!(config.check_fd_limit(524_288).is_ok());
         let limits = "Limit                     Soft Limit           Hard Limit           Units\n\

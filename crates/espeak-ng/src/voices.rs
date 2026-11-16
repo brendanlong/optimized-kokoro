@@ -7,34 +7,6 @@ use crate::defs::*;
 use crate::engine::{Espeak, ReplacePhonemes};
 use crate::tr_languages::{process_language_options, select_translator};
 
-/// Keys of `langopts_tab` (voice.h).
-fn langopts_key(key: &str) -> Option<&'static str> {
-    const KEYS: [&str; 21] = [
-        "apostrophe",
-        "brackets",
-        "bracketsAnnounced",
-        "dict_min",
-        "dictrules",
-        "intonation",
-        "l_dieresis",
-        "l_prefix",
-        "l_regressive_v",
-        "l_unpronouncable",
-        "l_sonorant_min",
-        "lowercaseSentence",
-        "numbers",
-        "spellingStress",
-        "stressAdd",
-        "stressAmp",
-        "stressLength",
-        "stressOpt",
-        "stressRule",
-        "tunes",
-        "words",
-    ];
-    KEYS.iter().copied().find(|&k| k == key)
-}
-
 /// `ReadNumbers`: a list of bit numbers.
 fn read_numbers(p: &[u8], flags: &mut i32, max_value: i32) {
     let mut i = 0isize;
@@ -73,18 +45,10 @@ impl Espeak {
         let Some(tr) = self.translator.as_deref_mut() else { return };
         let vb: Vec<u8> = value.bytes().chain(std::iter::once(0)).collect();
         match key {
-            "dict_min" => {
-                if let Some(&n) = scan_ints(value, 1).first() {
-                    tr.dict_min_size = n;
-                }
-            }
             "dictrules" => read_numbers(&vb, &mut tr.dict_condition, 32),
             "intonation" => {
                 if let Some(&n) = scan_ints(value, 1).first() {
                     self.option_tone_flags = n;
-                    if (n & 0xff) != 0 {
-                        tr.langopts.intonation_group = n & 0xff;
-                    }
                 }
             }
             "numbers" => {
@@ -155,7 +119,6 @@ impl Espeak {
 
     /// `LoadDictionary` for a translator: returns 0 on success, 1 if the file can't be read.
     pub(crate) fn load_dictionary(&mut self, tr: &mut Translator, name: &[u8]) -> i32 {
-        self.dictionary_name = name.to_vec();
         tr.dictionary_name = name.to_vec();
         tr.dict = None;
         let name = String::from_utf8_lossy(name).into_owned();
@@ -206,14 +169,10 @@ impl Espeak {
 
         if let Some(text) = text {
             for raw in text.split_inclusive('\n') {
-                let raw = &raw[..floor_char_boundary(raw, 160 + 30 - 1)];
+                let raw = &raw[..raw.floor_char_boundary(160 + 30 - 1)];
                 let line = strip_line(raw);
                 let (key, rest) = split_key(line);
                 if key.is_empty() {
-                    continue;
-                }
-                if let Some(k) = langopts_key(key) {
-                    self.load_language_options(k, rest);
                     continue;
                 }
                 match key {
@@ -231,7 +190,6 @@ impl Espeak {
                             phonemes_name = lt.as_bytes().to_vec();
                             self.select_phoneme_table_name(&phonemes_name);
                             self.translator = Some(Box::new(select_translator(&translator_name)));
-                            self.voice_language_name = language_name.as_bytes().to_vec();
                         }
                     }
                     "dictionary" => {
@@ -246,12 +204,12 @@ impl Espeak {
                     }
                     "replace" => {
                         if !phonemes_set {
-                            self.select_phoneme_table_name(&phonemes_name.clone());
+                            self.select_phoneme_table_name(&phonemes_name);
                             phonemes_set = true;
                         }
                         self.phoneme_replacement(rest);
                     }
-                    _ => {}
+                    _ => self.load_language_options(key, rest),
                 }
             }
         }
@@ -269,7 +227,7 @@ impl Espeak {
         tr.phoneme_tab_ix = ix;
         self.load_dictionary(&mut tr, &new_dictionary);
         self.translator = Some(tr);
-        if self.dictionary_name.is_empty() {
+        if new_dictionary.is_empty() {
             self.translator = None;
             return false;
         }
@@ -289,7 +247,6 @@ impl Espeak {
             ["voices/", "lang/"].iter().map(|d| format!("{d}{lower}")).find(|r| self.data.voice_file(r).is_some());
         if let Some(rel) = rel {
             if self.load_voice(&lower, Some(&rel)) {
-                self.voice_loaded = true;
                 return Ok(());
             }
         }
@@ -298,7 +255,6 @@ impl Espeak {
             let rel =
                 ["voices/", "lang/"].iter().map(|d| format!("{d}{id}")).find(|r| self.data.voice_file(r).is_some());
             if self.load_voice(&id, rel.as_deref()) {
-                self.voice_loaded = true;
                 return Ok(());
             }
         }
@@ -325,15 +281,4 @@ impl Espeak {
         }
         match_fname.or(match_fname2).map(|ix| voices[ix].identifier.clone())
     }
-}
-
-fn floor_char_boundary(s: &str, max: usize) -> usize {
-    if s.len() <= max {
-        return s.len();
-    }
-    let mut i = max;
-    while !s.is_char_boundary(i) {
-        i -= 1;
-    }
-    i
 }

@@ -1,7 +1,7 @@
 //! Times `text_to_phonemes` over the texts of one voice in a calls file (as for `compare`):
 //! `bench CALLS.jsonl VOICE [DATA_DIR] [REPEATS]`. Prints the best of the repeats.
 
-use kokoro_espeak_ng::{Espeak, EspeakData, PHONEMES_IPA_TIE};
+use kokoro_espeak_ng::{Espeak, EspeakData};
 use std::time::Instant;
 
 fn main() {
@@ -20,8 +20,7 @@ fn main() {
         .collect();
     let load = Instant::now();
     let data = EspeakData::load(&dir).unwrap();
-    let mut e = Espeak::new(data);
-    e.set_voice_by_name(voice).unwrap();
+    let mut e = Espeak::new(data, voice).unwrap();
     let setup = load.elapsed();
     let words: usize = texts.iter().map(|t| t.split_whitespace().count().max(1)).sum();
     let mut best = f64::MAX;
@@ -29,7 +28,7 @@ fn main() {
     for _ in 0..repeats {
         let start = Instant::now();
         for t in &texts {
-            sink += e.text_to_phonemes(t, PHONEMES_IPA_TIE).len();
+            sink += e.text_to_phonemes(t).len();
         }
         best = best.min(start.elapsed().as_secs_f64());
     }

@@ -12,18 +12,17 @@
 pub mod phonemizer;
 
 use phonemizer::{Backend, py_strip};
-use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
-pub use kokoro_espeak_ng::{Error, EspeakData, Result, alphabet_languages, default_data_dir};
+pub use kokoro_espeak_ng::{Error, EspeakData, Result, alphabet_languages};
 
-/// The data in [`default_data_dir`], loaded once per process.
+/// The data in [`kokoro_espeak_ng::default_data_dir`], loaded once per process.
 pub fn default_data() -> Result<Arc<EspeakData>> {
     static DATA: OnceLock<Arc<EspeakData>> = OnceLock::new();
     if let Some(d) = DATA.get() {
         return Ok(d.clone());
     }
-    let d = EspeakData::load(default_data_dir())?;
+    let d = EspeakData::load(kokoro_espeak_ng::default_data_dir())?;
     Ok(DATA.get_or_init(|| d).clone())
 }
 
@@ -38,10 +37,6 @@ pub struct EspeakFallback {
 impl EspeakFallback {
     pub fn new(british: bool) -> Result<Self> {
         Self::with_data(british, default_data()?)
-    }
-
-    pub fn with_data_dir(british: bool, data_dir: &Path) -> Result<Self> {
-        Self::with_data(british, EspeakData::load(data_dir)?)
     }
 
     pub fn with_data(british: bool, data: Arc<EspeakData>) -> Result<Self> {
@@ -74,21 +69,24 @@ impl EspeakFallback {
         Ok(Self { british, backend, e2m })
     }
 
-    pub fn backend(&self) -> &Backend {
-        &self.backend
+    pub fn backend(&mut self) -> &mut Backend {
+        &mut self.backend
     }
 
     /// Phonemes for one token's text, or `None` when espeak has nothing to say.
-    pub fn phonemize(&self, word: &str) -> Result<Option<String>> {
-        self.phonemize_with(word, |chunk| self.backend.espeak(chunk))
+    pub fn phonemize(&mut self, word: &str) -> Option<String> {
+        let raw = phonemizer::phonemize(word, |chunk| self.backend.espeak(chunk))?;
+        Some(self.espeak_to_misaki(&raw))
     }
 
     /// [`phonemize`](Self::phonemize) with `espeak` standing in for the engine.
-    pub fn phonemize_with(&self, word: &str, espeak: impl FnMut(&str) -> Result<String>) -> Result<Option<String>> {
-        let Some(raw) = self.backend.phonemize_with(word, espeak)? else {
-            return Ok(None);
-        };
-        let mut ps = py_strip(&raw).to_string();
+    pub fn phonemize_with(&self, word: &str, espeak: impl FnMut(&str) -> String) -> Option<String> {
+        let raw = phonemizer::phonemize(word, espeak)?;
+        Some(self.espeak_to_misaki(&raw))
+    }
+
+    fn espeak_to_misaki(&self, raw: &str) -> String {
+        let mut ps = py_strip(raw).to_string();
         for (old, new) in &self.e2m {
             ps = ps.replace(old, new);
         }
@@ -98,8 +96,7 @@ impl EspeakFallback {
         } else {
             ps = ps.replace("o^ʊ", "O").replace("ɜːɹ", "ɜɹ").replace("ɜː", "ɜɹ").replace("ɪə", "iə").replace('ː', "");
         }
-        ps = ps.replace('o', "ɔ").replace('ɾ', "T").replace('ʔ', "t").replace('^', "");
-        Ok(Some(ps))
+        ps.replace('o', "ɔ").replace('ɾ', "T").replace('ʔ', "t").replace('^', "")
     }
 }
 
@@ -128,10 +125,6 @@ impl EspeakG2P {
         Self::with_data(language, default_data()?)
     }
 
-    pub fn with_data_dir(language: &str, data_dir: &Path) -> Result<Self> {
-        Self::with_data(language, EspeakData::load(data_dir)?)
-    }
-
     pub fn with_data(language: &str, data: Arc<EspeakData>) -> Result<Self> {
         let backend = Backend::new(language, data)?;
         let mut e2m = vec![
@@ -151,31 +144,36 @@ impl EspeakG2P {
         Ok(Self { backend, e2m })
     }
 
-    pub fn backend(&self) -> &Backend {
-        &self.backend
+    pub fn backend(&mut self) -> &mut Backend {
+        &mut self.backend
     }
 
-    pub fn phonemize(&self, text: &str) -> Result<String> {
-        self.phonemize_with(text, |chunk| self.backend.espeak(chunk))
-    }
-
-    /// [`phonemize`](Self::phonemize) with `espeak` standing in for the engine.
-    ///
     /// misaki swaps `()` for `«»` before phonemizer and back after, so that phonemizer's flag
     /// removal can't take the text's parentheses for language-switch flags. Both are punctuation
     /// phonemizer keeps out of what espeak reads and puts back as they were, so the swap changes
     /// nothing but `«»` in the text, which come out as `“”`; that is all this does.
-    pub fn phonemize_with(&self, text: &str, espeak: impl FnMut(&str) -> Result<String>) -> Result<String> {
-        let text = text.replace('«', "\u{201c}").replace('»', "\u{201d}");
-        let Some(raw) = self.backend.phonemize_with(&text, espeak)? else {
-            return Ok(String::new());
-        };
-        let mut ps = py_strip(&raw).to_string();
+    pub fn phonemize(&mut self, text: &str) -> String {
+        let raw = phonemizer::phonemize(&swap_guillemets(text), |chunk| self.backend.espeak(chunk));
+        self.espeak_to_misaki(&raw.unwrap_or_default())
+    }
+
+    /// [`phonemize`](Self::phonemize) with `espeak` standing in for the engine.
+    pub fn phonemize_with(&self, text: &str, espeak: impl FnMut(&str) -> String) -> String {
+        let raw = phonemizer::phonemize(&swap_guillemets(text), espeak);
+        self.espeak_to_misaki(&raw.unwrap_or_default())
+    }
+
+    fn espeak_to_misaki(&self, raw: &str) -> String {
+        let mut ps = py_strip(raw).to_string();
         for (old, new) in &self.e2m {
             ps = ps.replace(old, new);
         }
-        Ok(ps.replace(['^', '-'], ""))
+        ps.replace(['^', '-'], "")
     }
+}
+
+fn swap_guillemets(text: &str) -> String {
+    text.replace('«', "\u{201c}").replace('»', "\u{201d}")
 }
 
 #[cfg(test)]
@@ -184,12 +182,12 @@ mod tests {
 
     #[test]
     fn language_switch_flags_are_dropped_and_parentheses_kept() {
-        let fallback = EspeakFallback::new(false).unwrap();
-        let georgian = fallback.phonemize("გამარჯობა").unwrap().unwrap();
+        let mut fallback = EspeakFallback::new(false).unwrap();
+        let georgian = fallback.phonemize("გამარჯობა").unwrap();
         assert!(!georgian.contains(['(', ')']), "{georgian}");
-        assert!(fallback.phonemize("(qzx)").unwrap().unwrap().starts_with('('));
-        let russian = EspeakG2P::new("ru").unwrap();
-        let word = russian.phonemize("Привет").unwrap();
-        assert_eq!(russian.phonemize("(Привет)").unwrap(), format!("({word})"));
+        assert!(fallback.phonemize("(qzx)").unwrap().starts_with('('));
+        let mut russian = EspeakG2P::new("ru").unwrap();
+        let word = russian.phonemize("Привет");
+        assert_eq!(russian.phonemize("(Привет)"), format!("({word})"));
     }
 }

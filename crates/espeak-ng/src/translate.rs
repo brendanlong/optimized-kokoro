@@ -203,7 +203,6 @@ impl Espeak {
 
     /// `TranslateWord2`: translates the word at `w[word]` (whose entry is `words[wix]`) and
     /// adds its phonemes to `ph_list2`.
-    #[allow(clippy::too_many_arguments)]
     fn translate_word2(
         &mut self,
         tr: Tr,
@@ -222,7 +221,6 @@ impl Espeak {
         let mut max_stress: i32;
         let mut max_stress_ix: usize = 0;
         let mut prev_vowel: isize = -1;
-        let mut pitch_raised = 0;
         let mut switch_phonemes: i32 = -1;
         let mut first_phoneme = true;
         let mut word_copy = [0u8; N_WORD_BYTES + 1];
@@ -272,25 +270,6 @@ impl Espeak {
             pre_pause += 4;
         }
 
-        if word_flags & FLAG_FIRST_UPPER != 0
-            && self.option_capitals > 2
-            && self.embedded_ix < N_EMBEDDED_LIST as i32 - 6
-        {
-            if self.embedded_flag != 0 {
-                if let Some(e) = self.embedded_list.get_mut((self.embedded_ix - 1) as usize) {
-                    *e &= !0x80;
-                }
-            }
-            pitch_raised = self.option_capitals;
-            if pitch_raised == 3 {
-                pitch_raised = 20;
-            }
-            self.embedded_list[self.embedded_ix as usize] = (EMBED_P + 0x40 + 0x80 + (pitch_raised << 8)) as u32;
-            self.embedded_ix += 1;
-            self.embedded_flag = SFLAG_EMBEDDED;
-        }
-
-        let mut old_dictionary_name = Vec::new();
         if word_flags & FLAG_PHONEMES != 0 {
             if at(w, word) == b'_' && at(w, word + 1) == b'^' && at(w, word + 2) == b'_' {
                 self.switch_language(w, word);
@@ -329,7 +308,6 @@ impl Espeak {
             }
 
             if self.word_phonemes[0] == PHON_SWITCH {
-                old_dictionary_name = self.dictionary_name.clone();
                 for _switch_attempt in 0..2 {
                     memcpy(w, word, &word_copy, 0, word_copy_len);
                     let mut new_language = cstr(&self.word_phonemes, 1).to_vec();
@@ -374,7 +352,6 @@ impl Espeak {
                     self.word_phonemes[2] = 0;
                 }
                 if switch_phonemes == -1 {
-                    self.dictionary_name = old_dictionary_name.clone();
                     let ix = self.voice_phoneme_tab_ix;
                     self.select_phoneme_table(ix);
                     switch_phonemes = self.voice_phoneme_tab_ix;
@@ -421,22 +398,9 @@ impl Espeak {
                 pre_pause -= 1;
             }
             let t = self.tm(tr);
-            t.end_stressed_vowel = 0;
             t.prev_dict_flags = [0, 0];
         }
         let plist2 = self.n_ph_list2 as usize;
-
-        if self.option_capitals == 1 && (word_flags & FLAG_FIRST_UPPER) != 0 {
-            for k in 0..2 {
-                if k == 1 && !((word_flags & FLAG_ALL_UPPER) != 0 && is_alpha(at(w, word + 1) as i32)) {
-                    break;
-                }
-                let n = self.n_ph_list2 as usize;
-                self.set_plist2(n, PHON_PAUSE_SHORT);
-                self.set_plist2(n + 1, PHON_CAPITAL);
-                self.n_ph_list2 += 2;
-            }
-        }
 
         let mut p = 0usize;
         if switch_phonemes >= 0 {
@@ -529,9 +493,6 @@ impl Espeak {
                 if ph.typ == PH_VOWEL {
                     stress = next_stress;
                     next_stress = 1;
-                    if stress >= 4 {
-                        self.any_stressed_words = true;
-                    }
                     if prev_vowel >= 0 && (n as isize - 1) != prev_vowel && n > 0 {
                         self.ph_list2[n - 1].stresslevel = stress as u8;
                     }
@@ -564,30 +525,12 @@ impl Espeak {
             self.ph_list2[plist2].sourceix = source_ix;
         }
 
-        self.tm(tr).end_stressed_vowel = 0;
-        let last = (self.n_ph_list2 - 1).max(0) as usize;
-        if stress >= 4 && self.phz(self.ph_list2[last].phcode).typ == PH_VOWEL {
-            self.tm(tr).end_stressed_vowel = 1;
-        }
-
         if switch_phonemes >= 0 {
-            self.dictionary_name = old_dictionary_name;
             let ix = self.voice_phoneme_tab_ix;
             self.select_phoneme_table(ix);
             let n = self.n_ph_list2 as usize;
             self.set_plist2(n, PHON_SWITCH);
             self.ph_list2[n].tone_ph = self.voice_phoneme_tab_ix as u8;
-            self.n_ph_list2 += 1;
-        }
-
-        if pitch_raised > 0 {
-            if let Some(e) = self.embedded_list.get_mut(self.embedded_ix as usize) {
-                *e = (EMBED_P + 0x60 + 0x80 + (pitch_raised << 8)) as u32;
-            }
-            self.embedded_ix += 1;
-            let n = self.n_ph_list2 as usize;
-            self.set_plist2(n, PHON_PAUSE_SHORT);
-            self.ph_list2[n].synthflags = SFLAG_EMBEDDED;
             self.n_ph_list2 += 1;
         }
 
@@ -753,7 +696,6 @@ impl Espeak {
     }
 
     /// `TranslateChar`: language-specific character changes (Korean jamo, Dutch 'n, .replace).
-    #[allow(clippy::too_many_arguments)]
     fn translate_char(
         &mut self,
         tr: Tr,
@@ -840,7 +782,6 @@ impl Espeak {
     }
 
     /// `CombineFlag`: joins a word marked `$combine` with the next one.
-    #[allow(clippy::too_many_arguments)]
     fn combine_flag(
         &mut self,
         tr: Tr,
@@ -933,7 +874,6 @@ impl Espeak {
         let mut next_in: i32;
         let mut next_in_nbytes: isize;
         let mut char_inserted: i32 = 0;
-        let mut clause_pause: i32;
         let mut pre_pause_add = 0;
         let mut all_upper_case: u32 = FLAG_ALL_UPPER;
         let mut alpha_count = 0;
@@ -942,7 +882,6 @@ impl Espeak {
         let mut phoneme_mode = false;
         let mut word_flags: u32;
         let mut next_word_flags: u32;
-        let new_sentence2: bool;
         let mut embedded_count = 0;
         let mut letter_count = 0;
         let mut space_inserted = false;
@@ -971,13 +910,11 @@ impl Espeak {
         self.embedded_ix = 0;
         self.embedded_read = 0;
         self.pre_pause = 0;
-        self.any_stressed_words = false;
 
         self.clause_start_char = self.count_characters;
         if self.clause_start_char < 0 {
             self.clause_start_char = 0;
         }
-        self.clause_start_word = self.count_words + 1;
 
         charix.fill(0);
         let mut source = std::mem::take(&mut self.source);
@@ -1001,11 +938,6 @@ impl Espeak {
             }
         }
 
-        clause_pause = (terminator & CLAUSE_PAUSE) * 10;
-        if terminator & CLAUSE_PAUSE_LONG != 0 {
-            clause_pause *= 32;
-        }
-
         let mut p = 0isize;
         while at(&self.source, p) != 0 {
             if !isspace2(at(&self.source, p) as i32) {
@@ -1013,44 +945,26 @@ impl Espeak {
             }
             p += 1;
         }
-        if at(&self.source, p) == 0 {
-            clause_pause -= self.max_clause_pause;
-            if clause_pause < 0 {
-                clause_pause = 0;
-            }
+        let new_sentence2 = if at(&self.source, p) == 0 {
             if self.new_sentence {
                 terminator |= CLAUSE_TYPE_SENTENCE;
             }
-            self.max_clause_pause += clause_pause;
-            new_sentence2 = false;
+            false
         } else {
-            self.max_clause_pause = clause_pause;
-            new_sentence2 = self.new_sentence;
-        }
+            self.new_sentence
+        };
         self.tm(tr).clause_terminator = terminator;
-
-        if new_sentence2 {
-            self.count_sentences += 1;
-            if self.skip_sentences > 0 {
-                self.skip_sentences -= 1;
-                if self.skip_sentences == 0 {
-                    self.skipping_text = false;
-                }
-            }
-        }
 
         self.ph_list2[0] = PhonemeList2 { phcode: PHON_PAUSE_SHORT, ..Default::default() };
         self.n_ph_list2 = 1;
         {
             let t = self.tm(tr);
-            t.prev_last_stress = 0;
             t.prepause_timeout = 0;
             t.expect_verb = 0;
             t.expect_noun = 0;
             t.expect_past = 0;
             t.expect_verb_s = 0;
             t.phonemes_repeat_count = 0;
-            t.end_stressed_vowel = 0;
             t.prev_dict_flags = [0, 0];
         }
 
@@ -1197,7 +1111,7 @@ impl Espeak {
                     decimal_sep_count = false;
                 }
 
-                if c == b'[' as i32 && (next_in == 0x02 || (next_in == b'[' as i32 && self.option_phoneme_input != 0)) {
+                if c == b'[' as i32 && next_in == 0x02 {
                     phoneme_mode = true;
                     source_index += 1;
                     continue;
@@ -1468,18 +1382,6 @@ impl Espeak {
         while wix < word_count && self.n_ph_list2 < N_PHONEME_LIST as i32 - 7 - 2 {
             let mut dict_flags: u32 = 0;
 
-            self.count_words += 1;
-            if self.skip_words > 0 {
-                self.skip_words -= 1;
-                if self.skip_words == 0 {
-                    self.skipping_text = false;
-                }
-            }
-            if self.skipping_text {
-                wix += 1;
-                continue;
-            }
-
             let word = words[wix].start as isize;
             let mut pw = word;
 
@@ -1623,13 +1525,6 @@ impl Espeak {
                         pw += nx;
                     }
                 }
-
-                if (dict_flags & (FLAG_ALLOW_DOT | FLAG_NEEDS_DOT)) != 0
-                    && wix as i32 == word_count as i32 - 1 - self.dictionary_skipwords
-                    && (terminator & CLAUSE_DOT_AFTER_LAST_WORD) != 0
-                {
-                    clause_pause = 10;
-                }
             }
 
             if dict_flags & FLAG_SKIPWORDS != 0 {
@@ -1662,11 +1557,7 @@ impl Espeak {
         }
         self.n_ph_list2 += 2;
 
-        if self.eof() && (word_count == 0 || self.option_endpause == 0) {
-            clause_pause = 10;
-        }
-
-        self.make_phoneme_list(tr, clause_pause, new_sentence2);
+        self.make_phoneme_list(tr, new_sentence2);
 
         if embedded_count != 0 {
             let n = (self.n_phoneme_list - 2).max(0) as usize;

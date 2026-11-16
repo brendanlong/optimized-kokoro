@@ -279,8 +279,10 @@ impl AudioStream {
                 self.started = true;
                 return Some(Ok(bytes));
             }
-            _ if !self.started && self.admission.is_shed() => {
-                Some(Err(StreamError::Shed(Shed { estimate: self.admission.shed_estimate() })))
+            _ if !self.started
+                && let Some(shed) = self.admission.shed_reason() =>
+            {
+                Some(Err(StreamError::Shed(shed)))
             }
             Some(Output::End) => None,
             Some(Output::Failed(e)) => Some(Err(e)),

@@ -3,7 +3,6 @@
 //! connections), how long a response write may stall, how many requests one connection serves,
 //! and how large a request head and hyper's buffers may be.
 
-use crate::config::Config;
 use crate::http::App;
 use hyper::Request;
 use hyper::body::Incoming;
@@ -34,31 +33,15 @@ pub const MAX_BUF: usize = 64 * 1024;
 /// checks the parsed head's length, so this holds exactly, whatever the read sizes.
 pub const MAX_HEAD: usize = 16 * 1024;
 
-#[derive(Debug, Clone, Copy)]
-pub struct Limits {
-    pub max_connections: usize,
-    pub max_requests_per_connection: usize,
-    pub header_read_timeout: Duration,
-    pub write_timeout: Duration,
-    pub shutdown_grace: Duration,
-}
-
-impl From<&Config> for Limits {
-    fn from(config: &Config) -> Self {
-        Self {
-            max_connections: config.max_connections,
-            max_requests_per_connection: config.max_requests_per_connection,
-            header_read_timeout: config.header_read_timeout(),
-            write_timeout: config.response_write_timeout(),
-            shutdown_grace: config.shutdown_grace(),
-        }
-    }
-}
-
-/// Serves `app` until `shutdown` resolves, then gives open connections `shutdown_grace` to finish
-/// their requests before dropping them.
-pub async fn serve(listener: TcpListener, app: App, limits: Limits, shutdown: impl Future<Output = ()>) {
-    let slots = Arc::new(Semaphore::new(limits.max_connections));
+/// Serves `app` until `shutdown` resolves, then gives open connections the config's
+/// `shutdown_grace_ms` to finish their requests before dropping them.
+pub async fn serve(listener: TcpListener, app: App, shutdown: impl Future<Output = ()>) {
+    let config = app.config();
+    let max_requests = config.max_requests_per_connection;
+    let header_read_timeout = Duration::from_millis(config.header_read_timeout_ms);
+    let write_timeout = Duration::from_millis(config.response_write_timeout_ms);
+    let shutdown_grace = Duration::from_millis(config.shutdown_grace_ms);
+    let slots = Arc::new(Semaphore::new(config.max_connections));
     let (closing_tx, closing_rx) = watch::channel(false);
     let mut connections = JoinSet::new();
     tokio::pin!(shutdown);
@@ -87,7 +70,7 @@ pub async fn serve(listener: TcpListener, app: App, limits: Limits, shutdown: im
             let served = Arc::new(AtomicUsize::new(0));
             let service = hyper::service::service_fn(move |request: Request<Incoming>| {
                 let app = app.clone();
-                let last = served.fetch_add(1, Ordering::Relaxed) + 1 >= limits.max_requests_per_connection;
+                let last = served.fetch_add(1, Ordering::Relaxed) + 1 >= max_requests;
                 async move {
                     let mut response = app.handle(request).await;
                     if last {
@@ -99,10 +82,10 @@ pub async fn serve(listener: TcpListener, app: App, limits: Limits, shutdown: im
             let mut builder = http1::Builder::new();
             builder
                 .timer(TokioTimer::new())
-                .header_read_timeout(limits.header_read_timeout)
+                .header_read_timeout(header_read_timeout)
                 .max_buf_size(MAX_BUF)
                 .max_header_size(MAX_HEAD);
-            let io = TokioIo::new(WriteDeadline::new(stream, limits.write_timeout));
+            let io = TokioIo::new(WriteDeadline::new(stream, write_timeout));
             let connection = builder.serve_connection(io, service);
             tokio::pin!(connection);
             let result = tokio::select! {
@@ -120,7 +103,7 @@ pub async fn serve(listener: TcpListener, app: App, limits: Limits, shutdown: im
     }
     closing_tx.send_replace(true);
     let drained =
-        tokio::time::timeout(limits.shutdown_grace, async { while connections.join_next().await.is_some() {} }).await;
+        tokio::time::timeout(shutdown_grace, async { while connections.join_next().await.is_some() {} }).await;
     if drained.is_err() {
         crate::warn!("dropping {} connections still open after the shutdown grace period", connections.len());
         connections.shutdown().await;

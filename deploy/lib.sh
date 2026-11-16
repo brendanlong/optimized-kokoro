@@ -1,24 +1,6 @@
 # shellcheck shell=bash
-# Shared by install.sh and update.sh (sourced, not run). Runs as root.
-#
-# Layout of $root (/srv/optimized-kokoro, everything root-owned):
-#   settings.env            KOKORO_GPU, KOKORO_LISTEN, KOKORO_DEMO_LISTEN, KOKORO_MAX_BATCH,
-#                           KOKORO_MAX_CHUNK_SECONDS, KOKORO_CLOUDFLARED
-#   models/                 what kokoro_worker.convert wrote (0644)
-#   unidic/SHA256.dic       UniDic for Japanese, named by its checksum (fetch_unidic.sh's OUT_SHA256);
-#                           each release's .env names the one it uses, so a new dictionary never
-#                           replaces the one a running server maps
-#   secrets/                0700; keys (named client keys, root 0600, see keys.sh), demo.key,
-#                           server.toml made from them, and, with the tunnel,
-#                           cloudflared.token (put there by the admin), root:65534 0640
-#   resolv.conf             for cloudflared (Docker's DNS doesn't work under runsc)
-#   releases/REL/           compose.yaml, .env and the compile-cache seed made with REL's worker image
-#   current -> releases/REL the release that runs; swapped by rename
-#   .lock                   held by install.sh, update.sh and keys.sh while they run
-# Images are tagged optimized-kokoro-{worker,server,demo}:REL. Each release is its own Compose
-# project, optimized-kokoro-rel (REL in lower case, COMPOSE_PROJECT_NAME in its .env), with its own
-# socket volume and network, so update.sh can start a new release's worker next to the running
-# release.
+# Shared by install.sh, update.sh and keys.sh (sourced, not run). Runs as root. The layout of
+# $root is in deploy/README.md (Layout).
 
 # Compose gives the environment priority over a release's .env, so nothing inherited (sudo -E, say)
 # may set what the scripts decide. The only inputs are KOKORO_BUILD_USER and SUDO_USER (and DESTDIR,
@@ -229,19 +211,6 @@ new_project() {
     echo "optimized-kokoro-${1,,}"
 }
 
-# The Compose project of release $1: COMPOSE_PROJECT_NAME in its .env, or new_project before it
-# has a .env.
-project_of() {
-    local env=$root/releases/$1/.env p
-    [ -f "$env" ] || {
-        new_project "$1"
-        return
-    }
-    p=$(sed -n 's/^COMPOSE_PROJECT_NAME=//p' "$env")
-    [ -n "$p" ] || die "$env has no COMPOSE_PROJECT_NAME"
-    echo "$p"
-}
-
 # Refuses to go on while a kept release is from before per-release Compose projects (2026-11-04),
 # which this deploy/ no longer knows how to stop or remove.
 check_releases() {
@@ -258,7 +227,7 @@ check_releases() {
 compose_rel() {
     local r=$1
     shift
-    docker compose -p "$(project_of "$r")" -f "$root/releases/$r/compose.yaml" "$@"
+    docker compose -p "$(new_project "$r")" -f "$root/releases/$r/compose.yaml" "$@"
 }
 
 # docker compose for the release current points at.
@@ -787,7 +756,7 @@ wait_worker() {
 stop_front() {
     local net
     compose_rel "$1" rm -sf server demo cloudflared || return 1
-    net="$(project_of "$1")_kokoro"
+    net="$(new_project "$1")_kokoro"
     if docker network inspect "$net" > /dev/null 2>&1 && ! docker network rm "$net" > /dev/null; then
         echo "couldn't remove the network $net; still attached: $(docker network inspect -f '{{range .Containers}}{{.Name}} {{end}}' "$net" 2> /dev/null)" >&2
         return 1
@@ -878,14 +847,11 @@ wait_tunnel() {
     return 1
 }
 
-# Removes a release's Compose project, images and directory, and the dictionaries no release names
-# any more. The project only if it isn't the running one.
+# Removes a release (never the current one): its Compose project, images and directory, and the
+# dictionaries no release names any more.
 remove_release() {
-    local i p
-    p=$(project_of "$1")
-    if [ ! -L "$root/current" ] || [ "$p" != "$(project_of "$(current_release)")" ]; then
-        remove_project "$p"
-    fi
+    local i
+    remove_project "$(new_project "$1")"
     for i in "${images[@]}"; do docker image rm "optimized-kokoro-$i:$1" > /dev/null 2>&1 || true; done
     rm -rf "${root:?}/releases/$1"
     prune_unidic

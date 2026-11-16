@@ -1,15 +1,15 @@
 //! phonemizer-fork 3.3.2's espeak backend, as misaki configures it: `preserve_punctuation=True`,
 //! `with_stress=True`, `tie='^'`, the default separator (words end in a space) and `strip=False`.
 
-use kokoro_espeak_ng::{Error, Espeak, EspeakData, PHONEMES_IPA_TIE, Result};
-use std::sync::{Arc, Mutex};
+use kokoro_espeak_ng::{Error, Espeak, EspeakData, Result};
+use std::sync::Arc;
 
 /// `phonemizer.punctuation._DEFAULT_MARKS`.
 const MARKS: &str = ";:,.!?¡¿—…\"«»“”(){}[]";
 const ESPEAK_TIE: char = '\u{361}';
 
 pub struct Backend {
-    espeak: Mutex<Espeak>,
+    espeak: Espeak,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,53 +35,45 @@ impl Backend {
             .find(|v| v.languages.first().is_some_and(|l| l.1 == language))
             .map(|v| v.identifier.clone())
             .ok_or_else(|| Error::VoiceNotFound(language.to_string()))?;
-        let mut espeak = Espeak::new(data);
-        espeak.set_voice_by_name(&identifier)?;
-        Ok(Self { espeak: Mutex::new(espeak) })
+        Ok(Self { espeak: Espeak::new(data, &identifier)? })
     }
 
     /// `EspeakWrapper.text_to_phonemes`: the non-empty clauses espeak reads in `text`, joined by
     /// spaces.
-    pub fn espeak(&self, text: &str) -> Result<String> {
-        let mut espeak = self.espeak.lock().unwrap_or_else(|e| e.into_inner());
-        let clauses = espeak.text_to_phonemes(text, PHONEMES_IPA_TIE);
-        Ok(clauses.into_iter().filter(|c| !c.is_empty()).collect::<Vec<_>>().join(" "))
+    pub fn espeak(&mut self, text: &str) -> String {
+        let clauses = self.espeak.text_to_phonemes(text);
+        clauses.into_iter().filter(|c| !c.is_empty()).collect::<Vec<_>>().join(" ")
     }
+}
 
-    /// `EspeakBackend.phonemize([text])`, as one string: `None` for empty text. phonemizer
-    /// returns a list, of which misaki keeps the first element; for one line of text it never
-    /// has more than one (`docs/divergences.md`), so this joins them instead.
-    pub fn phonemize(&self, text: &str) -> Result<Option<String>> {
-        self.phonemize_with(text, |chunk| self.espeak(chunk))
+/// `EspeakBackend.phonemize([text])`, as one string, with `espeak` reading each chunk (normally
+/// [`Backend::espeak`]): `None` for empty text. phonemizer returns a list, of which misaki keeps
+/// the first element; for one line of text it never has more than one (`docs/divergences.md`), so
+/// this joins them instead.
+pub fn phonemize(text: &str, mut espeak: impl FnMut(&str) -> String) -> Option<String> {
+    let (chunks, marks) = preserve(text);
+    if chunks.is_empty() && marks.is_empty() {
+        return None;
     }
+    let phonemized = chunks.iter().map(|chunk| postprocess_line(&espeak(chunk))).collect();
+    Some(restore(phonemized, &marks))
+}
 
-    /// [`phonemize`](Self::phonemize) with `espeak` standing in for [`espeak`](Self::espeak).
-    pub fn phonemize_with(&self, text: &str, mut espeak: impl FnMut(&str) -> Result<String>) -> Result<Option<String>> {
-        let (chunks, marks) = preserve(text);
-        if chunks.is_empty() && marks.is_empty() {
-            return Ok(None);
-        }
-        let phonemized =
-            chunks.iter().map(|chunk| Ok(self.postprocess_line(&espeak(chunk)?))).collect::<Result<Vec<_>>>()?;
-        Ok(Some(restore(phonemized, &marks)))
+/// `EspeakBackend._postprocess_line`, with `language_switch='remove-flags'`: espeak's
+/// `(en)…(fr)` language-switch flags are dropped. The text's own parentheses are marks, kept
+/// out of what espeak reads and put back afterwards, so they're never mistaken for flags.
+fn postprocess_line(line: &str) -> String {
+    let line = py_strip(line).replace('\n', " ").replace("  ", " ");
+    let line = remove_flags(&squeeze_underscores(&line).replace("_ ", " "));
+    if line.is_empty() {
+        return line;
     }
-
-    /// `EspeakBackend._postprocess_line`, with `language_switch='remove-flags'`: espeak's
-    /// `(en)…(fr)` language-switch flags are dropped. The text's own parentheses are marks, kept
-    /// out of what espeak reads and put back afterwards, so they're never mistaken for flags.
-    fn postprocess_line(&self, line: &str) -> String {
-        let line = py_strip(line).replace('\n', " ").replace("  ", " ");
-        let line = remove_flags(&squeeze_underscores(&line).replace("_ ", " "));
-        if line.is_empty() {
-            return line;
-        }
-        let mut out = String::with_capacity(line.len() + 8);
-        for word in line.split(' ') {
-            out.push_str(&py_strip(word).replace(ESPEAK_TIE, "^"));
-            out.push(' ');
-        }
-        out
+    let mut out = String::with_capacity(line.len() + 8);
+    for word in line.split(' ') {
+        out.push_str(&py_strip(word).replace(ESPEAK_TIE, "^"));
+        out.push(' ');
     }
+    out
 }
 
 /// Python's `str.isspace`, which also counts the ASCII information separators.

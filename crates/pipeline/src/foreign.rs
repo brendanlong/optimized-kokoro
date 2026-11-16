@@ -161,7 +161,7 @@ fn is_cjk(c: char) -> bool {
 }
 
 /// `[ '’\-]`: what may join two words of one run.
-pub fn is_joiner(c: char) -> bool {
+fn is_joiner(c: char) -> bool {
     matches!(c, ' ' | '\'' | '’' | '-')
 }
 
@@ -245,23 +245,11 @@ pub enum Native {
     Espeak(Script),
 }
 
-/// `ForeignScripts.split` in an English pipeline: `(segment, language)` pairs covering `text`,
-/// where `None` is English. `reads` says whether the Chinese G2P has a reading for a Han
-/// character: the reference leaves those pypinyin can't read (some radicals, Japanese-only
-/// kanji) to the English G2P, which here reads them as [`Language::Unread`]`(Han)`. `ー` outside
-/// kana stays English.
-pub fn split(text: &str, reads: impl Fn(char) -> bool) -> Vec<(&str, Option<Language>)> {
-    split_in(text, Native::English, reads)
-}
-
-/// `ForeignScripts.split` in the Chinese pipeline: Han runs without kana are its own (`None`),
-/// whatever pypinyin reads, and Latin runs are [`Language::English`].
-pub fn split_chinese(text: &str) -> Vec<(&str, Option<Language>)> {
-    split_in(text, Native::Chinese, |_| true)
-}
-
-/// `ForeignScripts.split` in the pipeline of `native`, where `None` is the pipeline's own
-/// language; `reads` is as for [`split`], in the pipelines that split Han runs out.
+/// `ForeignScripts.split` in the pipeline of `native`: `(segment, language)` pairs covering
+/// `text`, where `None` is the pipeline's own language. In the pipelines that split Han runs out,
+/// `reads` says whether the Chinese G2P has a reading for a Han character: the reference leaves
+/// those pypinyin can't read (some radicals, Japanese-only kanji) to the English G2P, which here
+/// reads them as [`Language::Unread`]`(Han)`. `ー` outside kana stays the pipeline's.
 pub fn split_in(text: &str, native: Native, reads: impl Fn(char) -> bool) -> Vec<(&str, Option<Language>)> {
     let mut segments = Vec::new();
     let mut last = 0;
@@ -349,16 +337,10 @@ pub fn prepare(segment: &str, language: Language) -> std::borrow::Cow<'_, str> {
     }
 }
 
-/// The rest of `ForeignScripts.phonemize` in an English pipeline: stripped, with sounds Kokoro
-/// has no phoneme for mapped to the nearest one, and Mandarin tones and unaspirated stops made
-/// English.
-pub fn finish(phonemes: &str, language: Language) -> String {
-    finish_in(phonemes, language, true)
-}
-
-/// [`finish`] in an English pipeline or another: outside English, Mandarin tones still become
-/// stress marks, but its stops stay as they are (`if self.language == 'en'`).
-pub fn finish_in(phonemes: &str, language: Language, english: bool) -> String {
+/// The rest of `ForeignScripts.phonemize`: stripped, with sounds Kokoro has no phoneme for mapped
+/// to the nearest one, and Mandarin tones made stress marks. In an `english` pipeline, Mandarin's
+/// unaspirated stops are made English too (`if self.language == 'en'`).
+pub fn finish(phonemes: &str, language: Language, english: bool) -> String {
     let ps: String = py::strip(phonemes)
         .chars()
         .map(|c| match c {
@@ -451,7 +433,7 @@ mod tests {
     use Language::Chinese;
 
     fn shape(text: &str) -> Vec<(&str, Option<&'static str>)> {
-        split(text, |c| c != '兙').into_iter().map(|(s, l)| (s, l.map(Language::code))).collect()
+        split_in(text, Native::English, |c| c != '兙').into_iter().map(|(s, l)| (s, l.map(Language::code))).collect()
     }
 
     #[test]
@@ -527,7 +509,10 @@ mod tests {
         assert_eq!(shape("፩፪፫"), [("፩፪፫", Some("Ethiopic"))]);
         assert_eq!(shape("a ꫰ ๏"), [("a ꫰ ๏", None)]);
         assert_eq!(shape("ᠮᠣᠩᠭᠣᠯ"), [("ᠮᠣᠩᠭᠣᠯ", Some("Mongolian"))]);
-        assert_eq!(split("ᐊᑎᒍ", |_| true), [("ᐊᑎᒍ", Some(Language::Unread(Script::CanadianAboriginal)))]);
+        assert_eq!(
+            split_in("ᐊᑎᒍ", Native::English, |_| true),
+            [("ᐊᑎᒍ", Some(Language::Unread(Script::CanadianAboriginal)))]
+        );
         assert_eq!(Language::Unread(Script::CanadianAboriginal).name(), "Canadian Aboriginal");
     }
 
@@ -586,11 +571,11 @@ mod tests {
 
     #[test]
     fn nearest_phonemes_and_mandarin() {
-        assert_eq!(finish(" maɾħaba ʕali ", Language::Script(Script::Arabic)), "maɾhaba ʔali");
-        assert_eq!(finish("pei↓ʨiŋ→", Chinese), "bˈeiʨˈiŋ");
-        assert_eq!(finish("tʰa→ n↗", Chinese), "tˈa ˈn");
-        assert_eq!(finish("pei↓", Language::Script(Script::Cyrillic)), "pei↓");
-        assert_eq!(finish_in("pei↓ʨʰiŋ→", Chinese, false), "pˈeiʨʰˈiŋ");
+        assert_eq!(finish(" maɾħaba ʕali ", Language::Script(Script::Arabic), true), "maɾhaba ʔali");
+        assert_eq!(finish("pei↓ʨiŋ→", Chinese, true), "bˈeiʨˈiŋ");
+        assert_eq!(finish("tʰa→ n↗", Chinese, true), "tˈa ˈn");
+        assert_eq!(finish("pei↓", Language::Script(Script::Cyrillic), true), "pei↓");
+        assert_eq!(finish("pei↓ʨʰiŋ→", Chinese, false), "pˈeiʨʰˈiŋ");
     }
 
     #[test]

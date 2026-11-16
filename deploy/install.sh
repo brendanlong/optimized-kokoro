@@ -19,7 +19,7 @@ set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 
 usage() {
-    sed -n '2,17p' "$0"
+    sed -n '2,/^[^#]/{/^#/p}' "$0"
     exit 2
 }
 

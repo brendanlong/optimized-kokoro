@@ -3,13 +3,14 @@
 //!     cargo run --release -p kokoro-espeak-ng --example compare -- CALLS.jsonl [DATA_DIR] [VOICE] [SHOW]
 //!
 //! CALLS.jsonl lines are `{"voice": "gmw/en-US", "text": "...", "clauses": ["...", ...]}`, the
-//! clauses `espeak_TextToPhonemes` returned in phonemizer's mode (see `scratch/tools/oracle.py`).
-//! Prints the exact-match rate per voice, per call and per word, then mismatches. Calls marked
-//! `ub` (C read memory out of bounds or uninitialised; see `oracle.py --ub`) run but aren't scored;
-//! the `ub` column counts them and `ub-same` how many still match. Each call starts from fresh
-//! state, so the answers must come from `oracle.py pairs` without `--history`.
+//! clauses `espeak_TextToPhonemes` returned in phonemizer's mode (see
+//! `reference/espeak-ng-oracle/oracle.py`). Prints the exact-match rate per voice, per call and
+//! per word, then mismatches. Calls marked `ub` (C read memory out of bounds or uninitialised; see
+//! `oracle.py --ub`) run but aren't scored; the `ub` column counts them and `ub-same` how many
+//! still match. Each call starts from fresh state, so the answers must come from `oracle.py pairs`
+//! without `--history`.
 
-use kokoro_espeak_ng::{Espeak, EspeakData, PHONEMES_IPA_TIE};
+use kokoro_espeak_ng::{Espeak, EspeakData};
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap};
 
@@ -61,12 +62,8 @@ fn main() {
         if call.reset {
             continue;
         }
-        let e = engines.entry(call.voice.clone()).or_insert_with(|| {
-            let mut e = Espeak::new(data.clone());
-            e.set_voice_by_name(&call.voice).unwrap();
-            e
-        });
-        let got = e.text_to_phonemes(&call.text, PHONEMES_IPA_TIE);
+        let e = engines.entry(call.voice.clone()).or_insert_with(|| Espeak::new(data.clone(), &call.voice).unwrap());
+        let got = e.text_to_phonemes(&call.text);
         let t = tallies.entry(call.voice.clone()).or_default();
         if !call.ub.is_empty() {
             t.ub += 1;

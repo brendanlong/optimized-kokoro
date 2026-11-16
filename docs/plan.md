@@ -1,8 +1,8 @@
-# Optimized Kokoro: feasibility and plan (draft)
+# Optimized Kokoro: design and history
 
 Goal (from Brendan): a Kokoro TTS server we can host without worrying about C exploits or slow Python. It should do no duplicate work, run optimized graphs, batch whatever is already queued without waiting, avoid C and risky dependencies, and stream audio as fast as possible.
 
-Items marked **Decided** are settled with Brendan; the rest is proposal. Numbers are from the measurements in the wiki (`kokoro-tts-local-vs-gpu`, `self-hosted-kokoro-exposure-options`, journals `2026-10-31/11-01--kokoro-fastapi-latency-profile*`, `2026-11-01--kokoro-architecture-retrain-ideas`), all on the RTX 3060 Ti.
+This began as the feasibility study and plan; it now records the design and why. Items marked **Decided** are settled with Brendan; the rest was proposal, and README.md describes what shipped. Numbers are from the measurements in the wiki (`kokoro-tts-local-vs-gpu`, `self-hosted-kokoro-exposure-options`, journals `2026-10-31/11-01--kokoro-fastapi-latency-profile*`, `2026-11-01--kokoro-architecture-retrain-ideas`), all on the RTX 3060 Ti.
 
 ## Short answer
 
@@ -13,22 +13,16 @@ It's feasible. Two of the goals need restating, though:
    - 50-token sentences: 127× real time at batch size 1, 296× at batch size 8;
    - 150-token sentences: 201× at batch size 1, 328× at batch size 8.
 
-   The card tops out around 330–350× real time. Typical sentences are short (median 81 phonemes), and short ones gain the most. An earlier decoder-only test at 470 frames found no gain, which fits: long inputs already fill the GPU. Mixed lengths are the catch. InstanceNorm/AdaIN and the bidirectional LSTMs read the padding, and padding changed the audio (spectrogram correlation 0.946–0.975 vs unpadded, noise floor ~0.99, in journal `2026-11-01--kokoro-fastapi-latency-profile-cont`). With or without a masked norm, padded audio measured 0.964 against a 0.995 floor, and the cause wasn't found. But Brendan listened and **couldn't hear the difference** (same journal). So padded, length-bucketed batching looks fine in practice. Do a listening check on real batched output before shipping, and treat finding the cause as optional cleanup.
+   The card tops out around 330–350× real time. Typical sentences are short (median 81 phonemes), and short ones gain the most. An earlier decoder-only test at 470 frames found no gain, which fits: long inputs already fill the GPU. Mixed lengths are the catch. InstanceNorm/AdaIN and the bidirectional LSTMs read the padding, and padding changed the audio (spectrogram correlation 0.946–0.975 vs unpadded, noise floor ~0.99, in journal `2026-11-01--kokoro-fastapi-latency-profile-cont`). With or without a masked norm, padded audio measured 0.964 against a 0.995 floor, and the cause wasn't found. But Brendan listened and **couldn't hear the difference** (same journal). So padded, length-bucketed batching looks fine in practice. *What shipped instead:* the worker masks padding and packs mixed-length chunks into decoder rows, with no buckets (`worker/README.md`).
 
 What's large: **G2P (turning text into phonemes) in Rust, at parity with misaki.** Everything else is small or already done.
 
-## Proposed architecture
+## Architecture
 
-```
-client ──► [Fly relay, Rust]  ◄── outbound connection ── [desktop: front, Rust] ──unix socket──► [model worker]
-           (public; auth;                                  text normalize, G2P,     fixed binary     gVisor + nvproxy,
-            OpenAI-ish route)                              chunking, scheduler,     frames           GPU, no network
-                                                           PCM streaming
-```
+The proposal had a public Fly relay and a desktop that listened on nothing. What shipped is the front and worker below, published through an optional Cloudflare Tunnel (README.md, `deploy/README.md`).
 
 - **Front (Rust, sandboxed, no GPU).** Owns every byte from the network: request parsing, text normalization, sentence chunking, G2P, the voice table, the scheduler and the PCM stream back. It sends the worker `{slot, voice_index, speed, phoneme_ids: [u8; ≤510]}` and gets back `{slot, durations, pcm: [i16]}` frames (`worker-protocol.md`).
 - **Model worker.** Only reads length-prefixed integer frames, and **re-validates them itself**. It doesn't trust the front: every phoneme id must be in the vocab, the voice index in range, the length ≤ 510, and speed (an integer, in hundredths) within bounds. Weights load from safetensors (no pickle). It runs in gVisor `runsc --nvproxy`, which forwards only the NVIDIA ioctls on its list for that driver version. That list is probably the "whitelist of allowed GPU commands" you remembered. The arguments to those ioctls are still forwarded, though, so the sandbox doesn't make the worker safe to compromise. It has no network and a read-only filesystem. nvproxy supports exact driver versions only, so pin the host driver and runsc together.
-- **Desktop listens on nothing.** This matches the relay design already chosen in `self-hosted-kokoro-exposure-options`. The relay and agent authenticate each other (mutual TLS or a pinned key). A stolen agent credential would receive every listener's text, so store it outside the `claude` user.
 - **Deployment.** **Decided (Brendan, 2026-11-03):** the services must not run as the `claude` user, because that account holds his credentials. They first ran as systemd user units under `claude` (the worker in rootless podman mapped to claude's uid, the server as a bare process). Now they run on the host's system Docker, installed with sudo (`deploy/install.sh`, `deploy/compose.yaml`): worker, server and demo page each in gVisor with directfs off, as nobody, with no capabilities and a read-only root. The worker and server share the socket through a nobody-owned tmpfs volume, as a host socket (`--host-uds`). The API keys live in a root-owned file only the containers can read. Details in `deploy/README.md`.
 
 ### Protocol question (OpenAI-compatible HTTP vs MessagePack-RPC)
@@ -46,7 +40,7 @@ Return raw PCM. No mature pure-Rust Opus or AAC encoder exists (the `opus` crate
 
 | Option | Speed we know | Risk |
 |---|---|---|
-| **PyTorch + torch.compile in the worker** | Model alone at batch size 1: 150–200× real time. The deployed server (one sentence per chunk) gets 95× and 48 ms to first audio, or ~135× with two processes. The gap is Python overhead around the model, which the GPU is only ~42% busy through. | Large C++ dependency, but it only ever sees integer arrays inside gVisor. Startup ~50 s for the compile. **Not yet tested in gVisor**: Inductor and Triton need gcc, ptxas and a writable cache. |
+| **PyTorch + torch.compile in the worker** | Model alone at batch size 1: 150–200× real time. The deployed server (one sentence per chunk) gets 95× and 48 ms to first audio, or ~135× with two processes. The gap is Python overhead around the model, which the GPU is only ~42% busy through. | Large C++ dependency, but it only ever sees integer arrays inside gVisor. Startup ~50 s for the compile. Inductor and Triton need gcc, ptxas and a writable cache; in gVisor the deploy exports a compile cache at install (`deploy/README.md`). |
 | Rust: burn (CubeCL CUDA, fuses ops automatically) | unknown | Speed on Kokoro's conv-heavy decoder is untested, plus LSTMs, ConvTranspose1d, STFT. Still needs the NVIDIA driver and NVRTC. |
 | Rust: candle (cudarc + cuBLAS/cuDNN) | unknown; Crane's Kokoro uses ONNX Runtime (C++), not candle | Same gaps. Its LSTM is a slow per-timestep loop. |
 | ONNX Runtime (Kokoros, Crane) | Slower than torch on CUDA in our one test (onnxruntime-gpu 1.23.2; some decoder convs used cuDNN fallback, see `onnx-istft-convtranspose-slow-on-cuda`). Not a careful measurement. | C++, so it fails goal 4 anyway. |
@@ -118,13 +112,13 @@ An adversarial review of PR #13 found resource-exhaustion gaps, all fixed with r
 - **Weights:** they are validated at load.
 - **Connections:** the cap is now 4096, with a 5 s header timeout.
 
-The connection cap and header timeout make a flood of unauthenticated connections expensive, but don't stop one. So whenever the server is reachable from the internet, an edge must filter unauthenticated traffic first: Cloudflare Access, or the relay above. The reviewer's tools are in `tools/security/`.
+The connection cap and header timeout make a flood of unauthenticated connections expensive, but don't stop one. So whenever the server is reachable from the internet, an edge must filter unauthenticated traffic first, such as Cloudflare Access in front of the tunnel. The reviewer's tools are in `tools/security/`.
 
 The server's request path also uses fewer dependencies: no axum, tower, tracing or safetensors. `deny.toml` checks licences, sources and advisories. The audit's numbers are in PR #13.
 
 ### Licensing
 
-To publish, we need one license for the combined work. Component licenses:
+The combined work needs one license. Component licenses:
 
 | Component | License |
 |---|---|
@@ -140,7 +134,7 @@ All of these are compatible with **GPL-3.0-or-later**, and espeak forces it for 
 - Our own code and the crates that don't depend on espeak (the protocol, scheduler, worker, the misaki-English/zh/ja ports, segmentation) are Apache-2.0, matching the repo's current LICENSE.
 - The num2words port was LGPL-2.1; it is gone (the text crate's own number reader, written from scratch, replaced it).
 - Only `kokoro-espeak-ng`, `kokoro-espeak`, and what links them (the pipeline and server) are GPL-3.0-or-later.
-- `cargo deny` in CI checks that no permissive crate pulls in a GPL or LGPL dependency. The alternative is to drop espeak (losing es/fr/it/pt/hi/ru/el/ko/ar/he and English unknown words) and stay Apache. Not publishing removes the question entirely, since the GPL and LGPL only bind distribution.
+- `cargo deny` in CI checks that no permissive crate pulls in a GPL or LGPL dependency.
 
 
 ### Scheduler / "no waiting"
@@ -148,19 +142,3 @@ All of these are compatible with **GPL-3.0-or-later**, and espeak forces it for 
 The worker loop: when the GPU is free, take the most urgent queued chunks, up to `--max-batch` (8 on the 3060 Ti). Never sleep to fill a batch. Urgency: the request's priority (0–255, higher first), then, within a priority, chunks a listener is blocked on before prefetch, then FIFO. The batch's durations run together; then its decoder runs on the chunks packed end to end into rows of at most the chunk cap's frames, most urgent first, and each row's chunks are sent as soon as it finishes. A row holding a waiting chunk takes no prefetch chunk after it, so a blocked-on chunk doesn't wait for prefetches to decode (`worker-protocol.md`, `worker/README.md`). On the server, sentences are phonemized once (KFastAPI#7) and packed into chunks of about 130 phonemes (`crates/server/src/pack.rs`), a sentence too long for one chunk is cut at clauses, and a clause too long by itself is overlap-stitched (#8) (`docs/divergences.md`). Streaming *inside* a sentence is blocked by InstanceNorm, BERT attention and the bidirectional LSTMs, which all see the whole sentence. So it needs a retrained, causal or windowed model, and it isn't in scope.
 
 **Priorities and load shedding (issue #26).** **Decided (Brendan, issue #26 comments):** a request priority is a `u8` with many levels (Lion Reader will combine paid versus free with first request versus follow-up); higher priority is always scheduled before lower; when the estimated first-audio latency is over a budget, shed the lowest priority first and, within a priority, the most recently queued first; only shed requests that haven't sent audio, so a started stream is never cut; and each key has a maximum priority. Ours: higher numbers are more urgent (default 128, so a client can go either side of a request that doesn't say), a request above its key's maximum runs at the maximum (issue #53, Brendan's request, 2026-11-10, reversing the first design's 400: a 400 there turns lowering a key's cap into every request from it going to the paid fallback provider) and responses say the priority used in `X-Priority`, and shed requests get 503 with `Retry-After: 1` (the server is busy; 429 stays the key's own stream limit). The estimate is the work queued at or above the request's priority times a cost per phoneme id learned from the worker's results (`crates/server/src/load.rs`); the budget is 800 ms, under the ~1 s of the clients' fallback provider. Wire format in `worker-protocol.md`; what clients see in `README.md` ("Using it").
-
-## Phases (rough)
-
-1. **Worker + protocol (small, about a week).** Day one: check that torch.compile/Triton runs under gVisor+nvproxy on this host's 580.x driver, with a tmpfs or prebuilt kernel cache. Then freeze the current compiled PyTorch model behind a unix-socket integer protocol in gVisor+nvproxy. Benchmark it fed with phonemes from the reference pipeline.
-2. **Rust G2P (large; in parallel with 1).** In the order above, starting with the parity harness and English.
-3. **Rust front and relay (small–medium).** HTTP/relay, chunking, scheduler with priorities and batching, PCM streaming. Switch production over once every language the current deploy supports, including zh and ja, reaches parity. The new server never hands any language back to Kokoro-FastAPI.
-4. **Smaller model (research).** Finish LSTM→conv distillation and maybe a Vocos head. Per-timestep norms make mixed-length batching exact.
-5. **Rust runtime (optional).** Port the simplified model to burn or candle, and keep it only if it matches torch.compile speed.
-
-Phase 2 is where the time goes, and the production switch waits for all of it. Phases 4–5 are optional performance work, and their value depends on measurements.
-
-## Open questions
-
-- Which GPU in production: the 3060 Ti only, or cloud? This sets the batch size and the bucket boundaries.
-- ~~Do we support generic OpenAI clients, or only Lion Reader and clawed-abode?~~ Only those two, with a strict schema (Brendan, 2026-11-03).
-

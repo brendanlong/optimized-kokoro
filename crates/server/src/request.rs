@@ -9,7 +9,7 @@ use crate::config::Config;
 use crate::pipeline::{Lang, voice_lang};
 use crate::protocol::{MAX_VOICE_NAME, Speed};
 use crate::worker::Connection;
-use kokoro_text::{Limits, Options, check_pause_budget, check_speakable};
+use kokoro_text::{Options, check_pause_budget, check_speakable};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -90,7 +90,7 @@ pub fn plan(request: SpeechRequest, config: &Config, connection: &Connection) ->
         ));
     };
     let speed = request.speed.map_or(Some(Speed::NORMAL), Speed::from_f64).expect("checked by check_fields");
-    check_pause_budget(&request.input, &Limits::default()).map_err(|e| e.to_string())?;
+    check_pause_budget(&request.input).map_err(|e| e.to_string())?;
     check_speakable(&request.input, &Options::default()).map_err(|e| e.to_string())?;
     Ok(Speech { lang, text: request.input, voice, speed })
 }

@@ -25,7 +25,7 @@
 set -euo pipefail
 
 usage() {
-    sed -n '2,26p' "$0"
+    sed -n '2,/^[^#]/{/^#/p}' "$0"
     exit 2
 }
 [ $# -ge 3 ] || usage
@@ -36,14 +36,9 @@ shift 3
 
 image=${KOKORO_WORKER_IMAGE:-localhost/kokoro-worker:latest}
 name=${KOKORO_WORKER_NAME:-kokoro-worker}
-runsc=${RUNSC:-/usr/bin/runsc}
 gpu=${KOKORO_GPU:-0}
 if [ "$gpu" = all ]; then
     echo "KOKORO_GPU=all: name one GPU (an index or UUID from nvidia-smi -L)" >&2
-    exit 2
-fi
-if [ -n "${KOKORO_CACHE_EXPORT:-}" ]; then
-    echo "KOKORO_CACHE_EXPORT is gone: use '$0 export-cache CACHE_DIR MODELS_DIR'" >&2
     exit 2
 fi
 
@@ -97,7 +92,7 @@ fi
 # the image's 1001), so the socket it creates belongs to that user on the host.
 # --tmpfs /tmp: Triton and Inductor write their caches and compile their launcher there (exec needed).
 exec "${limits[@]}" podman run --rm --name "$name" \
-    --runtime "$runsc" \
+    --runtime /usr/bin/runsc \
     --runtime-flag ignore-cgroups \
     --runtime-flag host-uds=create \
     --cgroups=split \

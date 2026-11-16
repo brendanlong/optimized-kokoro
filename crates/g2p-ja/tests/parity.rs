@@ -1,6 +1,8 @@
 //! Against the reference: MeCab's words (fugashi on UniDic 3.1.0) and `JAG2P()(text)[0]` for the
 //! texts in `tests/fixtures/` and, when set, every `*.mecab.jsonl` and `*.jag2p.jsonl` in
-//! `$KOKORO_JA_REFERENCE` (written by `tools/reference.py`).
+//! `$KOKORO_JA_REFERENCE` (written by `tools/reference.py`). The fixtures' texts are from
+//! `tools/gen_cases.py 1 20000` (`gen1`), `tools/fetch_corpus.py aozora`, the first 168 of
+//! `tools/gen_long.py` (`long`) and the first 600 of `tools/review_numbers.py` (`rv2`).
 //!
 //! Needs the dictionary (`tools/fetch_unidic.sh`); without it the tests say so and pass.
 //! Records where misaki raises are checked against the readings `docs/divergences.md` lists.

@@ -99,7 +99,7 @@ make sanitized                                     # ttp-asan and ttp-memcheck, 
 python3 oracle.py one gmw/en-US "Hello world."      # C's clauses for one text
 python3 gen_adversarial.py 1 3000 gmw/en-US roa/fr > /tmp/pairs.jsonl
 python3 oracle.py pairs --ub < /tmp/pairs.jsonl > /tmp/calls.jsonl   # each call in a fresh C library
-cargo run --release -p kokoro-espeak-ng --example compare -- /tmp/calls.jsonl .cache/espeak-ng-data
+cargo run --release -p kokoro-espeak-ng --example compare -- /tmp/calls.jsonl ../.cache/espeak-ng-data
 python3 adv.py --ub gen_dict.py 1 4 3000 gmw/en-US zle/ru  # generate, run C, compare, for seeds 1-4
 python3 bench.py /tmp/calls.jsonl 3                 # C (-O3) vs Rust time per call and per word
 python3 make_fixture.py ../../crates/espeak-ng/tests/c_calls.jsonl

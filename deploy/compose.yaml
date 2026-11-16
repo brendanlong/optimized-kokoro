@@ -14,17 +14,11 @@
 #
 #   sudo docker compose -f /srv/optimized-kokoro/current/compose.yaml ps|logs -f|restart
 #
-# The runtimes are runsc with different flags, which install.sh and update.sh put in
-# /etc/docker/daemon.json (kokoro_runtimes in lib.sh):
-#   runsc-kokoro-uds-create  runsc --directfs=false --host-uds=create   the worker
-#   runsc-kokoro-uds-open    runsc --directfs=false --host-uds=open     the server
-#   runsc-kokoro-no-uds      runsc --directfs=false                     the demo and the tunnel
-# --directfs=false: under rootful Docker the sandbox otherwise runs as root in the host's user
-#   namespace; with it, the sentry runs as nobody in an empty user namespace and all file access goes
-#   through the gofer.
-# --host-uds: each container is its own gVisor kernel, so a Unix socket the worker binds in the
-#   shared volume only reaches the server as a real host socket. The worker binds it (create), the
-#   server connects to it (open), and the others have no host sockets at all.
+# The runtimes are runsc with different flags (kokoro_runtimes in lib.sh; why each flag, in
+# deploy/README.md's Security model):
+#   runsc-kokoro-uds-create  the worker, which binds the socket
+#   runsc-kokoro-uds-open    the server, which connects to it
+#   runsc-kokoro-no-uds      the demo and the tunnel
 # GPU support turns on by itself when the spec has NVIDIA devices (from CDI, see the worker).
 
 x-hardening: &hardening

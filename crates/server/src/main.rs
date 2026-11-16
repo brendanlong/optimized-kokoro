@@ -64,10 +64,9 @@ async fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let worker = Worker::spawn(config.worker_settings());
+    let worker = Worker::spawn(&config);
     kokoro_server::info!("listening on {}, worker socket {}", config.listen, config.worker_socket.display());
-    let limits = serve::Limits::from(&config);
     let app = http::router(config, worker, Arc::new(pipelines));
-    serve::serve(listener, app, limits, shutdown_signal()).await;
+    serve::serve(listener, app, shutdown_signal()).await;
     ExitCode::SUCCESS
 }

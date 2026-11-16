@@ -6,7 +6,7 @@
 //! -- --ignored` also sweeps every unit of one to three characters from an alphabet of the
 //! characters the patterns react to.
 
-use kokoro_text::{Limits, Options, check_pause_budget, check_speakable, join_lines, normalize, sentences};
+use kokoro_text::{Options, check_pause_budget, check_speakable, join_lines, normalize, sentences};
 use kokoro_text::{smart_split, strip_emoji};
 use std::time::{Duration, Instant};
 
@@ -18,19 +18,17 @@ fn stages() -> Vec<Stage> {
         .into_iter()
         .map(|(name, pass)| (name.to_owned(), Box::new(move |t: &str| drop(pass(t))) as Box<dyn Fn(&str)>))
         .collect();
-    let opts = all.clone();
     stages.push((
         "smart_split".into(),
-        Box::new(move |t| smart_split(t, "a", &opts, &Limits::default(), 450, |x: &str| x.to_owned()).for_each(drop)),
+        Box::new(move |t| smart_split(t, "a", all, 450, |x: &str| x.to_owned()).for_each(drop)),
     ));
     stages.push(("join_lines".into(), Box::new(|t| drop(join_lines(t)))));
     stages.push(("sentences".into(), Box::new(|t| drop(sentences(t)))));
-    let opts = all.clone();
     stages.push((
         "checks".into(),
         Box::new(move |t| {
-            let _ = check_speakable(t, &opts);
-            let _ = check_pause_budget(t, &Limits::default());
+            let _ = check_speakable(t, &all);
+            let _ = check_pause_budget(t);
         }),
     ));
     stages.push(("strip_emoji".into(), Box::new(|t| drop(strip_emoji(t)))));

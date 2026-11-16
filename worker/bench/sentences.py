@@ -1,4 +1,5 @@
-"""Real phoneme sequences for tests and benchmarks, from the reference pipeline's committed fixture.
+"""Real phoneme sequences for tests and benchmarks: the reference pipeline's chunks of English books
+(corpus.jsonl).
 
 Each chunk the deployed server would send to the model, mapped to ids with the model's vocab.
 """
@@ -7,13 +8,12 @@ import json
 import os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-FIXTURE = os.path.join(HERE, "..", "..", "reference", "fixtures", "hard_cases.out.jsonl")
-CORPUS = os.path.join(HERE, "corpus.jsonl")  # written by make_corpus.py, if present
+CORPUS = os.path.join(HERE, "corpus.jsonl")
 
 
 def load(vocab: dict[str, int], path: str | None = None, max_len: int = 510) -> list[tuple[str, list[int]]]:
     """[(phonemes, ids)] for every English chunk, in file order."""
-    path = path or (CORPUS if os.path.exists(CORPUS) else FIXTURE)
+    path = path or CORPUS
     out = []
     with open(path, encoding="utf-8") as f:
         for line in f:

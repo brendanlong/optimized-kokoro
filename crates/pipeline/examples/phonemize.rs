@@ -7,14 +7,13 @@
 //! (default `a`), and sentences of more than `MAX_TOKENS` phonemes are cut at clauses (default
 //! 450, the reference's).
 
-use kokoro_pipeline::{Lang, NormalizationOptions, Pipeline};
+use kokoro_pipeline::{Lang, Pipeline};
 use std::io::{BufRead, Write};
 
 fn main() {
     let code = std::env::args().nth(1).unwrap_or_else(|| "a".into());
     let max_tokens = std::env::args().nth(2).map_or(kokoro_pipeline::DEFAULT_MAX_TOKENS, |n| n.parse().unwrap());
     let pipeline = Pipeline::new(Lang::from_code(&code).expect("a pipeline language")).unwrap();
-    let options = NormalizationOptions::default();
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
     for line in std::io::stdin().lock().lines() {
@@ -22,7 +21,7 @@ fn main() {
         let text = serde_json::from_str::<String>(&line).unwrap_or(line);
         let mut chunks = Vec::new();
         let mut error = None;
-        for chunk in pipeline.chunks_within_groups(&text, &options, max_tokens, max_tokens, &|| false) {
+        for chunk in pipeline.chunks_within_groups(&text, max_tokens, max_tokens, &|| false) {
             match chunk {
                 Ok(c) if c.pause.is_none() => chunks.push(serde_json::json!({
                     "text": c.text, "phonemes": c.phonemes, "ids": c.ids,

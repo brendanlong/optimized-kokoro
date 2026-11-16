@@ -2,12 +2,10 @@
 
 use crate::pipeline::{Chunk, DEFAULT_MAX_TOKENS, Lang, Pipeline, PipelineError};
 use kokoro_pipeline::Error;
-use kokoro_text::Options;
 
 pub struct KokoroPipelines {
     /// One per [`Lang::ALL`]. They share spaCy, misaki's lexicons and espeak's data.
     pipelines: Vec<kokoro_pipeline::Pipeline>,
-    options: Options,
 }
 
 impl KokoroPipelines {
@@ -15,7 +13,7 @@ impl KokoroPipelines {
     /// (the normalizer's patterns, about 20 ms) are built now rather than in the first request.
     pub fn load() -> Result<Self, Error> {
         let pipelines = Lang::ALL.into_iter().map(kokoro_pipeline::Pipeline::new).collect::<Result<_, _>>()?;
-        let pipelines = Self { pipelines, options: Options::default() };
+        let pipelines = Self { pipelines };
         pipelines
             .chunks(Lang::AmericanEnglish, "Warm up at 3:30.", DEFAULT_MAX_TOKENS, DEFAULT_MAX_TOKENS, &|| false)
             .for_each(drop);
@@ -33,20 +31,18 @@ impl Pipeline for KokoroPipelines {
         cancelled: &'a (dyn Fn() -> bool + Sync),
     ) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
         let pipeline = self.pipelines.iter().find(|p| p.lang() == lang).expect("a pipeline for every language");
-        Box::new(pipeline.chunks_within_groups(text, &self.options, max_phonemes, clause_groups, cancelled).map(
-            |chunk| {
-                chunk
-                    .map(|c| Chunk {
-                        text: c.text,
-                        phonemes: c.phonemes,
-                        ids: c.ids,
-                        pause: c.pause,
-                        unread: c.unread,
-                        split: c.split,
-                    })
-                    .map_err(|e| PipelineError(e.to_string()))
-            },
-        ))
+        Box::new(pipeline.chunks_within_groups(text, max_phonemes, clause_groups, cancelled).map(|chunk| {
+            chunk
+                .map(|c| Chunk {
+                    text: c.text,
+                    phonemes: c.phonemes,
+                    ids: c.ids,
+                    pause: c.pause,
+                    unread: c.unread,
+                    split: c.split,
+                })
+                .map_err(|e| PipelineError(e.to_string()))
+        }))
     }
 }
 

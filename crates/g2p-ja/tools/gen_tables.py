@@ -1,4 +1,4 @@
-"""Writes src/tables.rs: misaki's cutlet tables and the Python character classes the port needs.
+"""Writes src/tables.rs: misaki's cutlet tables and `str.isdigit()`'s digit values.
 
 Run with the reference venv's Python (misaki 0.9.4, jaconv, Python 3.12's Unicode 15.0):
     ../../reference/.cache/kfa/.venv/bin/python -I tools/gen_tables.py src/tables.rs
@@ -13,18 +13,6 @@ from misaki import cutlet
 
 def rs(s):
     return '"' + ''.join(c if c not in '"\\' else '\\' + c for c in s) + '"'
-
-
-def ranges(pred):
-    out, start = [], None
-    for cp in range(0x110000 + 1):
-        ok = cp < 0x110000 and not (0xD800 <= cp < 0xE000) and pred(chr(cp))
-        if ok and start is None:
-            start = cp
-        elif not ok and start is not None:
-            out.append((start, cp - 1))
-            start = None
-    return out
 
 
 def main(path):
@@ -58,9 +46,6 @@ def main(path):
         "pub static DIGITS: &[(u32, u32, u8)] = &[",
     ]
     lines += [f"    (0x{a:x}, 0x{b:x}, {d})," for a, b, d in runs]
-    lines += ["];", ""]
-    lines += ["/// `str.isdecimal()` (Python `re`'s `\\d`).", "pub static DECIMALS: &[(u32, u32)] = &["]
-    lines += [f"    (0x{a:x}, 0x{b:x})," for a, b in ranges(str.isdecimal)]
     lines += ["];", ""]
     with open(path, "w") as f:
         f.write("\n".join(lines))

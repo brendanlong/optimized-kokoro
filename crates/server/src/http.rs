@@ -55,6 +55,10 @@ pub fn router(config: Config, worker: Worker, pipeline: Arc<dyn Pipeline>) -> Ap
 }
 
 impl App {
+    pub(crate) fn config(&self) -> &Config {
+        &self.0.config
+    }
+
     /// Routes one request. Unknown paths get 404 and known paths with another method 405, both
     /// before the key is checked; the key is checked before anything reads the body.
     pub async fn handle<B>(&self, request: Request<B>) -> Response<Body>
@@ -198,7 +202,7 @@ where
 {
     let limit = config.body_limit();
     let read = async { Limited::new(body, limit).collect().await.map(|collected| collected.to_bytes()) };
-    match tokio::time::timeout(config.request_body_timeout(), read).await {
+    match tokio::time::timeout(std::time::Duration::from_millis(config.request_body_timeout_ms), read).await {
         Err(_) => Err(error(
             StatusCode::REQUEST_TIMEOUT,
             "timeout",
@@ -266,7 +270,7 @@ async fn speak_at(state: &Arc<AppState>, key: KeyIndex, request: SpeechRequest, 
     };
     // Refused at once if over budget, before it can displace anything (`admit` decides for sure).
     if state.load.would_refuse(level) {
-        return overloaded(StreamError::Shed(Shed { estimate: state.load.estimate(level) }).to_string());
+        return stream_failure(&StreamError::Shed(Shed { estimate: state.load.estimate(level) }));
     }
     // At either limit, a request may take the permits of a less urgent one that hasn't sent audio
     // yet (of the same key, for the key's limit), which is shed for it.
@@ -283,7 +287,7 @@ async fn speak_at(state: &Arc<AppState>, key: KeyIndex, request: SpeechRequest, 
     };
     let admission = match state.load.admit(level, key.0) {
         Ok(admission) => Arc::new(admission),
-        Err(shed) => return overloaded(StreamError::Shed(shed).to_string()),
+        Err(shed) => return stream_failure(&StreamError::Shed(shed)),
     };
 
     // The text checks scan the whole input, so they run on the blocking pool. The permits go with
@@ -302,8 +306,8 @@ async fn speak_at(state: &Arc<AppState>, key: KeyIndex, request: SpeechRequest, 
         (Err(message), _) => return invalid(message),
     };
     // Shed while its text was checked: don't send the worker anything.
-    if admission.is_shed() {
-        return overloaded(StreamError::Shed(Shed { estimate: admission.shed_estimate() }).to_string());
+    if let Some(shed) = admission.shed_reason() {
+        return stream_failure(&StreamError::Shed(shed));
     }
     let mut audio = stream::start(
         speech,

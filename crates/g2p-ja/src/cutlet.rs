@@ -4,7 +4,7 @@
 use crate::dict::Dictionary;
 use crate::mecab::{self, Morph};
 use crate::num2kana;
-use crate::tables::{DECIMALS, DIGITS, HEPBURN, KATA2HIRA};
+use crate::tables::{DIGITS, HEPBURN, KATA2HIRA};
 use kokoro_text::py;
 use std::collections::HashSet;
 use unicode_normalization::UnicodeNormalization;
@@ -16,15 +16,9 @@ const KATAKANA: u8 = 7;
 /// Not a MeCab category: a number read straight into phonemes ([`Part::Number`]).
 const NUMBER: u8 = u8::MAX;
 
-fn in_ranges(table: &[(u32, u32)], c: char) -> bool {
-    let cp = c as u32;
-    let i = table.partition_point(|&(_, hi)| hi < cp);
-    table.get(i).is_some_and(|&(lo, _)| lo <= cp)
-}
-
 /// `c.isdecimal()`: Python `re`'s `\d`.
 pub fn is_decimal(c: char) -> bool {
-    in_ranges(DECIMALS, c)
+    py::digit_value(c).is_some()
 }
 
 /// The digit value of a character for which `c.isdigit()` holds.
@@ -37,6 +31,11 @@ pub fn digit_value(c: char) -> Option<u8> {
 /// `str.isdigit()`
 fn is_digits(s: &str) -> bool {
     !s.is_empty() && s.chars().all(|c| digit_value(c).is_some())
+}
+
+/// Digits for which `str.isdigit()` holds, as ASCII.
+fn ascii_digits(s: &str) -> Vec<u8> {
+    s.chars().map(|c| b'0' + digit_value(c).expect("a digit")).collect()
 }
 
 fn table(key: &str) -> Option<&'static str> {
@@ -112,15 +111,14 @@ pub fn normalize(text: &str) -> Vec<Part> {
             return;
         }
         if digits || is_digits(segment) {
-            let ascii: Vec<u8> = segment.chars().map(|c| b'0' + digit_value(c).expect("a digit")).collect();
+            let ascii = ascii_digits(segment);
             out.push(' ');
             if segment.is_ascii() && ascii.len() <= 9 {
                 out.push_str(&num2kana::convert_kana(&ascii));
             } else {
                 parts.push(Part::Text(std::mem::take(out)));
-                let words: Vec<String> =
-                    num2kana::number_words(&ascii).iter().map(|kana| kana_phonemes(kana)).collect();
-                parts.push(Part::Number(String::from_utf8(ascii).expect("ASCII"), words.join(" ")));
+                let phonemes = number_phonemes(&ascii);
+                parts.push(Part::Number(String::from_utf8(ascii).expect("ASCII"), phonemes));
             }
         } else {
             out.push_str(segment);
@@ -152,6 +150,11 @@ pub fn normalize(text: &str) -> Vec<Part> {
 fn kana_phonemes(kana: &str) -> String {
     let hira = kata2hira(kana).replace("ゅう", "ゅー").replace("ょう", "ょー");
     romaji_word(&Word { surface: hira.clone(), hira, char_type: HIRAGANA })
+}
+
+/// [`num2kana::number_words`] in phonemes, a space between words.
+fn number_phonemes(ascii: &[u8]) -> String {
+    num2kana::number_words(ascii).iter().map(|kana| kana_phonemes(kana)).collect::<Vec<_>>().join(" ")
 }
 
 struct Word {
@@ -243,8 +246,7 @@ fn romaji_word(word: &Word) -> String {
     }
     let surface = word.surface.as_str();
     if is_digits(surface) {
-        let ascii: Vec<u8> = surface.chars().map(|c| b'0' + digit_value(c).expect("a digit")).collect();
-        return num2kana::number_words(&ascii).iter().map(|kana| kana_phonemes(kana)).collect::<Vec<_>>().join(" ");
+        return number_phonemes(&ascii_digits(surface));
     }
     if surface.is_ascii() {
         return surface.to_owned();

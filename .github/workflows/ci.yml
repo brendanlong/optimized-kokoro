@@ -194,24 +194,9 @@ jobs:
           koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d
           -x deploy/*.sh deploy/dry-run/*.sh deploy/dry-run/bin/* worker/run.sh worker/bench/*.sh crates/g2p-ja/tools/fetch_unidic.sh
           reference/setup.sh tools/security/*.sh
-      - name: docker compose config
-        run: |
-          # The variables deploy/lib.sh writes into a release's .env, with placeholder values.
-          cat > "$RUNNER_TEMP/ci.env" <<'EOF'
-          KOKORO_ROOT=/srv/optimized-kokoro
-          KOKORO_RELEASE=ci
-          KOKORO_UNIDIC_FILE=ci.dic
-          KOKORO_GPU=0
-          KOKORO_LISTEN=127.0.0.1:8880
-          KOKORO_DEMO_LISTEN=127.0.0.1:25436
-          KOKORO_MAX_BATCH=1
-          KOKORO_MAX_CHUNK_SECONDS=60
-          COMPOSE_PROJECT_NAME=optimized-kokoro-ci
-          EOF
-          docker compose -f deploy/compose.yaml --env-file "$RUNNER_TEMP/ci.env" config --quiet
-          COMPOSE_PROFILES=cloudflared docker compose -f deploy/compose.yaml --env-file "$RUNNER_TEMP/ci.env" config --quiet
       # install.sh, update.sh and keys.sh against fakes (no Docker daemon, GPU or root): success,
-      # failures and Ctrl-C at each step of an update, and the move off the single project.
+      # failures and Ctrl-C at each step of an update. Each release's compose.yaml goes through the
+      # real `docker compose config`.
       - name: deploy dry runs
         if: ${{ !cancelled() }}
         run: deploy/dry-run/test.sh

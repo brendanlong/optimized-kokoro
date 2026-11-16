@@ -105,14 +105,6 @@ impl TextDecoder {
         self.current = current;
         c
     }
-
-    /// `text_decoder_get_buffer`: the text not yet read, or `None` at the end.
-    pub fn remaining(&self) -> Option<&[u8]> {
-        if self.eof() {
-            return None;
-        }
-        Some(&self.buf[self.current..self.buf.len() - 1])
-    }
 }
 
 #[cfg(test)]

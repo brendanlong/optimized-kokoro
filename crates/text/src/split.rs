@@ -3,10 +3,10 @@
 //! G2P lives in other crates, so chunking takes the phonemizer as a function. Chunk limits count
 //! phoneme characters, as the reference does.
 
-use crate::normalize::{Normalizer, Options};
+use crate::normalize::{Options, english};
 use crate::py::{self, parse_float};
 use crate::pyre::{Pattern, compile};
-use crate::tags::{Limits, PAUSE_TAG, strip_emoji};
+use crate::tags::{MAX_PAUSE_S, PAUSE_TAG, strip_emoji};
 use std::collections::VecDeque;
 use std::convert::Infallible;
 use std::sync::LazyLock;
@@ -49,21 +49,20 @@ pub fn join_lines(text: &str) -> String {
 /// What `smart_split` normalizes: the normalizer runs between `[word](/phonemes/)` annotations,
 /// never inside them.
 pub fn normalize(text: &str, lang_code: &str, options: &Options) -> String {
-    match Normalizer::for_lang(lang_code).filter(|_| options.normalize) {
-        Some(normalizer) => {
-            let parts = CUSTOM_PHONEMES.split(text);
-            let joined: String = parts
-                .into_iter()
-                .enumerate()
-                .map(|(index, part)| {
-                    let part = part.expect("one group, always present");
-                    if index % 2 == 0 { normalizer.normalize(part, options) } else { part.to_owned() }
-                })
-                .collect();
-            py::strip(&joined).to_owned()
-        }
-        None => text.to_owned(),
+    // Kokoro-FastAPI registers a normalizer for English only.
+    if !(options.normalize && matches!(lang_code, "a" | "b")) {
+        return text.to_owned();
     }
+    let joined: String = CUSTOM_PHONEMES
+        .split(text)
+        .into_iter()
+        .enumerate()
+        .map(|(index, part)| {
+            let part = part.expect("one group, always present");
+            if index % 2 == 0 { english(part, options) } else { part.to_owned() }
+        })
+        .collect();
+    py::strip(&joined).to_owned()
 }
 
 /// `sentences`: UAX #29 sentences (unicode-segmentation 1.13.3, as the reference's
@@ -274,16 +273,15 @@ fn join<P, E, F: FnMut(&str) -> Result<P, E>>(mut group: Vec<Piece<P>>, g2p: &mu
 pub fn smart_split<'a, P: Phonemes, F: FnMut(&str) -> P>(
     text: &str,
     lang_code: &'a str,
-    options: &'a Options,
-    limits: &'a Limits,
+    options: Options,
     max_tokens: usize,
     mut g2p: F,
 ) -> impl Iterator<Item = Chunk<P>> + use<'a, P, F> {
-    try_smart_split(text, lang_code, options, limits, max_tokens, move |t: &str| Ok::<_, Infallible>(g2p(t))).map(
-        |chunk| match chunk {
+    try_smart_split(text, lang_code, options, max_tokens, move |t: &str| Ok::<_, Infallible>(g2p(t))).map(|chunk| {
+        match chunk {
             Ok(chunk) => chunk,
-        },
-    )
+        }
+    })
 }
 
 /// [`smart_split`] with a G2P that can fail. An error takes the place of the chunks of the
@@ -291,8 +289,7 @@ pub fn smart_split<'a, P: Phonemes, F: FnMut(&str) -> P>(
 pub struct SmartSplit<'a, P, F> {
     parts: std::vec::IntoIter<Option<String>>,
     lang_code: &'a str,
-    options: &'a Options,
-    limits: &'a Limits,
+    options: Options,
     max_tokens: usize,
     /// The size clause groups are packed to ([`SmartSplit::with_clause_groups`]).
     clause_groups: usize,
@@ -305,8 +302,7 @@ pub struct SmartSplit<'a, P, F> {
 pub fn try_smart_split<'a, P: Phonemes, E, F: FnMut(&str) -> Result<P, E>>(
     text: &str,
     lang_code: &'a str,
-    options: &'a Options,
-    limits: &'a Limits,
+    options: Options,
     max_tokens: usize,
     g2p: F,
 ) -> SmartSplit<'a, P, F> {
@@ -315,7 +311,6 @@ pub fn try_smart_split<'a, P: Phonemes, E, F: FnMut(&str) -> Result<P, E>>(
         parts: parts.into_iter(),
         lang_code,
         options,
-        limits,
         max_tokens,
         clause_groups: max_tokens,
         g2p,
@@ -340,7 +335,7 @@ impl<P, F> SmartSplit<'_, P, F> {
             return;
         }
         let raw = if self.options.remove_emoji { strip_emoji(raw) } else { raw.to_owned() };
-        let processed = normalize(&join_lines(&raw), self.lang_code, self.options);
+        let processed = normalize(&join_lines(&raw), self.lang_code, &self.options);
         self.sentences.extend(sentences(&processed));
     }
 }
@@ -369,7 +364,7 @@ impl<P: Phonemes, E, F: FnMut(&str) -> Result<P, E>> Iterator for SmartSplit<'_,
                 continue;
             }
             if let Some(duration) = self.pending_pause.take() {
-                let duration = parse_float(&duration).min(self.limits.max_pause_duration_s);
+                let duration = parse_float(&duration).min(MAX_PAUSE_S);
                 if duration > 0.0 {
                     return Some(Ok(Chunk::Pause(duration)));
                 }
@@ -412,7 +407,7 @@ mod tests {
 
     /// The chunks of `text` with the fake G2P and limit `limit`: (text, split before, split after).
     fn cut(text: &str, limit: usize) -> Vec<(String, bool, bool)> {
-        smart_split(text, "z", &Options::default(), &Limits::default(), limit, |t: &str| "x".repeat(t.len()))
+        smart_split(text, "z", Options::default(), limit, |t: &str| "x".repeat(t.len()))
             .map(|c| match c {
                 Chunk::Speech(p) => (p.text, p.split.before, p.split.after),
                 Chunk::Pause(_) => unreachable!(),
@@ -429,7 +424,7 @@ mod tests {
             calls.push(t.to_owned());
             "x".repeat(t.len())
         };
-        let chunks: Vec<_> = smart_split(&text, "z", &Options::default(), &Limits::default(), 70, g2p).collect();
+        let chunks: Vec<_> = smart_split(&text, "z", Options::default(), 70, g2p).collect();
         let shape: Vec<_> = chunks
             .iter()
             .map(|c| match c {
@@ -473,15 +468,13 @@ mod tests {
         let (a, b, c, d) = (words('a', 30), words('b', 30), words('c', 30), words('d', 30));
         let text = format!("{a}, {b}; {c}: {d}.");
         let cut = |limit, groups| -> Vec<String> {
-            try_smart_split(&text, "z", &Options::default(), &Limits::default(), limit, |t: &str| {
-                Ok::<_, Infallible>("x".repeat(t.len()))
-            })
-            .with_clause_groups(groups)
-            .map(|c| match c.unwrap() {
-                Chunk::Speech(p) => p.text,
-                Chunk::Pause(_) => unreachable!(),
-            })
-            .collect()
+            try_smart_split(&text, "z", Options::default(), limit, |t: &str| Ok::<_, Infallible>("x".repeat(t.len())))
+                .with_clause_groups(groups)
+                .map(|c| match c.unwrap() {
+                    Chunk::Speech(p) => p.text,
+                    Chunk::Pause(_) => unreachable!(),
+                })
+                .collect()
         };
         assert_eq!(cut(450, 40), std::slice::from_ref(&text));
         assert_eq!(cut(100, 100), [format!("{a}, {b}; {c}:"), format!("{d}.")]);
@@ -518,13 +511,12 @@ mod tests {
         assert_eq!(texts(cut(&format!("{shorts} {x97}."), 100)), [shorts.to_owned(), format!("{x97}.")]);
         // A clause without phonemes is short too, so it never makes a chunk without audio.
         let silent = |t: &str| if t == "bbbb," { String::new() } else { "x".repeat(t.len()) };
-        let chunks: Vec<_> =
-            smart_split(&format!("{x97}, bbbb, {y97}."), "z", &Options::default(), &Limits::default(), 98, silent)
-                .map(|c| match c {
-                    Chunk::Speech(p) => p.text,
-                    Chunk::Pause(_) => unreachable!(),
-                })
-                .collect();
+        let chunks: Vec<_> = smart_split(&format!("{x97}, bbbb, {y97}."), "z", Options::default(), 98, silent)
+            .map(|c| match c {
+                Chunk::Speech(p) => p.text,
+                Chunk::Pause(_) => unreachable!(),
+            })
+            .collect();
         assert_eq!(chunks, [format!("{x97},"), format!("bbbb, {y97}.")]);
         // With a limit below the minimum, every chunk is over it.
         assert!(cut("aa, bb, cc, dd, ee, ff, gg, hh, ii, jj, kk, ll.", 10).iter().all(|c| c.0.len() >= 25));
@@ -549,15 +541,14 @@ mod tests {
     #[test]
     fn a_g2p_error_stands_in_for_its_sentence() {
         let g2p = |t: &str| if t.contains('!') { Err(t.to_owned()) } else { Ok("x".repeat(t.len())) };
-        let chunks: Vec<_> =
-            try_smart_split("aaaa, bb!, cccc. Next.", "z", &Options::default(), &Limits::default(), 12, g2p)
-                .map(|c| {
-                    c.map(|c| match c {
-                        Chunk::Speech(p) => p.text,
-                        Chunk::Pause(s) => format!("<{s}>"),
-                    })
+        let chunks: Vec<_> = try_smart_split("aaaa, bb!, cccc. Next.", "z", Options::default(), 12, g2p)
+            .map(|c| {
+                c.map(|c| match c {
+                    Chunk::Speech(p) => p.text,
+                    Chunk::Pause(s) => format!("<{s}>"),
                 })
-                .collect();
+            })
+            .collect();
         assert_eq!(chunks, [Err("aaaa, bb!, cccc.".to_owned()), Ok("Next.".to_owned())]);
     }
 }

@@ -182,7 +182,7 @@ mod tests {
         let data = std::fs::read_to_string(path).unwrap();
         let mut differ = Vec::new();
         for line in data.lines() {
-            let (s, l, u, alpha, space, _digit, n): (String, String, String, bool, bool, Option<u8>, String) =
+            let (s, l, u, alpha, space, n): (String, String, String, bool, bool, String) =
                 serde_json::from_str(line).unwrap();
             let c = s.chars().next().unwrap();
             if lower(&s) != l

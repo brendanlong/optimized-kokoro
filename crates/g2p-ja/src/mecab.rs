@@ -68,7 +68,7 @@ fn decode(text: &[u8], begin: usize, end: usize) -> (u32, usize) {
 struct Lattice<'d, 't, 'o> {
     dict: &'d Dictionary,
     /// Sees every connection cost looked up, as `(left node's right id, right node's left id)`.
-    observe: Option<std::cell::RefCell<&'o mut dyn FnMut(u16, u16)>>,
+    observe: Option<&'o mut dyn FnMut(u16, u16)>,
     text: &'t [u8],
     nodes: Vec<Node>,
     end_heads: Vec<u32>,
@@ -229,14 +229,14 @@ impl Lattice<'_, '_, '_> {
         Ok(())
     }
 
-    fn best_left(&self, pos: usize, left: u16, wcost: i64) -> Option<(u32, i64)> {
+    fn best_left(&mut self, pos: usize, left: u16, wcost: i64) -> Option<(u32, i64)> {
         let mut best_cost: i64 = 2_147_483_647;
         let mut best = None;
         let mut l = self.end_heads[pos];
         while l != NONE {
             let lnode = &self.nodes[l as usize];
-            if let Some(observe) = &self.observe {
-                (observe.borrow_mut())(lnode.right, left);
+            if let Some(observe) = &mut self.observe {
+                observe(lnode.right, left);
             }
             let cost = lnode.cost + i64::from(self.dict.connection(lnode.right, left)) + wcost;
             if cost < best_cost {
@@ -277,7 +277,6 @@ pub fn analyze_observed<'a>(
         prev: NONE,
         enext: NONE,
     };
-    let observe = observe.map(std::cell::RefCell::new);
     let mut lattice =
         Lattice { dict, observe, text: bytes, nodes: vec![bos], end_heads: vec![NONE; len + 1], made: Vec::new() };
     lattice.end_heads[0] = 0;

@@ -6,7 +6,7 @@
 //! `reference/pipeline_bench.py` times the reference the same way. `KOKORO_BENCH_LANG=z` (or `b`)
 //! times another pipeline, and takes that language's records.
 
-use kokoro_pipeline::{Lang, NormalizationOptions, Pipeline};
+use kokoro_pipeline::{Lang, Pipeline};
 use std::io::Read;
 use std::time::Instant;
 
@@ -16,8 +16,7 @@ fn main() {
     let code = std::env::var("KOKORO_BENCH_LANG").unwrap_or_else(|_| "a".into());
     let lang = Lang::from_code(&code).expect("a pipeline language");
     let pipeline = Pipeline::new(lang).unwrap();
-    let options = NormalizationOptions::default();
-    pipeline.chunks("Warm up the lexicon and espeak data, Mr. Qzxv. 银行行长。", &options).for_each(drop);
+    pipeline.chunks("Warm up the lexicon and espeak data, Mr. Qzxv. 银行行长。").for_each(drop);
     eprintln!("load {:.2?}", start.elapsed());
     let texts: Vec<String> = match args.first().map(String::as_str) {
         Some("-") => {
@@ -40,7 +39,7 @@ fn main() {
     for _ in 0..repeat {
         for text in &texts {
             chars += text.chars().count();
-            chunks += pipeline.chunks(text, &options).filter(|c| c.as_ref().is_ok_and(|c| c.pause.is_none())).count();
+            chunks += pipeline.chunks(text).filter(|c| c.as_ref().is_ok_and(|c| c.pause.is_none())).count();
         }
     }
     let elapsed = start.elapsed();
