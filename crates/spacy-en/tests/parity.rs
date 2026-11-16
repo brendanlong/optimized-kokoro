@@ -4,6 +4,7 @@
 //!   over the downloaded corpus),
 //! - the `spacy` field of every English call in the reference pipeline dumps.
 
+use kokoro_g2p_en::Preprocessed;
 use kokoro_spacy_en::{Nlp, TAGS, Token};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
@@ -34,34 +35,6 @@ fn read_cases(path: &Path) -> Vec<Case> {
         .collect()
 }
 
-/// misaki's `G2P.preprocess`: strips leading whitespace and replaces `[text](...)` links with `text`.
-fn misaki_preprocess(text: &str) -> String {
-    let text = text.trim_start();
-    let mut out = String::with_capacity(text.len());
-    let mut rest = text;
-    while let Some(open) = rest.find('[') {
-        let after = &rest[open + 1..];
-        let link = after.find(']').filter(|&close| close > 0).and_then(|close| {
-            let target = after[close + 1..].strip_prefix('(')?;
-            let end = target.find(')')?;
-            Some((&after[..close], close + 1 + 1 + end + 1))
-        });
-        match link {
-            Some((label, len)) => {
-                out.push_str(&rest[..open]);
-                out.push_str(label);
-                rest = &after[len..];
-            }
-            None => {
-                out.push_str(&rest[..open + 1]);
-                rest = after;
-            }
-        }
-    }
-    out.push_str(rest);
-    out
-}
-
 /// spaCy's inputs and outputs from the reference dumps: each English call's segments without a
 /// language, as `KPipeline.en_g2p_tokens` passes them to misaki.
 fn dump_cases() -> (Vec<Case>, usize) {
@@ -73,9 +46,8 @@ fn dump_cases() -> (Vec<Case>, usize) {
                 .segments
                 .iter()
                 .filter(|(_, lang)| lang.is_none())
-                .map(|(s, _)| s.trim_start())
+                .map(|(s, _)| Preprocessed::new(s).text)
                 .filter(|s| !s.is_empty())
-                .map(misaki_preprocess)
                 .collect();
             if inputs.len() != call.spacy.len() {
                 skipped += 1;
@@ -183,11 +155,6 @@ fn parity_with_spacy() {
         stats.texts_exact, stats.texts, stats.tokenization_diffs, stats.tag_diffs, stats.tags_compared
     );
     assert!(failures.is_empty(), "{} mismatches", failures.len());
-}
-
-#[test]
-fn preprocess_replaces_links() {
-    assert_eq!(misaki_preprocess("  [Kokoro](/kˈOkəɹO/) is [a] (b) [c](d"), "Kokoro is [a] (b) [c](d");
 }
 
 #[derive(Deserialize)]

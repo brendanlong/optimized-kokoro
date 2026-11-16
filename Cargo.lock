@@ -318,6 +318,7 @@ dependencies = [
 name = "kokoro-spacy-en"
 version = "0.1.0"
 dependencies = [
+ "kokoro-g2p-en",
  "kokoro-reference",
  "regex",
  "serde",
