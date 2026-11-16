@@ -174,10 +174,10 @@ Then, if nothing else uses them, remove `runsc-kokoro-uds-create`, `runsc-kokoro
 
 ## Layout
 
-`/srv/optimized-kokoro`, all root-owned (see the top of `lib.sh`):
+`/srv/optimized-kokoro`, all root-owned:
 - `settings.env`: the settings above. Any other line, apart from comments, is an error.
 - `models/` and `unidic/SHA256.dic`: world-readable data. The server memory-maps the dictionary, so a new one (a new checksum in `fetch_unidic.sh`) is a new file next to the old one. Each release's `.env` names its own (`KOKORO_UNIDIC_FILE`), so neither the running server nor a rollback sees it change. Dictionaries that no kept release names are deleted.
-- `secrets/`: `server.toml` (listen address, socket path and API keys), `demo.key` and, with the tunnel, `cloudflared.token`.
+- `secrets/` (0700): `keys` (the named client keys, root-only, see API keys), `server.toml` made from them (listen address, socket path and API keys), `demo.key` and, with the tunnel, `cloudflared.token` (put there by the admin).
 - `resolv.conf`: for cloudflared, written when the tunnel is on.
 - `releases/REL/`: `compose.yaml` (a copy of `deploy/compose.yaml`), `.env` (`KOKORO_ROOT`, `KOKORO_RELEASE`, `KOKORO_UNIDIC_FILE`, `COMPOSE_PROJECT_NAME` and the settings) and `cache-seed/`. Images are `optimized-kokoro-{worker,server,demo}:REL`. The release's Compose project is `optimized-kokoro-rel` (REL in lower case), with the volume `optimized-kokoro-rel_sock` and the network `optimized-kokoro-rel_kokoro`. A plain `docker compose -f releases/REL/compose.yaml` finds it in the `.env`.
 - `current`: a symlink to the running release.

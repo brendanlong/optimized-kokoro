@@ -1,24 +1,6 @@
 # shellcheck shell=bash
-# Shared by install.sh and update.sh (sourced, not run). Runs as root.
-#
-# Layout of $root (/srv/optimized-kokoro, everything root-owned):
-#   settings.env            KOKORO_GPU, KOKORO_LISTEN, KOKORO_DEMO_LISTEN, KOKORO_MAX_BATCH,
-#                           KOKORO_MAX_CHUNK_SECONDS, KOKORO_CLOUDFLARED
-#   models/                 what kokoro_worker.convert wrote (0644)
-#   unidic/SHA256.dic       UniDic for Japanese, named by its checksum (fetch_unidic.sh's OUT_SHA256);
-#                           each release's .env names the one it uses, so a new dictionary never
-#                           replaces the one a running server maps
-#   secrets/                0700; keys (named client keys, root 0600, see keys.sh), demo.key,
-#                           server.toml made from them, and, with the tunnel,
-#                           cloudflared.token (put there by the admin), root:65534 0640
-#   resolv.conf             for cloudflared (Docker's DNS doesn't work under runsc)
-#   releases/REL/           compose.yaml, .env and the compile-cache seed made with REL's worker image
-#   current -> releases/REL the release that runs; swapped by rename
-#   .lock                   held by install.sh, update.sh and keys.sh while they run
-# Images are tagged optimized-kokoro-{worker,server,demo}:REL. Each release is its own Compose
-# project, optimized-kokoro-rel (REL in lower case, COMPOSE_PROJECT_NAME in its .env), with its own
-# socket volume and network, so update.sh can start a new release's worker next to the running
-# release.
+# Shared by install.sh, update.sh and keys.sh (sourced, not run). Runs as root. The layout of
+# $root is in deploy/README.md (Layout).
 
 # Compose gives the environment priority over a release's .env, so nothing inherited (sudo -E, say)
 # may set what the scripts decide. The only inputs are KOKORO_BUILD_USER and SUDO_USER (and DESTDIR,
