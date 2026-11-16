@@ -10,7 +10,6 @@ podman build -t localhost/kokoro-worker -f Containerfile .
 uv run python -m kokoro_worker.client /run/user/$UID/kokoro/worker.sock \
     --config models/config.json --phonemes "həlˈO wˈɜɹld." --out hello.wav
 uv run pytest                                             # protocol and connection tests, no GPU
-./run.sh probe /tmp/probe models/                         # what the sandbox can reach (tools/sandbox_probe.py)
 ```
 
 Startup compiles the model (torch.compile, Triton) into a tmpfs; the worker listens only once it's warm, so the front gets its Hello at once. In gVisor that takes 4-6 minutes at `--max-batch 1` and about 10 at `--max-batch 8`, including compiling and autotuning the Triton kernels. To restart faster, seed the caches: `./run.sh export-cache DIR models/ [same flags]` warms up, writes the caches to DIR and exits without ever listening; then `KOKORO_CACHE_SEED=DIR ./run.sh serve ...` mounts them read-only and copies them in (about 1 minute at batch 1). The cache holds pickles and shared objects the worker loads, which is why only a run that never accepts a connection may write it. A seed is only valid for the same image, GPU and driver.
@@ -57,7 +56,7 @@ The peak came from the corpus's packed rows both times; the longest requests run
 - `kokoro_worker/kernels.py`: the convolutions and STFT, without per-shape plans (see [Kernels](#kernels)).
 - `kokoro_worker/convert.py`, `kokoro_worker/client.py`: one-time converter and a test client.
 - `bench/`: equivalence checks, load generator, listening pairs, and the gpuc jobs that ran them; `e2e.sh` runs the Rust server against the sandboxed worker.
-- `tools/`: `hostile.py`, a hostile front (malformed, extreme and stalled frames, slot misuse, 300 mutations), and `sandbox_probe.py`, both from the PR #11 review; `fuzz_front.py`, coverage-guided fuzzing of the frame decoder and slot table with atheris (`uv run --with atheris python tools/fuzz_front.py CORPUS -max_total_time=600`).
+- `tools/`: `hostile.py`, a hostile front (malformed, extreme and stalled frames, slot misuse, 300 mutations), from the PR #11 review; `fuzz_front.py`, coverage-guided fuzzing of the frame decoder and slot table with atheris (`uv run --with atheris python tools/fuzz_front.py CORPUS -max_total_time=600`).
 
 
 ## Batching

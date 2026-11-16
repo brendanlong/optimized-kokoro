@@ -3,7 +3,6 @@
 #
 #   worker/run.sh serve SOCKET_DIR MODELS_DIR [worker flags, e.g. --max-batch 8]
 #   worker/run.sh export-cache CACHE_DIR MODELS_DIR [worker flags]
-#   worker/run.sh probe SOCKET_DIR MODELS_DIR     # tools/sandbox_probe.py with the serve flags
 #
 # serve: SOCKET_DIR gets worker.sock (mode 0660, owned by the calling user). MODELS_DIR is what
 #   `python -m kokoro_worker.convert` wrote. With KOKORO_CACHE_SEED=DIR, a compile cache made by
@@ -43,15 +42,7 @@ if [ "$gpu" = all ]; then
 fi
 
 mounts=(-v "$models:/models:ro")
-entry=()
 case $mode in
-probe)
-    mkdir -p "$dir"
-    chmod 0700 "$dir"
-    mounts+=(-v "$dir:/run/kokoro:rw" -v "$(cd "$(dirname "$0")" && pwd)/tools:/probe:ro")
-    entry=(--entrypoint python)
-    set -- /probe/sandbox_probe.py
-    ;;
 serve)
     mkdir -p "$dir"
     chmod 0700 "$dir"
@@ -106,5 +97,4 @@ exec "${limits[@]}" podman run --rm --name "$name" \
     --device "nvidia.com/gpu=$gpu" \
     -e NVIDIA_VISIBLE_DEVICES=void \
     "${mounts[@]}" \
-    "${entry[@]}" \
     "$image" "$@"

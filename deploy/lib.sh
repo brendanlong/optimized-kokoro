@@ -211,17 +211,6 @@ new_project() {
     echo "optimized-kokoro-${1,,}"
 }
 
-# Refuses to go on while a kept release is from before per-release Compose projects (2026-11-04),
-# which this deploy/ no longer knows how to stop or remove.
-check_releases() {
-    local env
-    for env in "$root"/releases/*/.env; do
-        [ -f "$env" ] || continue
-        grep -q '^COMPOSE_PROJECT_NAME=' "$env" ||
-            die "$env has no COMPOSE_PROJECT_NAME: that release is from before per-release Compose projects. Run update.sh from a checkout between commits a1d0768 and b2b7bca until no kept release is (twice if the running one is), then this one."
-    done
-}
-
 # docker compose for release $1. The project is in its .env too, so a plain
 # docker compose -f .../compose.yaml finds it as well; -p only makes it explicit.
 compose_rel() {
@@ -280,22 +269,19 @@ kokoro_runtimes='{
     "runsc-kokoro-no-uds": ["--directfs=false"]
 }'
 
-# Adds $kokoro_runtimes to daemon.json and removes runsc-kokoro (the single runtime, with
-# --host-uds=all, of releases before the split) once no kept release names it, then reloads Docker,
-# which picks up runtimes without restarting any container. The backup is the daemon.json from
+# Adds $kokoro_runtimes to daemon.json, then reloads Docker, which picks up runtimes without
+# restarting any container. The backup is the daemon.json from
 # before the first change.
 ensure_runtimes() {
-    local runsc clash keep_old=false
+    local runsc clash
     runsc=$(command -v runsc)
     [ -f "$daemon_json" ] || echo '{}' > "$daemon_json"
     # Any runsc path will do, as long as the flags match.
     clash=$(jq -r --argjson want "$kokoro_runtimes" \
         '.runtimes // {} | to_entries[] | select($want[.key] and .value.runtimeArgs != $want[.key]) | .key' "$daemon_json")
     [ -z "$clash" ] || die "$daemon_json already has different runtimes named ${clash//$'\n'/ }; their runtimeArgs must be: $(jq -c . <<< "$kokoro_runtimes")"
-    ! grep -qsx '    runtime: runsc-kokoro' "$root"/releases/*/compose.yaml || keep_old=true
-    jq --arg path "$runsc" --argjson want "$kokoro_runtimes" --argjson keep_old "$keep_old" '
-        .runtimes = ($want | map_values({path: $path, runtimeArgs: .}))
-            + (.runtimes // {} | if $keep_old then . else del(.["runsc-kokoro"]) end)' \
+    jq --arg path "$runsc" --argjson want "$kokoro_runtimes" '
+        .runtimes = ($want | map_values({path: $path, runtimeArgs: .})) + (.runtimes // {})' \
         "$daemon_json" > "$daemon_json.new"
     if jq -e --slurpfile old "$daemon_json" '. == $old[0]' "$daemon_json.new" > /dev/null; then
         rm "$daemon_json.new"
@@ -522,7 +508,6 @@ ensure_models() {
 ensure_secrets() {
     local from=${1:-} dir=$root/secrets rt line k keys=() demo
     if [ -f "$dir/server.toml" ] && [ -f "$dir/demo.key" ]; then
-        ensure_keys_file
         [ -z "$from" ] || echo "keeping the keys already in $dir (not importing $from)"
         return
     fi
@@ -571,32 +556,6 @@ ensure_secrets() {
     mv "$dir/demo.key.new" "$dir/demo.key"
     render_server_toml
     mv "$dir/server.toml.new" "$dir/server.toml"
-}
-
-# Makes secrets/keys for an install from before it existed: each plain key in server.toml becomes
-# imported-N (the demo's key is the table entry, and stays in demo.key).
-ensure_keys_file() {
-    local dir=$root/secrets i=0 k other
-    if [ -f "$dir/keys" ]; then
-        [ -s "$dir/keys" ] || die "$dir/keys is empty"
-        return 0
-    fi
-    # Only what install.sh ever wrote, which render_server_toml makes again; anything else (a hand
-    # edit) would be lost.
-    other=$(grep -vE '^(#.*|listen = "0\.0\.0\.0:8880"|worker_socket = "/run/kokoro/worker\.sock"|api_keys = \[|    "[^"]*",|    # .*|    \{ key = "[^"]*", max_streams = 4(, max_priority = 64)? \},|\])$' "$dir/server.toml" || true)
-    [ -z "$other" ] || die "$dir/server.toml has lines install.sh didn't write, which keys.sh would drop:
-$other
-Move them out (or into secrets/keys by hand: NAME<tab>KEY<tab>MAX_STREAMS<tab>MAX_PRIORITY, each a number or -) first."
-    (
-        umask 077
-        while IFS= read -r k; do
-            i=$((i + 1))
-            printf 'imported-%s\t%s\t-\t-\n' "$i" "$k"
-        done < <(sed -n 's/^    "\([^"]*\)",$/\1/p' "$dir/server.toml") > "$dir/keys.new"
-    )
-    [ -s "$dir/keys.new" ] || die "found no client keys in $dir/server.toml"
-    mv "$dir/keys.new" "$dir/keys"
-    echo "named the existing client keys imported-1.. in $dir/keys (deploy/keys.sh rename renames them)"
 }
 
 # Writes secrets/server.toml.new from a keys file ($1, default secrets/keys) and secrets/demo.key,
