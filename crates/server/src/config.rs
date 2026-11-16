@@ -89,8 +89,7 @@ pub struct Config {
     pub max_input_chars: usize,
     /// Speech requests served at once; more get 503, unless a more urgent request can displace a
     /// queued one. With `lookahead`, this bounds the audio the server can hold: see
-    /// [`Config::audio_bound`]. The default, 48 (16 until 2026-11-04, Brendan's decision on PR
-    /// #38), leans on latency-based shedding to keep first audio fast, and keeps the worst case
+    /// [`Config::audio_bound`]. The default, 48 (Brendan's decision on PR #38), leans on latency-based shedding to keep first audio fast, and keeps the worst case
     /// inside the server container's 3 GiB with room to spare.
     pub max_concurrent_requests: usize,
     /// Speech requests one API key may have in progress, unless the key sets its own
@@ -159,7 +158,7 @@ pub struct Config {
     pub worker_slots: Option<u16>,
     /// The largest per-chunk audio cap (samples, at any speed) a worker may announce in its hello.
     /// It bounds the audio the server holds (see [`Config::audio_bound`]); a worker announcing
-    /// more is refused. Default 60 s, the worker's own default since 2026-11-04 (it was 120 s).
+    /// more is refused. Default 60 s, the worker's own default.
     pub worker_max_chunk_samples: u32,
     /// On shutdown, how long open connections get to finish before they're dropped.
     pub shutdown_grace_ms: u64,
@@ -317,8 +316,7 @@ impl Config {
     /// Result arrives, and its audio then counts against its request.
     ///
     /// Defaults (48 requests, lookahead 3, the 60 s ceiling): a chunk is at most 2.88 MB, so
-    /// 48 × (5 × 2.88 MB + 0.42 MB) + 2.88 MB = 714,134,016 bytes. (Until protocol v4 the cap
-    /// scaled with 1/speed, and the worst case, at speed 0.25, was 2.80 GB.) The server's other
+    /// 48 × (5 × 2.88 MB + 0.42 MB) + 2.88 MB = 714,134,016 bytes. The server's other
     /// memory is about 160 MB (measured: the nine text pipelines loaded, 32 requests in flight), so
     /// the worst case is about 875 MB, well inside the container's 3 GiB (`deploy/compose.yaml`).
     /// Real sentences are around 5 s (240 KB), so typical use holds a few MB.

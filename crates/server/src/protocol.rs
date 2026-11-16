@@ -1,28 +1,8 @@
 //! Worker protocol v4 frames (`docs/worker-protocol.md`): length-prefixed, little-endian, no floats.
 //!
-//! Synthesize is `u8 type, u16 slot, u8 priority, u8 waiting, u16 speed (hundredths),
-//! u16 voice_index, u16 n_ids, u16 style_len, n_ids × u8 id`. The style vector is row `style_len - 1` of the voice
-//! pack (`1..=max_phonemes`): `n_ids` for a normal chunk, and the whole clause's length (capped at
-//! 510) for each piece of a stitched one.
-//!
-//! What the front accepts from the worker, beyond the frame layouts:
-//! - Hello comes first and only once, with version 4, `2 <= vocab_size <= 256`,
-//!   `max_phonemes == 510`, `max_batch >= 1`, `slots >= 1`, `sample_rate == 24000`,
-//!   `max_chunk_samples >= 1` and at most the configured ceiling (`worker_max_chunk_samples`), and
-//!   1 or more distinct voice names of 1 to 64 bytes of `[a-z0-9_]`.
-//! - Every other frame names a busy slot, and ends that slot's request.
-//! - Result: exactly `n_ids + 2` durations, each from 1 to `ceil(50 / speed)` (Kokoro's `max_dur`
-//!   is 50 sigmoid bins, divided by speed), then exactly `600 × Σ durations` samples (Kokoro v1.0
-//!   renders 600 samples per duration unit; measured exact on the real model), no more than the
-//!   chunk cap, `max_chunk_samples`, at any speed.
-//! - Failed: code 1 (cancelled) only after the front sent Cancel for that slot, 2 (internal
-//!   error), or 3 (too long: the predicted audio exceeds the chunk cap).
-//! - Each length prefix is checked against its frame type's bound before anything is allocated:
-//!   Hello at most 25 + 65,535 × 65 bytes, Failed exactly 4, and Result at most what its slot's
-//!   request allows, then exactly what its durations imply, so the reader asks the caller what
-//!   the slot holds.
-//!
-//! Anything else closes the connection, failing every request in flight on it.
+//! The front checks every rule the spec sets for worker frames, and a violation closes the
+//! connection, failing every request in flight on it. A Result's length depends on its slot's
+//! request, so the reader asks the caller what the slot holds.
 
 use std::fmt;
 use std::io;

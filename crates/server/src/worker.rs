@@ -463,7 +463,7 @@ impl Worker {
         &self.gauge
     }
 
-    /// Waits until a connection is up, for tests and startup logging.
+    /// Waits until a connection is up.
     pub async fn connected(&self) -> Arc<Connection> {
         let mut rx = self.current.clone();
         let connection = rx.wait_for(|c| c.as_ref().is_some_and(|c| c.is_open())).await.expect("worker task runs");
