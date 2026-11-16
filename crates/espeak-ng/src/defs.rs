@@ -1,7 +1,5 @@
 //! Constants and structures from translate.h, phoneme.h and synthesize.h.
 
-#![allow(dead_code)]
-
 use crate::data::{Dict, PhonemeTab};
 use std::sync::Arc;
 
@@ -142,7 +140,6 @@ pub const RULE_IFVERB: u8 = 26;
 pub const RULE_DOLLAR: u8 = 28;
 pub const RULE_NOVOWELS: u8 = 29;
 pub const RULE_SPELLING: u8 = 31;
-pub const RULE_LAST_RULE: u8 = 31;
 pub const RULE_SPACE: u8 = 32;
 pub const RULE_DEC_SCORE: u8 = 60;
 
@@ -159,14 +156,11 @@ pub const LETTERGP_G: i32 = 5;
 pub const LETTERGP_Y: i32 = 6;
 pub const LETTERGP_VOWEL2: i32 = 7;
 
-pub const CLAUSE_PAUSE: i32 = 0x00000FFF;
 pub const CLAUSE_INTONATION_TYPE: i32 = 0x00007000;
 pub const CLAUSE_OPTIONAL_SPACE_AFTER: i32 = 0x00008000;
-pub const CLAUSE_TYPE: i32 = 0x000F0000;
 pub const CLAUSE_PUNCTUATION_IN_WORD: i32 = 0x00100000;
 pub const CLAUSE_SPEAK_PUNCTUATION_NAME: i32 = 0x00200000;
 pub const CLAUSE_DOT_AFTER_LAST_WORD: i32 = 0x00400000;
-pub const CLAUSE_PAUSE_LONG: i32 = 0x00800000;
 
 pub const CLAUSE_INTONATION_FULL_STOP: i32 = 0x00000000;
 pub const CLAUSE_INTONATION_COMMA: i32 = 0x00001000;
@@ -184,17 +178,12 @@ pub const CLAUSE_NONE: i32 = CLAUSE_INTONATION_NONE | CLAUSE_TYPE_NONE;
 pub const CLAUSE_PARAGRAPH: i32 = 70 | CLAUSE_INTONATION_FULL_STOP | CLAUSE_TYPE_SENTENCE;
 pub const CLAUSE_EOF: i32 = 40 | CLAUSE_INTONATION_FULL_STOP | CLAUSE_TYPE_SENTENCE | CLAUSE_TYPE_EOF;
 pub const CLAUSE_VOICE: i32 = CLAUSE_INTONATION_NONE | CLAUSE_TYPE_VOICE_CHANGE;
-pub const CLAUSE_PERIOD: i32 = 40 | CLAUSE_INTONATION_FULL_STOP | CLAUSE_TYPE_SENTENCE;
-pub const CLAUSE_COMMA: i32 = 20 | CLAUSE_INTONATION_COMMA | CLAUSE_TYPE_CLAUSE;
 pub const CLAUSE_SHORTCOMMA: i32 = 4 | CLAUSE_INTONATION_COMMA | CLAUSE_TYPE_CLAUSE;
 pub const CLAUSE_SHORTFALL: i32 = 4 | CLAUSE_INTONATION_FULL_STOP | CLAUSE_TYPE_CLAUSE;
 pub const CLAUSE_QUESTION: i32 = 40 | CLAUSE_INTONATION_QUESTION | CLAUSE_TYPE_SENTENCE;
 pub const CLAUSE_EXCLAMATION: i32 = 45 | CLAUSE_INTONATION_EXCLAMATION | CLAUSE_TYPE_SENTENCE;
-pub const CLAUSE_COLON: i32 = 30 | CLAUSE_INTONATION_FULL_STOP | CLAUSE_TYPE_CLAUSE;
 pub const CLAUSE_SEMICOLON: i32 = 30 | CLAUSE_INTONATION_COMMA | CLAUSE_TYPE_CLAUSE;
 
-pub const SAYAS_CHARS: i32 = 0x12;
-pub const SAYAS_GLYPHS: i32 = 0x13;
 pub const SAYAS_SINGLE_CHARS: i32 = 0x14;
 pub const SAYAS_KEY: i32 = 0x24;
 pub const SAYAS_DIGITS: i32 = 0x40;
@@ -330,7 +319,6 @@ pub const BREAK_LAKH_UR: u32 = 0x000052a8;
 pub const BREAK_INDIVIDUAL: u32 = 0x00000018;
 
 pub const OPTION_EMPHASIZE_ALLCAPS: i32 = 0x100;
-pub const OPTION_EMPHASIZE_PENULTIMATE: i32 = 0x200;
 
 // phoneme.h
 pub const PH_PAUSE: u8 = 0;
@@ -342,26 +330,13 @@ pub const PH_VSTOP: u8 = 5;
 pub const PH_FRICATIVE: u8 = 6;
 pub const PH_VFRICATIVE: u8 = 7;
 pub const PH_NASAL: u8 = 8;
-pub const PH_VIRTUAL: u8 = 9;
-pub const PH_DELETED: u8 = 14;
 pub const PH_INVALID: u8 = 15;
 
 pub const PH_UNSTRESSED: u32 = 1 << 1;
-pub const PH_VOICELESS: u32 = 1 << 3;
 pub const PH_VOICED: u32 = 1 << 4;
-pub const PH_SIBILANT: u32 = 1 << 5;
-pub const PH_NOLINK: u32 = 1 << 6;
-pub const PH_TRILL: u32 = 1 << 7;
-pub const PH_PALATAL: u32 = 1 << 9;
-pub const PH_BRKAFTER: u32 = 1 << 14;
 pub const PH_NONSYLLABIC: u32 = 1 << 20;
 pub const PH_LONG: u32 = 1 << 21;
-pub const PH_LENGTHENSTOP: u32 = 1 << 22;
-pub const PH_RHOTIC: u32 = 1 << 23;
-pub const PH_NOPAUSE: u32 = 1 << 24;
-pub const PH_PREVOICE: u32 = 1 << 25;
 
-pub const PHON_CONTROL: u8 = 1;
 pub const PHON_STRESS_U: u8 = 2;
 pub const PHON_STRESS_D: u8 = 3;
 pub const PHON_STRESS_2: u8 = 4;
@@ -374,17 +349,13 @@ pub const PHON_PAUSE_SHORT: u8 = 10;
 pub const PHON_PAUSE_NOLINK: u8 = 11;
 pub const PHON_LENGTHEN: u8 = 12;
 pub const PHON_SCHWA: u8 = 13;
-pub const PHON_SCHWA_SHORT: u8 = 14;
 pub const PHON_END_WORD: u8 = 15;
-pub const PHON_DEFAULTTONE: u8 = 17;
-pub const PHON_CAPITAL: u8 = 18;
 pub const PHON_GLOTTALSTOP: u8 = 19;
 pub const PHON_SYLLABIC: u8 = 20;
 pub const PHON_SWITCH: u8 = 21;
 pub const PHON_X1: u8 = 22;
 pub const PHON_PAUSE_VSHORT: u8 = 23;
 pub const PHON_PAUSE_LONG: u8 = 24;
-pub const PHON_T_REDUCED: u8 = 25;
 pub const PHON_STRESS_TONIC: u8 = 26;
 pub const PHON_PAUSE_CLAUSE: u8 = 27;
 pub const PHON_VOWELTYPES: u8 = 28;
@@ -395,7 +366,6 @@ pub const N_REPLACE_PHONEMES: usize = 60;
 // synthesize.h
 pub const N_PHONEME_LIST: usize = 1000;
 
-pub const SFLAG_SEQCONTINUE: u16 = 0x01;
 pub const SFLAG_EMBEDDED: u16 = 0x02;
 pub const SFLAG_SYLLABLE: u16 = 0x04;
 pub const SFLAG_LENGTHEN: u16 = 0x08;
@@ -404,17 +374,7 @@ pub const SFLAG_SWITCHED_LANG: u16 = 0x20;
 pub const SFLAG_PROMOTE_STRESS: u16 = 0x40;
 pub const SFLAG_NEXT_PAUSE: u16 = 0x2000;
 
-pub const EMBED_P: i32 = 1;
-pub const EMBED_S: i32 = 2;
-pub const EMBED_A: i32 = 3;
-pub const EMBED_R: i32 = 4;
-pub const EMBED_H: i32 = 5;
-pub const EMBED_T: i32 = 6;
-pub const EMBED_I: i32 = 7;
-pub const EMBED_S2: i32 = 8;
 pub const EMBED_Y: i32 = 9;
-pub const EMBED_M: i32 = 10;
-pub const EMBED_U: i32 = 11;
 pub const EMBED_B: i32 = 12;
 pub const EMBED_F: i32 = 13;
 pub const N_EMBEDDED_VALUES: usize = 15;
@@ -428,8 +388,6 @@ pub const PHLIST_START_OF_SENTENCE: u8 = 4;
 pub const PHLIST_START_OF_CLAUSE: u8 = 8;
 
 pub const N_PHONEME_DATA_PARAM: usize = 16;
-pub const PD_FMT: usize = 0;
-pub const PD_WAV: usize = 1;
 pub const PD_VWLSTART: usize = 2;
 pub const PD_VWLEND: usize = 3;
 pub const PD_ADDWAV: usize = 4;
@@ -443,12 +401,8 @@ pub const I_REPLACE_NEXT_PHONEME: usize = 0x02;
 pub const I_INSERT_PHONEME: usize = 0x03;
 pub const I_APPEND_PHONEME: usize = 0x04;
 pub const I_APPEND_IFNEXTVOWEL: usize = 0x05;
-pub const I_VOICING_SWITCH: usize = 0x06;
-pub const I_PAUSE_BEFORE: usize = 0x07;
-pub const I_PAUSE_AFTER: usize = 0x08;
 pub const I_LENGTH_MOD: usize = 0x09;
 pub const I_SET_LENGTH: usize = 0x0a;
-pub const I_LONG_LENGTH: usize = 0x0b;
 pub const I_ADD_LENGTH: usize = 0x0c;
 pub const I_IPA_NAME: usize = 0x0d;
 
@@ -644,20 +598,6 @@ pub struct PhonemeList {
     pub typ: u8,
     pub newword: u8,
     pub std_length: u8,
-}
-
-impl PhonemeList {
-    pub fn from2(p: &PhonemeList2) -> Self {
-        PhonemeList {
-            synthflags: p.synthflags,
-            phcode: p.phcode,
-            stresslevel: p.stresslevel,
-            sourceix: p.sourceix,
-            wordstress: p.wordstress,
-            tone_ph: p.tone_ph,
-            ..Default::default()
-        }
-    }
 }
 
 /// `PHONEME_DATA`, without the synthesis-only fields.
