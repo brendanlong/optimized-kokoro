@@ -292,14 +292,13 @@ async fn shutdown_drops_connections_after_the_grace_period() {
     let mut config = config(&socket);
     config.shutdown_grace_ms = 300;
     let _worker = AutoWorker::listen(&socket, Duration::from_millis(1));
-    let worker = kokoro_server::Worker::spawn(config.worker_settings());
+    let worker = kokoro_server::Worker::spawn(&config);
     worker.connected().await;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-    let limits = kokoro_server::serve::Limits::from(&config);
     let app = kokoro_server::http::router(config, worker, Arc::new(StubPipeline));
     let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
-    let server = tokio::spawn(kokoro_server::serve::serve(listener, app, limits, async {
+    let server = tokio::spawn(kokoro_server::serve::serve(listener, app, async {
         let _ = stopped.await;
     }));
     let _client = raw_speech(addr, "Hi. [pause:60s]").await;

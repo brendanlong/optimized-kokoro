@@ -378,9 +378,9 @@ impl Admission {
         self.tracked.state() == SHED
     }
 
-    /// The estimate that shed it (zero if it was shed for a request permit, or not shed).
-    pub fn shed_estimate(&self) -> Duration {
-        self.tracked.shed_estimate()
+    /// Why it was shed, if it was.
+    pub fn shed_reason(&self) -> Option<Shed> {
+        self.is_shed().then(|| Shed { estimate: self.tracked.shed_estimate() })
     }
 }
 

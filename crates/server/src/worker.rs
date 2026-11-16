@@ -24,13 +24,13 @@
 //! work, or one the worker lost) is cancelled and its request fails; only if the slot is still
 //! outstanding a progress timeout after that is the worker disconnected.
 
+use crate::config::Config;
 use crate::load::Work;
 use crate::protocol::{
     self, Expected, FailCode, Hello, ReadError, Speed, Synthesize, WorkerFrame, encode_cancel, encode_synthesize,
 };
 use std::collections::HashMap;
 use std::fmt;
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -131,7 +131,6 @@ struct Pending {
 }
 
 struct State {
-    open: bool,
     slots: Vec<Option<Pending>>,
     free: Vec<u16>,
     next_ticket: u64,
@@ -152,29 +151,11 @@ impl State {
     }
 }
 
-/// Limits on the worker and how long it may take.
-#[derive(Debug, Clone)]
-pub struct Settings {
-    pub socket: PathBuf,
-    pub retry_interval: Duration,
-    pub hello_timeout: Duration,
-    /// Longest the worker may go without sending a whole frame while it has work.
-    pub progress_timeout: Duration,
-    /// The most slots the front uses, whatever the worker announces.
-    pub slots: u16,
-    /// The largest `max_chunk_samples` a worker may announce; a hello above it is refused, since
-    /// the cap is what bounds the audio the server holds.
-    pub max_chunk_samples: u32,
-    /// Longest one slot may stay outstanding after its Synthesize, queueing included, before it's
-    /// cancelled; `progress_timeout` after that, the connection is reset.
-    pub slot_timeout: Duration,
-}
-
 pub struct Connection {
     hello: Hello,
     voice_index: HashMap<String, u16>,
     outgoing: mpsc::Sender<Vec<u8>>,
-    /// One permit per free slot, so submitting waits for one.
+    /// One permit per free slot, so submitting waits for one. Closed when the connection is.
     free_slots: Semaphore,
     gauge: AudioGauge,
     state: Mutex<State>,
@@ -184,10 +165,8 @@ pub struct Connection {
 impl Connection {
     /// A connection using the first `slots` of the worker's slots (at most `hello.slots`).
     pub(crate) fn new(hello: Hello, outgoing: mpsc::Sender<Vec<u8>>, slots: u16, gauge: AudioGauge) -> Self {
-        let slots = slots.min(hello.slots);
         let voice_index = hello.voices.iter().enumerate().map(|(i, v)| (v.clone(), i as u16)).collect();
         let state = State {
-            open: true,
             slots: (0..slots).map(|_| None).collect(),
             free: (0..slots).rev().collect(),
             next_ticket: 0,
@@ -214,7 +193,7 @@ impl Connection {
     }
 
     pub fn is_open(&self) -> bool {
-        self.state.lock().unwrap().open
+        !self.free_slots.is_closed()
     }
 
     pub fn gauge(&self) -> &AudioGauge {
@@ -258,7 +237,7 @@ impl Connection {
         self.free_slots.acquire().await.map_err(|_| SynthError::ConnectionLost)?.forget();
         let (tx, rx) = oneshot::channel();
         let mut state = self.state.lock().unwrap();
-        if !state.open {
+        if self.free_slots.is_closed() {
             return Err(SynthError::ConnectionLost);
         }
         let slot = state.free.pop().expect("a permit means a free slot");
@@ -294,7 +273,7 @@ impl Connection {
 
     fn cancel(&self, slot: u16, ticket: u64) {
         let mut state = self.state.lock().unwrap();
-        if !state.open {
+        if self.free_slots.is_closed() {
             return;
         }
         if let Some(pending) = state.pending(slot)
@@ -392,7 +371,6 @@ impl Connection {
     /// Fails everything in flight and tells the connection task to hang up.
     fn close(&self) {
         let mut state = self.state.lock().unwrap();
-        state.open = false;
         self.free_slots.close();
         for pending in state.slots.iter_mut().filter_map(Option::take) {
             if let Some(reply) = pending.reply {
@@ -437,9 +415,10 @@ pub struct Worker {
 }
 
 impl Worker {
-    /// Connects to the worker's socket, and again `retry_interval` after every disconnect or
-    /// failed attempt, for as long as the returned handle (or a clone) exists.
-    pub fn spawn(settings: Settings) -> Self {
+    /// Connects to the worker's socket, and again `reconnect_interval_ms` after every disconnect
+    /// or failed attempt, for as long as the returned handle (or a clone) exists.
+    pub fn spawn(config: &Config) -> Self {
+        let config = config.clone();
         let (tx, rx) = watch::channel(None);
         let gauge = AudioGauge::default();
         let task_gauge = gauge.clone();
@@ -447,9 +426,9 @@ impl Worker {
             // A worker that keeps failing would log a line per reconnect attempt.
             let mut warnings = crate::log::RateLimit::new(Duration::from_secs(60));
             loop {
-                match UnixStream::connect(&settings.socket).await {
+                match UnixStream::connect(&config.worker_socket).await {
                     Ok(stream) => {
-                        if let Err(e) = serve(stream, &tx, &settings, &task_gauge).await
+                        if let Err(e) = serve(stream, &tx, &config, &task_gauge).await
                             && let Some(suppressed) = warnings.allow()
                         {
                             match suppressed {
@@ -459,12 +438,12 @@ impl Worker {
                         }
                         tx.send_replace(None);
                     }
-                    Err(e) => crate::debug!("connecting to the worker at {}: {e}", settings.socket.display()),
+                    Err(e) => crate::debug!("connecting to the worker at {}: {e}", config.worker_socket.display()),
                 }
                 if tx.is_closed() {
                     return;
                 }
-                tokio::time::sleep(settings.retry_interval).await;
+                tokio::time::sleep(Duration::from_millis(config.reconnect_interval_ms)).await;
             }
         });
         Self { current: rx, gauge }
@@ -495,31 +474,41 @@ impl Worker {
 async fn serve(
     stream: UnixStream,
     publish: &watch::Sender<Option<Arc<Connection>>>,
-    settings: &Settings,
+    config: &Config,
     gauge: &AudioGauge,
 ) -> Result<(), ReadError> {
     let (mut reader, mut writer) = stream.into_split();
-    let hello = match tokio::time::timeout(settings.hello_timeout, protocol::read_frame(&mut reader, |_| None)).await {
+    let hello = match tokio::time::timeout(
+        Duration::from_millis(config.worker_hello_timeout_ms),
+        protocol::read_frame(&mut reader, |_| None),
+    )
+    .await
+    {
         Err(_) => return Err(ReadError::Violation("no hello in time".into())),
         Ok(frame) => match frame? {
             WorkerFrame::Hello(hello) => hello,
             _ => return Err(ReadError::Violation("first frame isn't a hello".into())),
         },
     };
-    if hello.max_chunk_samples > settings.max_chunk_samples {
+    if hello.max_chunk_samples > config.worker_max_chunk_samples {
         return Err(ReadError::Violation(format!(
             "the worker's chunk cap {} is over the configured ceiling {}",
-            hello.max_chunk_samples, settings.max_chunk_samples
+            hello.max_chunk_samples, config.worker_max_chunk_samples
         )));
     }
-    let slots = settings.slots.min(hello.slots);
+    let slots = config.worker_slots().min(hello.slots);
     crate::info!("worker connected: {} voices, max batch {}, {slots} slots", hello.voices.len(), hello.max_batch);
     let (out_tx, mut out_rx) = mpsc::channel::<Vec<u8>>(3 * usize::from(slots));
 
     let connection = Arc::new(Connection::new(hello, out_tx, slots, gauge.clone()));
     publish.send_replace(Some(connection.clone()));
 
-    let read = read_loop(&mut reader, &connection, settings.progress_timeout, settings.slot_timeout);
+    let read = read_loop(
+        &mut reader,
+        &connection,
+        Duration::from_millis(config.worker_progress_timeout_ms),
+        Duration::from_millis(config.worker_slot_timeout_ms),
+    );
     let write = async {
         while let Some(frame) = out_rx.recv().await {
             writer.write_all(&frame).await?;
