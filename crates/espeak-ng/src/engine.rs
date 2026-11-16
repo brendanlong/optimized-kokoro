@@ -29,8 +29,9 @@ pub(crate) struct ReplacePhonemes {
 #[derive(Clone)]
 pub struct Espeak {
     pub(crate) data: Arc<EspeakData>,
-    /// The state right after `set_voice_by_name`, copied back before each call. It leaves out
-    /// the large buffers, which are all default at that point and are cleared instead.
+    /// The state right after `espeak_SetVoiceByName`, copied back before each call (`None` only
+    /// in that copy). It leaves out the large buffers, which are all default at that point and
+    /// are cleared instead.
     pub(crate) after_set_voice: Option<Arc<Espeak>>,
     /// The state has been used by a call since it was copied from `after_set_voice`.
     pub(crate) used: bool,
@@ -42,7 +43,6 @@ pub struct Espeak {
 
     // voices.c
     pub(crate) voice_phoneme_tab_ix: i32,
-    pub(crate) voice_loaded: bool,
     pub(crate) replace_phonemes: Vec<ReplacePhonemes>,
 
     // translate.c
@@ -119,7 +119,7 @@ pub(crate) const N_EMBEDDED_LIST: usize = 250;
 
 impl Espeak {
     /// `espeak_Initialize`: a fresh copy of the library's state, with no voice selected.
-    pub fn new(data: Arc<EspeakData>) -> Self {
+    pub(crate) fn initialize(data: Arc<EspeakData>) -> Self {
         let dummy = Box::new(crate::tr_languages::select_translator(b""));
         Espeak {
             data,
@@ -129,7 +129,6 @@ impl Espeak {
             n_phoneme_tab: 0,
             current_phoneme_table: -1,
             voice_phoneme_tab_ix: 0,
-            voice_loaded: false,
             replace_phonemes: Vec::new(),
             translator: None,
             translator2: None,

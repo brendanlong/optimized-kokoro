@@ -2884,8 +2884,7 @@ mod tests {
         for voice in ["gmw/en-US", "roa/es", "roa/fr", "gmw/de", "roa/it", "roa/pt-BR", "inc/hi"] {
             let run = |full: bool| {
                 FULL_RESTARTS.with(|f| f.set(full));
-                let mut e = Espeak::new(data.clone());
-                e.set_voice_by_name(voice).unwrap();
+                let mut e = Espeak::new(data.clone(), voice).unwrap();
                 texts.iter().map(|t| e.text_to_phonemes(t)).collect::<Vec<_>>()
             };
             let (resumed, restarted) = (run(false), run(true));

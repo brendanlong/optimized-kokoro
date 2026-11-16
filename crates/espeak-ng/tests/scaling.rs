@@ -28,8 +28,7 @@ fn many_clauses_take_linear_time() {
         ("roa/es", "a。"),
         ("roa/fr", "1 234, "),
     ] {
-        let mut e = Espeak::new(data.clone());
-        e.set_voice_by_name(voice).unwrap();
+        let mut e = Espeak::new(data.clone(), voice).unwrap();
         let mut time = |count: usize| {
             let text = unit.repeat(count);
             best_of(2, || {

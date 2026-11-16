@@ -62,11 +62,7 @@ fn main() {
         if call.reset {
             continue;
         }
-        let e = engines.entry(call.voice.clone()).or_insert_with(|| {
-            let mut e = Espeak::new(data.clone());
-            e.set_voice_by_name(&call.voice).unwrap();
-            e
-        });
+        let e = engines.entry(call.voice.clone()).or_insert_with(|| Espeak::new(data.clone(), &call.voice).unwrap());
         let got = e.text_to_phonemes(&call.text);
         let t = tallies.entry(call.voice.clone()).or_default();
         if !call.ub.is_empty() {

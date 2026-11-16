@@ -39,11 +39,7 @@ fn replay(data: &Arc<EspeakData>, path: &Path) -> (usize, Vec<String>) {
             engines.remove(&call.voice);
             continue;
         }
-        let e = engines.entry(call.voice.clone()).or_insert_with(|| {
-            let mut e = Espeak::new(data.clone());
-            e.set_voice_by_name(&call.voice).unwrap();
-            e
-        });
+        let e = engines.entry(call.voice.clone()).or_insert_with(|| Espeak::new(data.clone(), &call.voice).unwrap());
         let got = e.text_to_phonemes(&call.text);
         if !call.ub.is_empty() {
             continue;
@@ -94,8 +90,7 @@ fn engines_share_data_across_threads() {
         .map(|voice| {
             let data = data.clone();
             std::thread::spawn(move || {
-                let mut e = Espeak::new(data);
-                e.set_voice_by_name(voice).unwrap();
+                let mut e = Espeak::new(data, voice).unwrap();
                 e.text_to_phonemes("123, abc.")
             })
         })
@@ -117,8 +112,7 @@ fn earlier_text_does_not_change_number_reading() {
     let later =
         "1247328568694660478413776674155675977384639814658857044049129367935696294763049432641823903136079361-10127";
     let run = |texts: &[&str]| {
-        let mut e = Espeak::new(data.clone());
-        e.set_voice_by_name("roa/fr").unwrap();
+        let mut e = Espeak::new(data.clone(), "roa/fr").unwrap();
         texts.iter().map(|t| e.text_to_phonemes(t)).last().unwrap()
     };
     assert_eq!(run(&[earlier, later]), run(&[later]));
@@ -131,12 +125,10 @@ fn earlier_text_does_not_change_number_reading() {
 fn earlier_text_does_not_change_later_calls() {
     let data = EspeakData::load(default_data_dir()).unwrap();
     let later = "Hello, world. 42 cats.";
-    let mut fresh = Espeak::new(data.clone());
-    fresh.set_voice_by_name("gmw/en-US").unwrap();
+    let mut fresh = Espeak::new(data.clone(), "gmw/en-US").unwrap();
     let expected = fresh.text_to_phonemes(later);
     assert_eq!(expected, ["həlˈo͡ʊ", "wˈɜːld", "fˈɔː͡ɹɾi tˈuː kˈæts"]);
-    let mut e = Espeak::new(data);
-    e.set_voice_by_name("gmw/en-US").unwrap();
+    let mut e = Espeak::new(data, "gmw/en-US").unwrap();
     for earlier in ["\\\x01B.,", "xx \x011B yy, zz.", "\x012Y abc, def.", "abc.", "[[h@l'oU", "\x01"] {
         e.text_to_phonemes(earlier);
         assert_eq!(e.text_to_phonemes(later), expected, "after {earlier:?}");
@@ -146,7 +138,5 @@ fn earlier_text_does_not_change_later_calls() {
 #[test]
 fn unknown_voice_is_an_error() {
     let data = EspeakData::load(default_data_dir()).unwrap();
-    let mut e = Espeak::new(data);
-    assert!(e.set_voice_by_name("no-such-voice").is_err());
-    assert!(e.text_to_phonemes("hello").is_empty());
+    assert!(Espeak::new(data, "no-such-voice").is_err());
 }

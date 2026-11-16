@@ -153,11 +153,7 @@ fn main() {
     for i in 0..iterations {
         let v = rng.below(voices.len() as u64) as usize;
         let text = random_text(&mut rng);
-        let engine = engines[v].get_or_insert_with(|| {
-            let mut e = Espeak::new(data.clone());
-            e.set_voice_by_name(&voices[v]).unwrap();
-            e
-        });
+        let engine = engines[v].get_or_insert_with(|| Espeak::new(data.clone(), &voices[v]).unwrap());
         let start = Instant::now();
         let r = catch_unwind(AssertUnwindSafe(|| engine.text_to_phonemes(&text)));
         let took = start.elapsed();

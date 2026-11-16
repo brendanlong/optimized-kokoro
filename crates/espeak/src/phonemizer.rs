@@ -35,9 +35,7 @@ impl Backend {
             .find(|v| v.languages.first().is_some_and(|l| l.1 == language))
             .map(|v| v.identifier.clone())
             .ok_or_else(|| Error::VoiceNotFound(language.to_string()))?;
-        let mut espeak = Espeak::new(data);
-        espeak.set_voice_by_name(&identifier)?;
-        Ok(Self { espeak })
+        Ok(Self { espeak: Espeak::new(data, &identifier)? })
     }
 
     /// `EspeakWrapper.text_to_phonemes`: the non-empty clauses espeak reads in `text`, joined by

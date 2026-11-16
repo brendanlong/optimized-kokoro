@@ -20,8 +20,7 @@ fn main() {
         .collect();
     let load = Instant::now();
     let data = EspeakData::load(&dir).unwrap();
-    let mut e = Espeak::new(data);
-    e.set_voice_by_name(voice).unwrap();
+    let mut e = Espeak::new(data, voice).unwrap();
     let setup = load.elapsed();
     let words: usize = texts.iter().map(|t| t.split_whitespace().count().max(1)).sum();
     let mut best = f64::MAX;

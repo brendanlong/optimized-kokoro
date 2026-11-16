@@ -8,8 +8,7 @@ fn main() {
     let dir = std::env::var("ESPEAK_DATA")
         .unwrap_or_else(|_| concat!(env!("CARGO_MANIFEST_DIR"), "/espeak-ng-data").to_string());
     let data = EspeakData::load(dir).unwrap();
-    let mut e = Espeak::new(data);
-    e.set_voice_by_name(&args[1]).unwrap();
+    let mut e = Espeak::new(data, &args[1]).unwrap();
     let dump = std::env::var_os("ESPEAK_DUMP").is_some();
     let text = args[2..].join(" ");
     let clauses = e.translate_text(&text, |e| {

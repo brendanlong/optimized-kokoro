@@ -247,7 +247,6 @@ impl Espeak {
             ["voices/", "lang/"].iter().map(|d| format!("{d}{lower}")).find(|r| self.data.voice_file(r).is_some());
         if let Some(rel) = rel {
             if self.load_voice(&lower, Some(&rel)) {
-                self.voice_loaded = true;
                 return Ok(());
             }
         }
@@ -256,7 +255,6 @@ impl Espeak {
             let rel =
                 ["voices/", "lang/"].iter().map(|d| format!("{d}{id}")).find(|r| self.data.voice_file(r).is_some());
             if self.load_voice(&id, rel.as_deref()) {
-                self.voice_loaded = true;
                 return Ok(());
             }
         }

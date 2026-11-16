@@ -8,8 +8,7 @@
 //! ```no_run
 //! use kokoro_espeak_ng::{Espeak, EspeakData};
 //! let data = EspeakData::load("espeak-ng-data").unwrap();
-//! let mut espeak = Espeak::new(data);
-//! espeak.set_voice_by_name("gmw/en-US").unwrap();
+//! let mut espeak = Espeak::new(data, "gmw/en-US").unwrap();
 //! let clauses = espeak.text_to_phonemes("Hello world.");
 //! ```
 
@@ -56,13 +55,13 @@ use engine::Tr;
 use std::sync::Arc;
 
 impl Espeak {
-    /// `espeak_SetVoiceByName` on a freshly initialised library: `name` is a voice file name
-    /// (e.g. `gmw/en-US`) or voice name.
-    pub fn set_voice_by_name(&mut self, name: &str) -> Result<()> {
-        *self = Espeak::new(self.data.clone());
-        self.set_voice_by_name_c(name)?;
-        debug_assert!(self.buffers_are_default());
-        let mut snapshot = self.clone();
+    /// `espeak_Initialize` then `espeak_SetVoiceByName`: `voice` is a voice file name (e.g.
+    /// `gmw/en-US`) or voice name.
+    pub fn new(data: Arc<EspeakData>, voice: &str) -> Result<Self> {
+        let mut e = Espeak::initialize(data);
+        e.set_voice_by_name_c(voice)?;
+        debug_assert!(e.buffers_are_default());
+        let mut snapshot = e.clone();
         snapshot.phoneme_list = Vec::new();
         snapshot.ph_list2 = Vec::new();
         snapshot.ph_list3 = Vec::new();
@@ -70,8 +69,8 @@ impl Espeak {
         snapshot.clause_words = Vec::new();
         snapshot.clause_charix = Vec::new();
         snapshot.source = Vec::new();
-        self.after_set_voice = Some(Arc::new(snapshot));
-        Ok(())
+        e.after_set_voice = Some(Arc::new(snapshot));
+        Ok(e)
     }
 
     /// Puts every field back to its value in `after_set_voice`. The large buffers, which are all
@@ -133,13 +132,10 @@ impl Espeak {
     pub fn translate_text(&mut self, text: &str, mut after_clause: impl FnMut(&Self)) -> Vec<String> {
         let mut out = Vec::new();
         if self.used {
-            let Some(after_set_voice) = self.after_set_voice.clone() else { return out };
+            let after_set_voice = self.after_set_voice.clone().expect("set by new");
             self.reset(after_set_voice);
         }
         self.used = true;
-        if !self.voice_loaded || self.translator.is_none() {
-            return out;
-        }
         self.decoder.decode_string(text.as_bytes());
         loop {
             self.translate_clause(Tr::Main);
