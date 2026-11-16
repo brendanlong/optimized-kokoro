@@ -28,7 +28,6 @@ fn is_lexicon_char(c: char) -> bool {
 
 /// What the lexicon reads from a token.
 pub(crate) struct LexToken<'a> {
-    /// The alias if there is one, else the text.
     pub text: &'a str,
     pub tag: &'a str,
     pub stress: Option<f64>,
@@ -229,28 +228,22 @@ impl Lexicon {
         })
     }
 
-    fn get_special_case(
-        &self,
-        word: &str,
-        tag: &str,
-        stress: Option<f64>,
-        ctx: &TokenContext,
-    ) -> Option<Option<String>> {
-        let found = |ps: &str| Some(Some(ps.to_string()));
+    fn get_special_case(&self, word: &str, tag: &str, stress: Option<f64>, ctx: &TokenContext) -> Option<String> {
+        let found = |ps: &str| Some(ps.to_string());
         if tag == "ADD" && (word == "." || word == "/") {
-            return Some(self.lookup(if word == "." { "dot" } else { "slash" }, None, Some(-0.5), Some(ctx)));
+            return self.lookup(if word == "." { "dot" } else { "slash" }, None, Some(-0.5), ctx);
         }
         if word.trim_matches('.').contains('.')
             && text::str_is_alpha(&word.replace('.', ""))
             && word.split('.').map(|p| p.chars().count()).max().unwrap_or(0) < 3
         {
-            return Some(self.get_nnp(word));
+            return self.get_nnp(word);
         }
         match word {
             "a" | "A" => found(if tag == "DT" { "ɐ" } else { "ˈA" }),
             "am" | "Am" | "AM" => {
                 if tag.starts_with("NN") {
-                    Some(self.get_nnp(word))
+                    self.get_nnp(word)
                 } else if ctx.future_vowel.is_none() || word != "am" || stress.is_some_and(|s| s > 0.0) {
                     found(self.gold_plain("am"))
                 } else {
@@ -259,7 +252,7 @@ impl Lexicon {
             }
             "an" | "An" | "AN" => {
                 if word == "AN" && tag.starts_with("NN") {
-                    Some(self.get_nnp(word))
+                    self.get_nnp(word)
                 } else {
                     found("ɐn")
                 }
@@ -272,7 +265,7 @@ impl Lexicon {
             "IN" if tag != "NNP" => found(self.in_(tag, ctx)),
             "the" | "The" => found(if ctx.future_vowel == Some(true) { "ði" } else { "ðə" }),
             "THE" if tag == "DT" => found(if ctx.future_vowel == Some(true) { "ði" } else { "ðə" }),
-            _ if tag == "IN" && is_vs(word) => Some(self.lookup("versus", None, None, Some(ctx))),
+            _ if tag == "IN" && is_vs(word) => self.lookup("versus", None, None, ctx),
             "used" | "Used" | "USED" => {
                 if (tag == "VBD" || tag == "JJ") && ctx.future_to {
                     found(self.gold_tagged("used", "VBD"))
@@ -312,7 +305,7 @@ impl Lexicon {
         is_upper(&word[1..])
     }
 
-    fn lookup(&self, word: &str, tag: Option<&str>, stress: Option<f64>, ctx: Option<&TokenContext>) -> Option<String> {
+    fn lookup(&self, word: &str, tag: Option<&str>, stress: Option<f64>, ctx: &TokenContext) -> Option<String> {
         let mut word = Cow::Borrowed(word);
         let mut is_nnp = false;
         if is_upper(&word) && !self.golds.contains_key(&*word) {
@@ -328,7 +321,7 @@ impl Lexicon {
             Some(Entry::Plain(ps)) => Some(*ps),
             Some(Entry::Tagged(tags)) => {
                 let get = |t: Option<&str>| tags.iter().find(|(k, _)| Some(*k) == t).map(|(_, v)| *v);
-                let tag = if ctx.is_some_and(|c| c.future_vowel.is_none()) && get(Some("None")).is_some() {
+                let tag = if ctx.future_vowel.is_none() && get(Some("None")).is_some() {
                     Some("None")
                 } else if get(tag).is_none() {
                     parent_tag(tag)
@@ -360,7 +353,7 @@ impl Lexicon {
         Some(stem)
     }
 
-    fn stem_s(&self, word: &str, tag: Option<&str>, stress: Option<f64>, ctx: Option<&TokenContext>) -> Option<String> {
+    fn stem_s(&self, word: &str, tag: Option<&str>, stress: Option<f64>, ctx: &TokenContext) -> Option<String> {
         if clen(word) < 3 || !word.ends_with('s') {
             return None;
         }
@@ -402,13 +395,7 @@ impl Lexicon {
         Some(stem)
     }
 
-    fn stem_ed(
-        &self,
-        word: &str,
-        tag: Option<&str>,
-        stress: Option<f64>,
-        ctx: Option<&TokenContext>,
-    ) -> Option<String> {
+    fn stem_ed(&self, word: &str, tag: Option<&str>, stress: Option<f64>, ctx: &TokenContext) -> Option<String> {
         if clen(word) < 4 || !word.ends_with('d') {
             return None;
         }
@@ -444,13 +431,7 @@ impl Lexicon {
         Some(stem)
     }
 
-    fn stem_ing(
-        &self,
-        word: &str,
-        tag: Option<&str>,
-        stress: Option<f64>,
-        ctx: Option<&TokenContext>,
-    ) -> Option<String> {
+    fn stem_ing(&self, word: &str, tag: Option<&str>, stress: Option<f64>, ctx: &TokenContext) -> Option<String> {
         if clen(word) < 5 || !word.ends_with("ing") {
             return None;
         }
@@ -468,10 +449,8 @@ impl Lexicon {
     }
 
     fn get_word(&self, word: &str, tag: &str, stress: Option<f64>, ctx: &TokenContext) -> Option<String> {
-        if let Some(ps) = self.get_special_case(word, tag, stress, ctx)
-            && ps.is_some()
-        {
-            return ps;
+        if let Some(ps) = self.get_special_case(word, tag, stress, ctx) {
+            return Some(ps);
         }
         let wl = lower(word);
         let mut word = Cow::Borrowed(word);
@@ -489,34 +468,34 @@ impl Lexicon {
             })
             && (self.golds.contains_key(&*wl)
                 || self.silvers.contains_key(&*wl)
-                || self.stem_s(&wl, t, stress, Some(ctx)).is_some_and(|s| !s.is_empty())
-                || self.stem_ed(&wl, t, stress, Some(ctx)).is_some_and(|s| !s.is_empty())
-                || self.stem_ing(&wl, t, stress, Some(ctx)).is_some_and(|s| !s.is_empty()))
+                || self.stem_s(&wl, t, stress, ctx).is_some()
+                || self.stem_ed(&wl, t, stress, ctx).is_some()
+                || self.stem_ing(&wl, t, stress, ctx).is_some())
         {
             word = Cow::Owned(wl.into_owned());
         }
         let word = &*word;
         if self.is_known(word) {
-            return self.lookup(word, t, stress, Some(ctx));
+            return self.lookup(word, t, stress, ctx);
         }
         if let Some(stem) = word.strip_suffix("s'") {
             let possessive = format!("{stem}'s");
             if self.is_known(&possessive) {
-                return self.lookup(&possessive, t, stress, Some(ctx));
+                return self.lookup(&possessive, t, stress, ctx);
             }
         }
         if let Some(stem) = word.strip_suffix('\'')
             && self.is_known(stem)
         {
-            return self.lookup(stem, t, stress, Some(ctx));
+            return self.lookup(stem, t, stress, ctx);
         }
-        if let Some(ps) = self.stem_s(word, t, stress, Some(ctx)) {
+        if let Some(ps) = self.stem_s(word, t, stress, ctx) {
             return Some(ps);
         }
-        if let Some(ps) = self.stem_ed(word, t, stress, Some(ctx)) {
+        if let Some(ps) = self.stem_ed(word, t, stress, ctx) {
             return Some(ps);
         }
-        self.stem_ing(word, t, Some(stress.unwrap_or(0.5)), Some(ctx))
+        self.stem_ing(word, t, Some(stress.unwrap_or(0.5)), ctx)
     }
 
     /// `Lexicon.__call__`, without misaki's numbers: a word with digits has no reading here.
