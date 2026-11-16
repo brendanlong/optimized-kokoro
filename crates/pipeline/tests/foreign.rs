@@ -1,7 +1,7 @@
 //! Script segmentation against kokoro's `ForeignScripts.split` on random mixed-script text
 //! (`reference/foreign_cases.py`), with pypinyin's readings for the Han characters in it.
 
-use kokoro_pipeline::foreign::{Language, Script, split};
+use kokoro_pipeline::foreign::{Language, Native, Script, split_in};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -22,7 +22,7 @@ fn matches_foreign_py() {
         // Han characters pypinyin can't read are English text in the reference, and "Chinese
         // text" here (docs/divergences.md): as English, they join the English text around them.
         let mut actual: Vec<(String, Option<String>)> = Vec::new();
-        for (s, l) in split(&case.text, |c| !case.unreadable.contains(&c)) {
+        for (s, l) in split_in(&case.text, Native::English, |c| !case.unreadable.contains(&c)) {
             let l = l.filter(|&l| l != Language::Unread(Script::Han)).map(Language::code).map(str::to_owned);
             match actual.last_mut() {
                 Some((previous, None)) if l.is_none() => previous.push_str(s),

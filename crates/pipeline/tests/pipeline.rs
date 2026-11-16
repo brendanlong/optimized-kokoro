@@ -304,6 +304,19 @@ fn han_without_mandarin_reading_is_chinese_text() {
     assert_eq!(ps, "ˈni ʧˌInˈiz tˈɛkst ˈni");
 }
 
+#[test]
+fn the_chinese_pipeline_reads_unread_runs_as_the_english_ones_do() {
+    let pipeline = Pipeline::new(Lang::Chinese).unwrap().with_foreign_g2p(Language::Japanese, Box::new(NoDictionary));
+    for (text, expected) in
+        [("カナ カナ", "ʤˌæpənˈiz tˈɛkst"), ("カナ\u{200b}カナ", "ʤˌæpənˈiz tˈɛkst"), ("，カナ", ", ʤˌæpənˈiz tˈɛkst")]
+    {
+        assert_eq!(pipeline.phonemize(text).unwrap().0, expected, "{text:?}");
+    }
+    let unread: Vec<usize> =
+        pipeline.chunks("他说カナ カナ。", &NormalizationOptions::default()).map(|c| c.unwrap().unread).collect();
+    assert_eq!(unread, [1]);
+}
+
 fn speech(chunks: &[Result<Chunk, Error>]) -> Vec<Result<&str, String>> {
     chunks
         .iter()

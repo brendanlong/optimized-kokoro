@@ -14,8 +14,7 @@
 //! mapped the first time Japanese is read; without the dictionary they are read as "Japanese
 //! text". So is a run of any script espeak has no voice for, by the script's name ("Thai text"),
 //! and a Han character pypinyin has no reading for ("Chinese text"). [`Chunk::unread`] counts
-//! them. The Chinese pipeline is in `chinese.rs`. `docs/divergences.md` lists every intentional difference from
-//! the reference.
+//! them. `docs/divergences.md` lists every intentional difference from the reference.
 #![forbid(unsafe_code)]
 
 mod chinese;
@@ -136,11 +135,11 @@ impl Lang {
 
 #[derive(Debug)]
 pub enum Error {
-    /// misaki's English G2P failed where the reference raises (a number too large to read).
+    /// misaki's English G2P failed: spaCy's tokens didn't align with the text.
     G2p(kokoro_g2p_en::Error),
     /// espeak-ng's data couldn't be read.
     Espeak(kokoro_espeak::Error),
-    /// A G2P passed to [`Pipeline::with_foreign_g2p`] failed.
+    /// The Chinese or Japanese G2P (bundled, or passed to [`Pipeline::with_foreign_g2p`]) failed.
     Foreign { language: Language, message: String },
     /// The Japanese G2P's dictionary couldn't be loaded.
     Dictionary(String),
@@ -280,7 +279,7 @@ impl ForeignG2p for LazyJapanese {
     }
 
     fn available(&self) -> bool {
-        kokoro_g2p_ja::default_dictionary().is_ok()
+        japanese_available()
     }
 }
 
@@ -297,10 +296,7 @@ impl Pipeline {
     /// once per process, from `$KOKORO_UNIDIC`. Without it, the `j` pipeline's sentences fail with
     /// [`Error::Dictionary`], and Japanese runs in other pipelines are read as "Japanese text".
     pub fn new(lang: Lang) -> Result<Pipeline, Error> {
-        Self::with_espeak_data(lang, kokoro_espeak::default_data()?)
-    }
-
-    pub fn with_espeak_data(lang: Lang, espeak: Arc<EspeakData>) -> Result<Pipeline, Error> {
+        let espeak = kokoro_espeak::default_data()?;
         EspeakFallback::with_data(lang.british(), espeak.clone())?;
         for voice in foreign::espeak_voices().into_iter().chain(lang.espeak_voice()) {
             EspeakG2P::with_data(espeak_voice(voice, lang), espeak.clone())?;
@@ -510,6 +506,20 @@ fn separate(tokens: &mut [Token], placeholders: &[Range<usize>]) {
     }
 }
 
+/// The end of the unread run at `segments[start]`: runs of one language with only joiners, marks
+/// or format characters between them are read as one placeholder.
+fn unread_run_end(segments: &[(&str, Option<Language>)], start: usize) -> usize {
+    let language = segments[start].1;
+    let mut end = start + 1;
+    while let [(gap, None), (_, next), ..] = segments[end..]
+        && next == language
+        && gap.chars().all(foreign::is_gap)
+    {
+        end += 2;
+    }
+    end
+}
+
 /// One request's G2P state: espeak engines are made on first use and dropped with the request.
 struct Request<'p> {
     pipeline: &'p Pipeline,
@@ -573,7 +583,8 @@ impl<'p> Request<'p> {
     /// the reference reads it as nothing too).
     fn phonemize(&mut self, text: &str) -> Result<Phonemes, Error> {
         if self.pipeline.lang == Lang::Chinese {
-            return self.chinese(text);
+            // No CJK punctuation mapping: `ZHG2P` does its own.
+            return self.g2p_phonemes(text);
         }
         if self.pipeline.lang == Lang::Japanese {
             return self.japanese(text);
@@ -585,7 +596,8 @@ impl<'p> Request<'p> {
         let mut tokens: Vec<Token> = Vec::new();
         let mut placeholders = Vec::new();
         let chinese = self.pipeline.foreign.get(&Language::Chinese);
-        let segments = foreign::split(&graphemes, |c| chinese.is_none_or(|g2p| g2p.reads(c)));
+        let segments =
+            foreign::split_in(&graphemes, foreign::Native::English, |c| chinese.is_none_or(|g2p| g2p.reads(c)));
         let mut i = 0;
         while i < segments.len() {
             let (segment, language) = segments[i];
@@ -611,12 +623,7 @@ impl<'p> Request<'p> {
                 segment.to_owned()
             } else {
                 let start = i - 1;
-                while let [(gap, None), (_, Some(next)), ..] = segments[i..]
-                    && next == language
-                    && gap.chars().all(foreign::is_gap)
-                {
-                    i += 2;
-                }
+                i = unread_run_end(&segments, start);
                 segments[start..i].iter().map(|(s, _)| *s).collect()
             };
             let start = tokens.len();
@@ -649,14 +656,15 @@ impl<'p> Request<'p> {
         self.g2p_phonemes(text)
     }
 
-    /// The pipeline's own G2P on a segment `ForeignScripts` didn't split out: misaki's Japanese
-    /// G2P, or `EspeakG2P` in the pipeline's language, stripped.
+    /// The pipeline's own G2P on a segment `ForeignScripts` didn't split out: misaki's Chinese or
+    /// Japanese G2P, or `EspeakG2P` in the pipeline's language, stripped.
     fn native(&mut self, segment: &str) -> Result<String, Error> {
         let pipeline = self.pipeline;
         let raw = match pipeline.lang.espeak_voice() {
             None => {
-                let g2p = pipeline.foreign.get(&Language::Japanese).expect("every pipeline has a Japanese G2P");
-                g2p.phonemize(segment).map_err(|message| Error::Foreign { language: Language::Japanese, message })?
+                let language = if pipeline.lang == Lang::Chinese { Language::Chinese } else { Language::Japanese };
+                let g2p = pipeline.foreign.get(&language).expect("every pipeline has Chinese and Japanese G2Ps");
+                g2p.phonemize(segment).map_err(|message| Error::Foreign { language, message })?
             }
             Some(voice) => {
                 let engine = match &mut self.native {
@@ -669,15 +677,16 @@ impl<'p> Request<'p> {
         Ok(kokoro_text::py::strip(&raw).to_owned())
     }
 
-    /// `KPipeline.g2p_phonemes` for Japanese and the espeak languages (Kokoro-FastAPI's
+    /// `KPipeline.g2p_phonemes` for Chinese, Japanese and the espeak languages (Kokoro-FastAPI's
     /// `phonemize` maps CJK punctuation first for the latter): the text split into runs, where
-    /// what `foreign.py` doesn't split out goes to the pipeline's own G2P (Japanese: Han, kana and
-    /// the rest; espeak's language: its own script and the rest), Latin runs in another script's
-    /// pipeline to misaki's American English G2P, Chinese and Japanese runs to theirs, and the
-    /// other scripts to espeak, as in the English pipelines (so the scripts it has no voice for
-    /// are "<name> text"). Each run's phonemes are stripped and joined with a space where the
-    /// text has one at the join, or two letters meet there. There are no tokens: a chunk's words
-    /// are its text's, paired with the phoneme groups ([`text_word_spans`]).
+    /// what `foreign.py` doesn't split out goes to the pipeline's own G2P (Chinese: Han without
+    /// kana and the rest; Japanese: Han, kana and the rest; espeak's language: its own script and
+    /// the rest), Latin runs in another script's pipeline to misaki's American English G2P,
+    /// Chinese and Japanese runs to theirs, and the other scripts to espeak, as in the English
+    /// pipelines (so the scripts it has no voice for are "<name> text"). Each run's phonemes are
+    /// stripped and joined with a space where the text has one at the join, or two letters meet
+    /// there. There are no tokens: a chunk's words are its text's, paired with the phoneme groups
+    /// ([`text_word_spans`]).
     fn g2p_phonemes(&mut self, text: &str) -> Result<Phonemes, Error> {
         let chinese = self.pipeline.foreign.get(&Language::Chinese);
         let segments = foreign::split_in(text, self.pipeline.lang.native(), |c| chinese.is_none_or(|g2p| g2p.reads(c)));
@@ -696,27 +705,21 @@ impl<'p> Request<'p> {
                 Some(Language::English) => {
                     let text = foreign::prepare(segment, Language::English);
                     let raw = self.english_string(&text)?;
-                    foreign::finish(&raw, Language::English)
+                    foreign::finish(&raw, Language::English, true)
                 }
                 Some(language) if self.reads(language) => self.foreign(segment, language)?,
                 Some(language) => {
-                    while let [(gap, None), (_, Some(next)), ..] = segments[i..]
-                        && next == language
-                        && gap.chars().all(foreign::is_gap)
-                    {
-                        i += 2;
-                    }
+                    i = unread_run_end(&segments, start);
                     unread += 1;
                     placeholder = true;
                     let run: String = segments[start..i].iter().map(|(s, _)| *s).collect();
                     kokoro::tokens_to_ps(&self.placeholder(language, run)?)
                 }
             };
-            let segment_start = segment;
             let last = segments[i - 1].0;
             let mut boundary = String::new();
             boundary.extend(previous.chars().next_back());
-            boundary.extend(segment_start.chars().next());
+            boundary.extend(segment.chars().next());
             let alpha = boundary.chars().count() == 2 && boundary.chars().all(kokoro_g2p_en::is_alpha);
             // A placeholder is kept apart from its neighbours, as in the English pipelines.
             let apart = placeholder || after_placeholder;
@@ -804,7 +807,7 @@ impl<'p> Request<'p> {
             };
             engine.phonemize(&text)
         };
-        Ok(foreign::finish_in(&raw, language, self.pipeline.lang.english()))
+        Ok(foreign::finish(&raw, language, self.pipeline.lang.english()))
     }
 }
 
