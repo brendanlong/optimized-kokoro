@@ -1105,7 +1105,6 @@ impl Espeak {
     }
 
     /// `MatchRule`: scores the rules of one group against the word at `w[*word]`.
-    #[allow(clippy::too_many_arguments)]
     fn match_rule(
         &mut self,
         tr: Tr,
@@ -1743,7 +1742,6 @@ impl Espeak {
 
     /// `TranslateRules`: spelling-to-sound rules for the word at `w[p_start]`, appended to
     /// `phonemes`; any standard prefix or suffix goes to `end_phonemes`.
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn translate_rules(
         &mut self,
         tr: Tr,
@@ -1773,7 +1771,6 @@ impl Espeak {
     }
 
     /// `translate_rules`, recording its steps in `steps`.
-    #[allow(clippy::too_many_arguments)]
     fn translate_rules_with(
         &mut self,
         steps: &mut Vec<RuleStep>,
@@ -2290,7 +2287,6 @@ impl Espeak {
     /// `LookupDict2`: finds `word` in the dictionary. `w2` is the text after the word (the
     /// following words, for multi-word entries), in buffer `src`. Returns where the matched
     /// text ends in `src`.
-    #[allow(clippy::too_many_arguments)]
     fn lookup_dict2(
         &mut self,
         tr: Tr,
@@ -2507,7 +2503,6 @@ impl Espeak {
     /// `LookupDictList`: looks up the word at `w[*wordptr]`, also trying an `a.b.c`
     /// abbreviation, a removed `e` and an undoubled final letter. If the entry is replacement
     /// text, `*replacement` receives it (C points `*wordptr` at a static buffer).
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn lookup_dict_list(
         &mut self,
         tr: Tr,
@@ -2815,7 +2810,6 @@ impl Espeak {
     }
 
     /// `DollarRule`: `$list` and `$p_alt` conditions look up the word so far.
-    #[allow(clippy::too_many_arguments)]
     fn dollar_rule(
         &mut self,
         tr: Tr,

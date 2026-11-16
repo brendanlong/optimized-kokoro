@@ -203,7 +203,6 @@ impl Espeak {
 
     /// `TranslateWord2`: translates the word at `w[word]` (whose entry is `words[wix]`) and
     /// adds its phonemes to `ph_list2`.
-    #[allow(clippy::too_many_arguments)]
     fn translate_word2(
         &mut self,
         tr: Tr,
@@ -697,7 +696,6 @@ impl Espeak {
     }
 
     /// `TranslateChar`: language-specific character changes (Korean jamo, Dutch 'n, .replace).
-    #[allow(clippy::too_many_arguments)]
     fn translate_char(
         &mut self,
         tr: Tr,
@@ -784,7 +782,6 @@ impl Espeak {
     }
 
     /// `CombineFlag`: joins a word marked `$combine` with the next one.
-    #[allow(clippy::too_many_arguments)]
     fn combine_flag(
         &mut self,
         tr: Tr,

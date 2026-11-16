@@ -1077,7 +1077,6 @@ impl Espeak {
         !(is_digit09(at(w, word + group_len) as i32) || is_digit09(sat(w, word - 1)))
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn translate_number_1(
         &mut self,
         tr: Tr,
@@ -1503,7 +1502,6 @@ impl Espeak {
     }
 
     /// `TranslateNumber`.
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn translate_number(
         &mut self,
         tr: Tr,

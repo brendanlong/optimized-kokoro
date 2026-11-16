@@ -513,7 +513,6 @@ impl Espeak {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn reinterpret_phoneme(
         &mut self,
         ph: &crate::data::PhonemeTab,

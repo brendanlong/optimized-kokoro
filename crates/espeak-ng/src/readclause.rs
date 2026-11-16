@@ -168,7 +168,6 @@ impl Espeak {
     }
 
     /// `AnnouncePunctuation`: with punctuation announcement on (`\x01B` in the text).
-    #[allow(clippy::too_many_arguments)]
     fn announce_punctuation(
         &mut self,
         tr: Tr,
@@ -249,7 +248,6 @@ impl Espeak {
     }
 
     /// `ReadClause`: reads the next clause into `buf`, returning its terminator.
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn read_clause(
         &mut self,
         tr: Tr,

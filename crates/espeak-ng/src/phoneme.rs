@@ -173,7 +173,6 @@ impl Espeak {
         count
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn interpret_condition(
         &self,
         tr: Option<Tr>,
