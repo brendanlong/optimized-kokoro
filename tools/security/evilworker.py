@@ -75,7 +75,7 @@ def serve(conn):
         "voice_nul": lambda: hello(voices=[b"af\x00x"]), "version1": lambda: hello(version=1),
         "magic": lambda: hello(magic=b"KOKX"), "maxph511": lambda: hello(maxph=511), "batch0": lambda: hello(batch=0),
         "rate": lambda: hello(rate=22050), "nvoices_more": lambda: hello(n_voices=5),
-        "trailing": lambda: hello()[:-0] + b"",
+        "trailing": lambda: frame(hello()[4:] + b"x"),
         "voices65535": lambda: hello(voices=[("v%05d" % i) + "_" + "x" * 57 for i in range(65535)]),
     }
     if m in hellos:
@@ -145,8 +145,6 @@ def serve(conn):
         elif m == "dur_over":
             send(result(slot, [maxdur(speed) + 1] + d[1:]))
         elif m == "dur_max":
-            send(result(slot, [maxdur(speed)] * (n + 2)))
-        elif m == "cap_exceed":
             send(result(slot, [maxdur(speed)] * (n + 2)))
         elif m == "fill_cap":
             # v4: the cap is the same at every speed.

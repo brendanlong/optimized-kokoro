@@ -17,7 +17,7 @@ set -euo pipefail
 # shellcheck source=deploy/lib.sh
 . "$(dirname "$0")/lib.sh"
 
-[ $# = 0 ] || { sed -n '2,15p' "$0"; exit 2; }
+[ $# = 0 ] || { sed -n '2,/^[^#]/{/^#/p}' "$0"; exit 2; }
 require_root
 take_lock
 check_checkout
@@ -34,7 +34,7 @@ check_port_free "$KOKORO_LISTEN" "${used[@]}"
 check_port_free "$KOKORO_DEMO_LISTEN" "${used[@]}"
 ensure_runtimes
 # A worker, network or volume an update killed before it could clean up left.
-sweep_projects "$(project_of "$prev")"
+sweep_projects "$(new_project "$prev")"
 # An update killed during its swap can leave the previous release's worker without its server: put
 # the server, demo and tunnel back now (the worker is warm), rather than be down until the next swap.
 running=$(compose ps --status running --services 2> /dev/null || true)

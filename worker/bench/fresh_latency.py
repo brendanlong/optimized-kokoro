@@ -62,7 +62,6 @@ def main():
 
     if args.mode == "worker":
         from kokoro_worker import protocol as P
-        from kokoro_worker.client import Client
         from load import wait_for
 
         vocab = json.load(open(args.extra, encoding="utf-8"))["vocab"]

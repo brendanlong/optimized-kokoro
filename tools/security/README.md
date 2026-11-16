@@ -5,8 +5,8 @@ These scripts and inputs come from the adversarial review of PR #13. They run ag
 They are quick scripts: arguments are positional, and most expect the server on `127.0.0.1` and a worker socket you choose. Run Python with `-I`.
 
 **Workers**
-- `fakeworker.py SOCKET [normal|stall|slow] [delay_ms]` is a protocol-v2 worker that renders fake audio.
-- `evilworker.py SOCKET MODE [seconds]` is a hostile worker with about 40 modes, listed in its source:
+- `fakeworker.py SOCKET [normal|stall|slow] [delay_ms]` is a protocol-v4 worker that renders fake audio.
+- `evilworker.py SOCKET MODE [seconds]` is a hostile worker with about 60 modes, listed in its source:
   - malformed or lying frames (`hello_huge_len`, `wrong_n`, `dur_over`, `samples_long`, …);
   - stalls and trickles (`stall`, `partial_stall`, `trickle_result`);
   - protocol abuse (`double_result`, `free_slot_result`, `skip_first`, `ignore_cancel`, `rapid_reconnect`).
@@ -21,11 +21,11 @@ They are quick scripts: arguments are positional, and most expect the server on 
 - `timing.py` checks the key comparison for timing differences.
 
 **Inputs and generators**
-- `worst.json` and `worst_b.json` are 20 KB request bodies of long negative numbers: about 481k phoneme ids, ~7 h of audio (finding 4).
+- `worst.json` is a 20 KB request body of long negative numbers: about 481k phoneme ids, ~7 h of audio (finding 4).
 - `shapes.py`, `shapes2.py` and `randmix.py` generate adversarial texts for `crates/server/examples/adv.rs`.
 - `stgen.py TAGGER.safetensors OUTDIR` writes corrupted tagger weight files (finding 8).
 
 **Rust harnesses** are in `crates/server/examples/`:
 - `adv.rs` times the text path for each input line (JSON on stdin).
-- `textfuzz.rs` sends random texts through the text path, looking for panics.
+- `textfuzz.rs` sends random texts through the text checks and chunking, looking for panics.
 - `statefuzz.rs` checks that one input can't change the output for a later one.

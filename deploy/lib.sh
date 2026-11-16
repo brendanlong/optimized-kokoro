@@ -229,19 +229,6 @@ new_project() {
     echo "optimized-kokoro-${1,,}"
 }
 
-# The Compose project of release $1: COMPOSE_PROJECT_NAME in its .env, or new_project before it
-# has a .env.
-project_of() {
-    local env=$root/releases/$1/.env p
-    [ -f "$env" ] || {
-        new_project "$1"
-        return
-    }
-    p=$(sed -n 's/^COMPOSE_PROJECT_NAME=//p' "$env")
-    [ -n "$p" ] || die "$env has no COMPOSE_PROJECT_NAME"
-    echo "$p"
-}
-
 # Refuses to go on while a kept release is from before per-release Compose projects (2026-11-04),
 # which this deploy/ no longer knows how to stop or remove.
 check_releases() {
@@ -258,7 +245,7 @@ check_releases() {
 compose_rel() {
     local r=$1
     shift
-    docker compose -p "$(project_of "$r")" -f "$root/releases/$r/compose.yaml" "$@"
+    docker compose -p "$(new_project "$r")" -f "$root/releases/$r/compose.yaml" "$@"
 }
 
 # docker compose for the release current points at.
@@ -787,7 +774,7 @@ wait_worker() {
 stop_front() {
     local net
     compose_rel "$1" rm -sf server demo cloudflared || return 1
-    net="$(project_of "$1")_kokoro"
+    net="$(new_project "$1")_kokoro"
     if docker network inspect "$net" > /dev/null 2>&1 && ! docker network rm "$net" > /dev/null; then
         echo "couldn't remove the network $net; still attached: $(docker network inspect -f '{{range .Containers}}{{.Name}} {{end}}' "$net" 2> /dev/null)" >&2
         return 1
@@ -878,14 +865,11 @@ wait_tunnel() {
     return 1
 }
 
-# Removes a release's Compose project, images and directory, and the dictionaries no release names
-# any more. The project only if it isn't the running one.
+# Removes a release (never the current one): its Compose project, images and directory, and the
+# dictionaries no release names any more.
 remove_release() {
-    local i p
-    p=$(project_of "$1")
-    if [ ! -L "$root/current" ] || [ "$p" != "$(project_of "$(current_release)")" ]; then
-        remove_project "$p"
-    fi
+    local i
+    remove_project "$(new_project "$1")"
     for i in "${images[@]}"; do docker image rm "optimized-kokoro-$i:$1" > /dev/null 2>&1 || true; done
     rm -rf "${root:?}/releases/$1"
     prune_unidic

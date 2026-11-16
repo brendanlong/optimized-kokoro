@@ -3,7 +3,6 @@ bench/kernels_bench.py checks it)."""
 
 import pytest
 import torch
-import torch.nn.functional as F
 
 from kokoro_worker import kernels
 

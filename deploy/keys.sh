@@ -21,7 +21,7 @@ set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 
 usage() {
-    sed -n '2,16p' "$0"
+    sed -n '2,/^[^#]/{/^#/p}' "$0"
     exit 2
 }
 [ $# -ge 1 ] || usage

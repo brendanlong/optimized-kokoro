@@ -4,8 +4,8 @@ durations forced to a given total frame count, compiled as the worker runs.
     uv run python bench/chunk_memory.py MODELS ROWS FRAMES [FRAMES ...]
 
 Frame counts run in the order given, each twice; an out-of-memory error is reported and the next
-one tried. 40 frames are one second of audio; a chunk at --max-chunk-seconds S and speed 0.25 (the
-slowest) may reach 160 * S frames. (Based on the PR #37 review's memory.py.)
+one tried. 40 frames are one second of audio; a chunk at --max-chunk-seconds S may reach 40 * S frames at
+any speed. (Based on the PR #37 review's memory.py.)
 """
 
 import os
