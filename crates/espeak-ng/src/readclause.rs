@@ -265,20 +265,12 @@ impl Espeak {
         let mut cprev: i32 = b' ' as i32;
         let mut c_next: i32 = 0;
         let mut ix: isize = 0;
-        let mut linelength = 0;
-        let mut phoneme_mode = 0;
         let mut any_alnum = false;
         let mut punct_data: i32;
         let mut is_end_clause: bool;
         let mut announced_punctuation: i32;
         let mut stressed_word = false;
-        let end_clause_after_tag = 0;
         let n_buf = n_buf as isize;
-
-        if self.clear_skipping_text {
-            self.skipping_text = false;
-            self.clear_skipping_text = false;
-        }
 
         {
             let t = self.tm(tr);
@@ -298,17 +290,6 @@ impl Espeak {
         }
 
         while !self.eof() || self.ungot_char != 0 || self.ungot_char2 != 0 || self.ungot_string_ix >= 0 {
-            if !ucd::isalnum(c1) {
-                if self.end_character_position > 0 && self.count_characters > self.end_character_position {
-                    return CLAUSE_EOF;
-                }
-                if self.skip_characters > 0 && self.count_characters >= self.skip_characters {
-                    self.clear_skipping_text = true;
-                    self.skip_characters = 0;
-                    self.unget_c(c2);
-                    return CLAUSE_NONE;
-                }
-            }
             let cprev2 = cprev;
             cprev = c1;
             c1 = c2;
@@ -330,24 +311,6 @@ impl Espeak {
             }
 
             self.ungot_char2 = 0;
-
-            if self.ignore_text {
-                continue;
-            }
-
-            if c2 == b'\n' as i32 && self.option_linelength == -1 {
-                let mut terminator = ucd::clause_type_from_codepoint(c1);
-                if terminator == CLAUSE_NONE {
-                    if let Some(x) = charix.get_mut(ix as usize) {
-                        *x = (self.count_characters - self.clause_start_char) as i16;
-                    }
-                    *charix_top = ix as i32;
-                    utf8_push(buf, &mut ix, c1);
-                    terminator = CLAUSE_PERIOD;
-                }
-                self.terminate_buf_with_space_and_zero(buf, ix, None);
-                return terminator;
-            }
 
             if c1 == CTRL_EMBEDDED {
                 if c2 == b'V' as i32 {
@@ -397,8 +360,6 @@ impl Espeak {
                 }
             }
 
-            linelength += 1;
-
             if let Some(i) = Some(lookupwchar2(self.t(tr).chars_ignore, c1)).filter(|&i| i != 0) {
                 if i == 1 {
                     continue;
@@ -425,27 +386,8 @@ impl Espeak {
 
             if ucd::isupper(c1) {
                 self.tm(tr).clause_upper_count += 1;
-                if self.option_capitals == 2 && self.sayas_mode == 0 && !ucd::isupper(cprev) {
-                    if let Some(text_buf) = self.lookup_special(tr, b"_cap\0") {
-                        let j = text_buf.len().min(29) as isize;
-                        if ix + j < n_buf {
-                            cstrcpy(buf, ix, &text_buf[..j as usize]);
-                            ix += j;
-                        }
-                    }
-                }
             } else if ucd::isalpha(c1) {
                 self.tm(tr).clause_lower_count += 1;
-            }
-
-            if self.option_phoneme_input != 0 {
-                if phoneme_mode > 0 {
-                    phoneme_mode -= 1;
-                } else if c1 == b'[' as i32 && c2 == b'[' as i32 {
-                    phoneme_mode = -1;
-                } else if c1 == b']' as i32 && c2 == b']' as i32 {
-                    phoneme_mode = 2;
-                }
             }
 
             if c1 == b'\n' as i32 {
@@ -463,153 +405,144 @@ impl Espeak {
                     }
                     return (CLAUSE_PARAGRAPH - 30) + 30 * parag;
                 }
-                if linelength <= self.option_linelength {
-                    self.terminate_buf_with_space_and_zero(buf, ix, Some(c2));
-                    return CLAUSE_COLON;
-                }
-                linelength = 0;
             }
 
             announced_punctuation = 0;
 
-            if phoneme_mode == 0 && self.sayas_mode == 0 {
-                is_end_clause = false;
-                let _ = end_clause_after_tag;
+            is_end_clause = false;
 
-                if c1 == b'.' as i32 && c2 == b'.' as i32 {
-                    loop {
-                        if self.eof() {
-                            break;
+            if c1 == b'.' as i32 && c2 == b'.' as i32 {
+                loop {
+                    if self.eof() {
+                        break;
+                    }
+                    c_next = self.get_c();
+                    if c_next != b'.' as i32 {
+                        break;
+                    }
+                    c1 = 0x2026;
+                    c2 = b' ' as i32;
+                }
+                if c1 == 0x2026 {
+                    c2 = c_next;
+                } else {
+                    self.unget_c(c_next);
+                }
+            }
+
+            punct_data = ucd::clause_type_from_codepoint(c1);
+            if punct_data != CLAUSE_NONE {
+                if punct_data & (CLAUSE_QUESTION | CLAUSE_EXCLAMATION) != 0 {
+                    while !self.eof()
+                        && (ucd::clause_type_from_codepoint(c2) & (CLAUSE_QUESTION | CLAUSE_EXCLAMATION)) != 0
+                    {
+                        c_next = self.get_c();
+                        c2 = c_next;
+                    }
+                }
+                if punct_data & CLAUSE_PUNCTUATION_IN_WORD != 0 {
+                    stressed_word = true;
+                    *tone_type = (punct_data >> 12) & 0xf;
+                    continue;
+                }
+                if ucd::isspace(c2)
+                    || (punct_data & CLAUSE_OPTIONAL_SPACE_AFTER) != 0
+                    || is_bracket(c2)
+                    || c2 == b'?' as i32
+                    || self.eof()
+                    || c2 == CTRL_EMBEDDED
+                {
+                    is_end_clause = true;
+                }
+            }
+
+            if c1 == 0xe000 + b'<' as i32 {
+                c1 = b'<' as i32;
+            }
+            if self.option_punctuation != 0
+                && ucd::ispunct(c1)
+                && (self.option_punctuation == 1 || (c1 != 0 && wcschr(&self.option_punctlist, c1)))
+            {
+                self.tm(tr).phonemes_repeat_count = 0;
+                let terminator = self.announce_punctuation(tr, c1, &mut c2, buf, &mut ix, is_end_clause);
+                if terminator >= 0 {
+                    return terminator;
+                }
+                announced_punctuation = c1;
+            }
+
+            if (punct_data & CLAUSE_SPEAK_PUNCTUATION_NAME) != 0 && announced_punctuation == 0 {
+                let name = self.lookup_char_name(tr, c1, true);
+                cstrcpy(buf, ix, &name);
+                if at(buf, ix) != 0 {
+                    ix += cstrlen(buf, ix) as isize;
+                    announced_punctuation = c1;
+                    punct_data &= !CLAUSE_INTONATION_TYPE;
+                }
+            }
+
+            if is_end_clause {
+                let mut nl_count = 0;
+                c_next = c2;
+                if ucd::isspace(c_next) {
+                    while !self.eof() && ucd::isspace(c_next) {
+                        if c_next == b'\n' as i32 {
+                            nl_count += 1;
                         }
                         c_next = self.get_c();
-                        if c_next != b'.' as i32 {
-                            break;
-                        }
-                        c1 = 0x2026;
-                        c2 = b' ' as i32;
-                    }
-                    if c1 == 0x2026 {
-                        c2 = c_next;
-                    } else {
-                        self.unget_c(c_next);
                     }
                 }
-
-                punct_data = ucd::clause_type_from_codepoint(c1);
-                if punct_data != CLAUSE_NONE {
-                    if punct_data & (CLAUSE_QUESTION | CLAUSE_EXCLAMATION) != 0 {
-                        while !self.eof()
-                            && (ucd::clause_type_from_codepoint(c2) & (CLAUSE_QUESTION | CLAUSE_EXCLAMATION)) != 0
-                        {
-                            c_next = self.get_c();
-                            c2 = c_next;
-                        }
-                    }
-                    if punct_data & CLAUSE_PUNCTUATION_IN_WORD != 0 {
-                        stressed_word = true;
-                        *tone_type = (punct_data >> 12) & 0xf;
-                        continue;
-                    }
-                    if ucd::isspace(c2)
-                        || (punct_data & CLAUSE_OPTIONAL_SPACE_AFTER) != 0
-                        || is_bracket(c2)
-                        || c2 == b'?' as i32
-                        || self.eof()
-                        || c2 == CTRL_EMBEDDED
+                if c1 == b'.' as i32 && nl_count < 2 {
+                    punct_data |= CLAUSE_DOT_AFTER_LAST_WORD;
+                }
+                if nl_count == 0 {
+                    if c1 == b',' as i32
+                        && cprev == b'.' as i32
+                        && self.t(tr).translator_name == l2(b'h', b'u')
+                        && ucd::isdigit(cprev2)
+                        && (ucd::isdigit(c_next) || ucd::islower(c_next))
                     {
-                        is_end_clause = true;
+                        c1 = CHAR_COMMA_BREAK;
+                        is_end_clause = false;
                     }
-                }
-
-                if c1 == 0xe000 + b'<' as i32 {
-                    c1 = b'<' as i32;
-                }
-                if self.option_punctuation != 0
-                    && ucd::ispunct(c1)
-                    && !self.audio_text
-                    && (self.option_punctuation == 1 || (c1 != 0 && wcschr(&self.option_punctlist, c1)))
-                {
-                    self.tm(tr).phonemes_repeat_count = 0;
-                    let terminator = self.announce_punctuation(tr, c1, &mut c2, buf, &mut ix, is_end_clause);
-                    if terminator >= 0 {
-                        return terminator;
+                    if c1 == b'.' as i32 && c_next == b'\'' as i32 && self.decoder.peekc() == b's' as i32 {
+                        is_end_clause = false;
                     }
-                    announced_punctuation = c1;
-                }
-
-                if (punct_data & CLAUSE_SPEAK_PUNCTUATION_NAME) != 0 && announced_punctuation == 0 {
-                    let name = self.lookup_char_name(tr, c1, true);
-                    cstrcpy(buf, ix, &name);
-                    if at(buf, ix) != 0 {
-                        ix += cstrlen(buf, ix) as isize;
-                        announced_punctuation = c1;
-                        punct_data &= !CLAUSE_INTONATION_TYPE;
+                    if c1 == b'.' as i32 {
+                        if (self.t(tr).langopts.numbers & NUM_ORDINAL_DOT) != 0
+                            && (ucd::isdigit(cprev)
+                                || (is_roman_u(cprev) && (is_roman_u(cprev2) || ucd::isspace(cprev2))))
+                        {
+                            if !ucd::isdigit(cprev) || ucd::islower(c_next) || c_next == b'-' as i32 {
+                                is_end_clause = false;
+                            }
+                        }
+                        if ucd::islower(c_next) && !self.t(tr).langopts.lowercase_sentence {
+                            is_end_clause = false;
+                        }
+                        if !any_alnum {
+                            c1 = b' ' as i32;
+                            is_end_clause = false;
+                        }
+                    } else if !any_alnum {
+                        is_end_clause = false;
                     }
                 }
 
                 if is_end_clause {
-                    let mut nl_count = 0;
-                    c_next = c2;
-                    if ucd::isspace(c_next) {
-                        while !self.eof() && ucd::isspace(c_next) {
-                            if c_next == b'\n' as i32 {
-                                nl_count += 1;
-                            }
-                            c_next = self.get_c();
-                        }
+                    self.terminate_buf_with_space_and_zero(buf, ix, Some(c_next));
+                    if ucd::isdigit(cprev) && !is_alpha(c_next) {
+                        punct_data &= !CLAUSE_DOT_AFTER_LAST_WORD;
                     }
-                    if c1 == b'.' as i32 && nl_count < 2 {
-                        punct_data |= CLAUSE_DOT_AFTER_LAST_WORD;
+                    if nl_count > 1 {
+                        if punct_data == CLAUSE_QUESTION || punct_data == CLAUSE_EXCLAMATION {
+                            return punct_data + 35;
+                        }
+                        return CLAUSE_PARAGRAPH;
                     }
-                    if nl_count == 0 {
-                        if c1 == b',' as i32
-                            && cprev == b'.' as i32
-                            && self.t(tr).translator_name == l2(b'h', b'u')
-                            && ucd::isdigit(cprev2)
-                            && (ucd::isdigit(c_next) || ucd::islower(c_next))
-                        {
-                            c1 = CHAR_COMMA_BREAK;
-                            is_end_clause = false;
-                        }
-                        if c1 == b'.' as i32 && c_next == b'\'' as i32 && self.decoder.peekc() == b's' as i32 {
-                            is_end_clause = false;
-                        }
-                        if c1 == b'.' as i32 {
-                            if (self.t(tr).langopts.numbers & NUM_ORDINAL_DOT) != 0
-                                && (ucd::isdigit(cprev)
-                                    || (is_roman_u(cprev) && (is_roman_u(cprev2) || ucd::isspace(cprev2))))
-                            {
-                                if !ucd::isdigit(cprev) || ucd::islower(c_next) || c_next == b'-' as i32 {
-                                    is_end_clause = false;
-                                }
-                            }
-                            if ucd::islower(c_next) && !self.t(tr).langopts.lowercase_sentence {
-                                is_end_clause = false;
-                            }
-                            if !any_alnum {
-                                c1 = b' ' as i32;
-                                is_end_clause = false;
-                            }
-                        } else if !any_alnum {
-                            is_end_clause = false;
-                        }
-                    }
-
-                    if is_end_clause {
-                        self.terminate_buf_with_space_and_zero(buf, ix, Some(c_next));
-                        if ucd::isdigit(cprev) && !is_alpha(c_next) {
-                            punct_data &= !CLAUSE_DOT_AFTER_LAST_WORD;
-                        }
-                        if nl_count > 1 {
-                            if punct_data == CLAUSE_QUESTION || punct_data == CLAUSE_EXCLAMATION {
-                                return punct_data + 35;
-                            }
-                            return CLAUSE_PARAGRAPH;
-                        }
-                        return punct_data;
-                    } else if !self.eof() && ucd::isspace(c2) {
-                        self.unget_c(c_next);
-                    }
+                    return punct_data;
+                } else if !self.eof() && ucd::isspace(c2) {
+                    self.unget_c(c_next);
                 }
             }
 

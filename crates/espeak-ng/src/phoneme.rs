@@ -63,10 +63,7 @@ impl Espeak {
 
     pub(crate) fn lookup_phoneme_table(&mut self, name: &[u8]) -> i32 {
         match self.data.phoneme_tab_list.iter().position(|t| t.name == name) {
-            Some(ix) => {
-                self.phoneme_tab_number = ix as i32;
-                ix as i32
-            }
+            Some(ix) => ix as i32,
             None => -1,
         }
     }

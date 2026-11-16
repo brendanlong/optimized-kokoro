@@ -97,8 +97,7 @@ impl Espeak {
     }
 
     /// `MakePhonemeList`.
-    pub(crate) fn make_phoneme_list(&mut self, tr: Tr, post_pause: i32, start_sentence: bool) {
-        let _ = post_pause;
+    pub(crate) fn make_phoneme_list(&mut self, tr: Tr, start_sentence: bool) {
         let mut start_sentence = start_sentence;
         let mut ix = 0usize;
         let mut insert_ph: u8 = 0;
@@ -375,9 +374,6 @@ impl Espeak {
                     if x != 0 && (x > 1 || (insert_ph != PHON_PAUSE_SHORT && insert_ph != PHON_PAUSE_NOLINK)) {
                         insert_ph = PAUSE_PHONEMES[x];
                     }
-                    if self.option_wordgap > 0 {
-                        insert_ph = PHON_PAUSE_LONG;
-                    }
                 }
             }
 
@@ -389,7 +385,6 @@ impl Espeak {
             }
 
             if !deleted {
-                let pause_short_ph = self.ph(PHON_PAUSE_SHORT);
                 let e3 = list3[plist3];
                 let out = &mut self.phoneme_list[ix];
                 out.ph = Some(phv);
@@ -413,9 +408,6 @@ impl Espeak {
                     }
                 } else {
                     out.newword = 0;
-                }
-                if phv.code == PHON_PAUSE_LONG && self.option_wordgap > 0 && list3[plist3 + 1].sourceix != 0 {
-                    out.ph = pause_short_ph;
                 }
                 ix += 1;
             }

@@ -155,7 +155,6 @@ impl Espeak {
 
     /// `LoadDictionary` for a translator: returns 0 on success, 1 if the file can't be read.
     pub(crate) fn load_dictionary(&mut self, tr: &mut Translator, name: &[u8]) -> i32 {
-        self.dictionary_name = name.to_vec();
         tr.dictionary_name = name.to_vec();
         tr.dict = None;
         let name = String::from_utf8_lossy(name).into_owned();
@@ -231,7 +230,6 @@ impl Espeak {
                             phonemes_name = lt.as_bytes().to_vec();
                             self.select_phoneme_table_name(&phonemes_name);
                             self.translator = Some(Box::new(select_translator(&translator_name)));
-                            self.voice_language_name = language_name.as_bytes().to_vec();
                         }
                     }
                     "dictionary" => {
@@ -269,7 +267,7 @@ impl Espeak {
         tr.phoneme_tab_ix = ix;
         self.load_dictionary(&mut tr, &new_dictionary);
         self.translator = Some(tr);
-        if self.dictionary_name.is_empty() {
+        if new_dictionary.is_empty() {
             self.translator = None;
             return false;
         }
