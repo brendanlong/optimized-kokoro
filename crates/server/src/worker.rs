@@ -163,7 +163,7 @@ pub struct Connection {
 }
 
 impl Connection {
-    /// A connection using the first `slots` of the worker's slots (at most `hello.slots`).
+    /// A connection using the first `slots` of the worker's slots.
     pub(crate) fn new(hello: Hello, outgoing: mpsc::Sender<Vec<u8>>, slots: u16, gauge: AudioGauge) -> Self {
         let voice_index = hello.voices.iter().enumerate().map(|(i, v)| (v.clone(), i as u16)).collect();
         let state = State {

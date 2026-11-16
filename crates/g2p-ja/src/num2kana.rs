@@ -129,7 +129,7 @@ fn convert(mut s: &[u8], out: &mut String) {
 }
 
 /// `Convert(digits, 'hiragana')` for one to nine ASCII digits, as the reference reads them.
-pub fn convert_kana(digits: &[u8]) -> String {
+pub(crate) fn convert_kana(digits: &[u8]) -> String {
     let mut out = String::new();
     convert(digits, &mut out);
     out

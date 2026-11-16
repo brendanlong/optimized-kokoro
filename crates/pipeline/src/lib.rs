@@ -135,7 +135,8 @@ impl Lang {
 
 #[derive(Debug)]
 pub enum Error {
-    /// misaki's English G2P failed: spaCy's tokens didn't align with the text.
+    /// misaki's English G2P failed: spaCy's tokens didn't align with the text, or it returned an
+    /// empty token.
     G2p(kokoro_g2p_en::Error),
     /// espeak-ng's data couldn't be read.
     Espeak(kokoro_espeak::Error),

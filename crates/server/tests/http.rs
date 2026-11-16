@@ -9,7 +9,7 @@ use kokoro_server::protocol::{FailCode, Hello, Priority, Speed};
 use kokoro_server::stitch::{Plan, max_render_ids};
 use serde_json::json;
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -631,10 +631,12 @@ async fn pipeline_failures_fail_the_response() {
     }
 }
 
+static PIPELINES: LazyLock<Arc<KokoroPipelines>> = LazyLock::new(|| Arc::new(KokoroPipelines::load().unwrap()));
+
 /// Speaks `text` in `voice` through the real pipelines and a scripted worker, checking the worker
 /// gets the voice and the server's chunks for `lang`, and the client their audio. Returns the chunks.
 async fn speak_with_real_pipelines(voice: &str, lang: Lang, text: &str) -> Vec<Chunk> {
-    let pipelines = Arc::new(kokoro_server::kokoro::KokoroPipelines::load().unwrap());
+    let pipelines = PIPELINES.clone();
     let server = start(|_| {}, pipelines.clone()).await;
     let mut worker = ScriptedWorker::listen(&server.socket, worker_side::hello(&hello()));
     server.worker.connected().await;
@@ -667,8 +669,7 @@ async fn speaks_spanish_with_a_spanish_voice() {
     let text = "¿Dónde está la biblioteca? Está en Москва.";
     let chunks = speak_with_real_pipelines("ef_dora", Lang::Spanish, text).await;
     assert_eq!(chunks.len(), 1);
-    let english = KokoroPipelines::load().unwrap();
-    assert_ne!(chunks, packed_chunks(&english, Lang::AmericanEnglish, text));
+    assert_ne!(chunks, packed_chunks(PIPELINES.as_ref(), Lang::AmericanEnglish, text));
 }
 
 #[tokio::test]
