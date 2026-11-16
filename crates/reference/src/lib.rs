@@ -48,11 +48,6 @@ pub struct Call {
     /// Runs read by another language's G2P: `(segment, language, phonemes)`.
     #[serde(default)]
     pub foreign: Vec<(String, String, String)>,
-    /// `spacy` and `fallback` for Latin runs in another pipeline, read by English G2P.
-    #[serde(default)]
-    pub foreign_spacy: Vec<Vec<SpacyToken>>,
-    #[serde(default)]
-    pub foreign_fallback: Vec<(String, Option<String>)>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
