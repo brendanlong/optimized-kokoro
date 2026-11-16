@@ -12,6 +12,5 @@ with open(sys.argv[1], "w") as out:
         if 0xD800 <= cp < 0xE000:
             continue
         c = chr(cp)
-        digit = int(unicodedata.numeric(c)) if c.isdigit() else None
-        row = [c, c.lower(), c.upper(), c.isalpha(), c.isspace(), digit, unicodedata.normalize("NFKC", c)]
+        row = [c, c.lower(), c.upper(), c.isalpha(), c.isspace(), unicodedata.normalize("NFKC", c)]
         out.write(json.dumps(row, ensure_ascii=False) + "\n")

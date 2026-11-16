@@ -72,7 +72,7 @@ impl Nlp {
     }
 
     /// Loads `tokenizer.json` and `tagger.safetensors` as written by `export.py`.
-    pub fn from_data(tokenizer_json: &[u8], weights: &[u8]) -> Self {
+    fn from_data(tokenizer_json: &[u8], weights: &[u8]) -> Self {
         let data: Data = serde_json::from_slice(tokenizer_json).expect("tokenizer.json");
         assert_eq!(data.tags, TAGS, "tag set");
         let tagger = Tagger::load(weights, &data.model, TAGS.len());
