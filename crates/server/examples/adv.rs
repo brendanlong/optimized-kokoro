@@ -2,7 +2,9 @@
 //! {"name": ..., "text": ..., "lang": "a"|"b"}. Prints name, bytes, chars, check ms, first-chunk ms,
 //! total ms, chunks, slowest chunk ms, total ids.
 use kokoro_server::kokoro::KokoroPipelines;
-use kokoro_server::pipeline::{Lang, Pipeline};
+use kokoro_server::pack::SOFT_MAX_PHONEMES;
+use kokoro_server::pipeline::{DEFAULT_MAX_TOKENS, Lang};
+use kokoro_server::stream;
 use std::io::BufRead;
 use std::time::Instant;
 
@@ -17,8 +19,8 @@ fn main() {
         let mut best: Option<(f64, f64, f64, usize, f64, usize, usize)> = None;
         for _ in 0..reps {
             let t0 = Instant::now();
-            let ok = kokoro_text::check_pause_budget(text, &kokoro_text::Limits::default()).is_ok()
-                && kokoro_text::check_speakable(text, &kokoro_text::Options::default()).is_ok();
+            let _ = kokoro_text::check_pause_budget(text, &kokoro_text::Limits::default());
+            let _ = kokoro_text::check_speakable(text, &kokoro_text::Options::default());
             let check = t0.elapsed().as_secs_f64() * 1e3;
             let t1 = Instant::now();
             let mut first = None;
@@ -27,13 +29,7 @@ fn main() {
             let mut ids = 0;
             let mut errs = 0;
             let mut last = Instant::now();
-            for c in p.chunks(
-                lang,
-                text,
-                kokoro_server::pipeline::DEFAULT_MAX_TOKENS,
-                kokoro_server::pipeline::DEFAULT_MAX_TOKENS,
-                &|| false,
-            ) {
+            for c in stream::packed_chunks(&p, lang, text, DEFAULT_MAX_TOKENS, SOFT_MAX_PHONEMES, &|| false) {
                 let now = Instant::now();
                 slowest = slowest.max((now - last).as_secs_f64() * 1e3);
                 last = now;
@@ -45,7 +41,6 @@ fn main() {
                 n += 1;
             }
             let total = t1.elapsed().as_secs_f64() * 1e3;
-            let _ = ok;
             let r = (check, first.unwrap_or(0.0), total, n, slowest, ids, errs);
             if best.is_none_or(|b| r.2 + r.0 < b.2 + b.0) {
                 best = Some(r);
