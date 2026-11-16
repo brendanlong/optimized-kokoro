@@ -9,7 +9,6 @@
 #![forbid(unsafe_code)]
 
 mod abbreviations;
-mod english_data;
 mod footnotes;
 pub mod normalize;
 mod numbers;

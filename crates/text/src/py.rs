@@ -3,17 +3,8 @@
 use crate::tables::{DIGIT, SPACE, WORD};
 
 fn in_table(table: &[(char, char)], c: char) -> bool {
-    table
-        .binary_search_by(|&(lo, hi)| {
-            if hi < c {
-                std::cmp::Ordering::Less
-            } else if lo > c {
-                std::cmp::Ordering::Greater
-            } else {
-                std::cmp::Ordering::Equal
-            }
-        })
-        .is_ok()
+    let i = table.partition_point(|&(_, hi)| hi < c);
+    table.get(i).is_some_and(|&(lo, _)| lo <= c)
 }
 
 /// `str.isspace()`, Python `re`'s `\s`.

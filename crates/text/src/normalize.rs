@@ -3,7 +3,6 @@
 //! reference's, and Roman numerals where the context shows they are numbers (`roman.rs`;
 //! `docs/divergences.md`). The reference's unit option is gone: the number pass reads units.
 
-use crate::english_data::VALID_TLDS;
 use crate::numbers::{self, cardinal};
 use crate::py;
 use crate::pyre::{Captures, Pattern, compile, compile_i};
@@ -62,6 +61,13 @@ struct Patterns {
     dotted_acronym: Pattern,
     acronym_dot: Pattern,
 }
+
+/// `VALID_TLDS` from Kokoro-FastAPI's `normalization/english_data.py`, in its original order.
+const VALID_TLDS: &[&str] = &[
+    "com", "org", "net", "edu", "gov", "mil", "int", "biz", "info", "name", "pro", "coop", "museum", "travel", "jobs",
+    "mobi", "tel", "asia", "cat", "xxx", "aero", "arpa", "bg", "br", "ca", "cn", "de", "es", "eu", "fr", "in", "it",
+    "jp", "mx", "nl", "ru", "uk", "us", "io", "co",
+];
 
 static PATTERNS: LazyLock<Patterns> = LazyLock::new(|| Patterns {
     multi_space: compile(r"\s{2,}"),
@@ -298,8 +304,6 @@ mod tests {
     use super::*;
     use crate::scan::tests::random_texts;
 
-    /// Every pattern's fast paths (native conditions, relaxed matches) against the plain
-    /// backtracker, on random text made of the pieces the patterns react to.
     #[test]
     fn dashes() {
         let n = |t: &str| english(t, &Options::default());
@@ -354,6 +358,8 @@ mod tests {
         }
     }
 
+    /// Every pattern's fast paths (native conditions, relaxed matches) against the plain
+    /// backtracker, on random text made of the pieces the patterns react to.
     #[test]
     fn patterns_match_the_backtracker() {
         let p = &*PATTERNS;
