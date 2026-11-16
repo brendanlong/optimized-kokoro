@@ -1,4 +1,5 @@
 # From the PR #19 review (copied from its scratch directory): test texts for reference.py.
+# tests/fixtures/rv2.*.jsonl are its first 600 texts.
 import json, random, sys
 random.seed(7)
 nums = lambda: random.choice([str(random.randint(0,10**random.randint(1,14))), f"{random.randint(0,999)},{random.randint(0,999):03d}", f"-{random.randint(0,99)}", f"−{random.randint(0,99)}.{random.randint(0,99)}", f"{random.random()*100:.3f}", "".join(chr(0xff10+int(c)) for c in str(random.randint(0,10**8))), f"{random.randint(1,9)}億{random.randint(1,9999)}万", f"二〇{random.randint(10,29)}年", f"{random.randint(1,12)}月{random.randint(1,31)}日", f"{random.randint(1,99)}{random.choice('人本匹杯個回階時分秒歳枚台冊頭羽件軒足着点')}", f"第{random.randint(1,99)}", f"{random.randint(1,9)}〜{random.randint(10,99)}", f"{random.randint(1,9)}～{random.randint(10,99)}%", f"{random.randint(1,99)}％", f"0{random.randint(0,99)}", "１.５", f"{random.randint(1,9)}.{random.randint(0,9)}.{random.randint(0,9)}"])

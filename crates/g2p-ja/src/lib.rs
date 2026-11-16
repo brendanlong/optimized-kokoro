@@ -95,8 +95,4 @@ impl JaG2p {
     pub fn morphs<'a>(&'a self, text: &'a str) -> Result<Vec<mecab::Morph<'a>>, mecab::Error> {
         mecab::analyze(&self.dict, text)
     }
-
-    pub fn dictionary(&self) -> &Dictionary {
-        &self.dict
-    }
 }

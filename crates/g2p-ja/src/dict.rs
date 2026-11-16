@@ -104,7 +104,6 @@ pub struct Dictionary {
     chars: Vec<CharInfo>,
     /// The unknown-word tokens of each character category, by category id.
     unknown: Vec<Vec<Token>>,
-    category_names: Vec<String>,
     map: Mmap,
     da: Range<usize>,
     tokens: Range<usize>,
@@ -205,10 +204,6 @@ impl Dictionary {
 
     pub fn unknown_tokens(&self, category: u8) -> &[Token] {
         self.unknown.get(category as usize).map_or(&[], Vec::as_slice)
-    }
-
-    pub fn category_name(&self, category: u8) -> &str {
-        &self.category_names[category as usize]
     }
 
     /// `Connector::cost` without the right node's word cost (0 for ids out of range, which only
@@ -326,9 +321,9 @@ impl Dictionary {
             return Err(format("too many character categories"));
         }
         let mut unknown = Vec::with_capacity(categories);
-        let mut category_names = Vec::with_capacity(categories);
         for _ in 0..categories {
-            category_names.push(c.string()?);
+            // The category's name, which only `build` uses.
+            c.string()?;
             unknown.push(c.tokens()?);
         }
         let n = c.u32()? as usize;
@@ -353,20 +348,7 @@ impl Dictionary {
         if chars.iter().any(|c| c.default_type() as usize >= unknown.len()) {
             return Err(format("character table refers to an unknown category"));
         }
-        Ok(Dictionary {
-            version,
-            lsize,
-            rsize,
-            chars,
-            unknown,
-            category_names,
-            map,
-            da,
-            tokens,
-            readings,
-            reading_ends,
-            matrix,
-        })
+        Ok(Dictionary { version, lsize, rsize, chars, unknown, map, da, tokens, readings, reading_ends, matrix })
     }
 }
 
@@ -512,8 +494,6 @@ pub fn token_reading(raw: &str) -> Result<Option<String>, String> {
     Ok(pick(9).or_else(|| pick(20)).map(|r| crate::cutlet::kata2hira(r)))
 }
 
-/// Converts the MeCab dictionary in `dicdir` (UniDic's `sys.dic`, `unk.dic`, `char.bin`,
-/// `matrix.bin`) into the file [`Dictionary::load`] reads.
 /// The order to number context ids in: ids listed first get the lowest numbers, the rest
 /// follow in their old order. Id 0 stays 0 (MeCab's BOS and EOS nodes use it).
 #[derive(Debug, Clone, Default)]
@@ -562,6 +542,8 @@ impl ContextOrder {
 /// file's.
 const MATRIX_ALIGN: usize = 4096;
 
+/// Converts the MeCab dictionary in `dicdir` (UniDic's `sys.dic`, `unk.dic`, `char.bin`,
+/// `matrix.bin`) into the file [`Dictionary::load`] reads.
 pub fn build(dicdir: &Path, version: &str, order: &ContextOrder, out: &Path) -> Result<(), Error> {
     let sys = MecabDic::read(&dicdir.join("sys.dic"))?;
     let unk = MecabDic::read(&dicdir.join("unk.dic"))?;
@@ -641,7 +623,6 @@ pub fn build(dicdir: &Path, version: &str, order: &ContextOrder, out: &Path) -> 
         }
     }
     let mut w = BufWriter::with_capacity(1 << 20, File::create(out)?);
-    let mut written = 0usize;
     w.write_all(MAGIC)?;
     write_string(&mut w, version)?;
     w.write_all(&sys.lsize.to_le_bytes())?;
@@ -653,13 +634,7 @@ pub fn build(dicdir: &Path, version: &str, order: &ContextOrder, out: &Path) -> 
     w.write_all(&(names.len() as u32).to_le_bytes())?;
     for (name, list) in names.iter().zip(&unknown) {
         write_string(&mut w, name)?;
-        w.write_all(&(list.len() as u32).to_le_bytes())?;
-        for t in list {
-            w.write_all(&t.left.to_le_bytes())?;
-            w.write_all(&t.right.to_le_bytes())?;
-            w.write_all(&t.cost.to_le_bytes())?;
-            w.write_all(&t.reading.to_le_bytes())?;
-        }
+        write_tokens(&mut w, list)?;
     }
     w.write_all(&(sys.da.len() as u32).to_le_bytes())?;
     for u in &sys.da {
@@ -674,7 +649,7 @@ pub fn build(dicdir: &Path, version: &str, order: &ContextOrder, out: &Path) -> 
         w.write_all(&e.to_le_bytes())?;
     }
     w.flush()?;
-    written += w.get_ref().metadata()?.len() as usize;
+    let written = w.get_ref().metadata()?.len() as usize;
     w.write_all(&vec![0; written.next_multiple_of(MATRIX_ALIGN) - written])?;
     w.write_all(&reordered)?;
     w.flush()?;

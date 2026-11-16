@@ -24,11 +24,11 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let before = rss_mb();
     let start = Instant::now();
-    let dict = Dictionary::load(default_dictionary_path().expect("KOKORO_UNIDIC")).expect("dictionary");
+    let dict = Arc::new(Dictionary::load(default_dictionary_path().expect("KOKORO_UNIDIC")).expect("dictionary"));
     let load = start.elapsed();
-    let g2p = JaG2p::new(Arc::new(dict));
+    let g2p = JaG2p::new(dict.clone());
     println!("load {load:.2?}, RSS {:.0} MB -> {:.0} MB", before, rss_mb());
-    for (part, bytes) in g2p.dictionary().sizes() {
+    for (part, bytes) in dict.sizes() {
         println!("  {part:18} {:7.1} MB mapped", bytes as f64 / 1e6);
     }
     let Some(path) = args.get(1) else { return };

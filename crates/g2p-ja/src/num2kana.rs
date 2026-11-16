@@ -1,7 +1,7 @@
 //! misaki's `num2kana.Convert(digits, 'hiragana')`: a number of up to nine digits in kana.
 //!
 //! Longer numbers, which `Convert` answers with an English error message (that cutlet then
-//! crashes on), are read digit by digit; see [`number`].
+//! crashes on), are read by [`number_words`].
 
 const DIGITS: [&str; 10] = ["ゼロ", "いち", "に", "さん", "よん", "ご", "ろく", "なな", "はち", "きゅう"];
 const TEN: &str = "じゅう";
@@ -131,9 +131,7 @@ fn convert(mut s: &[u8], out: &mut String) {
 /// `Convert(digits, 'hiragana')` for one to nine ASCII digits, as the reference reads them.
 pub fn convert_kana(digits: &[u8]) -> String {
     let mut out = String::new();
-    if !digits.is_empty() {
-        convert(digits, &mut out);
-    }
+    convert(digits, &mut out);
     out
 }
 
