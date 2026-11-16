@@ -3,11 +3,12 @@
 //!     cargo run --release -p kokoro-espeak-ng --example compare -- CALLS.jsonl [DATA_DIR] [VOICE] [SHOW]
 //!
 //! CALLS.jsonl lines are `{"voice": "gmw/en-US", "text": "...", "clauses": ["...", ...]}`, the
-//! clauses `espeak_TextToPhonemes` returned in phonemizer's mode (see `scratch/tools/oracle.py`).
-//! Prints the exact-match rate per voice, per call and per word, then mismatches. Calls marked
-//! `ub` (C read memory out of bounds or uninitialised; see `oracle.py --ub`) run but aren't scored;
-//! the `ub` column counts them and `ub-same` how many still match. Each call starts from fresh
-//! state, so the answers must come from `oracle.py pairs` without `--history`.
+//! clauses `espeak_TextToPhonemes` returned in phonemizer's mode (see
+//! `reference/espeak-ng-oracle/oracle.py`). Prints the exact-match rate per voice, per call and
+//! per word, then mismatches. Calls marked `ub` (C read memory out of bounds or uninitialised; see
+//! `oracle.py --ub`) run but aren't scored; the `ub` column counts them and `ub-same` how many
+//! still match. Each call starts from fresh state, so the answers must come from `oracle.py pairs`
+//! without `--history`.
 
 use kokoro_espeak_ng::{Espeak, EspeakData};
 use serde::Deserialize;
