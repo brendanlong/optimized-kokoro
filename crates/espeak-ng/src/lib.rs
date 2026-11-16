@@ -144,7 +144,7 @@ impl Espeak {
         loop {
             self.translate_clause(Tr::Main);
             after_clause(self);
-            let done = self.decoder.remaining().is_none();
+            let done = self.decoder.eof();
             out.push(String::from_utf8_lossy(&self.get_translated_phoneme_string()).into_owned());
             if done {
                 return out;
