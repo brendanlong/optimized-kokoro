@@ -80,17 +80,17 @@ impl Wrapper {
         }
     }
 
-    fn run(&self, text: &str, espeak: Option<&mut EspeakFn>) -> Option<String> {
+    fn run(&mut self, text: &str, espeak: Option<&mut EspeakFn>) -> Option<String> {
         match (self, espeak) {
-            (Wrapper::Fallback(w), Some(e)) => w.phonemize_with(text, e).unwrap(),
-            (Wrapper::Fallback(w), None) => w.phonemize(text).unwrap(),
-            (Wrapper::G2P(w), Some(e)) => Some(w.phonemize_with(text, e).unwrap()),
-            (Wrapper::G2P(w), None) => Some(w.phonemize(text).unwrap()),
+            (Wrapper::Fallback(w), Some(e)) => w.phonemize_with(text, e),
+            (Wrapper::Fallback(w), None) => w.phonemize(text),
+            (Wrapper::G2P(w), Some(e)) => Some(w.phonemize_with(text, e)),
+            (Wrapper::G2P(w), None) => Some(w.phonemize(text)),
         }
     }
 }
 
-type EspeakFn<'a> = dyn FnMut(&str) -> kokoro_espeak::Result<String> + 'a;
+type EspeakFn<'a> = dyn FnMut(&str) -> String + 'a;
 
 #[derive(Default)]
 struct Tally {
@@ -131,7 +131,7 @@ fn wrappers_match_misaki_given_c_espeak() {
         let mut asked = Vec::new();
         let mut espeak = |chunk: &str| {
             asked.push(chunk.to_string());
-            Ok(calls.next().filter(|(text, _)| text == chunk).map_or_else(String::new, |(_, ps)| ps.clone()))
+            calls.next().filter(|(text, _)| text == chunk).map_or_else(String::new, |(_, ps)| ps.clone())
         };
         let got = wrapper.run(&case.text, Some(&mut espeak));
         let expected_calls: Vec<_> = case.espeak.iter().map(|(t, _)| t.clone()).collect();
@@ -162,16 +162,16 @@ fn parity_with_c_espeak() {
         if !seen.insert((key.clone(), case.text.clone())) {
             continue;
         }
-        let wrapper = &*wrappers.entry(key.clone()).or_insert_with(|| Wrapper::new(&case));
+        let wrapper = wrappers.entry(key.clone()).or_insert_with(|| Wrapper::new(&case));
+        let got = wrapper.run(&case.text, None);
         let backend = match wrapper {
             Wrapper::Fallback(w) => w.backend(),
             Wrapper::G2P(w) => w.backend(),
         };
-        let got = wrapper.run(&case.text, None);
         let tally = tallies.entry(key.clone()).or_default();
         tally.total += 1;
         tally.chunks += case.espeak.len();
-        tally.chunks_matched += case.espeak.iter().filter(|(text, c)| backend.espeak(text).unwrap() == *c).count();
+        tally.chunks_matched += case.espeak.iter().filter(|(text, c)| backend.espeak(text) == *c).count();
         let listed = divergences.get(&(case.wrapper.clone(), case.language.clone(), case.text.clone()));
         if listed.is_some() {
             tally.diverged += 1;

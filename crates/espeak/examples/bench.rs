@@ -14,15 +14,15 @@ fn main() {
         cases.entry(key).or_default().push(v["text"].as_str().unwrap().to_string());
     }
     for ((wrapper, language), texts) in cases {
-        let run: Box<dyn Fn(&str)> = if wrapper == "fallback" {
-            let w = EspeakFallback::new(language == "en-gb").unwrap();
+        let mut run: Box<dyn FnMut(&str)> = if wrapper == "fallback" {
+            let mut w = EspeakFallback::new(language == "en-gb").unwrap();
             Box::new(move |t| {
-                w.phonemize(t).unwrap();
+                w.phonemize(t);
             })
         } else {
-            let w = EspeakG2P::new(&language).unwrap();
+            let mut w = EspeakG2P::new(&language).unwrap();
             Box::new(move |t| {
-                w.phonemize(t).unwrap();
+                w.phonemize(t);
             })
         };
         run(&texts[0]);

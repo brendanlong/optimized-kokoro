@@ -52,7 +52,7 @@ fn phonemize(text: &str) -> String {
 }
 
 fn espeak(language: &str, text: &str) -> String {
-    EspeakG2P::new(language).unwrap().phonemize(text).unwrap()
+    EspeakG2P::new(language).unwrap().phonemize(text)
 }
 
 struct Spacy(Nlp);
@@ -71,7 +71,7 @@ struct Espeak(EspeakFallback);
 
 impl Fallback for Espeak {
     fn phonemize(&mut self, word: &str) -> Option<String> {
-        self.0.phonemize(word).unwrap()
+        self.0.phonemize(word)
     }
 }
 

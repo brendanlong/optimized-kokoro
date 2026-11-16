@@ -554,11 +554,7 @@ impl Fallback for LazyFallback<'_> {
                 }
             }
         }
-        let engine = self.engine.as_ref().expect("made above");
-        engine.phonemize(word).unwrap_or_else(|e| {
-            self.error.get_or_insert(e);
-            None
-        })
+        self.engine.as_mut().expect("made above").phonemize(word)
     }
 }
 
@@ -667,7 +663,7 @@ impl<'p> Request<'p> {
                     Some(engine) => engine,
                     native => native.insert(EspeakG2P::with_data(voice, pipeline.espeak.clone())?),
                 };
-                engine.phonemize(segment)?
+                engine.phonemize(segment)
             }
         };
         Ok(kokoro_text::py::strip(&raw).to_owned())
@@ -806,7 +802,7 @@ impl<'p> Request<'p> {
                     e.insert(EspeakG2P::with_data(voice, self.pipeline.espeak.clone())?)
                 }
             };
-            engine.phonemize(&text)?
+            engine.phonemize(&text)
         };
         Ok(foreign::finish_in(&raw, language, self.pipeline.lang.english()))
     }
