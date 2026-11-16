@@ -9,7 +9,7 @@
 //! the `ub` column counts them and `ub-same` how many still match. Each call starts from fresh
 //! state, so the answers must come from `oracle.py pairs` without `--history`.
 
-use kokoro_espeak_ng::{Espeak, EspeakData, PHONEMES_IPA_TIE};
+use kokoro_espeak_ng::{Espeak, EspeakData};
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap};
 
@@ -66,7 +66,7 @@ fn main() {
             e.set_voice_by_name(&call.voice).unwrap();
             e
         });
-        let got = e.text_to_phonemes(&call.text, PHONEMES_IPA_TIE);
+        let got = e.text_to_phonemes(&call.text);
         let t = tallies.entry(call.voice.clone()).or_default();
         if !call.ub.is_empty() {
             t.ub += 1;

@@ -292,20 +292,13 @@ impl Espeak {
         out
     }
 
-    /// `WritePhMnemonic`, appending to `out`. `plist` selects `phoneme_list[ix]`.
-    pub(crate) fn write_ph_mnemonic(
-        &mut self,
-        out: &mut Vec<u8>,
-        ph: &PhonemeTab,
-        plist: Option<usize>,
-        use_ipa: bool,
-        flags: Option<&mut i32>,
-    ) {
+    /// `WritePhMnemonic` in IPA, appending to `out`, for `phoneme_list[ix]`.
+    pub(crate) fn write_ph_mnemonic(&mut self, out: &mut Vec<u8>, ph: &PhonemeTab, ix: usize) {
         if ph.code == PHON_END_WORD {
             return;
         }
         if ph.code == PHON_SWITCH {
-            let tone_ph = plist.map_or(0, |ix| self.phoneme_list.get(ix).map_or(0, |p| p.tone_ph));
+            let tone_ph = self.phoneme_list.get(ix).map_or(0, |p| p.tone_ph);
             out.push(b'(');
             if let Some(t) = self.data.phoneme_tab_list.get(tone_ph as usize) {
                 out.extend_from_slice(&t.name);
@@ -313,32 +306,19 @@ impl Espeak {
             out.push(b')');
             return;
         }
-        if use_ipa {
-            let mut phdata = PhonemeData::default();
-            match plist {
-                None => self.interpret_phoneme2(ph.code, &mut phdata),
-                Some(ix) => {
-                    let mut list = std::mem::take(&mut self.phoneme_list);
-                    self.interpret_phoneme(None, 0, &mut list, ix as isize, &mut phdata, None);
-                    self.phoneme_list = list;
-                }
-            }
-            let ipa = &phdata.ipa_string;
-            let mut p = 0;
-            if ipa[0] == 0x20 {
-                return;
-            }
-            if ipa[0] != 0 && ipa[0] < 0x20 {
-                if let Some(f) = flags {
-                    *f = ipa[0] as i32;
-                }
-                p = 1;
-            }
-            let s = cstr(ipa, p as isize);
-            if !s.is_empty() {
-                out.extend_from_slice(s);
-                return;
-            }
+        let mut phdata = PhonemeData::default();
+        let mut list = std::mem::take(&mut self.phoneme_list);
+        self.interpret_phoneme(None, 0, &mut list, ix as isize, &mut phdata, None);
+        self.phoneme_list = list;
+        let ipa = &phdata.ipa_string;
+        if ipa[0] == 0x20 {
+            return;
+        }
+        let p = if ipa[0] != 0 && ipa[0] < 0x20 { 1 } else { 0 };
+        let s = cstr(ipa, p);
+        if !s.is_empty() {
+            out.extend_from_slice(s);
+            return;
         }
         let mut first = true;
         let mut mnem = ph.mnemonic;
@@ -348,33 +328,27 @@ impl Espeak {
             if c == b'/' as i32 {
                 break;
             }
-            if use_ipa {
-                if first && c == b'_' as i32 {
-                    break;
-                }
-                if c == b'#' as i32 && ph.typ == PH_VOWEL {
-                    break;
-                }
-                if !first && is_digit09(c) {
-                    continue;
-                }
-                if (0x20..128).contains(&c) {
-                    c = IPA1[(c - 0x20) as usize] as i32;
-                }
-                push_utf8(out, c);
-            } else {
-                out.push(c as u8);
+            if first && c == b'_' as i32 {
+                break;
             }
+            if c == b'#' as i32 && ph.typ == PH_VOWEL {
+                break;
+            }
+            if !first && is_digit09(c) {
+                continue;
+            }
+            if (0x20..128).contains(&c) {
+                c = IPA1[(c - 0x20) as usize] as i32;
+            }
+            push_utf8(out, c);
             first = false;
         }
     }
 
-    /// `GetTranslatedPhonemeString`.
-    pub(crate) fn get_translated_phoneme_string(&mut self, phoneme_mode: i32) -> Vec<u8> {
-        const STRESS_CHARS: &[u8] = b"==,,''";
-        let use_ipa = phoneme_mode & ESPEAK_PHONEMES_IPA != 0;
-        let (use_tie, separate_phonemes) =
-            if phoneme_mode & ESPEAK_PHONEMES_TIE != 0 { (phoneme_mode >> 8, 0) } else { (0, phoneme_mode >> 8) };
+    /// `GetTranslatedPhonemeString` in phonemizer's mode, `espeakPHONEMES_IPA |
+    /// espeakPHONEMES_TIE` with U+0361 tying multi-letter phonemes.
+    pub(crate) fn get_translated_phoneme_string(&mut self) -> Vec<u8> {
+        const TIE: i32 = 0x361;
         let mut out = std::mem::take(&mut self.phon_out);
         out.clear();
         let mut buf = Vec::with_capacity(32);
@@ -384,18 +358,11 @@ impl Espeak {
             phon_buf2.clear();
             let plist = self.phoneme_list[ix];
             let ph = plist.ph.unwrap_or_default();
-            let mut flags = 0;
-            self.write_ph_mnemonic(&mut phon_buf2, &ph, Some(ix), use_ipa, Some(&mut flags));
+            self.write_ph_mnemonic(&mut phon_buf2, &ph, ix);
             if plist.newword & PHLIST_START_OF_WORD != 0
                 && plist.newword & (PHLIST_START_OF_SENTENCE | PHLIST_START_OF_CLAUSE) == 0
             {
                 buf.push(b' ');
-            }
-            if (plist.newword == 0 || separate_phonemes == b' ' as i32) && separate_phonemes != 0 && ix > 1 {
-                let c = utf8_in(&phon_buf2, 0).0;
-                if !(0x2b0..=0x36f).contains(&c) {
-                    push_utf8(&mut buf, separate_phonemes);
-                }
             }
             if plist.synthflags & SFLAG_SYLLABLE != 0 {
                 let mut stress = plist.stresslevel as i32;
@@ -403,29 +370,16 @@ impl Espeak {
                     if stress > STRESS_IS_PRIORITY {
                         stress = STRESS_IS_PRIORITY;
                     }
-                    let c = if use_ipa {
-                        if stress > STRESS_IS_SECONDARY { 0x2c8 } else { 0x2cc }
-                    } else {
-                        STRESS_CHARS[stress as usize] as i32
-                    };
-                    if c != 0 {
-                        push_utf8(&mut buf, c);
-                    }
+                    push_utf8(&mut buf, if stress > STRESS_IS_SECONDARY { 0x2c8 } else { 0x2cc });
                 }
             }
-            let flags = 0;
             let mut count = 0;
             let mut p = 0isize;
             while at(&phon_buf2, p) != 0 {
                 let (c, n) = utf8_in(&phon_buf2, p);
                 p += n;
-                if use_tie != 0
-                    && count > 0
-                    && (flags & (1 << (count - 1))) == 0
-                    && !(0x2b0..=0x36f).contains(&c)
-                    && ucd::isalpha(c)
-                {
-                    push_utf8(&mut buf, use_tie);
+                if count > 0 && !(0x2b0..=0x36f).contains(&c) && ucd::isalpha(c) {
+                    push_utf8(&mut buf, TIE);
                 }
                 push_utf8(&mut buf, c);
                 count += 1;
@@ -433,15 +387,15 @@ impl Espeak {
             if ph.code != PHON_SWITCH {
                 if plist.synthflags & SFLAG_LENGTHEN != 0 {
                     let l = self.phz(PHON_LENGTHEN);
-                    self.write_ph_mnemonic(&mut buf, &l, Some(ix), use_ipa, None);
+                    self.write_ph_mnemonic(&mut buf, &l, ix);
                 }
                 if plist.synthflags & SFLAG_SYLLABLE != 0 && plist.typ != PH_VOWEL {
                     let s = self.phz(PHON_SYLLABIC);
-                    self.write_ph_mnemonic(&mut buf, &s, Some(ix), use_ipa, None);
+                    self.write_ph_mnemonic(&mut buf, &s, ix);
                 }
                 if plist.tone_ph > 0 {
                     let t = self.phz(plist.tone_ph);
-                    self.write_ph_mnemonic(&mut buf, &t, Some(ix), use_ipa, None);
+                    self.write_ph_mnemonic(&mut buf, &t, ix);
                 }
             }
             if let Some(z) = buf.iter().position(|&c| c == 0) {
@@ -2939,7 +2893,7 @@ mod tests {
                 FULL_RESTARTS.with(|f| f.set(full));
                 let mut e = Espeak::new(data.clone());
                 e.set_voice_by_name(voice).unwrap();
-                texts.iter().map(|t| e.text_to_phonemes(t, crate::PHONEMES_IPA_TIE)).collect::<Vec<_>>()
+                texts.iter().map(|t| e.text_to_phonemes(t)).collect::<Vec<_>>()
             };
             let (resumed, restarted) = (run(false), run(true));
             for ((text, a), b) in texts.iter().zip(&resumed).zip(&restarted) {

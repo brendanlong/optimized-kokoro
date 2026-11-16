@@ -1,7 +1,7 @@
 //! Runs a sequence of calls on one engine: `seq VOICE < texts.jsonl`, where each input line is a
 //! JSON string; prints each call's clauses as a JSON array. `ESPEAK_DATA` selects the data.
 
-use kokoro_espeak_ng::{Espeak, EspeakData, PHONEMES_IPA_TIE};
+use kokoro_espeak_ng::{Espeak, EspeakData};
 use std::io::BufRead;
 
 fn main() {
@@ -12,7 +12,7 @@ fn main() {
     e.set_voice_by_name(&voice).unwrap();
     for line in std::io::stdin().lock().lines() {
         let text: String = serde_json::from_str(&line.unwrap()).unwrap();
-        let clauses = e.text_to_phonemes(&text, PHONEMES_IPA_TIE);
+        let clauses = e.text_to_phonemes(&text);
         println!("{}", serde_json::to_string(&clauses).unwrap());
     }
 }

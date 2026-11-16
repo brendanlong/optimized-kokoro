@@ -2,7 +2,7 @@
 //! `fuzz [ITERATIONS] [SEED] [DATA_DIR]`. Build without `--release` so arithmetic overflow panics.
 //! Also reports the slowest call, as a check that time stays bounded.
 
-use kokoro_espeak_ng::{Espeak, EspeakData, PHONEMES_IPA_TIE};
+use kokoro_espeak_ng::{Espeak, EspeakData};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::time::{Duration, Instant};
 
@@ -159,7 +159,7 @@ fn main() {
             e
         });
         let start = Instant::now();
-        let r = catch_unwind(AssertUnwindSafe(|| engine.text_to_phonemes(&text, PHONEMES_IPA_TIE)));
+        let r = catch_unwind(AssertUnwindSafe(|| engine.text_to_phonemes(&text)));
         let took = start.elapsed();
         if took > slowest.0 {
             slowest = (took, voices[v].clone(), text.clone());

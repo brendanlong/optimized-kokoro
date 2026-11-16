@@ -478,9 +478,6 @@ pub const IS_BREAK: u32 = 17;
 pub const IS_WORD_START: u32 = 18;
 pub const IS_WORD_END: u32 = 19;
 
-pub const ESPEAK_PHONEMES_IPA: i32 = 0x02;
-pub const ESPEAK_PHONEMES_TIE: i32 = 0x80;
-
 pub const ESPEAKNG_DEFAULT_VOICE: &[u8] = b"en";
 
 /// `WORD_TAB`.

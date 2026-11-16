@@ -6,11 +6,11 @@
 //! by all instances lives in [`EspeakData`].
 //!
 //! ```no_run
-//! use kokoro_espeak_ng::{Espeak, EspeakData, PHONEMES_IPA_TIE};
+//! use kokoro_espeak_ng::{Espeak, EspeakData};
 //! let data = EspeakData::load("espeak-ng-data").unwrap();
 //! let mut espeak = Espeak::new(data);
 //! espeak.set_voice_by_name("gmw/en-US").unwrap();
-//! let clauses = espeak.text_to_phonemes("Hello world.", PHONEMES_IPA_TIE);
+//! let clauses = espeak.text_to_phonemes("Hello world.");
 //! ```
 
 #![forbid(unsafe_code)]
@@ -54,13 +54,6 @@ pub fn default_data_dir() -> std::path::PathBuf {
 
 use engine::Tr;
 use std::sync::Arc;
-
-/// `espeakPHONEMES_IPA`.
-pub const PHONEMES_IPA: i32 = 0x02;
-/// `espeakPHONEMES_TIE`: bits 8-23 hold the tie character.
-pub const PHONEMES_TIE: i32 = 0x80;
-/// The mode phonemizer uses: IPA, with U+0361 tying multi-letter phonemes.
-pub const PHONEMES_IPA_TIE: i32 = PHONEMES_IPA | PHONEMES_TIE | (0x361 << 8);
 
 impl Espeak {
     /// `espeak_SetVoiceByName` on a freshly initialised library: `name` is a voice file name
@@ -130,19 +123,14 @@ impl Espeak {
     /// C decodes the remaining text again for each clause. The UTF-8 decoder carries no state
     /// between characters, so decoding once and continuing from where the last clause stopped
     /// gives the same characters, in time linear in the length of the text.
-    pub fn text_to_phonemes(&mut self, text: &str, phoneme_mode: i32) -> Vec<String> {
-        self.translate_text(text, phoneme_mode, |_| {})
+    pub fn text_to_phonemes(&mut self, text: &str) -> Vec<String> {
+        self.translate_text(text, |_| {})
     }
 
     /// [`text_to_phonemes`](Self::text_to_phonemes), calling `after_clause` after each clause,
     /// e.g. to print [`debug_phoneme_list`](Self::debug_phoneme_list).
     #[doc(hidden)]
-    pub fn translate_text(
-        &mut self,
-        text: &str,
-        phoneme_mode: i32,
-        mut after_clause: impl FnMut(&Self),
-    ) -> Vec<String> {
+    pub fn translate_text(&mut self, text: &str, mut after_clause: impl FnMut(&Self)) -> Vec<String> {
         let mut out = Vec::new();
         if self.used {
             let Some(after_set_voice) = self.after_set_voice.clone() else { return out };
@@ -157,7 +145,7 @@ impl Espeak {
             self.translate_clause(Tr::Main);
             after_clause(self);
             let done = self.decoder.remaining().is_none();
-            out.push(String::from_utf8_lossy(&self.get_translated_phoneme_string(phoneme_mode)).into_owned());
+            out.push(String::from_utf8_lossy(&self.get_translated_phoneme_string()).into_owned());
             if done {
                 return out;
             }

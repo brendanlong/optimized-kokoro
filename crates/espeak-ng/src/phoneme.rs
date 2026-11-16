@@ -602,17 +602,4 @@ impl Espeak {
             }
         }
     }
-
-    /// `InterpretPhoneme2`: an isolated phoneme between pauses.
-    pub(crate) fn interpret_phoneme2(&self, phcode: u8, phdata: &mut PhonemeData) {
-        let mut plist = [PhonemeList::default(); 4];
-        for p in &mut plist {
-            p.phcode = PHON_PAUSE;
-            p.ph = self.ph(PHON_PAUSE);
-        }
-        plist[1].phcode = phcode;
-        plist[1].ph = self.ph(phcode);
-        plist[2].sourceix = 1;
-        self.interpret_phoneme(None, 0, &mut plist, 1, phdata, None);
-    }
 }

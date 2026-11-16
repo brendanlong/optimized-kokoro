@@ -1,7 +1,7 @@
 //! Time grows linearly with the number of clauses in a text: 4× the clauses take well under 16×
 //! the time, which is what work per clause proportional to the rest of the text would give.
 
-use kokoro_espeak_ng::{Espeak, EspeakData, PHONEMES_IPA_TIE, default_data_dir};
+use kokoro_espeak_ng::{Espeak, EspeakData, default_data_dir};
 use std::time::{Duration, Instant};
 
 fn best_of(runs: usize, mut f: impl FnMut()) -> Duration {
@@ -33,7 +33,7 @@ fn many_clauses_take_linear_time() {
         let mut time = |count: usize| {
             let text = unit.repeat(count);
             best_of(2, || {
-                assert!(!e.text_to_phonemes(&text, PHONEMES_IPA_TIE).is_empty());
+                assert!(!e.text_to_phonemes(&text).is_empty());
             })
         };
         let (t1, t4) = (time(n), time(4 * n));

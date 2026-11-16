@@ -1,7 +1,7 @@
 //! phonemizer-fork 3.3.2's espeak backend, as misaki configures it: `preserve_punctuation=True`,
 //! `with_stress=True`, `tie='^'`, the default separator (words end in a space) and `strip=False`.
 
-use kokoro_espeak_ng::{Error, Espeak, EspeakData, PHONEMES_IPA_TIE, Result};
+use kokoro_espeak_ng::{Error, Espeak, EspeakData, Result};
 use std::sync::{Arc, Mutex};
 
 /// `phonemizer.punctuation._DEFAULT_MARKS`.
@@ -44,7 +44,7 @@ impl Backend {
     /// spaces.
     pub fn espeak(&self, text: &str) -> Result<String> {
         let mut espeak = self.espeak.lock().unwrap_or_else(|e| e.into_inner());
-        let clauses = espeak.text_to_phonemes(text, PHONEMES_IPA_TIE);
+        let clauses = espeak.text_to_phonemes(text);
         Ok(clauses.into_iter().filter(|c| !c.is_empty()).collect::<Vec<_>>().join(" "))
     }
 
