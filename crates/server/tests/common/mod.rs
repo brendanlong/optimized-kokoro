@@ -436,3 +436,31 @@ impl Pipeline for BrokenPipeline {
         ))
     }
 }
+
+/// A server with the stub pipeline and a connected scripted worker.
+pub async fn with_scripted(adjust: impl FnOnce(&mut kokoro_server::Config)) -> (Server, ScriptedWorker) {
+    let server = start(adjust, Arc::new(StubPipeline)).await;
+    let mut worker = ScriptedWorker::listen(&server.socket, worker_side::hello(&hello()));
+    assert_eq!(worker.next().await, Event::Connected);
+    server.worker.connected().await;
+    (server, worker)
+}
+
+pub fn one_stream(c: &mut kokoro_server::Config) {
+    c.max_concurrent_requests = 1;
+    c.max_streams_per_key = 1;
+}
+
+/// Sends a speech request over a socket with a small receive buffer, and doesn't read.
+pub async fn raw_speech(addr: std::net::SocketAddr, text: &str) -> TcpStream {
+    let socket = tokio::net::TcpSocket::new_v4().unwrap();
+    socket.set_recv_buffer_size(4096).unwrap();
+    let mut stream = socket.connect(addr).await.unwrap();
+    let body = pcm(text).to_string();
+    let request = format!(
+        "POST /v1/audio/speech HTTP/1.1\r\nHost: test\r\nAuthorization: Bearer {KEY}\r\nContent-Length: {}\r\n\r\n{body}",
+        body.len()
+    );
+    stream.write_all(request.as_bytes()).await.unwrap();
+    stream
+}

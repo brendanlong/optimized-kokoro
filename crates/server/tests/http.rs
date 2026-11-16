@@ -2,6 +2,7 @@ mod common;
 
 use common::*;
 use kokoro_server::StubPipeline;
+use kokoro_server::kokoro::KokoroPipelines;
 use kokoro_server::pipeline::{Chunk, Lang, Pipeline, PipelineError};
 use kokoro_server::protocol::worker_side::{self, FrontFrame};
 use kokoro_server::protocol::{FailCode, Hello, Priority, Speed};
@@ -12,14 +13,6 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
-
-async fn with_scripted(adjust: impl FnOnce(&mut kokoro_server::Config)) -> (Server, ScriptedWorker) {
-    let server = start(adjust, Arc::new(StubPipeline)).await;
-    let mut worker = ScriptedWorker::listen(&server.socket, worker_side::hello(&hello()));
-    assert_eq!(worker.next().await, Event::Connected);
-    server.worker.connected().await;
-    (server, worker)
-}
 
 #[tokio::test]
 async fn health_and_voices_follow_the_worker() {
@@ -638,20 +631,18 @@ async fn pipeline_failures_fail_the_response() {
     }
 }
 
-#[tokio::test]
-async fn speaks_chinese_with_a_chinese_voice() {
+/// Speaks `text` in `voice` through the real pipelines and a scripted worker, checking the worker
+/// gets the voice and the server's chunks for `lang`, and the client their audio. Returns the chunks.
+async fn speak_with_real_pipelines(voice: &str, lang: Lang, text: &str) -> Vec<Chunk> {
     let pipelines = Arc::new(kokoro_server::kokoro::KokoroPipelines::load().unwrap());
     let server = start(|_| {}, pipelines.clone()).await;
     let mut worker = ScriptedWorker::listen(&server.socket, worker_side::hello(&hello()));
     server.worker.connected().await;
-    let text = "银行行长在长城上。他说：“你好，世界！”";
     let mut body = pcm(text);
-    body["voice"] = json!("zf_xiaobei");
+    body["voice"] = json!(voice);
     let client = tokio::spawn(speak(server.addr, body));
-    let chunks = packed_chunks(pipelines.as_ref(), Lang::Chinese, text);
-    // Both sentences are short, so they are one chunk (`pack`).
-    assert_eq!(chunks.len(), 1);
-    let voice = VOICES.iter().position(|&v| v == "zf_xiaobei").unwrap() as u16;
+    let chunks = packed_chunks(pipelines.as_ref(), lang, text);
+    let voice = VOICES.iter().position(|&v| v == voice).unwrap() as u16;
     let mut expected = Vec::new();
     for chunk in &chunks {
         let (id, _, _, v, ids) = worker.synthesize().await;
@@ -661,43 +652,29 @@ async fn speaks_chinese_with_a_chinese_voice() {
     }
     let response = client.await.unwrap();
     assert_eq!(samples(&body_bytes(response).await.unwrap()), expected);
+    chunks
+}
+
+#[tokio::test]
+async fn speaks_chinese_with_a_chinese_voice() {
+    let chunks = speak_with_real_pipelines("zf_xiaobei", Lang::Chinese, "银行行长在长城上。他说：“你好，世界！”").await;
+    // Both sentences are short, so they are one chunk (`pack`).
+    assert_eq!(chunks.len(), 1);
 }
 
 #[tokio::test]
 async fn speaks_spanish_with_a_spanish_voice() {
-    let pipelines = Arc::new(kokoro_server::kokoro::KokoroPipelines::load().unwrap());
-    let server = start(|_| {}, pipelines.clone()).await;
-    let mut worker = ScriptedWorker::listen(&server.socket, worker_side::hello(&hello()));
-    server.worker.connected().await;
     let text = "¿Dónde está la biblioteca? Está en Москва.";
-    let mut body = pcm(text);
-    body["voice"] = json!("ef_dora");
-    let client = tokio::spawn(speak(server.addr, body));
-    let chunks = packed_chunks(pipelines.as_ref(), Lang::Spanish, text);
+    let chunks = speak_with_real_pipelines("ef_dora", Lang::Spanish, text).await;
     assert_eq!(chunks.len(), 1);
-    assert_ne!(chunks, packed_chunks(pipelines.as_ref(), Lang::AmericanEnglish, text));
-    let voice = VOICES.iter().position(|&v| v == "ef_dora").unwrap() as u16;
-    let mut expected = Vec::new();
-    for chunk in &chunks {
-        let (id, _, _, v, ids) = worker.synthesize().await;
-        assert_eq!((v, &ids), (voice, &chunk.ids));
-        worker.send(respond(id, &ids));
-        expected.extend(expected_chunk(&ids));
-    }
-    let response = client.await.unwrap();
-    assert_eq!(samples(&body_bytes(response).await.unwrap()), expected);
+    let english = KokoroPipelines::load().unwrap();
+    assert_ne!(chunks, packed_chunks(&english, Lang::AmericanEnglish, text));
 }
 
 #[tokio::test]
 async fn speaks_english_with_the_real_pipeline() {
-    let pipelines = Arc::new(kokoro_server::kokoro::KokoroPipelines::load().unwrap());
-    let server = start(|_| {}, pipelines.clone()).await;
-    let mut worker = ScriptedWorker::listen(&server.socket, worker_side::hello(&hello()));
-    server.worker.connected().await;
     let text = "The quick brown fox jumps over the lazy dog. It costs $5. 東京へ行く";
-    let client = tokio::spawn(speak(server.addr, pcm(text)));
-    let chunks = packed_chunks(pipelines.as_ref(), Lang::AmericanEnglish, text);
-
+    let chunks = speak_with_real_pipelines("af_heart", Lang::AmericanEnglish, text).await;
     // Three short sentences, packed into one chunk (`pack`).
     assert_eq!(chunks.len(), 1);
     // Read by the Japanese G2P when UniDic is installed, else as "Japanese text".
@@ -705,13 +682,4 @@ async fn speaks_english_with_the_real_pipeline() {
         if kokoro_pipeline::japanese_available() { ("toːkʲoː e ikɯ", 0) } else { ("ʤˌæpənˈiz tˈɛkst", 1) };
     assert!(chunks[0].phonemes.ends_with(japanese.0), "{}", chunks[0].phonemes);
     assert_eq!(chunks[0].unread, japanese.1);
-    let mut expected = Vec::new();
-    for chunk in &chunks {
-        let (id, _, _, _, ids) = worker.synthesize().await;
-        assert_eq!(ids, chunk.ids);
-        worker.send(respond(id, &ids));
-        expected.extend(expected_chunk(&ids));
-    }
-    let response = client.await.unwrap();
-    assert_eq!(samples(&body_bytes(response).await.unwrap()), expected);
 }

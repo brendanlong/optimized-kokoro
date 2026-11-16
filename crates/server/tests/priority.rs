@@ -15,14 +15,6 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::task::JoinHandle;
 
-async fn with_scripted(adjust: impl FnOnce(&mut kokoro_server::Config)) -> (Server, ScriptedWorker) {
-    let server = start(adjust, Arc::new(StubPipeline)).await;
-    let mut worker = ScriptedWorker::listen(&server.socket, worker_side::hello(&hello()));
-    assert_eq!(worker.next().await, Event::Connected);
-    server.worker.connected().await;
-    (server, worker)
-}
-
 fn at(priority: impl Into<Value>, text: &str) -> Value {
     let mut body = pcm(text);
     body["priority"] = priority.into();

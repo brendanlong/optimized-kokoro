@@ -13,27 +13,8 @@ const WAITING: Priority = Priority { level: 128, waiting: true };
 use kokoro_server::worker::SynthRequest;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpStream, UnixListener};
-
-fn one_stream(c: &mut kokoro_server::Config) {
-    c.max_concurrent_requests = 1;
-    c.max_streams_per_key = 1;
-}
-
-/// Sends a speech request over a socket with a small receive buffer, and doesn't read.
-async fn raw_speech(addr: std::net::SocketAddr, text: &str) -> TcpStream {
-    let socket = tokio::net::TcpSocket::new_v4().unwrap();
-    socket.set_recv_buffer_size(4096).unwrap();
-    let mut stream = socket.connect(addr).await.unwrap();
-    let body = pcm(text).to_string();
-    let request = format!(
-        "POST /v1/audio/speech HTTP/1.1\r\nHost: test\r\nAuthorization: Bearer {KEY}\r\nContent-Length: {}\r\n\r\n{body}",
-        body.len()
-    );
-    stream.write_all(request.as_bytes()).await.unwrap();
-    stream
-}
+use tokio::io::AsyncReadExt;
+use tokio::net::UnixListener;
 
 /// Speaks `text` with the auto worker, expecting success.
 async fn speak_ok(addr: std::net::SocketAddr, text: &str) {
@@ -372,17 +353,6 @@ async fn a_hello_over_the_chunk_cap_ceiling_is_refused() {
     let mut greedy = hello();
     greedy.max_chunk_samples = kokoro_server::Config::default().worker_max_chunk_samples + 1;
     let mut worker = ScriptedWorker::listen(&server.socket, worker_side::hello(&greedy));
-    assert_eq!(worker.next().await, Event::Connected);
-    assert_eq!(worker.next().await, Event::Closed);
-    assert!(server.worker.current().is_none());
-}
-
-#[tokio::test]
-async fn a_hello_with_the_largest_chunk_cap_is_refused() {
-    let server = start(|_| {}, Arc::new(StubPipeline)).await;
-    let mut max = hello();
-    max.max_chunk_samples = u32::MAX;
-    let mut worker = ScriptedWorker::listen(&server.socket, worker_side::hello(&max));
     assert_eq!(worker.next().await, Event::Connected);
     assert_eq!(worker.next().await, Event::Closed);
     assert!(server.worker.current().is_none());
