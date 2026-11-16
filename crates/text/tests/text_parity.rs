@@ -100,9 +100,7 @@ fn text_cases() {
         // in the seeded fuzz cases, which glue numbers, symbols and words together in ways the
         // word-by-word check can't line up, a digit or symbol in the input is the explanation.
         let text = str_of(&case, "text");
-        let has_number_or_symbol = text.chars().any(|c| {
-            c.is_numeric() || (!c.is_alphanumeric() && !c.is_whitespace() && !".,;:!?'\"()[]{}-—–…“”‘’«»`".contains(c))
-        });
+        let has_number_or_symbol = text.chars().any(|c| c.is_numeric() || kokoro_reference::divergence::is_symbol(c));
         let kind = matches!(str_of(&case, "kind"), "normalize" | "smart_split");
         let explained = kokoro_reference::divergence::explain(text, &strings(&expected), &strings(&actual));
         let strict = kind && explained.is_ok();

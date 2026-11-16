@@ -22,8 +22,9 @@
 //! the port doesn't let happen (docs/divergences.md, "espeak-ng: state between calls"). They are
 //! counted apart, and must still be chunked the same, with as many words in each chunk.
 
-use kokoro_pipeline::foreign::{Script, script};
+use kokoro_pipeline::foreign::{in_foreign_py, script};
 use kokoro_pipeline::{Lang, Pipeline};
+use kokoro_reference::divergence::is_symbol;
 use kokoro_reference::without_language_flags;
 use serde::Deserialize;
 use std::path::PathBuf;
@@ -87,24 +88,15 @@ const STATE_DEPENDENT: [&str; 8] = [
 ];
 
 fn uses_new_script(text: &str) -> bool {
-    use Script::*;
-    text.chars().filter_map(script).any(|s| {
-        !matches!(s, Latin | Han | Hiragana | Katakana | Arabic | Cyrillic | Devanagari | Greek | Hangul | Hebrew)
-    })
+    text.chars().filter_map(script).any(|s| !in_foreign_py(s))
 }
 
 /// The character fuzz of `request_cases.py`: letters of several scripts with digits or symbols
 /// glued to them, which the word-by-word check of `kokoro_reference::divergence` can't line up.
 /// There, a digit or symbol in the text is counted as the explanation, apart.
 fn fuzz(text: &str) -> bool {
-    let symbol = |c: char| !c.is_alphanumeric() && !c.is_whitespace() && !".,;:!?'\"()[]{}-—–…“”‘’«»`".contains(c);
     let other_script = |c: char| c.is_alphabetic() && !c.is_ascii() && !matches!(c as u32, 0xC0..=0x24F);
-    text.chars().any(other_script) && text.chars().any(|c| c.is_numeric() || symbol(c))
-}
-
-/// A symbol or emoji (not a letter, digit, space or plain punctuation).
-fn in_symbols(c: char) -> bool {
-    !c.is_alphanumeric() && !c.is_whitespace() && !".,;:!?'\"()[]{}-—–…“”‘’«»`".contains(c)
+    text.chars().any(other_script) && text.chars().any(|c| c.is_numeric() || is_symbol(c))
 }
 
 #[test]
@@ -268,7 +260,7 @@ fn requests_match_the_reference() {
             // word-by-word check can't line up: there a digit or symbol in the text is counted as
             // the explanation, apart.
             // The reference said nothing where the port reads a symbol's name ("[😀").
-            let silent_symbols = theirs.is_empty() && case.text.chars().any(|c| !c.is_ascii() && in_symbols(c));
+            let silent_symbols = theirs.is_empty() && case.text.chars().any(|c| !c.is_ascii() && is_symbol(c));
             if theirs != ours && (fuzz(&case.text) || silent_symbols) {
                 fuzzed += 1;
                 continue;

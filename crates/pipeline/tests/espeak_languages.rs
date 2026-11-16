@@ -22,7 +22,7 @@
 //! `PARITY_SHOW=n` prints up to n mismatches (default 20), and `SHOW_SKIPPED=1` the records not
 //! compared that differ.
 
-use kokoro_pipeline::foreign::{Script, script};
+use kokoro_pipeline::foreign::{Script, in_foreign_py, script};
 use kokoro_pipeline::{Lang, Pipeline};
 use kokoro_reference::Record;
 use std::collections::{BTreeMap, HashSet};
@@ -30,10 +30,7 @@ use std::time::Instant;
 
 /// Letters of a script `foreign.py` doesn't split out, other than Latin and CJK.
 fn uses_new_script(record: &Record) -> bool {
-    use Script::*;
-    record.text.chars().filter_map(script).any(|s| {
-        !matches!(s, Latin | Han | Hiragana | Katakana | Arabic | Cyrillic | Devanagari | Greek | Hangul | Hebrew)
-    })
+    record.text.chars().filter_map(script).any(|s| !in_foreign_py(s))
 }
 
 fn reads_unreadable_han(record: &Record) -> bool {

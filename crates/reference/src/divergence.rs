@@ -40,7 +40,8 @@ fn is_plain_punctuation(c: char) -> bool {
     ".,;:!?'\"()[]{}-—–…“”‘’«»¡¿`".contains(c)
 }
 
-fn is_symbol(c: char) -> bool {
+/// A symbol or emoji: not a letter, digit, space or plain punctuation.
+pub fn is_symbol(c: char) -> bool {
     !c.is_alphanumeric() && !c.is_whitespace() && !is_plain_punctuation(c)
 }
 

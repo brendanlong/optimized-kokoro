@@ -21,7 +21,7 @@
 //!
 //! `PARITY_SHOW=n` prints up to n mismatches (default 20).
 
-use kokoro_pipeline::foreign::{self, Language, Script, script};
+use kokoro_pipeline::foreign::{self, Language, Script, in_foreign_py, script};
 use kokoro_pipeline::{ForeignG2p, Lang, Pipeline};
 use kokoro_reference::divergence::{self, Kind};
 use kokoro_reference::{Call, Record};
@@ -38,10 +38,7 @@ fn uses_cjk(record: &Record) -> bool {
 
 /// Letters of a script `foreign.py` doesn't split out, other than Latin and CJK.
 fn uses_new_script(record: &Record) -> bool {
-    use Script::*;
-    record.text.chars().filter_map(script).any(|s| {
-        !matches!(s, Latin | Han | Hiragana | Katakana | Arabic | Cyrillic | Devanagari | Greek | Hangul | Hebrew)
-    })
+    record.text.chars().filter_map(script).any(|s| !in_foreign_py(s))
 }
 
 /// An English record where the reference left a Han character pypinyin can't read to the English
@@ -173,8 +170,8 @@ fn reference_records() {
     let (mut cjk, mut cjk_matched, mut cjk_skipped, mut new_script, mut flagged) = (0, 0, 0, Vec::new(), Vec::new());
     let (mut zh, mut zh_matched, mut failing, mut failing_matched, mut unreadable) = (0, 0, 0, 0, Vec::new());
     let mut mismatches = Vec::new();
-    let (mut changed, mut numbers, mut symbols, mut unchanged_chunks, mut dashes, mut roman) = (0, 0, 0, 0, 0, 0);
-    let mut by_kind: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    let (mut changed, mut unchanged_chunks) = (0, 0);
+    let mut by_kind: std::collections::BTreeMap<Kind, usize> = std::collections::BTreeMap::new();
     let mut dropped_abbreviations = 0;
     let start = Instant::now();
     for record in &records {
@@ -236,12 +233,8 @@ fn reference_records() {
                         }
                         unchanged_chunks += usize::from(reference.contains_key(text.as_str()));
                     }
-                    numbers += usize::from(kinds.contains(&Kind::Numbers));
-                    symbols += usize::from(kinds.contains(&Kind::Symbols));
-                    dashes += usize::from(kinds.contains(&Kind::Dashes));
-                    roman += usize::from(kinds.contains(&Kind::Roman));
-                    for kind in &kinds {
-                        *by_kind.entry(format!("{kind:?}")).or_default() += 1;
+                    for &kind in &kinds {
+                        *by_kind.entry(kind).or_default() += 1;
                     }
                     changed += 1;
                     // `PARITY_CHANGED=FILE` writes each such record, to review the differences.
@@ -336,7 +329,7 @@ fn reference_records() {
         unreadable.len()
     );
     println!(
-        "normalized differently, by the number reader and symbol pass: {changed} records ({numbers} with numbers, {symbols} with symbols, {dashes} with dashes, {roman} with Roman numerals), whose {unchanged_chunks} chunks with unchanged text match"
+        "normalized differently, by the number reader and symbol pass: {changed} records, whose {unchanged_chunks} chunks with unchanged text match"
     );
     println!("by kind: {by_kind:?}; {dropped_abbreviations} more read \"dr\" or \"mr\" without misaki's lexicon entry");
     println!("{} records, {chars} characters in {:.2?}", records.len(), elapsed);

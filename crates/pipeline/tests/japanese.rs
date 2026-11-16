@@ -12,15 +12,12 @@
 //!
 //! Needs UniDic (`crates/g2p-ja/tools/fetch_unidic.sh`). `PARITY_SHOW=n` prints up to n mismatches.
 
-use kokoro_pipeline::foreign::{Script, script};
+use kokoro_pipeline::foreign::{in_foreign_py, script};
 use kokoro_pipeline::{Lang, Pipeline};
 use std::time::Instant;
 
 fn uses_new_script(text: &str) -> bool {
-    use Script::*;
-    text.chars().filter_map(script).any(|s| {
-        !matches!(s, Latin | Han | Hiragana | Katakana | Arabic | Cyrillic | Devanagari | Greek | Hangul | Hebrew)
-    })
+    text.chars().filter_map(script).any(|s| !in_foreign_py(s))
 }
 
 #[test]
