@@ -3,7 +3,6 @@
 
 use crate::defs::*;
 use crate::engine::{Espeak, Tr};
-use crate::phoneme::pl;
 
 const PAUSE_PHONEMES: [u8; 8] = [
     0,
@@ -534,6 +533,5 @@ impl Espeak {
             list3[plist3].synthflags &= !SFLAG_SYLLABLE;
         }
         self.interpret_phoneme(Some(tr), 0x100, list3, plist3 as isize, phdata, Some(worddata));
-        let _ = pl;
     }
 }

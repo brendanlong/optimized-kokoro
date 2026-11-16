@@ -12,7 +12,7 @@ enum Target {
     PrevVowel,
 }
 
-pub(crate) fn pl(list: &[PhonemeList], i: isize) -> PhonemeList {
+fn pl(list: &[PhonemeList], i: isize) -> PhonemeList {
     if i < 0 { PhonemeList::default() } else { list.get(i as usize).copied().unwrap_or_default() }
 }
 

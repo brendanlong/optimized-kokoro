@@ -1149,9 +1149,6 @@ impl Espeak {
                 return false;
             }
         }
-        let this_value = value;
-        let _ = this_value;
-
         let group_len: isize = if self.t(tr).langopts.numbers2 & NUM2_MYRIADS != 0 { 4 } else { 3 };
         let thousands_sep = self.t(tr).langopts.thousands_sep;
         let decimal_sep = self.t(tr).langopts.decimal_sep;
