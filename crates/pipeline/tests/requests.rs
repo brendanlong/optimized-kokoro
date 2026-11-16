@@ -23,7 +23,7 @@
 //! counted apart, and must still be chunked the same, with as many words in each chunk.
 
 use kokoro_pipeline::foreign::{Script, script};
-use kokoro_pipeline::{Lang, NormalizationOptions, Pipeline};
+use kokoro_pipeline::{Lang, Pipeline};
 use kokoro_reference::without_language_flags;
 use serde::Deserialize;
 use std::path::PathBuf;
@@ -110,7 +110,6 @@ fn in_symbols(c: char) -> bool {
 #[test]
 fn requests_match_the_reference() {
     let pipelines: Vec<Pipeline> = Lang::ALL.into_iter().map(|l| Pipeline::new(l).unwrap()).collect();
-    let options = NormalizationOptions::default();
     let cases = cases();
     let mut failures = Vec::new();
     let (mut flagged, mut rechunked, mut new_script, mut stateful, mut numbers, mut fuzzed) = (0, 0, 0, 0, 0, 0);
@@ -123,7 +122,7 @@ fn requests_match_the_reference() {
         }
         let pipeline = pipelines.iter().find(|p| p.lang().code() == case.lang).expect("a pipeline language");
         let mut actual = Vec::new();
-        for chunk in pipeline.chunks(&case.text, &options) {
+        for chunk in pipeline.chunks(&case.text) {
             actual.push(match chunk {
                 Ok(c) => match c.pause {
                     Some(pause) => Expected::Pause { pause },

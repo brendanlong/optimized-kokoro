@@ -2,7 +2,7 @@
 //! `chunks` about 4× slower, not 16×. Run in release for timings:
 //! `cargo test --release -p kokoro-pipeline --test scaling -- --nocapture`.
 
-use kokoro_pipeline::{Lang, NormalizationOptions, Pipeline};
+use kokoro_pipeline::{Lang, Pipeline};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
@@ -19,11 +19,10 @@ fn chinese() -> &'static Pipeline {
 }
 
 fn time(pipeline: &Pipeline, text: &str) -> Duration {
-    let options = NormalizationOptions::default();
     (0..3)
         .map(|_| {
             let start = Instant::now();
-            pipeline.chunks(text, &options).for_each(drop);
+            pipeline.chunks(text).for_each(drop);
             start.elapsed()
         })
         .min()

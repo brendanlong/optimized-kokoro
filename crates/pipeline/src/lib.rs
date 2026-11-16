@@ -29,12 +29,12 @@ use kokoro_spacy_en::Nlp;
 use std::collections::HashMap;
 use std::fmt;
 use std::ops::Range;
-use std::sync::{Arc, LazyLock, OnceLock};
+use std::sync::{Arc, OnceLock};
 
 pub use kokoro_g2p_en::Token;
 #[doc(hidden)]
 pub use kokoro_g2p_ja::skip_without_dictionary;
-pub use kokoro_text::{DEFAULT_MAX_TOKENS, Limits, Options as NormalizationOptions, Split};
+pub use kokoro_text::{DEFAULT_MAX_TOKENS, Split};
 pub use vocab::id;
 
 /// Whether this process has loaded misaki's Chinese G2P yet: only Han text or a Chinese request
@@ -328,15 +328,12 @@ impl Pipeline {
     /// `smart_split(text, lang)` as the reference runs it: sentences of more than
     /// [`DEFAULT_MAX_TOKENS`] phonemes cut at clauses, packed into groups of up to that.
     /// See [`chunks_within_groups`](Self::chunks_within_groups).
-    pub fn chunks<'a>(
-        &'a self,
-        text: &str,
-        options: &'a NormalizationOptions,
-    ) -> impl Iterator<Item = Result<Chunk, Error>> + Send + use<'a> {
-        self.chunks_within_groups(text, options, DEFAULT_MAX_TOKENS, DEFAULT_MAX_TOKENS, &|| false)
+    pub fn chunks<'a>(&'a self, text: &str) -> impl Iterator<Item = Result<Chunk, Error>> + Send + use<'a> {
+        self.chunks_within_groups(text, DEFAULT_MAX_TOKENS, DEFAULT_MAX_TOKENS, &|| false)
     }
 
-    /// `smart_split(text, lang)`: lazy, so each sentence's G2P runs as its chunks are taken. An
+    /// `smart_split(text, lang)` with the default normalization options (requests can't set
+    /// them, `docs/divergences.md`): lazy, so each sentence's G2P runs as its chunks are taken. An
     /// error stands in for the sentence it happened in, and later sentences still follow. Voice
     /// and rate tags aren't supported: they're read as text.
     ///
@@ -350,19 +347,23 @@ impl Pipeline {
     pub fn chunks_within_groups<'a>(
         &'a self,
         text: &str,
-        options: &'a NormalizationOptions,
         max_tokens: usize,
         clause_groups: usize,
         cancelled: &'a (dyn Fn() -> bool + Sync),
     ) -> impl Iterator<Item = Result<Chunk, Error>> + Send + use<'a> {
-        static LIMITS: LazyLock<Limits> = LazyLock::new(Limits::default);
         let mut request = Request::new(self);
-        kokoro_text::try_smart_split(text, self.lang.code(), options, &LIMITS, max_tokens, move |t: &str| {
-            if cancelled() {
-                return Err(Error::Cancelled);
-            }
-            request.phonemize(t)
-        })
+        kokoro_text::try_smart_split(
+            text,
+            self.lang.code(),
+            kokoro_text::Options::default(),
+            max_tokens,
+            move |t: &str| {
+                if cancelled() {
+                    return Err(Error::Cancelled);
+                }
+                request.phonemize(t)
+            },
+        )
         .with_clause_groups(clause_groups)
         .map(|chunk| {
             chunk.map(|chunk| match chunk {

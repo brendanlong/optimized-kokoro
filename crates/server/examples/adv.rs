@@ -19,7 +19,7 @@ fn main() {
         let mut best: Option<(f64, f64, f64, usize, f64, usize, usize)> = None;
         for _ in 0..reps {
             let t0 = Instant::now();
-            let _ = kokoro_text::check_pause_budget(text, &kokoro_text::Limits::default());
+            let _ = kokoro_text::check_pause_budget(text);
             let _ = kokoro_text::check_speakable(text, &kokoro_text::Options::default());
             let check = t0.elapsed().as_secs_f64() * 1e3;
             let t1 = Instant::now();

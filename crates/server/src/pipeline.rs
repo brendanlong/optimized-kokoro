@@ -3,7 +3,7 @@
 //! [`crate::kokoro::KokoroPipelines`] is the real one; this trait is the narrow surface the server
 //! needs from it, so tests can stand in their own.
 
-use kokoro_text::{Limits, Options, Piece};
+use kokoro_text::{Options, Piece};
 
 pub use kokoro_text::{DEFAULT_MAX_TOKENS, Split};
 use std::fmt;
@@ -93,9 +93,7 @@ impl Pipeline for StubPipeline {
         clause_groups: usize,
         cancelled: &'a (dyn Fn() -> bool + Sync),
     ) -> Box<dyn Iterator<Item = Result<Chunk, PipelineError>> + 'a> {
-        static LIMITS: std::sync::LazyLock<Limits> = std::sync::LazyLock::new(Limits::default);
-        static OPTIONS: std::sync::LazyLock<Options> = std::sync::LazyLock::new(Options::default);
-        let split = kokoro_text::try_smart_split(text, lang.code(), &OPTIONS, &LIMITS, max_phonemes, |t: &str| {
+        let split = kokoro_text::try_smart_split(text, lang.code(), Options::default(), max_phonemes, |t: &str| {
             if cancelled() { Err(PipelineError("cancelled".into())) } else { Ok(stub_g2p(t)) }
         })
         .with_clause_groups(clause_groups);

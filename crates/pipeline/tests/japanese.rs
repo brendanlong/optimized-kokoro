@@ -13,7 +13,7 @@
 //! Needs UniDic (`crates/g2p-ja/tools/fetch_unidic.sh`). `PARITY_SHOW=n` prints up to n mismatches.
 
 use kokoro_pipeline::foreign::{Script, script};
-use kokoro_pipeline::{Lang, NormalizationOptions, Pipeline};
+use kokoro_pipeline::{Lang, Pipeline};
 use std::time::Instant;
 
 fn uses_new_script(text: &str) -> bool {
@@ -29,8 +29,7 @@ fn japanese_reference_records() {
     records.extend(kokoro_reference::read(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/japanese.jsonl")));
     records.retain(|r| r.lang == "j");
     let pipeline = Pipeline::new(Lang::Japanese).unwrap();
-    let options = NormalizationOptions::default();
-    if let Some(Err(e)) = pipeline.chunks("日本", &options).next() {
+    if let Some(Err(e)) = pipeline.chunks("日本").next() {
         return kokoro_pipeline::skip_without_dictionary(e);
     }
     let show: usize = std::env::var("PARITY_SHOW").ok().and_then(|s| s.parse().ok()).unwrap_or(20);
@@ -40,7 +39,7 @@ fn japanese_reference_records() {
     for record in &records {
         chars += record.text.chars().count();
         let actual: Vec<(String, String)> = pipeline
-            .chunks(&record.text, &options)
+            .chunks(&record.text)
             .filter_map(|c| {
                 let c = c.unwrap_or_else(|e| panic!("{}: {e}", record.id));
                 c.pause.is_none().then_some((c.text, c.phonemes))

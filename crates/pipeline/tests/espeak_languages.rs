@@ -23,7 +23,7 @@
 //! compared that differ.
 
 use kokoro_pipeline::foreign::{Script, script};
-use kokoro_pipeline::{Lang, NormalizationOptions, Pipeline};
+use kokoro_pipeline::{Lang, Pipeline};
 use kokoro_reference::Record;
 use std::collections::{BTreeMap, HashSet};
 use std::time::Instant;
@@ -88,7 +88,6 @@ fn espeak_reference_records() {
     let pipelines: Vec<Pipeline> = langs.iter().map(|&l| Pipeline::new(l).unwrap()).collect();
     let japanese = kokoro_pipeline::japanese_available();
     let divergent = espeak_divergences();
-    let options = NormalizationOptions::default();
     let show: usize = std::env::var("PARITY_SHOW").ok().and_then(|s| s.parse().ok()).unwrap_or(20);
     let mut counts: BTreeMap<&str, Count> = BTreeMap::new();
     let mut mismatches = Vec::new();
@@ -99,7 +98,7 @@ fn espeak_reference_records() {
         count.records += 1;
         count.chars += record.text.chars().count();
         let actual: Vec<(String, String)> = pipeline
-            .chunks(&record.text, &options)
+            .chunks(&record.text)
             .filter_map(|c| {
                 let c = c.unwrap_or_else(|e| panic!("{}: {e}", record.id));
                 c.pause.is_none().then_some((c.text, c.phonemes))

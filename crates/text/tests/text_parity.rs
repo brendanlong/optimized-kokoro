@@ -1,9 +1,7 @@
 //! Parity with the reference's text functions on hard and randomized cases
 //! (`reference/fixtures/text_cases.out.jsonl`, written by `reference/dump_text.py`).
 
-use kokoro_text::{
-    Chunk, Limits, Options, check_pause_budget, check_speakable, join_lines, py, sentences, smart_split,
-};
+use kokoro_text::{Chunk, Options, check_pause_budget, check_speakable, join_lines, py, sentences, smart_split};
 use kokoro_text::{split, strip_emoji};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -45,7 +43,7 @@ fn run(case: &Value) -> (Value, Value) {
         "smart_split" => {
             let g2p = |t: &str| if t.chars().any(py::is_alnum) { t.to_owned() } else { String::new() };
             let max_tokens = case["max_tokens"].as_u64().unwrap() as usize;
-            let chunks: Vec<Value> = smart_split(text, lang, &opts, &Limits::default(), max_tokens, g2p)
+            let chunks: Vec<Value> = smart_split(text, lang, opts, max_tokens, g2p)
                 .map(|c| match c {
                     Chunk::Speech(p) => json!([p.text, p.phonemes]),
                     Chunk::Pause(s) => json!(s),
@@ -57,7 +55,7 @@ fn run(case: &Value) -> (Value, Value) {
             assert_eq!(case["allow_voice_tags"], false, "voice tags aren't supported");
             let opts = Options { remove_emoji: case["remove_emoji"].as_bool().unwrap(), ..Options::default() };
             let speakable = check_speakable(text, &opts).is_ok();
-            let budget = check_pause_budget(text, &Limits::default()).err().map(|e| e.to_string());
+            let budget = check_pause_budget(text).err().map(|e| e.to_string());
             (
                 json!({ "speakable": case["speakable"], "pause_budget": case["pause_budget"] }),
                 json!({ "speakable": speakable, "pause_budget": budget }),

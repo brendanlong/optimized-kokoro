@@ -12,7 +12,7 @@ use std::ops::Range;
 use std::sync::LazyLock;
 
 /// `NormalizationOptions` from the request schema, with its defaults.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Options {
     pub normalize: bool,
     pub url_normalization: bool,
@@ -35,24 +35,6 @@ impl Default for Options {
             caps_normalization: true,
             replace_remaining_symbols: true,
             remove_emoji: false,
-        }
-    }
-}
-
-/// The normalizer registered for a pipeline language code, if any.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Normalizer {
-    English,
-}
-
-impl Normalizer {
-    pub fn for_lang(lang_code: &str) -> Option<Self> {
-        matches!(lang_code, "a" | "b").then_some(Self::English)
-    }
-
-    pub fn normalize(self, text: &str, options: &Options) -> String {
-        match self {
-            Self::English => english(text, options),
         }
     }
 }

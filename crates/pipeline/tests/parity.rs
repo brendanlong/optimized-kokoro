@@ -22,7 +22,7 @@
 //! `PARITY_SHOW=n` prints up to n mismatches (default 20).
 
 use kokoro_pipeline::foreign::{self, Language, Script, script};
-use kokoro_pipeline::{ForeignG2p, Lang, NormalizationOptions, Pipeline};
+use kokoro_pipeline::{ForeignG2p, Lang, Pipeline};
 use kokoro_reference::divergence::{self, Kind};
 use kokoro_reference::{Call, Record};
 use std::collections::HashMap;
@@ -168,7 +168,6 @@ fn reference_records() {
         .collect();
     let chinese_recorded =
         Pipeline::new(Lang::Chinese).unwrap().with_foreign_g2p(Language::Japanese, Box::new(Recorded(japanese)));
-    let options = NormalizationOptions::default();
     let show: usize = std::env::var("PARITY_SHOW").ok().and_then(|s| s.parse().ok()).unwrap_or(20);
     let (mut matched, mut compared, mut chars, mut regrouped) = (0, 0, 0, 0);
     let (mut cjk, mut cjk_matched, mut cjk_skipped, mut new_script, mut flagged) = (0, 0, 0, Vec::new(), Vec::new());
@@ -191,7 +190,7 @@ fn reference_records() {
         // port's error stands in for the failed sentence.
         let mut actual = Vec::new();
         let mut error = None;
-        for chunk in pipeline.chunks(&record.text, &options) {
+        for chunk in pipeline.chunks(&record.text) {
             match chunk {
                 Ok(c) if c.pause.is_none() && error.is_none() => actual.push((c.text, c.phonemes)),
                 Ok(_) => {}
@@ -213,7 +212,11 @@ fn reference_records() {
             unreadable.push(record.id.as_str());
             continue;
         }
-        let normalized = kokoro_text::split::normalize(&kokoro_text::join_lines(&record.text), &record.lang, &options);
+        let normalized = kokoro_text::split::normalize(
+            &kokoro_text::join_lines(&record.text),
+            &record.lang,
+            &kokoro_text::Options::default(),
+        );
         if normalized != record.normalized {
             match divergence::explain(&record.text, &record.normalized, &normalized) {
                 Ok(kinds) => {

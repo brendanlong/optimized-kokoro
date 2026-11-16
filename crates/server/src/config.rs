@@ -322,7 +322,7 @@ impl Config {
     /// Real sentences are around 5 s (240 KB), so typical use holds a few MB.
     pub fn audio_bound(&self, max_chunk_samples: u32) -> usize {
         // A pause is one chunk of silence, at most the text limits' longest.
-        let max_pause = crate::audio::silence(kokoro_text::Limits::default().max_pause_duration_s) as u64;
+        let max_pause = crate::audio::silence(kokoro_text::MAX_PAUSE_S) as u64;
         let chunk_samples = u64::from(max_chunk_samples).max(max_pause);
         let chunk = usize::try_from(2 * chunk_samples).unwrap_or(usize::MAX);
         let per_stream = (self.lookahead + 2).saturating_mul(chunk).saturating_add(HYPER_QUEUE_BYTES);

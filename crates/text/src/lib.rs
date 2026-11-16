@@ -22,9 +22,9 @@ mod symbols;
 mod tables;
 pub mod tags;
 
-pub use normalize::{Normalizer, Options};
+pub use normalize::Options;
 pub use split::{
     Chunk, DEFAULT_MAX_TOKENS, MIN_CLAUSE_CHUNK, Phonemes, Piece, SmartSplit, Split, join_lines, sentences,
     smart_split, try_smart_split,
 };
-pub use tags::{Limits, Rejected, check_pause_budget, check_speakable, strip_emoji};
+pub use tags::{MAX_PAUSE_S, MAX_TOTAL_PAUSE_S, Rejected, check_pause_budget, check_speakable, strip_emoji};

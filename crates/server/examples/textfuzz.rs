@@ -34,7 +34,7 @@ fn main() {
                     let text: String = (0..n).map(|_| ATOMS[(next() % ATOMS.len() as u64) as usize]).collect();
                     let lang = if next() % 2 == 0 { Lang::AmericanEnglish } else { Lang::BritishEnglish };
                     let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        let _ = kokoro_text::check_pause_budget(&text, &kokoro_text::Limits::default());
+                        let _ = kokoro_text::check_pause_budget(&text);
                         let _ = kokoro_text::check_speakable(&text, &kokoro_text::Options::default());
                         for c in
                             stream::packed_chunks(&*p, lang, &text, DEFAULT_MAX_TOKENS, SOFT_MAX_PHONEMES, &|| false)
