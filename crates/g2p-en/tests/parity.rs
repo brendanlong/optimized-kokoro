@@ -2,6 +2,9 @@
 //! come from the recording, everything else is this crate. Foreign-script runs are spliced in from the
 //! recording the way kokoro does, so whole calls can be compared.
 //!
+//! The recording's phonemes are in Kokoro's `config.json` symbols: they go in as IPA and the
+//! port's are compared as the ids the model reads.
+//!
 //! Prints match rates and mismatches (`PARITY_SHOW=n` shows up to n, default 30).
 
 use kokoro_g2p_en::{Fallback, G2p, TaggedToken, Tagger, Token, kokoro};
@@ -31,14 +34,14 @@ impl Tagger for Recorded<'_> {
 }
 
 struct Espeak<'a> {
-    answers: HashMap<&'a str, Option<&'a str>>,
+    answers: HashMap<&'a str, Option<String>>,
     problems: Vec<String>,
 }
 
 impl Fallback for Espeak<'_> {
     fn phonemize(&mut self, word: &str) -> Option<String> {
         match self.answers.get(word) {
-            Some(ps) => ps.map(str::to_string),
+            Some(ps) => ps.clone(),
             None => {
                 self.problems.push(format!("fallback asked for {word:?}, which wasn't recorded"));
                 None
@@ -51,7 +54,7 @@ impl Fallback for Espeak<'_> {
 fn replay(g2p: &G2p, call: &Call) -> (Vec<Token>, Vec<String>) {
     let mut tagger = Recorded { calls: call.spacy.iter().map(Vec::as_slice).collect(), problems: Vec::new() };
     let mut espeak = Espeak {
-        answers: call.fallback.iter().map(|(w, ps)| (w.as_str(), ps.as_deref())).collect(),
+        answers: call.fallback.iter().map(|(w, ps)| (w.as_str(), ps.as_deref().map(kokoro_reference::ipa))).collect(),
         problems: Vec::new(),
     };
     let mut foreign = call.foreign.iter();
@@ -68,7 +71,7 @@ fn replay(g2p: &G2p, call: &Call) -> (Vec<Token>, Vec<String>) {
                 text: if i == 0 { segment.clone() } else { String::new() },
                 tag: String::new(),
                 whitespace: if i + 1 < words.len() { " ".to_string() } else { String::new() },
-                phonemes: Some(w.to_string()),
+                phonemes: Some(kokoro_reference::ipa(w)),
             }));
             continue;
         }
@@ -121,24 +124,28 @@ fn matches_reference() {
                     text: t.text.clone(),
                     tag: t.tag.clone(),
                     whitespace: t.whitespace.clone(),
-                    phonemes: t.phonemes.clone(),
+                    phonemes: t.phonemes.as_deref().map(kokoro_reference::canonical),
                 })
                 .collect();
             let got_norm: Vec<Token> = got
                 .iter()
-                .map(|t| Token { phonemes: Some(t.phonemes.clone().unwrap_or_default()), ..t.clone() })
+                .map(|t| Token {
+                    phonemes: Some(kokoro_reference::ours(t.phonemes.as_deref().unwrap_or_default())),
+                    ..t.clone()
+                })
                 .collect();
             let same_tokens = got_norm.len() == expected.len();
             let token_matches = got_norm.iter().zip(&expected).filter(|(a, b)| a == b).count();
             tokens += expected.len();
             tokens_ok += if same_tokens { token_matches } else { 0 };
-            let ps = kokoro::tokens_to_ps(&got);
-            let ok = problems.is_empty() && same_tokens && token_matches == expected.len() && ps == call.phonemes;
+            let ps = kokoro_reference::ours(&kokoro::tokens_to_ps(&got));
+            let reference = kokoro_reference::canonical(&call.phonemes);
+            let ok = problems.is_empty() && same_tokens && token_matches == expected.len() && ps == reference;
             // Names are read in their own language (docs/divergences.md, "misaki English: names"); a
             // multi-word name is one token, so only the phonemes are compared, word by word.
             if !ok
                 && problems.is_empty()
-                && kokoro_reference::divergence::differs_only_in_names(&call.input, &call.phonemes, &ps)
+                && kokoro_reference::divergence::differs_only_in_names(&call.input, &reference, &ps)
             {
                 calls -= 1;
                 names += 1;
@@ -151,8 +158,8 @@ fn matches_reference() {
                 for p in &problems {
                     println!("  problem: {p}");
                 }
-                if ps != call.phonemes {
-                    println!("  expected: {}\n  got:      {}", call.phonemes, ps);
+                if ps != reference {
+                    println!("  expected: {reference}\n  got:      {ps}");
                 }
                 for i in 0..got_norm.len().max(expected.len()) {
                     let (a, b) = (got_norm.get(i), expected.get(i));

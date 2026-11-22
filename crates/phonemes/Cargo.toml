@@ -1,0 +1,9 @@
+[package]
+name = "kokoro-phonemes"
+version = "0.1.0"
+description = "Kokoro-82M's vocabulary, and the tokenizer from IPA to its input ids"
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+license = "Apache-2.0"
+publish = false

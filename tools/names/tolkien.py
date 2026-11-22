@@ -31,7 +31,6 @@ UNITS = sorted({**DIPHTHONGS, **CONSONANT_UNITS}.items(), key=lambda kv: -len(kv
 VOWELS = {"a": "a", "e": "e", "i": "i", "o": "o", "u": "u", "y": "y"}
 CONSONANTS = {"c": "k", "g": "ɡ", "x": "ks"}
 TWO_CONSONANTS = {"ks", "ŋɡ", "ŋk", "xt", "kw", "ŋkw"}
-KOKORO_VOWELS = set("aeiouyAIOWYɑæəɛɪʊʌɔɜᵊᵻ")
 # Unstressed little words inside names, written lowercase: "Gwaith-i-Mírdain", "Taur-im-Duinath" (but "Nan Elmoth").
 PARTICLES = {"i", "in", "im", "en", "na", "nan", "e", "o"}
 
@@ -106,21 +105,17 @@ def stressed(part, mark, sindarin):
         target = nuclei[0]
     else:
         target = nuclei[-2] if heavy(segs, nuclei[-2]) else nuclei[-3]
-    return "".join((mark if k == target else "") + p for k, (p, _) in enumerate(segs))
+    at = None if target is None else onset(segs, target)
+    return "".join((mark if k == at else "") + p for k, (p, _) in enumerate(segs))
 
 
-def relocate_stress(p):
-    """Put each stress mark just before its vowel, where misaki puts it."""
-    out, pending = [], ""
-    for ch in p:
-        if ch in "ˈˌ":
-            pending = ch
-        elif ch in KOKORO_VOWELS and pending:
-            out += [pending, ch]
-            pending = ""
-        else:
-            out.append(ch)
-    return "".join(out)
+def onset(segs, k):
+    """Where the syllable of nucleus segs[k] starts, for its stress mark: at the word's start, or at the
+    last consonant before it (Ga-lad-ri-el, Ca-ran-thir)."""
+    start = k
+    while start > 0 and segs[start - 1][1] == "C":
+        start -= 1
+    return start if start == 0 or start == k else k - 1
 
 
 def pronounce(name, sindarin=False):
@@ -129,7 +124,7 @@ def pronounce(name, sindarin=False):
         parts = word.split("-")
         main = max((i for i, p in enumerate(parts) if p not in PARTICLES), default=len(parts) - 1)
         words.append("".join(stressed(p, "ˈ" if i == main else "ˌ", sindarin) for i, p in enumerate(parts)))
-    return relocate_stress(" ".join(words))
+    return " ".join(words)
 
 
 def names(cache: Path, english):

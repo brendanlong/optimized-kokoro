@@ -135,10 +135,11 @@ fn wrappers_match_misaki_given_c_espeak() {
         };
         let got = wrapper.run(&case.text, Some(&mut espeak));
         let expected_calls: Vec<_> = case.espeak.iter().map(|(t, _)| t.clone()).collect();
-        if got != case.phonemes || asked != expected_calls {
+        let misaki = case.phonemes.as_deref().map(kokoro_reference::ipa);
+        if got != misaki || asked != expected_calls {
             failures.push(format!(
                 "{} {} {:?}\n  misaki: {:?} asked {:?}\n  rust:   {:?} asked {:?}",
-                case.wrapper, case.language, case.text, case.phonemes, expected_calls, got, asked
+                case.wrapper, case.language, case.text, misaki, expected_calls, got, asked
             ));
         }
     }
@@ -176,7 +177,7 @@ fn parity_with_c_espeak() {
         if listed.is_some() {
             tally.diverged += 1;
         }
-        let expected = listed.cloned().or_else(|| case.phonemes.clone());
+        let expected = listed.cloned().or_else(|| case.phonemes.clone()).map(|ps| kokoro_reference::ipa(&ps));
         if got == expected {
             tally.matched += 1;
         } else {

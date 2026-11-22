@@ -67,7 +67,7 @@ What's deployed isn't "misaki English". It's a pipeline: script segmentation (ko
 Rejected alternatives (measured in session decf45d1):
 - **One learned G2P model.** It's simpler to serve, but not faster: Python G2P is already ~1.5% of request time. It would also need a teacher and carries long-tail risk.
 - **misaki's BART fallback for unknown words.** About 10 ms per word on CPU, one word at a time, and it truncates long words. The deploy uses espeak instead, where 32 unknown words cost about the same as 70 known ones (~4 ms).
-- **Treating duplicate symbols as interchangeable.** Kokoro treats `T` and `ɾ`, and `ts` and `ʦ`, as different sounds (wiki `kokoro-duplicate-phoneme-tokens`). So the port must reproduce each pipeline's exact symbol conventions.
+- **Treating duplicate symbols as interchangeable.** Kokoro treats `T` and `ɾ`, and `ts` and `ʦ`, as different sounds (wiki `kokoro-duplicate-phoneme-tokens`). So the port must reproduce each pipeline's exact symbol conventions. Since the port writes standard IPA (`crates/phonemes`; `divergences.md`, "Phonemes: standard IPA"), they stay apart there as `t̬` and `ɾ`, and `ts` and `t͡s`.
 
 ### espeak: port the engine, keep its rules
 

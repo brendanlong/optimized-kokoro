@@ -12,15 +12,15 @@ pub(crate) const SECONDARY_STRESS: char = 'ˌ';
 
 /// With e, o and y, and r, x and ç, which only names use (`data/names.json`), so "the Eldar" is "thee".
 pub(crate) fn is_vowel(c: char) -> bool {
-    "AIOQWYaeiouyæɑɒɔəɛɜɪʊʌᵻ".contains(c)
+    "aeiouyæɑɒɔəɛɜɪʊʌᵻ".contains(c)
 }
 
 pub(crate) fn is_consonant(c: char) -> bool {
-    "bdfhjklmnprstvwxzçðŋɡɹɾʃʒʤʧθ".contains(c)
+    "bdfhjklmnprstvwxzçðŋɡɹɾʃʒθ".contains(c)
 }
 
 fn is_us_tau(c: char) -> bool {
-    "AIOWYiuæɑəɛɪɹʊʌ".contains(c)
+    "iuæɑəɛɪɹʊʌ".contains(c)
 }
 
 fn is_lexicon_char(c: char) -> bool {
@@ -241,7 +241,7 @@ impl Lexicon {
             return self.get_nnp(word);
         }
         match word {
-            "a" | "A" => found(if tag == "DT" { "ɐ" } else { "ˈA" }),
+            "a" | "A" => found(if tag == "DT" { "ɐ" } else { "ˈe͡ɪ" }),
             "am" | "Am" | "AM" => {
                 if tag.starts_with("NN") {
                     self.get_nnp(word)
@@ -258,8 +258,8 @@ impl Lexicon {
                     found("ɐn")
                 }
             }
-            "I" if tag == "PRP" => found("ˌI"),
-            "by" | "By" | "BY" if parent_tag(Some(tag)) == Some("ADV") => found("bˈI"),
+            "I" if tag == "PRP" => found("ˌa͡ɪ"),
+            "by" | "By" | "BY" if parent_tag(Some(tag)) == Some("ADV") => found("ˈba͡ɪ"),
             "to" | "To" => found(self.to(ctx)),
             "TO" if tag == "TO" || tag == "IN" => found(self.to(ctx)),
             "in" | "In" => found(self.in_(tag, ctx)),
@@ -346,7 +346,7 @@ impl Lexicon {
         // x and ç are only in names (crates/g2p-en/data/names.json): "Anach's".
         if "ptkfθxç".contains(last) {
             stem.push('s');
-        } else if "szʃʒʧʤ".contains(last) {
+        } else if "szʃʒ".contains(last) {
             stem.push(if self.british { 'ɪ' } else { 'ᵻ' });
             stem.push('z');
         } else {
@@ -379,7 +379,7 @@ impl Lexicon {
         let last = chars.next().expect("non-empty");
         let before = chars.next();
         let schwa_or_i = if self.british { 'ɪ' } else { 'ᵻ' };
-        if "pkfθʃsʧ".contains(last) {
+        if "pkfθʃs".contains(last) {
             stem.push('t');
         } else if last == 'd' {
             stem.push(schwa_or_i);
@@ -390,7 +390,7 @@ impl Lexicon {
             stem.push_str("ɪd");
         } else if before.is_some_and(is_us_tau) {
             stem.pop();
-            stem.push_str("ɾᵻd");
+            stem.push_str("t̬ᵻd");
         } else {
             stem.push_str("ᵻd");
         }
@@ -426,7 +426,7 @@ impl Lexicon {
             }
         } else if last == 't' && before.is_some_and(is_us_tau) {
             stem.pop();
-            stem.push_str("ɾɪŋ");
+            stem.push_str("t̬ɪŋ");
             return Some(stem);
         }
         stem.push_str("ɪŋ");
@@ -554,10 +554,10 @@ mod tests {
 
     #[test]
     fn stress() {
-        assert_eq!(apply_stress("hɛlO", Some(0.0)), "hˌɛlO");
-        assert_eq!(apply_stress("hˈɛlO", Some(-1.0)), "hˌɛlO");
-        assert_eq!(apply_stress("hˌɛlO", Some(2.0)), "hˈɛlO");
-        assert_eq!(apply_stress("hˈɛlˌO", Some(-2.0)), "hɛlO");
+        assert_eq!(apply_stress("hɛlo͡ʊ", Some(0.0)), "hˌɛlo͡ʊ");
+        assert_eq!(apply_stress("hˈɛlo͡ʊ", Some(-1.0)), "hˌɛlo͡ʊ");
+        assert_eq!(apply_stress("hˌɛlo͡ʊ", Some(2.0)), "hˈɛlo͡ʊ");
+        assert_eq!(apply_stress("hˈɛlˌo͡ʊ", Some(-2.0)), "hɛlo͡ʊ");
         assert_eq!(apply_stress("hm", Some(2.0)), "hm");
     }
 

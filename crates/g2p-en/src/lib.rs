@@ -266,7 +266,7 @@ fn token_context(ctx: &TokenContext, ps: Option<&str>, token: &MToken) -> TokenC
 }
 
 fn stress_weight(ps: &str) -> usize {
-    ps.chars().map(|c| if "AIOQWYʤʧ".contains(c) { 2 } else { 1 }).sum()
+    ps.chars().filter(|c| !matches!(c, '\u{361}' | '\u{32c}')).count()
 }
 
 fn resolve_tokens(tokens: &mut [MToken]) {
@@ -336,7 +336,7 @@ fn resolve_tokens(tokens: &mut [MToken]) {
 /// separators longer than this read differently (docs/divergences.md).
 const MAX_SPAN: usize = 16;
 
-/// misaki's English `G2P` as kokoro configures it (`version=None`, so `ɾ` and `ʔ` become `T` and `t`).
+/// misaki's English `G2P` as kokoro configures it (`version=None`, so `ɾ` and `ʔ` become the English flap `t̬` and `t`).
 pub struct G2p {
     lexicon: Lexicon,
     names: names::Names,
@@ -397,7 +397,7 @@ impl G2p {
                     Word::Many(tks) => merge_tokens(&tks, true),
                 };
                 if let Some(ps) = tk.phonemes.as_mut().filter(|p| p.contains(['ɾ', 'ʔ'])) {
-                    *ps = ps.replace('ɾ', "T").replace('ʔ', "t");
+                    *ps = ps.replace('ɾ', "t̬").replace('ʔ', "t");
                 }
                 out.push_str(tk.phonemes.as_deref().unwrap_or_default());
                 out.push_str(&tk.whitespace);

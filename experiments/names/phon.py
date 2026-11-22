@@ -3,8 +3,12 @@
 import re
 from pathlib import Path
 
-VOCAB_RS = Path(__file__).resolve().parents[2] / "crates/pipeline/src/vocab.rs"
-VOCAB = {chr(int(h, 16)) for h in re.findall(r"\('\\u\{([0-9a-f]+)\}', \d+\)", VOCAB_RS.read_text())}
+# Kokoro's config.json symbols: these experiments predate the port writing IPA.
+VOCAB_RS = Path(__file__).resolve().parents[2] / "crates/phonemes/src/lib.rs"
+VOCAB = {
+    chr(int(m[1], 16)) if m[1] else m[2] or m[3]
+    for m in re.finditer(r"^    \(\d+, '(?:\\u\{([0-9a-f]+)\}|\\(.)|(.))', ", VOCAB_RS.read_text(), re.M)
+}
 
 VOWELS = set("AIOWYɑæəɛɪiʊuʌɔɜᵊᵻaeo")
 STRESS = "ˈˌ"

@@ -951,10 +951,12 @@ pub fn names_read(text: &str) -> Vec<&'static str> {
         .collect()
 }
 
-/// Whether two phoneme strings for `text` differ only in words that are the phonemes of a name `text`
-/// has (with any ending: "Sauron's" is sˈauronz).
+/// Whether two phoneme strings for `text`, in `config.json` symbols ([`crate::canonical`],
+/// [`crate::ours`]), differ only in words that are the phonemes of a name `text` has (with any
+/// ending: "Sauron's" is sˈauronz).
 pub fn differs_only_in_names(text: &str, reference: &str, ours: &str) -> bool {
-    let names: Vec<&str> = names_read(text).iter().flat_map(|p| p.split(' ')).collect();
+    let names: Vec<String> = names_read(text).iter().map(|p| crate::ours(p)).collect();
+    let names: Vec<&str> = names.iter().flat_map(|p| p.split(' ')).collect();
     let (a, b): (Vec<&str>, Vec<&str>) = (reference.split(' ').collect(), ours.split(' ').collect());
     let is_name = |w: &str| {
         let w = w.trim_matches(|c: char| !c.is_alphabetic() && !"ˈˌː".contains(c));
@@ -1097,7 +1099,7 @@ mod tests {
 
     #[test]
     fn only_the_names_words_may_differ() {
-        let gondor = names_read("Gondor")[0];
+        let gondor = crate::ours(names_read("Gondor")[0]);
         assert!(differs_only_in_names("Gondor cat", "ɡˈɑndɔɹ kˈæt", &format!("{gondor} kˈæt")));
         assert!(differs_only_in_names("Gondor's cat", "ɡˈɑndɔɹz kˈæt", &format!("{gondor}z kˈæt")));
         assert!(!differs_only_in_names("Gondor cat", "ɡˈɑndɔɹ kˈæt", &format!("{gondor} dˈɔɡ")));

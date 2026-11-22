@@ -13,6 +13,7 @@ kokoro-espeak = { path = "../espeak" }
 kokoro-g2p-en = { path = "../g2p-en" }
 kokoro-g2p-zh = { path = "../g2p-zh" }
 kokoro-g2p-ja = { path = "../g2p-ja" }
+kokoro-phonemes = { path = "../phonemes" }
 kokoro-spacy-en = { path = "../spacy-en" }
 kokoro-text = { path = "../text" }
 regex = "1"

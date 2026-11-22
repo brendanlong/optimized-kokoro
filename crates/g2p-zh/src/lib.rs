@@ -143,8 +143,11 @@ mod tests {
 
     #[test]
     fn polyphones() {
-        assert_eq!(G2P.phonemize("银行行长").unwrap(), "i↗nxa↗ŋxa↗ŋꭧa↓ŋ");
-        assert_eq!(G2P.phonemize("他在银行工作，行长很长").unwrap(), "tʰa→ ʦai↘ i↗nxa↗ŋ kʊ→ŋʦwo↘, xa↗ŋꭧa↓ŋ xə↓nꭧa↓ŋ");
+        assert_eq!(G2P.phonemize("银行行长").unwrap(), "i↗nxa↗ŋxa↗ŋʈ͡ʂa↓ŋ");
+        assert_eq!(
+            G2P.phonemize("他在银行工作，行长很长").unwrap(),
+            "tʰa→ t͡sai↘ i↗nxa↗ŋ kʊ→ŋt͡swo↘, xa↗ŋʈ͡ʂa↓ŋ xə↓nʈ͡ʂa↓ŋ"
+        );
     }
 
     #[test]

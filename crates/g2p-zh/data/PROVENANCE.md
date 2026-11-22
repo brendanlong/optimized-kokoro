@@ -8,7 +8,7 @@ These files are the dictionaries misaki 0.9.4's legacy Chinese G2P reads (`ZHG2P
 | `hmm.txt` | jieba 0.42.1 `finalseg/prob_emit.py` (`repr` of each float). `prob_start.py` and `prob_trans.py` are constants in `src/jieba.rs` | MIT, as above |
 | `chars.txt` | pypinyin 0.55.0 `pinyin_dict.json`: each character's first reading | MIT, © 2016 mozillazg, 闲耘 (`../LICENSE-pypinyin`) |
 | `phrases.txt` | pypinyin 0.55.0 `phrases_dict.json`: each phrase's first reading per character | MIT, as above |
-| `syllables.txt` | Each reading above through pypinyin's TONE3 style (neutral tone as 5) and misaki's `pinyin_to_ipa` and `retone` (`misaki/transcription.py`, adapted by misaki from pinyin-to-ipa, MIT) | misaki: Apache-2.0, © hexgrad |
+| `syllables.txt` | Each reading above through pypinyin's TONE3 style (neutral tone as 5) and misaki's `pinyin_to_ipa` and `retone` (`misaki/transcription.py`, adapted by misaki from pinyin-to-ipa, MIT), with misaki's one-letter affricates for Kokoro (ʦ, ʨ, ꭧ) written as standard IPA (t͡s, t͡ɕ, ʈ͡ʂ) | misaki: Apache-2.0, © hexgrad |
 
 cn2an 0.5.23 (MIT, © 2017 Ailln, `../LICENSE-cn2an`) has no data files; its number tables are in `src/cn2an.rs`.
 
@@ -31,7 +31,7 @@ And of the files here:
 | `hmm.txt` | `e9b7080bfc9598bff76c33cec38d32c637000ef5725aafbdc3927f34720ecc10` |
 | `jieba.txt` | `cc98c7720d5b309d758446d9ba1bd3ffdcd7a9a5ceddc68fcd818e26fb856bc8` |
 | `phrases.txt` | `6d4e7921a2e2fed60493ef1253c4c8bc3da62b9f82d8e8159075256d1448ebb1` |
-| `syllables.txt` | `adb5a1e859a67e5b713064a683c72ca32761e8a749ebac1ea49cd5a2cccfdc04` |
+| `syllables.txt` | `cf45c0f121008c5e8712fe5cc3d19149f09853b319649537a3ab4fbf48a538da` |
 
 They are compiled in with `include_str!` and parsed when a `ZhG2p` is made: about 80–95 ms in a release build, and about 45 MB resident for the Chinese G2P alone. The pipeline loads one per process, lazily, on the first Han character or Chinese request (Brendan's decision, 2026-11-03), so an English-only server never pays for it.
 

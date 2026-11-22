@@ -65,6 +65,9 @@ pub struct Token {
     pub phonemes: Option<String>,
 }
 
+/// The records in `path`. In the English and Chinese pipelines, which read `[word](/phonemes/)`
+/// links, the phonemes of every link in the text are written in IPA, as the port takes them
+/// ([`with_ipa_links`]); the other pipelines read a link as text.
 pub fn read(path: impl AsRef<Path>) -> Vec<Record> {
     let path = path.as_ref();
     let file = File::open(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
@@ -73,10 +76,31 @@ pub fn read(path: impl AsRef<Path>) -> Vec<Record> {
         .enumerate()
         .filter_map(|(n, line)| {
             let line = line.unwrap();
-            (!line.trim().is_empty())
-                .then(|| serde_json::from_str(&line).unwrap_or_else(|e| panic!("{}:{}: {e}", path.display(), n + 1)))
+            (!line.trim().is_empty()).then(|| {
+                let record: Record =
+                    serde_json::from_str(&line).unwrap_or_else(|e| panic!("{}:{}: {e}", path.display(), n + 1));
+                record.with_ipa_links()
+            })
         })
         .collect()
+}
+
+impl Record {
+    fn with_ipa_links(mut self) -> Self {
+        if !matches!(self.lang.as_str(), "a" | "b" | "z") {
+            return self;
+        }
+        let links = |s: &mut String| *s = with_ipa_links(s);
+        links(&mut self.text);
+        links(&mut self.normalized);
+        self.sentences.iter_mut().for_each(links);
+        self.chunks.iter_mut().for_each(|c| links(&mut c.text));
+        for call in &mut self.calls {
+            links(&mut call.input);
+            call.segments.iter_mut().for_each(|(s, _)| links(s));
+        }
+        self
+    }
 }
 
 /// The committed fixtures (hard cases, Chinese mixed with English from `zh_mixed_cases.py`, kana next to Han and joiners in English from `kana_mixed_cases.py`), plus every dump in `reference/out/` (or `$KOKORO_REFERENCE_OUT`)
@@ -107,6 +131,47 @@ pub fn all() -> Vec<Record> {
         paths.extend(extra);
     }
     paths.iter().flat_map(read).collect()
+}
+
+/// The reference's phonemes as the port's tokenizer reads them, in `config.json` symbols: the
+/// symbols the model has ids for, with each stress mark before its vowel. The reference puts a few
+/// before a consonant (a Chinese tone's mark before a syllable's n, m or ŋ), which the tokenizer
+/// moves (docs/divergences.md, "Phonemes: stress marks before a consonant").
+pub fn canonical(reference: &str) -> String {
+    ours(&ipa(reference))
+}
+
+/// The port's IPA as the model reads it, in `config.json` symbols: comparable with [`canonical`].
+pub fn ours(ipa: &str) -> String {
+    kokoro_phonemes::symbols(&kokoro_phonemes::tokenize(ipa).ids)
+}
+
+/// The reference's phonemes written in IPA, to hand recorded G2P answers to the port.
+pub fn ipa(reference: &str) -> String {
+    reference
+        .chars()
+        .map(|c| match kokoro_phonemes::symbol_id(c).and_then(kokoro_phonemes::ipa) {
+            Some(ipa) => ipa.to_owned(),
+            None => c.to_string(),
+        })
+        .collect()
+}
+
+/// The reference's phonemes from misaki's Chinese or Japanese G2P without the capital letters
+/// they pass through from the text. The reference reads the capitals that are `config.json`
+/// symbols as their sounds ("ISBN" as e͡ɪ and s͡s); the port writes those sounds in IPA, so a
+/// capital is no sound at all, like any letter the vocabulary lacks (docs/divergences.md,
+/// "Phonemes: capital letters in Chinese and Japanese").
+pub fn without_capitals(reference: &str) -> String {
+    reference.chars().filter(|c| !c.is_ascii_uppercase()).collect()
+}
+
+/// `text` with the phonemes of its `[word](/phonemes/)` links, written for the reference in
+/// `config.json` symbols, in IPA as the port reads them.
+pub fn with_ipa_links(text: &str) -> String {
+    static LINK: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r"(\]\(/)([^\)]*)(/\))").unwrap());
+    LINK.replace_all(text, |c: &regex::Captures| format!("{}{}{}", &c[1], ipa(&c[2]), &c[3])).into_owned()
 }
 
 /// `phonemes` without the language-switch flags misaki's English fallback leaves in, as they look
@@ -171,6 +236,13 @@ pub fn clause_regrouping(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn reference_phonemes_as_ipa() {
+        assert_eq!(super::ipa("ʧˈIm ˈʌTəɹ ʦa"), "t͡ʃˈa͡ɪm ˈʌt̬əɹ t͡sa");
+        assert_eq!(super::ours(&super::ipa("ʧˈIm ˈʌTəɹ ʦa ɫ")), super::canonical("ʧˈIm ˈʌTəɹ ʦa ɫ"));
+        assert_eq!(super::with_ipa_links("[Kokoro](/kˈOkəɹO/) [x](#y)"), "[Kokoro](/kˈo͡ʊkəɹo͡ʊ/) [x](#y)");
+    }
+
     #[test]
     fn language_flags() {
         assert_eq!(super::without_language_flags("hˈɪndi(hi)həlˈʌnt(An-us) (ˈɛɹ"), Some("hˈɪndihəlˈʌnt (ˈɛɹ".into()));

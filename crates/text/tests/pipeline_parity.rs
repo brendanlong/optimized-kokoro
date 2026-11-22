@@ -42,14 +42,30 @@ impl Stage {
 /// `smart_split` with a G2P that answers from the record's calls. When the reference's G2P raised
 /// (`record.error`), the first text it has no answer for is the one that raised, and the output
 /// stops before the sentence that asked for it, as the reference's did.
+/// A recorded answer, measured as the reference measures phonemes: in characters, where the port
+/// counts the ids they read as. They differ only for symbols the vocabulary lacks
+/// (docs/divergences.md, "Text: chunk limits count ids"), which the pipeline's tests cover; here
+/// the splitting itself is compared.
+struct Recorded(String);
+
+impl kokoro_text::Phonemes for Recorded {
+    fn phonemes(&self) -> &str {
+        &self.0
+    }
+
+    fn ids(&self) -> usize {
+        self.0.chars().count()
+    }
+}
+
 fn chunks(record: &Record, calls: &mut Vec<String>) -> Vec<(String, String)> {
     let answers: HashMap<&str, &str> = record.calls.iter().map(|c| (c.input.as_str(), c.phonemes.as_str())).collect();
     let failed = Cell::new(false);
     let g2p = |text: &str| {
         if failed.get() {
-            return String::new();
+            return Recorded(String::new());
         }
-        match answers.get(text) {
+        Recorded(match answers.get(text) {
             Some(p) => {
                 calls.push(text.to_owned());
                 p.to_string()
@@ -62,7 +78,7 @@ fn chunks(record: &Record, calls: &mut Vec<String>) -> Vec<(String, String)> {
                 calls.push(text.to_owned());
                 format!("<no recorded call for {text:?}>")
             }
-        }
+        })
     };
     let options = Options::default();
     let mut out = Vec::new();
@@ -71,7 +87,7 @@ fn chunks(record: &Record, calls: &mut Vec<String>) -> Vec<(String, String)> {
             break;
         }
         if let Chunk::Speech(p) = chunk {
-            out.push((p.text, p.phonemes));
+            out.push((p.text, p.phonemes.0));
         }
     }
     out

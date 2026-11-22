@@ -161,7 +161,7 @@ fn reference_records() {
         .flat_map(|r| &r.calls)
         .flat_map(|c| &c.foreign)
         .filter(|(_, l, _)| l == "ja")
-        .map(|(segment, _, phonemes)| (segment.clone(), phonemes.clone()))
+        .map(|(segment, _, phonemes)| (segment.clone(), kokoro_reference::ipa(phonemes)))
         .collect();
     let chinese_recorded =
         Pipeline::new(Lang::Chinese).unwrap().with_foreign_g2p(Language::Japanese, Box::new(Recorded(japanese)));
@@ -190,7 +190,9 @@ fn reference_records() {
         let mut error = None;
         for chunk in pipeline.chunks(&record.text) {
             match chunk {
-                Ok(c) if c.pause.is_none() && error.is_none() => actual.push((c.text, c.phonemes)),
+                Ok(c) if c.pause.is_none() && error.is_none() => {
+                    actual.push((c.text, kokoro_reference::ours(&c.phonemes)))
+                }
                 Ok(_) => {}
                 Err(e) => {
                     error.get_or_insert(e);
@@ -219,11 +221,14 @@ fn reference_records() {
             match divergence::explain(&record.text, &record.normalized, &normalized) {
                 Ok(kinds) => {
                     // Chunks whose text is unchanged must still be read exactly as before.
-                    let reference: HashMap<&str, &str> =
-                        record.chunks.iter().map(|c| (c.text.as_str(), c.phonemes.as_str())).collect();
+                    let reference: HashMap<&str, String> = record
+                        .chunks
+                        .iter()
+                        .map(|c| (c.text.as_str(), kokoro_reference::canonical(&c.phonemes)))
+                        .collect();
                     let placeholders = uses_cjk(record) && !japanese_read;
                     for (text, phonemes) in actual.iter().filter(|_| !placeholders) {
-                        if let Some(&expected) = reference.get(text.as_str())
+                        if let Some(expected) = reference.get(text.as_str())
                             && expected != phonemes
                             && !divergence::has_dropped_abbreviation(text)
                         {
@@ -262,14 +267,19 @@ fn reference_records() {
                 continue;
             }
             let placeholder = |name: &str| {
-                pipeline.phonemize(&format!("{name} text")).unwrap().0.split(' ').map(str::to_owned).collect()
+                let ipa = pipeline.phonemize(&format!("{name} text")).unwrap().0;
+                ipa.split(' ').map(kokoro_reference::ours).collect()
             };
-            record.calls.iter().map(|c| (c.input.clone(), with_placeholders(c, placeholder))).collect()
+            record
+                .calls
+                .iter()
+                .map(|c| (c.input.clone(), kokoro_reference::canonical(&with_placeholders(c, placeholder))))
+                .collect()
         } else {
             compared += 1;
             zh += usize::from(record.lang == "z");
             failing += usize::from(record.error.is_some());
-            record.chunks.iter().map(|c| (c.text.clone(), c.phonemes.clone())).collect()
+            record.chunks.iter().map(|c| (c.text.clone(), kokoro_reference::canonical(&c.phonemes))).collect()
         };
         if error.is_some() == record.error.is_some() && actual == expected {
             if uses_cjk(record) && !chinese_with_japanese && !japanese_read {

@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
 OUT = ROOT / "crates/g2p-en/data/names.json"
 SOURCES = {"tolkien": tolkien}
-VOCAB_RS = ROOT / "crates/pipeline/src/vocab.rs"
+VOCAB_RS = ROOT / "crates/phonemes/src/lib.rs"
 
 
 def strip_accents(s):
@@ -79,7 +79,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--cache", type=Path, default=Path.home() / ".cache/kokoro-names")
     args = ap.parse_args()
-    vocab = {chr(int(h, 16)) for h in re.findall(r"\('\\u\{([0-9a-f]+)\}', \d+\)", VOCAB_RS.read_text())}
+    # The letters and marks of the vocabulary's IPA; kokoro-phonemes' tests check each name reads whole.
+    ipa = re.findall(r'^    \(\d+, \'.*\', "(.*)"\),$', VOCAB_RS.read_text(), re.M)
+    unescape = lambda s: re.sub(r"\\u\{([0-9a-f]+)\}|\\(.)", lambda m: chr(int(m[1], 16)) if m[1] else m[2], s)
+    vocab = {c for s in ipa for c in unescape(s)}
     english, exclude = english_words(), excluded()
     names, unreviewed = {}, []
     for source, module in SOURCES.items():
@@ -94,7 +97,7 @@ def main():
                 return False
             bad = set(phonemes) - vocab
             if bad:
-                raise SystemExit(f"{spelling}: {phonemes} has symbols Kokoro doesn't know: {bad}")
+                raise SystemExit(f"{spelling}: {phonemes} has sounds Kokoro doesn't know: {bad}")
             if names.get(spelling, phonemes) != phonemes:
                 raise SystemExit(f"{spelling}: two sources read it differently")
             return True

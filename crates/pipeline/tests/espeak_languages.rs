@@ -98,12 +98,12 @@ fn espeak_reference_records() {
             .chunks(&record.text)
             .filter_map(|c| {
                 let c = c.unwrap_or_else(|e| panic!("{}: {e}", record.id));
-                c.pause.is_none().then_some((c.text, c.phonemes))
+                c.pause.is_none().then_some((c.text, kokoro_reference::ours(&c.phonemes)))
             })
             .collect();
         count.chunks += actual.len();
         let expected: Vec<(String, String)> =
-            record.chunks.iter().map(|c| (c.text.clone(), c.phonemes.clone())).collect();
+            record.chunks.iter().map(|c| (c.text.clone(), kokoro_reference::canonical(&c.phonemes))).collect();
         assert!(record.error.is_none(), "{}: the reference failed: {:?}", record.id, record.error);
         let reason = if uses_new_script(record) {
             Some("other scripts")

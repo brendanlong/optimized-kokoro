@@ -124,6 +124,12 @@ fn jag2p_matches_misaki() {
                 continue;
             }
             let theirs = r["phonemes"].as_str().unwrap();
+            // Compared as the model reads them; misaki passes capital letters through, which the
+            // reference reads as the symbols some of them are (docs/divergences.md).
+            let (ours, theirs) = (
+                kokoro_reference::ours(&ours),
+                kokoro_reference::canonical(&kokoro_reference::without_capitals(theirs)),
+            );
             if ours != theirs {
                 bad += 1;
                 if bad <= show() {
@@ -153,6 +159,12 @@ fn jag2p_matches_misaki_with_the_listed_fixes() {
             let text = r["text"].as_str().unwrap();
             let ours = g2p.phonemize(text).unwrap();
             let theirs = r["phonemes"].as_str().unwrap_or_else(|| panic!("{text:?}: {}", r["error"]));
+            // Compared as the model reads them; misaki passes capital letters through, which the
+            // reference reads as the symbols some of them are (docs/divergences.md).
+            let (ours, theirs) = (
+                kokoro_reference::ours(&ours),
+                kokoro_reference::canonical(&kokoro_reference::without_capitals(theirs)),
+            );
             if ours != theirs {
                 bad += 1;
                 if bad <= show() {

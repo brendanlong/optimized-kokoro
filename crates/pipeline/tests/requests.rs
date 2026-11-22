@@ -69,7 +69,25 @@ fn cases() -> Vec<Case> {
         })
         // The committed fixtures are the start of the dumps in `out/requests`: each request once.
         .filter(|case| seen.insert(case.id.clone()))
+        .map(as_the_port_reads)
         .collect()
+}
+
+/// A recorded request as the port takes it and the model reads it: links' phonemes in IPA in the
+/// pipelines that read links, and the chunks' phonemes as the model's ids in `config.json` symbols.
+fn as_the_port_reads(mut case: Case) -> Case {
+    if matches!(case.lang.as_str(), "a" | "b" | "z") {
+        case.text = kokoro_reference::with_ipa_links(&case.text);
+    }
+    for chunk in &mut case.chunks {
+        if let Expected::Speech { text, phonemes, .. } = chunk {
+            if matches!(case.lang.as_str(), "a" | "b" | "z") {
+                *text = kokoro_reference::with_ipa_links(text);
+            }
+            *phonemes = kokoro_reference::canonical(phonemes);
+        }
+    }
+    case
 }
 
 /// Requests of `request_cases.py 2 1500 efhip` whose reference phonemes depend on espeak state an
@@ -119,10 +137,10 @@ fn requests_match_the_reference() {
                 Ok(c) => match c.pause {
                     Some(pause) => Expected::Pause { pause },
                     None => Expected::Speech {
-                        dropped: c.dropped(),
+                        dropped: c.dropped,
                         words: c.words().into_iter().map(|w| (w.text, w.ids.start, w.ids.end)).collect(),
                         text: c.text,
-                        phonemes: c.phonemes,
+                        phonemes: kokoro_reference::ours(&c.phonemes),
                         ids: c.ids,
                     },
                 },

@@ -13,6 +13,8 @@ reads, from the reference venv's jieba 0.42.1 and pypinyin 0.55.0, in the shapes
                    reading. Its keys are also mmseg's prefix set.
     syllables.txt  `pinyin ipa` for every reading above: misaki's `ZHG2P.py2ipa` of pypinyin's
                    TONE3 (neutral tone as 5) form of it, or `!Error: message` where misaki raises.
+                   misaki writes affricates as Kokoro's one-letter symbols (ʦ, ʨ, ꭧ); this writes
+                   them as standard IPA with a tie bar (t͡s, t͡ɕ, ʈ͡ʂ), which kokoro-phonemes reads.
 
 Usage (from reference/, after ./setup.sh):
     .cache/kfa/.venv/bin/python -I gen_zh_data.py ../crates/g2p-zh/data
@@ -63,6 +65,9 @@ for phrase, pys in PHRASES_DICT.items():
     assert len(pys) == len(phrase), phrase
     phrases[phrase] = [p[0] for p in pys]
 
+# Kokoro's one-letter affricates in standard IPA.
+AFFRICATES = str.maketrans({"ʦ": "t͡s", "ʨ": "t͡ɕ", "ꭧ": "ʈ͡ʂ"})
+
 syllables = sorted(set(readings.values()) | {p for pys in phrases.values() for p in pys})
 converter = UltimateConverter(neutral_tone_with_five=True)
 ipa = {}
@@ -70,7 +75,7 @@ for py in syllables:
     assert py and not any(c.isspace() for c in py), py
     tone3 = converter.convert_style("", py, Style.TONE3, True)
     try:
-        ipa[py] = ZHG2P.py2ipa(tone3)
+        ipa[py] = ZHG2P.py2ipa(tone3).translate(AFFRICATES)
         assert ipa[py] and not ipa[py].startswith("!") and not any(c.isspace() for c in ipa[py])
     except Exception as e:
         ipa[py] = f"!{type(e).__name__}: {e}"
@@ -90,7 +95,7 @@ with open(os.path.join(out, "syllables.txt"), "w", encoding="utf-8", newline="\n
 for c, py in readings.items():
     if "一" <= c <= "鿿":
         try:
-            expected = ZHG2P.word2ipa(c)
+            expected = ZHG2P.word2ipa(c).translate(AFFRICATES)
         except Exception as e:
             expected = f"!{type(e).__name__}: {e}"
         assert expected == ipa[py], (c, py, expected, ipa[py])

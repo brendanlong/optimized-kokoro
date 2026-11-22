@@ -42,7 +42,9 @@ fn matches_misaki() {
     for (file, case) in &cases {
         let got = g2p.phonemize(&case.text);
         let ok = match (&got, &case.phonemes, &case.error) {
-            (Ok(ps), Some(expected), _) => ps == expected,
+            (Ok(ps), Some(expected), _) => {
+                kokoro_reference::ours(ps) == kokoro_reference::canonical(&kokoro_reference::without_capitals(expected))
+            }
             (Err(_), None, Some(_)) => true,
             _ => false,
         };

@@ -94,10 +94,10 @@ enum Produced {
     End,
 }
 
-/// The most phonemes a sentence may have before the chunker cuts it at clause punctuation: the
-/// reference's 450, or fewer if one worker request may have fewer ids (`render_ids`, from
-/// [`stitch::max_render_ids`]). An id is a phoneme the vocabulary has, so a chunk within this many
-/// phonemes is rendered whole; only a clause longer than this by itself is stitched.
+/// The most phonemes (model ids) a sentence may have before the chunker cuts it at clause
+/// punctuation: the reference's 450, or fewer if one worker request may have fewer ids
+/// (`render_ids`, from [`stitch::max_render_ids`]). A chunk within this many is rendered whole;
+/// only a clause longer than this by itself is stitched.
 pub fn max_chunk_phonemes(render_ids: usize) -> usize {
     render_ids.min(DEFAULT_MAX_TOKENS)
 }
@@ -117,9 +117,8 @@ pub fn packed_chunks<'a>(
 }
 
 /// A chunk's units. `render_ids` is the most ids one worker request may have
-/// ([`stitch::max_render_ids`]): a chunk over [`max_chunk_phonemes`] is stitched. (Its ids are the
-/// phonemes the vocabulary has, so a chunk within it has at most `render_ids` ids.) Where the
-/// chunker cut the chunk's sentence, the first unit starts and the last ends at the cut
+/// ([`stitch::max_render_ids`]): a chunk of more ids than [`max_chunk_phonemes`] is stitched.
+/// Where the chunker cut the chunk's sentence, the first unit starts and the last ends at the cut
 /// ([`Joins`]).
 fn units(chunk: Chunk, speech: &Speech, render_ids: usize) -> Vec<Unit> {
     if let Some(pause) = chunk.pause {
@@ -147,7 +146,7 @@ fn units(chunk: Chunk, speech: &Speech, render_ids: usize) -> Vec<Unit> {
             end_after_id: if last && split.after { final_clause_mark(&ids[own..]).map(|i| own + i) } else { None },
         },
     };
-    if chunk.phonemes.chars().count() <= max_chunk_phonemes(render_ids) {
+    if chunk.ids.len() <= max_chunk_phonemes(render_ids) {
         let n = chunk.ids.len();
         let finish = finish(None, &chunk.ids, 0, true, true);
         return vec![Unit::Speech(request(chunk.ids, n), finish)];
@@ -457,16 +456,15 @@ mod tests {
         assert_eq!(max_chunk_phonemes(0), 0);
     }
 
-    /// Stitching is decided by the phonemes, as the chunker cuts: a chunk over the limit is
-    /// stitched even when some of its phonemes have no id and its ids would fit one request.
+    /// Stitching is decided by the ids, as the chunker counts them, however the IPA is written.
     #[test]
     fn chunks_over_the_phoneme_limit_are_stitched() {
         let speech = Speech { lang: Lang::AmericanEnglish, text: String::new(), voice: 0, speed: Speed::NORMAL };
-        let stitched = |phonemes: usize| {
+        let stitched = |ids: usize| {
             let chunk = Chunk {
                 text: "words.".into(),
-                phonemes: "x".repeat(phonemes),
-                ids: vec![43; 100],
+                phonemes: "a͡ɪ".repeat(ids),
+                ids: vec![25; ids],
                 pause: None,
                 unread: 0,
                 split: Split::default(),

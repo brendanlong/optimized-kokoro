@@ -511,7 +511,7 @@ async fn long_clauses_are_stitched_from_overlapping_pieces() {
 async fn chunks_that_could_exceed_the_cap_are_stitched() {
     let text = (0..50).map(|i| format!("word{}", char::from(b'a' + (i % 26) as u8))).collect::<Vec<_>>().join(" ");
     let chunk = stub_chunks(&text).remove(0);
-    assert!(chunk.phonemes.chars().count() <= 450 && chunk.ids.len() > 270, "{}", chunk.ids.len());
+    assert!(chunk.ids.len() <= 450 && chunk.ids.len() > 270, "{}", chunk.ids.len());
     for (cap, speed, most) in [(1_440_000, 100, None), (720_000, 100, Some(270)), (720_000, 25, Some(45))] {
         let speed = Speed::from_hundredths(speed).unwrap();
         let expected = match most {
@@ -679,8 +679,11 @@ async fn speaks_english_with_the_real_pipeline() {
     // Three short sentences, packed into one chunk (`pack`).
     assert_eq!(chunks.len(), 1);
     // Read by the Japanese G2P when UniDic is installed, else as "Japanese text".
-    let japanese =
-        if kokoro_pipeline::japanese_available() { ("toːkʲoː e ikɯ", 0) } else { ("ʤˌæpənˈiz tˈɛkst", 1) };
+    let japanese = if kokoro_pipeline::japanese_available() {
+        ("toːkʲoː e ikɯ", 0)
+    } else {
+        ("ˌd͡ʒæpəˈniz ˈtɛkst", 1)
+    };
     assert!(chunks[0].phonemes.ends_with(japanese.0), "{}", chunks[0].phonemes);
     assert_eq!(chunks[0].unread, japanese.1);
 }

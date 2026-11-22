@@ -1,17 +1,17 @@
 # Provenance
 
-The four lexicons here are unmodified copies of `misaki/data/` from misaki 0.9.4 (the version Kokoro-FastAPI locks; installed by `reference/setup.sh`). misaki is © hexgrad and licensed Apache-2.0: https://github.com/hexgrad/misaki
+The four lexicons here are `misaki/data/` from misaki 0.9.4 (the version Kokoro-FastAPI locks; installed by `reference/setup.sh`), rewritten in standard IPA by `tools/lexicon_to_ipa.py`: misaki writes them in Kokoro's one-letter symbols (`A` for e͡ɪ, `ʧ` for t͡ʃ, `ɾ` for the flap Kokoro reads as `T`) with stress marks before the vowel, and the script writes tie bars, `t̬` and syllable-start stress. The words and sounds are misaki's. misaki is © hexgrad and licensed Apache-2.0: https://github.com/hexgrad/misaki
 
-| File | SHA-256 |
-|---|---|
-| `us_gold.json` | `dc414872a49a28ae6c141463d502fd945f3b2fde040484fdc47d00cc4612686f` |
-| `us_silver.json` | `de8f67be911bb6c659187b4a65fd966b6a30e56350e0f790d763210b053ac475` |
-| `gb_gold.json` | `29e62f4b60261c88f7f3c2c7811ca3825978948090b72d2b27d565b729282f71` |
-| `gb_silver.json` | `48131e2d92ccc41655f4543e87e0f938e71463eb5a54be7f0693bb712ebb6bce` |
+| File | SHA-256 of misaki's | SHA-256 here |
+|---|---|---|
+| `us_gold.json` | `dc414872a49a28ae6c141463d502fd945f3b2fde040484fdc47d00cc4612686f` | `8a718dce57fed62ca5b8502a01f5d2a78495457ab3ecea8c36b6301ac7259fbf` |
+| `us_silver.json` | `de8f67be911bb6c659187b4a65fd966b6a30e56350e0f790d763210b053ac475` | `27fc0996b2d53951ed9fec2171b9a9d176859c3045a2876240bb97f576e48eda` |
+| `gb_gold.json` | `29e62f4b60261c88f7f3c2c7811ca3825978948090b72d2b27d565b729282f71` | `2dc1034044168d4cf3228fa4482bf2e348ed5cc05d2c5c90905989c359da81d9` |
+| `gb_silver.json` | `48131e2d92ccc41655f4543e87e0f938e71463eb5a54be7f0693bb712ebb6bce` | `ea28404df32371fa3064f5e8a4b71d4c884faff4e3fdaba92c509f4bd3a11a3c` |
 
 They are compiled into the crate with `include_str!` and parsed when a `G2p` is created (about 40–50 ms per accent in a release build). Keys and phonemes borrow from the embedded text; only the case variants `Lexicon.grow_dictionary` adds are allocated.
 
-The files are unchanged; `lexicon.rs` drops the keys "dr" and "mr" after loading them (`GUESSES`, `docs/divergences.md`, "misaki English: lowercase abbreviations").
+`lexicon.rs` drops the keys "dr" and "mr" after loading them (`GUESSES`, `docs/divergences.md`, "misaki English: lowercase abbreviations").
 
 ## names.json
 
