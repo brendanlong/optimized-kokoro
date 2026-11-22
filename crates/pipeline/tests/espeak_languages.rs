@@ -71,6 +71,8 @@ struct Count {
     matched: usize,
     /// Matched but for regrouped short clauses (docs/divergences.md).
     regrouped: usize,
+    /// Matched but for the spacing where runs of different G2Ps join (docs/divergences.md).
+    respaced: usize,
     chunks: usize,
     chars: usize,
     skipped: BTreeMap<&'static str, Vec<String>>,
@@ -128,6 +130,9 @@ fn espeak_reference_records() {
         count.compared += 1;
         if actual == expected {
             count.matched += 1;
+        } else if kokoro_reference::divergence::chunks_differ_only_in_run_spacing(&expected, &actual) {
+            count.matched += 1;
+            count.respaced += 1;
         } else if kokoro_reference::clause_regrouping(
             &expected,
             &actual,
@@ -154,10 +159,11 @@ fn espeak_reference_records() {
     let elapsed = start.elapsed();
     for (lang, c) in &counts {
         println!(
-            "{lang}: {}/{} compared records match ({} with short clauses regrouped), of {} ({} chunks, {} characters); not compared: {:?}",
+            "{lang}: {}/{} compared records match ({} with short clauses regrouped, {} spaced as runs join), of {} ({} chunks, {} characters); not compared: {:?}",
             c.matched,
             c.compared,
             c.regrouped,
+            c.respaced,
             c.records,
             c.chunks,
             c.chars,

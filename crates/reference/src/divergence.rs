@@ -940,6 +940,59 @@ pub fn has_link_with_tap_or_glottal_stop(lang: &str, text: &str) -> bool {
     matches!(lang, "a" | "b" | "z") && LINK.is_match(text)
 }
 
+/// Whether `ours` is the reference's phonemes, both in `config.json` symbols, spaced as the port
+/// joins runs of different G2Ps (`docs/divergences.md`, "Pipeline: one way to join runs"): each
+/// run of whitespace one space, and a space where two words met with none between them.
+pub fn differs_only_in_run_spacing(reference: &str, ours: &str) -> bool {
+    let mut collapsed = String::with_capacity(reference.len());
+    for c in reference.chars() {
+        if c.is_whitespace() {
+            if !collapsed.ends_with(' ') {
+                collapsed.push(' ');
+            }
+        } else {
+            collapsed.push(c);
+        }
+    }
+    let (mut a, mut b) = (collapsed.chars().peekable(), ours.chars().peekable());
+    let mut previous = None;
+    while let Some(c) = b.next() {
+        if a.peek() == Some(&c) {
+            a.next();
+        } else if c != ' ' || previous.is_none() || b.peek().is_none() {
+            return false;
+        }
+        previous = Some(c);
+    }
+    a.next().is_none() && reference != ours
+}
+
+/// Whether two lists of (text, phonemes) chunks differ only as [`differs_only_in_run_spacing`]
+/// allows: the same texts, and each chunk's phonemes the same or spaced as the port joins runs.
+pub fn chunks_differ_only_in_run_spacing(reference: &[(String, String)], ours: &[(String, String)]) -> bool {
+    reference.len() == ours.len()
+        && reference != ours
+        && reference
+            .iter()
+            .zip(ours)
+            .all(|(r, o)| r.0 == o.0 && (r.1 == o.1 || differs_only_in_run_spacing(&r.1, &o.1)))
+}
+
+/// The reference's phonemes with the port's spacing where `ours` reads the same words, so that a
+/// comparison that goes word by word (names) can be made after the port's spacing
+/// ([`differs_only_in_run_spacing`]). A reference word `ours` reads differently is kept whole.
+pub fn respaced(reference: &str, ours: &str) -> String {
+    let collapsed: String = reference.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut rest = collapsed.as_str();
+    let mut out = Vec::new();
+    for word in ours.split(' ') {
+        let taken = if rest.starts_with(word) { word.len() } else { rest.find(' ').unwrap_or(rest.len()) };
+        out.push(&rest[..taken]);
+        rest = rest[taken..].strip_prefix(' ').unwrap_or(&rest[taken..]);
+    }
+    if rest.is_empty() { out.join(" ") } else { reference.to_owned() }
+}
+
 /// The phonemes of each name from `crates/g2p-en/data/names.json` that `text` writes as a word of its
 /// own, which the port reads in their own language (`docs/divergences.md`, "misaki English: names").
 pub fn names_read(text: &str) -> Vec<&'static str> {
@@ -1105,6 +1158,15 @@ pub fn explain(input: &str, reference: &str, ours: &str) -> Result<BTreeSet<Kind
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn run_spacing() {
+        assert!(differs_only_in_run_spacing("toβakˈA", "toβa kˈA"));
+        assert!(differs_only_in_run_spacing("dˈaʁ  ( e", "dˈaʁ ( e"));
+        assert!(!differs_only_in_run_spacing("toβakˈA", "toβakˈO"));
+        assert!(!differs_only_in_run_spacing("a b", "a b"));
+        assert!(!differs_only_in_run_spacing("ab", " ab"));
+    }
 
     #[test]
     fn only_the_names_words_may_differ() {

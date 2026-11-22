@@ -174,6 +174,7 @@ fn reference_records() {
     let mut by_kind: std::collections::BTreeMap<Kind, usize> = std::collections::BTreeMap::new();
     let mut dropped_abbreviations = 0;
     let mut stress_moved = 0;
+    let mut respaced = 0;
     let mut names = 0;
     let start = Instant::now();
     for record in &records {
@@ -229,6 +230,14 @@ fn reference_records() {
                         if let Some(&expected) = reference.get(text.as_str())
                             && kokoro_reference::canonical(expected) != *phonemes
                             && kokoro_reference::stress_moved(expected) != *phonemes
+                            && !divergence::differs_only_in_run_spacing(
+                                &kokoro_reference::canonical(expected),
+                                phonemes,
+                            )
+                            && !divergence::differs_only_in_run_spacing(
+                                &kokoro_reference::stress_moved(expected),
+                                phonemes,
+                            )
                             && !divergence::has_dropped_abbreviation(text)
                         {
                             mismatches.push(format!(
@@ -320,11 +329,17 @@ fn reference_records() {
             // "MR" and "dr" are read without misaki's "mister" and "doctor" (docs/divergences.md).
             dropped_abbreviations += 1;
         } else if error.is_some() == record.error.is_some()
+            && divergence::chunks_differ_only_in_run_spacing(&expected, &actual)
+        {
+            // Runs of different G2Ps are joined with one rule (docs/divergences.md, "Pipeline: one
+            // way to join runs").
+            respaced += 1;
+        } else if error.is_some() == record.error.is_some()
             && expected.len() == actual.len()
-            && expected
-                .iter()
-                .zip(&actual)
-                .all(|(e, a)| e == a || e.0 == a.0 && divergence::differs_only_in_names(&e.0, &e.1, &a.1))
+            && expected.iter().zip(&actual).all(|(e, a)| {
+                let spaced = divergence::respaced(&e.1, &a.1);
+                e == a || e.0 == a.0 && divergence::differs_only_in_names(&e.0, &spaced, &a.1)
+            })
         {
             // Names are read in their own language (docs/divergences.md, "misaki English: names").
             names += 1;
@@ -362,7 +377,7 @@ fn reference_records() {
         "normalized differently, by the number reader and symbol pass: {changed} records, whose {unchanged_chunks} chunks with unchanged text match"
     );
     println!(
-        "by kind: {by_kind:?}; {dropped_abbreviations} more read \"dr\" or \"mr\" without misaki's lexicon entry, {names} with names read in their own language; {stress_moved} compared with stress marks moved to their vowel"
+        "by kind: {by_kind:?}; {dropped_abbreviations} more read \"dr\" or \"mr\" without misaki's lexicon entry, {names} with names read in their own language; {stress_moved} compared with stress marks moved to their vowel, {respaced} spaced as runs join"
     );
     println!("{} records, {chars} characters in {:.2?}", records.len(), elapsed);
     for m in mismatches.iter().take(show) {

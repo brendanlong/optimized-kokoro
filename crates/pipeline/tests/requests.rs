@@ -105,6 +105,18 @@ const STATE_DEPENDENT: [&str; 8] = [
     "efhip-2-1454",
 ];
 
+/// Whether `ours` are `theirs` split finer: a run read by another G2P is a word per word of its
+/// text where the counts match, where the reference made it one. The same text and ids.
+fn refines(theirs: &[(String, usize, usize)], ours: &[(String, usize, usize)]) -> bool {
+    // Words are the text after CJK punctuation is made Western, as English words were.
+    let text = |ws: &[(String, usize, usize)]| {
+        let words: String = ws.iter().map(|w| w.0.as_str()).collect();
+        kokoro_pipeline::foreign::translate_cjk_punctuation(&words).split_whitespace().collect::<String>()
+    };
+    let ids = |ws: &[(String, usize, usize)]| ws.iter().flat_map(|w| w.1..w.2).collect::<Vec<_>>();
+    theirs.is_empty() || text(theirs) == text(ours) && ids(theirs).iter().all(|i| ids(ours).contains(i))
+}
+
 fn uses_new_script(text: &str) -> bool {
     text.chars().filter_map(script).any(|s| !in_foreign_py(s))
 }
@@ -126,6 +138,7 @@ fn requests_match_the_reference() {
     let mut roman = 0;
     let mut regrouped = 0;
     let mut links = 0;
+    let mut runs_joined = 0;
     for case in &cases {
         if uses_new_script(&case.text) {
             new_script += 1;
@@ -160,6 +173,7 @@ fn requests_match_the_reference() {
         if error.is_some() {
             expected.pop();
         }
+        let english = matches!(case.lang.as_str(), "a" | "b");
         if STATE_DEPENDENT.contains(&case.id.as_str()) {
             assert!(error.is_none() && expected.len() == actual.len(), "{}", case.id);
             let mut changed = 0;
@@ -178,8 +192,12 @@ fn requests_match_the_reference() {
                         assert!(differ <= 1, "{}: {differ} words differ in {text:?}", case.id);
                         changed += differ;
                         let names = |ws: &[(String, usize, usize)]| ws.iter().map(|w| w.0.clone()).collect::<Vec<_>>();
-                        assert_eq!(names(words), names(w), "{}", case.id);
-                        if differ == 0 {
+                        // Word spans come from each run's words (docs/divergences.md, "Pipeline: one
+                        // way to join runs"), as the reference has them only in English.
+                        if english {
+                            assert_eq!(names(words), names(w), "{}", case.id);
+                        }
+                        if differ == 0 && english {
                             assert_eq!(*e, a, "{}", case.id);
                         }
                     }
@@ -216,9 +234,29 @@ fn requests_match_the_reference() {
             continue;
         }
         flagged += usize::from(flags);
+        // Runs of different G2Ps are joined with one rule, and word spans come from each run's
+        // words (docs/divergences.md, "Pipeline: one way to join runs"): a chunk spaced so, or
+        // with other word spans outside English, is counted apart.
+        let joined = std::cell::Cell::new(false);
         let same = |e: &Expected, a: &Expected| match (e, a) {
             (Expected::Speech { text, phonemes, .. }, Expected::Speech { text: t, phonemes: p, .. }) if flags => {
                 text == t && without_language_flags(phonemes).as_ref().unwrap_or(phonemes) == p
+            }
+            (
+                Expected::Speech { text, phonemes, ids, dropped, words },
+                Expected::Speech { text: t, phonemes: p, ids: i, dropped: d, words: w },
+            ) if e != a => {
+                // A space now where the reference had whitespace the vocabulary lacks (U+2009) or
+                // none: the dropped count and the word spans follow.
+                let respaced = kokoro_reference::divergence::differs_only_in_run_spacing(phonemes, p);
+                // Outside English both the reference's and the port's word spans are a guess that
+                // pairs text words with phoneme words, which espeak sometimes merges ("from the"):
+                // they aren't compared there. Nor is the dropped count, where whitespace the
+                // vocabulary lacks inside a run (a tab) is now a space between its words.
+                let ok = text == t
+                    && (respaced || phonemes == p && ids == i && (!english || dropped == d && refines(words, w)));
+                joined.set(joined.get() || ok);
+                ok
             }
             _ => e == a,
         };
@@ -236,6 +274,10 @@ fn requests_match_the_reference() {
             Some(_) => prefix_matches && actual[expected.len()..].iter().any(|a| matches!(a, Expected::Error { .. })),
             None => prefix_matches && expected.len() == actual.len(),
         };
+        if ok && joined.get() {
+            runs_joined += 1;
+            continue;
+        }
         // Pauses and errors stay in, as chunks of their own, so they must match too.
         let pairs = |chunks: &mut dyn Iterator<Item = &Expected>| -> Vec<(String, String)> {
             chunks
@@ -248,7 +290,7 @@ fn requests_match_the_reference() {
         // A chunk with the same text on both sides must be the same, ids and words included.
         let shared_equal = actual.iter().all(|a| {
             expected.iter().all(|e| match (e, a) {
-                (Expected::Speech { text, .. }, Expected::Speech { text: t, .. }) if text == t => *e == a,
+                (Expected::Speech { text, .. }, Expected::Speech { text: t, .. }) if text == t => same(e, a),
                 _ => true,
             })
         });
@@ -299,13 +341,13 @@ fn requests_match_the_reference() {
             ));
         }
     }
-    let compared = cases.len() - new_script - rechunked - stateful - numbers - fuzzed - regrouped - links;
+    let compared = cases.len() - new_script - rechunked - stateful - numbers - fuzzed - regrouped - links - runs_joined;
     println!(
         "{} of {compared} requests match ({flagged} of them once espeak's language-switch flags are dropped from the reference's); \
          not compared: {rechunked} chunked differently without the flags, {new_script} with other scripts, \
          {stateful} where the reference's espeak read a word by an earlier call's state, \
          {numbers} with numbers or symbols read differently ({roman} with Roman numerals), {fuzzed} more fuzzed ones with digits or symbols, \
-         {regrouped} with short clauses regrouped, {links} with a link's ɾ or ʔ read as written",
+         {regrouped} with short clauses regrouped, {links} with a link's ɾ or ʔ read as written, {runs_joined} with runs joined by the port's rule",
         compared - failures.len(),
     );
     for f in failures.iter().take(10) {

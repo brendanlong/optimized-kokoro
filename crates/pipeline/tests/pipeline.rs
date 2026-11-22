@@ -36,7 +36,8 @@ fn japanese_runs_are_read_by_the_japanese_g2p() {
     let pipeline = Pipeline::new(Lang::AmericanEnglish).unwrap();
     for (text, expected) in [
         ("東京へ行く", "toːkʲoː e ikɯ"),
-        ("The wordカナmeans hello.", "ðə wˈɜɹdkanamˈinz həlˈO."),
+        // Runs whose letters meet are words of their own.
+        ("The wordカナmeans hello.", "ðə wˈɜɹd kana mˈinz həlˈO."),
         ("東京\u{200d}へ", "dˈʊŋʨˈiŋe"),
     ] {
         assert_eq!(read(&pipeline.phonemize(text).unwrap().0), expected, "{text}");
@@ -141,7 +142,7 @@ fn hebrew_points_are_dropped() {
 fn a_foreign_run_is_one_token_per_word() {
     let (ps, tokens) = pipeline().phonemize("Say Москва река now").unwrap();
     let texts: Vec<&str> = tokens.iter().map(|t| t.text.as_str()).collect();
-    assert_eq!(texts, ["Say", "Москва река", "", "now"]);
+    assert_eq!(texts, ["Say", "Москва", "река", "now"]);
     assert_eq!(ps.split(' ').count(), 4);
 }
 
