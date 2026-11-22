@@ -113,6 +113,8 @@ fn espeak_reference_records() {
             Some("Han without a reading")
         } else if has_language_flag(record) {
             Some("espeak language flags")
+        } else if kokoro_reference::divergence::has_link_read_as_text(&record.lang, &record.text) {
+            Some("links, which the reference read as text")
         } else if reads_divergent_espeak(record, &divergent) {
             Some("espeak reads uninitialised memory")
         } else if uses_japanese(record) && !japanese {

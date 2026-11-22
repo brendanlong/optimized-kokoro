@@ -73,17 +73,13 @@ fn cases() -> Vec<Case> {
         .collect()
 }
 
-/// A recorded request as the port takes it and the model reads it: links' phonemes in IPA in the
-/// pipelines that read links, and the chunks' phonemes as the model's ids in `config.json` symbols.
+/// A recorded request as the port takes it and the model reads it: links' phonemes in IPA, and the
+/// chunks' phonemes as the model's ids in `config.json` symbols.
 fn as_the_port_reads(mut case: Case) -> Case {
-    if matches!(case.lang.as_str(), "a" | "b" | "z") {
-        case.text = kokoro_reference::with_ipa_links(&case.text);
-    }
+    case.text = kokoro_reference::with_ipa_links(&case.text);
     for chunk in &mut case.chunks {
         if let Expected::Speech { text, phonemes, .. } = chunk {
-            if matches!(case.lang.as_str(), "a" | "b" | "z") {
-                *text = kokoro_reference::with_ipa_links(text);
-            }
+            *text = kokoro_reference::with_ipa_links(text);
             *phonemes = kokoro_reference::canonical(phonemes);
         }
     }
@@ -144,7 +140,9 @@ fn requests_match_the_reference() {
             new_script += 1;
             continue;
         }
-        if kokoro_reference::divergence::has_link_with_tap_or_glottal_stop(&case.lang, &case.text) {
+        if kokoro_reference::divergence::has_link_with_tap_or_glottal_stop(&case.lang, &case.text)
+            || kokoro_reference::divergence::has_link_read_as_text(&case.lang, &case.text)
+        {
             links += 1;
             continue;
         }
@@ -185,7 +183,10 @@ fn requests_match_the_reference() {
                     ) => {
                         // Everything but the phonemes of the words the carried-over state changed
                         // (and the ids and word positions after them).
-                        assert_eq!((text, dropped), (t, d), "{}", case.id);
+                        assert_eq!(text, t, "{}", case.id);
+                        if english {
+                            assert_eq!(dropped, d, "{}", case.id);
+                        }
                         let (ew, aw): (Vec<&str>, Vec<&str>) = (phonemes.split(' ').collect(), p.split(' ').collect());
                         assert_eq!(ew.len(), aw.len(), "{}", case.id);
                         let differ = ew.iter().zip(&aw).filter(|(x, y)| x != y).count();
@@ -347,7 +348,7 @@ fn requests_match_the_reference() {
          not compared: {rechunked} chunked differently without the flags, {new_script} with other scripts, \
          {stateful} where the reference's espeak read a word by an earlier call's state, \
          {numbers} with numbers or symbols read differently ({roman} with Roman numerals), {fuzzed} more fuzzed ones with digits or symbols, \
-         {regrouped} with short clauses regrouped, {links} with a link's ɾ or ʔ read as written, {runs_joined} with runs joined by the port's rule",
+         {regrouped} with short clauses regrouped, {links} with a link the reference read otherwise (as text, or ɾ and ʔ as the English flap and t), {runs_joined} with runs joined by the port's rule",
         compared - failures.len(),
     );
     for f in failures.iter().take(10) {

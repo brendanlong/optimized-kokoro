@@ -371,9 +371,7 @@ impl G2p {
         tagged: Vec<TaggedToken>,
         mut fallback: Option<&mut dyn Fallback>,
     ) -> Result<(String, Vec<Token>), Error> {
-        let mut tokens = self.tokenize(pre, tagged)?;
-        self.read_names(&mut tokens);
-        let tokens = Self::fold_left(tokens);
+        let tokens = Self::fold_left(self.tokenize(pre, tagged)?);
         let mut words = retokenize(tokens)?;
         let mut ctx = TokenContext::default();
         for word in words.iter_mut().rev() {
@@ -500,32 +498,12 @@ impl G2p {
         Ok(tokens)
     }
 
-    /// Gives each run of tokens that spells a name from `data/names.json` the name's phonemes, as a
-    /// `[name](/phonemes/)` link would: the first token carries them and the rest fold into it.
-    fn read_names(&self, tokens: &mut [MToken]) {
-        let mut i = 0;
-        while i < tokens.len() {
-            let free = tokens[i..].iter().take_while(|t| t.phonemes.is_none() && t.stress.is_none());
-            match self.names.longest(free.map(|t| (t.text.as_str(), t.whitespace.as_str()))) {
-                Some((mut n, phonemes)) => {
-                    let mut phonemes = phonemes.to_string();
-                    // "Sauron's": the lexicon adds 's to words it knows, which a name isn't.
-                    let possessive = tokens.get(i + n).filter(|t| {
-                        matches!(t.text.as_str(), "'s" | "’s") && t.phonemes.is_none() && t.stress.is_none()
-                    });
-                    if possessive.is_some() && tokens[i + n - 1].whitespace.is_empty() {
-                        phonemes = self.lexicon.s(Some(phonemes)).expect("a name's phonemes aren't empty");
-                        n += 1;
-                    }
-                    for (k, tk) in tokens[i..i + n].iter_mut().enumerate() {
-                        tk.is_head = k == 0;
-                        tk.phonemes = Some(if k == 0 { std::mem::take(&mut phonemes) } else { String::new() });
-                    }
-                    i += n;
-                }
-                None => i += 1,
-            }
-        }
+    /// `text` with each name from `data/names.json` that stands as a word of its own made a
+    /// `[name](/phonemes/)` link, outside the links it has: so every G2P reads names alike. "'s"
+    /// after a name takes misaki's ending ("Sauron's").
+    pub fn link_names<'t>(&self, text: &'t str) -> std::borrow::Cow<'t, str> {
+        let links: Vec<(usize, usize)> = link_regex().find_iter(text).map(|m| (m.start(), m.end())).collect();
+        self.names.link(text, &links, |ps| self.lexicon.s(Some(ps.to_owned())).expect("a name's phonemes aren't empty"))
     }
 
     /// `fold_left`: each non-head token is merged into the token before it. Merging one pair at a time

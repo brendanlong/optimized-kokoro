@@ -459,6 +459,52 @@ fn word_spans(tokens: &[Token], kept: &[usize]) -> Vec<Word> {
     words
 }
 
+/// Two runs whose letters meet are still two words: scripts without spaces ("東京Tokyo").
+fn space_where_letters_meet(tokens: &mut [Token], before: char, after: char) {
+    if kokoro_g2p_en::is_alpha(before)
+        && kokoro_g2p_en::is_alpha(after)
+        && let Some(last) = tokens.last_mut().filter(|t| t.whitespace.is_empty())
+    {
+        last.whitespace.push(' ');
+    }
+}
+
+/// A piece of a run outside English: text for the run's G2P, or a `[text](/phonemes/)` link's.
+enum Piece {
+    Text(String),
+    Phonemes { text: String, ipa: String },
+}
+
+/// `segment` cut at its links. A link with phonemes (misaki's `/phonemes/`, IPA's syllable breaks
+/// left out) is its own piece; any other link (a stress mark, which only misaki reads) is its text.
+fn link_pieces(segment: &str) -> Vec<Piece> {
+    static LINK: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r"\[([^\]]+)\]\(([^\)]*)\)").expect("valid regex"));
+    let mut pieces = Vec::new();
+    let mut text = String::new();
+    let mut last = 0;
+    for m in LINK.captures_iter(segment) {
+        let whole = m.get(0).expect("match");
+        text.push_str(&segment[last..whole.start()]);
+        last = whole.end();
+        let feature = &m[2];
+        if feature.chars().count() > 1 && feature.starts_with('/') && feature.ends_with('/') {
+            if !text.is_empty() {
+                pieces.push(Piece::Text(std::mem::take(&mut text)));
+            }
+            let ipa = feature[1..].trim_end_matches('/').chars().filter(|&c| c != '.').collect();
+            pieces.push(Piece::Phonemes { text: m[1].to_owned(), ipa });
+        } else {
+            text.push_str(&m[1]);
+        }
+    }
+    text.push_str(&segment[last..]);
+    if !text.is_empty() {
+        pieces.push(Piece::Text(text));
+    }
+    pieces
+}
+
 /// Appends a run read by a G2P other than misaki's English: one token per word of `phonemes`,
 /// each holding its word of the text when the run has as many words as phoneme words, else the
 /// first holding the run's text. The run's whitespace at either end joins it to its neighbours,
@@ -611,6 +657,7 @@ impl<'p> Request<'p> {
             Lang::Chinese | Lang::Japanese => text.into(),
             _ => foreign::translate_cjk_punctuation(text),
         };
+        let graphemes = self.pipeline.g2p.link_names(&graphemes);
         let mut tokens: Vec<Token> = Vec::new();
         let mut placeholders = Vec::new();
         let chinese = self.pipeline.foreign.get(&Language::Chinese);
@@ -618,14 +665,10 @@ impl<'p> Request<'p> {
         let mut i = 0;
         while i < segments.len() {
             let (segment, language) = segments[i];
-            // Two runs whose letters meet are still two words: scripts without spaces ("東京Tokyo").
             if i > 0
                 && let (Some(a), Some(b)) = (segments[i - 1].0.chars().next_back(), segment.chars().next())
-                && kokoro_g2p_en::is_alpha(a)
-                && kokoro_g2p_en::is_alpha(b)
-                && let Some(last) = tokens.last_mut().filter(|t| t.whitespace.is_empty())
             {
-                last.whitespace.push(' ');
+                space_where_letters_meet(&mut tokens, a, b);
             }
             i += 1;
             let run = match language {
@@ -638,8 +681,22 @@ impl<'p> Request<'p> {
                     continue;
                 }
                 None => {
-                    let ps = self.native(segment)?;
-                    append_run(&mut tokens, segment, &ps);
+                    // misaki reads links in English; elsewhere a link is a run of its own.
+                    let mut previous: Option<char> = None;
+                    for piece in link_pieces(segment) {
+                        let (text, ps) = match piece {
+                            Piece::Text(text) => {
+                                let ps = self.native(&text)?;
+                                (text, ps)
+                            }
+                            Piece::Phonemes { text, ipa } => (text, ipa),
+                        };
+                        if let (Some(a), Some(b)) = (previous, text.chars().next()) {
+                            space_where_letters_meet(&mut tokens, a, b);
+                        }
+                        append_run(&mut tokens, &text, &ps);
+                        previous = text.chars().next_back().or(previous);
+                    }
                     continue;
                 }
                 Some(language) if self.reads(language) => {
