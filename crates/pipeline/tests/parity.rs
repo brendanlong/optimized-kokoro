@@ -173,6 +173,7 @@ fn reference_records() {
     let (mut changed, mut unchanged_chunks) = (0, 0);
     let mut by_kind: std::collections::BTreeMap<Kind, usize> = std::collections::BTreeMap::new();
     let mut dropped_abbreviations = 0;
+    let mut names = 0;
     let start = Instant::now();
     for record in &records {
         let chinese_with_japanese = record.lang == "z" && uses_cjk(record);
@@ -298,6 +299,12 @@ fn reference_records() {
         {
             // "MR" and "dr" are read without misaki's "mister" and "doctor" (docs/divergences.md).
             dropped_abbreviations += 1;
+        } else if error.is_some() == record.error.is_some()
+            && expected.len() == actual.len()
+            && expected.iter().zip(&actual).all(|(e, a)| e == a || e.0 == a.0 && divergence::has_name(&e.0))
+        {
+            // Names are read in their own language (docs/divergences.md, "misaki English: names").
+            names += 1;
         } else {
             let first =
                 expected.iter().zip(&actual).position(|(e, a)| e != a).unwrap_or(expected.len().min(actual.len()));
@@ -331,7 +338,9 @@ fn reference_records() {
     println!(
         "normalized differently, by the number reader and symbol pass: {changed} records, whose {unchanged_chunks} chunks with unchanged text match"
     );
-    println!("by kind: {by_kind:?}; {dropped_abbreviations} more read \"dr\" or \"mr\" without misaki's lexicon entry");
+    println!(
+        "by kind: {by_kind:?}; {dropped_abbreviations} more read \"dr\" or \"mr\" without misaki's lexicon entry, {names} with names read in their own language"
+    );
     println!("{} records, {chars} characters in {:.2?}", records.len(), elapsed);
     for m in mismatches.iter().take(show) {
         println!("{m}");

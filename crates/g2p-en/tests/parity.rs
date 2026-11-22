@@ -96,6 +96,7 @@ fn matches_reference() {
     let mut shown = 0;
     let mut numbers = 0;
     let mut dropped = 0;
+    let mut names = 0;
     for record in records.iter().filter(|r| r.lang == "a" || r.lang == "b") {
         let g2p = if record.lang == "b" { &gb } else { &us };
         for call in &record.calls {
@@ -109,6 +110,11 @@ fn matches_reference() {
             // (docs/divergences.md, "misaki English: lowercase abbreviations").
             if kokoro_reference::divergence::has_dropped_abbreviation(&call.input) {
                 dropped += 1;
+                continue;
+            }
+            // Names are read in their own language (docs/divergences.md, "misaki English: names").
+            if kokoro_reference::divergence::has_name(&call.input) {
+                names += 1;
                 continue;
             }
             calls += 1;
@@ -158,7 +164,7 @@ fn matches_reference() {
     }
     let pct = |a: usize, b: usize| 100.0 * a as f64 / b.max(1) as f64;
     println!(
-        "not compared: {numbers} calls with numbers, money or symbols misaki read, {dropped} with \"dr\" or \"mr\" in a case other than \"Dr\" and \"Mr\""
+        "not compared: {numbers} calls with numbers, money or symbols misaki read, {dropped} with \"dr\" or \"mr\" in a case other than \"Dr\" and \"Mr\", {names} with a name from names.json"
     );
     println!(
         "calls: {calls_ok}/{calls} exact ({:.3}%); tokens: {tokens_ok}/{tokens} exact ({:.3}%)",

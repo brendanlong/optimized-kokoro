@@ -289,7 +289,7 @@ impl Lexicon {
         if ctx.future_vowel.is_none() || tag != "IN" { "ˈɪn" } else { "ɪn" }
     }
 
-    fn is_known(&self, word: &str) -> bool {
+    pub(crate) fn is_known(&self, word: &str) -> bool {
         if self.golds.contains_key(word) || self.silvers.contains_key(word) {
             return true;
         }
@@ -339,7 +339,7 @@ impl Lexicon {
         ps.map(|ps| apply_stress(ps, stress))
     }
 
-    fn s(&self, stem: Option<String>) -> Option<String> {
+    pub(crate) fn s(&self, stem: Option<String>) -> Option<String> {
         let mut stem = stem.filter(|s| !s.is_empty())?;
         let last = stem.chars().next_back().expect("non-empty");
         if "ptkfθ".contains(last) {

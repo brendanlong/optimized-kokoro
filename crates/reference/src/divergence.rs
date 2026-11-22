@@ -931,6 +931,22 @@ pub fn has_dropped_abbreviation(text: &str) -> bool {
         .any(|w| (w.eq_ignore_ascii_case("dr") || w.eq_ignore_ascii_case("mr")) && !matches!(w, "Dr" | "Mr"))
 }
 
+/// Whether `text` spells a name from `crates/g2p-en/data/names.json` as a word of its own, which
+/// the port reads in its own language (`docs/divergences.md`, "misaki English: names").
+pub fn has_name(text: &str) -> bool {
+    static NAMES: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    let names = NAMES.get_or_init(|| {
+        let map: std::collections::HashMap<String, String> =
+            serde_json::from_str(include_str!("../../g2p-en/data/names.json")).expect("valid names.json");
+        map.into_keys().collect()
+    });
+    let alnum = |c: Option<char>| c.is_some_and(char::is_alphanumeric);
+    names.iter().any(|name| {
+        text.match_indices(name.as_str())
+            .any(|(i, _)| !alnum(text[..i].chars().next_back()) && !alnum(text[i + name.len()..].chars().next()))
+    })
+}
+
 /// Why `ours` differs from the reference's normalized text of `input`: the divergences that
 /// explain every difference, or the first one nothing explains. A number difference needs a
 /// number in the input (a digit or another number character: `²`, `½`, `①`), and a symbol
