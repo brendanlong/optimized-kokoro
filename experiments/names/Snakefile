@@ -1,0 +1,61 @@
+configfile: "config.yaml"
+
+R = "results"
+PHONEMIZE = "../../target/release/examples/phonemize"
+ARMS = ["current", "rules"] + [f"llm_{m}_{f}" for m in config["models"] for f in config["formats"]]
+
+
+def arm_file(arm):
+    return f"{R}/arms/{arm}.jsonl"
+
+
+rule all:
+    input: f"{R}/scores.json", "../../worker/bench/name_listen/plan.json"
+
+
+rule fetch:
+    output: f"{R}/tolkien_gateway.jsonl"
+    shell: "python3 fetch_tolkien.py > {output}"
+
+
+rule key:
+    input: raw=rules.fetch.output, config="config.yaml"
+    output: f"{R}/key.jsonl"
+    shell: "python3 key.py {input.raw} {input.config} {output}"
+
+
+rule phonemize_binary:
+    output: PHONEMIZE
+    shell: "cargo build --release -p kokoro-pipeline --example phonemize"
+
+
+rule current:
+    input: key=rules.key.output, binary=PHONEMIZE
+    output: arm_file("current")
+    shell: "python3 baseline.py {input.key} {input.binary} {output}"
+
+
+rule rules_arm:
+    input: rules.key.output
+    output: arm_file("rules")
+    shell: "python3 rules.py {input} {output}"
+
+
+rule llm:
+    input: key=rules.key.output, config="config.yaml"
+    output: f"{R}/arms/llm_{{model}}_{{fmt}}.jsonl"
+    shell: "python3 llm.py {input.key} {input.config} {wildcards.model} {wildcards.fmt} {output}"
+
+
+rule score:
+    input: key=rules.key.output, arms=[arm_file(a) for a in ARMS]
+    output: f"{R}/scores.json"
+    params: specs=" ".join(f"{a.removeprefix('llm_')}={arm_file(a)}" for a in ARMS)
+    shell: "python3 score.py {input.key} {output} {params.specs}"
+
+
+rule listen_plan:
+    input: scores=rules.score.output, binary=PHONEMIZE, arms=[arm_file(a) for a in ARMS]
+    output: "../../worker/bench/name_listen/plan.json"
+    params: specs=" ".join(f"{a.removeprefix('llm_')}={arm_file(a)}" for a in ARMS if a != "llm_haiku_ipa")
+    shell: "python3 listen_plan.py {input.scores} {input.binary} {output} {params.specs}"

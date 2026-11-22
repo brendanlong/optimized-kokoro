@@ -1,0 +1,14 @@
+# Tolkien Gateway articles whose IPA is for another name, or isn't a name's pronunciation.
+exclude: [Mount Doom, Pelennor Fields, Walls of the World, Thingol, Rivendell, Valinor, Vanyarin, Patakar, Éowyn]
+# Articles whose IPA field starts with another of the character's names.
+ipa_override:
+  Gil-galad: "ɡilˈɡalad"
+  Eärnil I: "eˈarnil"
+rename:
+  Eärnil I: Eärnil
+
+llm_batch: 25
+models:
+  haiku: claude-haiku-5-5
+  opus: claude-opus-5-5
+formats: [misaki, ipa]
