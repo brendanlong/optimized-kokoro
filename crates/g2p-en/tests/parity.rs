@@ -96,6 +96,7 @@ fn matches_reference() {
     let mut shown = 0;
     let mut numbers = 0;
     let mut dropped = 0;
+    let mut names = 0;
     for record in records.iter().filter(|r| r.lang == "a" || r.lang == "b") {
         let g2p = if record.lang == "b" { &gb } else { &us };
         for call in &record.calls {
@@ -133,6 +134,16 @@ fn matches_reference() {
             tokens_ok += if same_tokens { token_matches } else { 0 };
             let ps = kokoro::tokens_to_ps(&got);
             let ok = problems.is_empty() && same_tokens && token_matches == expected.len() && ps == call.phonemes;
+            // Names are read in their own language (docs/divergences.md, "misaki English: names"); a
+            // multi-word name is one token, so only the phonemes are compared, word by word.
+            if !ok
+                && problems.is_empty()
+                && kokoro_reference::divergence::differs_only_in_names(&call.input, &call.phonemes, &ps)
+            {
+                calls -= 1;
+                names += 1;
+                continue;
+            }
             calls_ok += usize::from(ok);
             if !ok && shown < show_max {
                 shown += 1;
@@ -158,7 +169,7 @@ fn matches_reference() {
     }
     let pct = |a: usize, b: usize| 100.0 * a as f64 / b.max(1) as f64;
     println!(
-        "not compared: {numbers} calls with numbers, money or symbols misaki read, {dropped} with \"dr\" or \"mr\" in a case other than \"Dr\" and \"Mr\""
+        "not compared: {numbers} calls with numbers, money or symbols misaki read, {dropped} with \"dr\" or \"mr\" in a case other than \"Dr\" and \"Mr\", {names} with a name from names.json"
     );
     println!(
         "calls: {calls_ok}/{calls} exact ({:.3}%); tokens: {tokens_ok}/{tokens} exact ({:.3}%)",

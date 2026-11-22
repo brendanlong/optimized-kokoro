@@ -424,3 +424,52 @@ fn cancelling_stops_at_the_next_g2p_call() {
     assert_eq!(asked.load(Ordering::SeqCst), 4, "asked once per G2P call, up to the one cancelled");
     assert!(chunks.all(|c| matches!(c, Err(Error::Cancelled))));
 }
+
+fn name(spelling: &str) -> String {
+    static NAMES: OnceLock<std::collections::HashMap<String, String>> = OnceLock::new();
+    let names = NAMES.get_or_init(|| serde_json::from_str(include_str!("../../g2p-en/data/names.json")).unwrap());
+    names.get(spelling).unwrap_or_else(|| panic!("{spelling} isn't in names.json")).clone()
+}
+
+#[test]
+fn names_are_read_in_their_own_language() {
+    let british = Pipeline::new(Lang::BritishEnglish).unwrap();
+    for spelling in ["Celebrimbor", "Minas Tirith", "Gil-galad", "Eärendil"] {
+        let text = format!("Then {spelling} came.");
+        let expected = format!("{} kˈAm.", name(spelling));
+        assert!(phonemize(&text).ends_with(&expected), "{}", phonemize(&text));
+        assert!(british.phonemize(&text).unwrap().0.contains(&name(spelling)), "{spelling} in British English");
+    }
+    assert_eq!(phonemize("Earendil"), phonemize("Eärendil"));
+}
+
+#[test]
+fn a_name_takes_possessive_and_plural_endings() {
+    assert_eq!(phonemize("Sauron's"), format!("{}z", name("Sauron")));
+    assert_eq!(phonemize("Minas Tirith's"), format!("{}s", name("Minas Tirith")));
+    // A plural is its own reviewed entry, not a rule: "Estes" isn't Este's plural.
+    assert_eq!(phonemize("Silmarils"), name("Silmarils"));
+    assert!(!phonemize("Estes Park").contains(&format!("{}z", name("Este"))), "{}", phonemize("Estes Park"));
+}
+
+#[test]
+fn names_need_their_exact_spelling_and_lose_to_overrides() {
+    let gondor = name("Gondor");
+    for text in ["gondor", "Gondorian", "[Gondor](/ɡˈɑndɔɹ/)", "[Gondor](+2)"] {
+        assert!(!phonemize(text).contains(&gondor), "{text}: {}", phonemize(text));
+    }
+    // "Minas" alone is left out as ambiguous (Minas Gerais); "Minas Tirith" is a name.
+    let minas = name("Minas Tirith").split(' ').next().unwrap().to_string();
+    assert!(!phonemize("Minas Gerais").contains(&minas), "{}", phonemize("Minas Gerais"));
+}
+
+#[test]
+fn a_name_starting_with_a_vowel_takes_an_and_thee() {
+    assert_eq!(phonemize("the Eldar"), format!("ði {}", name("Eldar")));
+    assert_eq!(phonemize("the Noldor"), format!("ðə {}", name("Noldor")));
+}
+
+#[test]
+fn names_match_with_accents_as_combining_marks() {
+    assert_eq!(phonemize("Ea\u{308}rendil"), name("Eärendil"));
+}

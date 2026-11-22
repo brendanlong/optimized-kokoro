@@ -10,12 +10,13 @@ use std::borrow::Cow;
 pub(crate) const PRIMARY_STRESS: char = 'ˈ';
 pub(crate) const SECONDARY_STRESS: char = 'ˌ';
 
+/// With e, o and y, and r, x and ç, which only names use (`data/names.json`), so "the Eldar" is "thee".
 pub(crate) fn is_vowel(c: char) -> bool {
-    "AIOQWYaiuæɑɒɔəɛɜɪʊʌᵻ".contains(c)
+    "AIOQWYaeiouyæɑɒɔəɛɜɪʊʌᵻ".contains(c)
 }
 
 pub(crate) fn is_consonant(c: char) -> bool {
-    "bdfhjklmnpstvwzðŋɡɹɾʃʒʤʧθ".contains(c)
+    "bdfhjklmnprstvwxzçðŋɡɹɾʃʒʤʧθ".contains(c)
 }
 
 fn is_us_tau(c: char) -> bool {
@@ -289,7 +290,7 @@ impl Lexicon {
         if ctx.future_vowel.is_none() || tag != "IN" { "ˈɪn" } else { "ɪn" }
     }
 
-    fn is_known(&self, word: &str) -> bool {
+    pub(crate) fn is_known(&self, word: &str) -> bool {
         if self.golds.contains_key(word) || self.silvers.contains_key(word) {
             return true;
         }
@@ -339,10 +340,11 @@ impl Lexicon {
         ps.map(|ps| apply_stress(ps, stress))
     }
 
-    fn s(&self, stem: Option<String>) -> Option<String> {
+    pub(crate) fn s(&self, stem: Option<String>) -> Option<String> {
         let mut stem = stem.filter(|s| !s.is_empty())?;
         let last = stem.chars().next_back().expect("non-empty");
-        if "ptkfθ".contains(last) {
+        // x and ç are only in names (crates/g2p-en/data/names.json): "Anach's".
+        if "ptkfθxç".contains(last) {
             stem.push('s');
         } else if "szʃʒʧʤ".contains(last) {
             stem.push(if self.british { 'ɪ' } else { 'ᵻ' });

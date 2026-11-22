@@ -7,6 +7,7 @@
 mod align;
 pub mod kokoro;
 mod lexicon;
+mod names;
 mod subtokenize;
 mod text;
 mod unicode_tables;
@@ -338,12 +339,13 @@ const MAX_SPAN: usize = 16;
 /// misaki's English `G2P` as kokoro configures it (`version=None`, so `ɾ` and `ʔ` become `T` and `t`).
 pub struct G2p {
     lexicon: Lexicon,
+    names: names::Names,
 }
 
 impl G2p {
     /// American (`british = false`, kokoro's `a`) or British (`b`) English, with kokoro's `unk=''`.
     pub fn new(british: bool) -> Self {
-        G2p { lexicon: Lexicon::new(british) }
+        G2p { lexicon: Lexicon::new(british), names: names::Names::new() }
     }
 
     /// `G2P.__call__`: the phoneme string and the tokens.
@@ -365,7 +367,8 @@ impl G2p {
         tagged: Vec<TaggedToken>,
         mut fallback: Option<&mut dyn Fallback>,
     ) -> Result<(String, Vec<Token>), Error> {
-        let tokens = self.tokenize(pre, tagged)?;
+        let mut tokens = self.tokenize(pre, tagged)?;
+        self.read_names(&mut tokens);
         let tokens = Self::fold_left(tokens);
         let mut words = retokenize(tokens)?;
         let mut ctx = TokenContext::default();
@@ -494,6 +497,34 @@ impl G2p {
             }
         }
         Ok(tokens)
+    }
+
+    /// Gives each run of tokens that spells a name from `data/names.json` the name's phonemes, as a
+    /// `[name](/phonemes/)` link would: the first token carries them and the rest fold into it.
+    fn read_names(&self, tokens: &mut [MToken]) {
+        let mut i = 0;
+        while i < tokens.len() {
+            let free = tokens[i..].iter().take_while(|t| t.phonemes.is_none() && t.stress.is_none());
+            match self.names.longest(free.map(|t| (t.text.as_str(), t.whitespace.as_str()))) {
+                Some((mut n, phonemes)) => {
+                    let mut phonemes = phonemes.to_string();
+                    // "Sauron's": the lexicon adds 's to words it knows, which a name isn't.
+                    let possessive = tokens.get(i + n).filter(|t| {
+                        matches!(t.text.as_str(), "'s" | "’s") && t.phonemes.is_none() && t.stress.is_none()
+                    });
+                    if possessive.is_some() && tokens[i + n - 1].whitespace.is_empty() {
+                        phonemes = self.lexicon.s(Some(phonemes)).expect("a name's phonemes aren't empty");
+                        n += 1;
+                    }
+                    for (k, tk) in tokens[i..i + n].iter_mut().enumerate() {
+                        tk.is_head = k == 0;
+                        tk.phonemes = Some(if k == 0 { std::mem::take(&mut phonemes) } else { String::new() });
+                    }
+                    i += n;
+                }
+                None => i += 1,
+            }
+        }
     }
 
     /// `fold_left`: each non-head token is merged into the token before it. Merging one pair at a time

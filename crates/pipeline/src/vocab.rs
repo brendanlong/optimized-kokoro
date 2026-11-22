@@ -153,4 +153,13 @@ mod tests {
         assert_eq!(id('¡'), None);
         assert_eq!(ids("hˈɛlO ¿"), (vec![50, 156, 86, 54, 31, 16], vec![0, 1, 2, 3, 4, 5, 6, 6]));
     }
+
+    #[test]
+    fn every_name_is_in_the_vocabulary() {
+        let names: std::collections::HashMap<String, String> =
+            serde_json::from_str(include_str!("../../g2p-en/data/names.json")).unwrap();
+        for (name, phonemes) in names {
+            assert!(phonemes.chars().all(|c| id(c).is_some()), "{name}: {phonemes}");
+        }
+    }
 }
