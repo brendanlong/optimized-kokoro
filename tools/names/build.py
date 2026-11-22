@@ -2,14 +2,15 @@
 
     python3 tools/names/build.py [--cache DIR]
 
-Each source module (SOURCES) gives {spelling: phonemes} from names(cache, english), where english is the set
-of words misaki's dictionaries have (lowercase and as written). Every word of a multi-word name becomes an entry
-too, and every spelling gets an accent-free twin ("Earendil" for "Eärendil"). Each single word that's kept
-also gets its plural ("Silmarils"), which goes through the same checks. A spelling is left out when:
+Each source module (SOURCES) has names(cache, english) -> {spelling: (phonemes, countable)}: the spellings
+the source attests, where english is the set of words misaki's dictionaries have (as written and
+lowercase) and countable says whether the name takes a plural (Silmaril and Balrog do; Celebrimbor and
+Gondor don't). Each spelling with accents also gets an accent-free twin ("Earendil" for "Eärendil"), and each
+countable name its plural ("Silmarils"). A spelling is left out when:
 - English already has it: misaki's dictionaries know it in any case ("Region", "Luna", "Turin");
 - it's on exclude.tsv: an English reader could meet it outside the source's world (reviewed by hand from
   the flags flag.py collects in review/);
-- two entries spell the same but are pronounced differently, unless one is the source's own spelling.
+- two names that differ only in accents are read differently, for their shared accent-free twin.
 Single words must have been through flag.py; the build stops if one hasn't.
 """
 
@@ -55,29 +56,15 @@ def reviewed(source):
 
 
 def candidates(own):
-    """{spelling: (phonemes, is the source's own spelling)} from one source's names."""
-    out = {}
-
-    def add(spelling, phonemes, primary):
-        old = out.get(spelling)
-        if old is None or (primary and not old[1]):
-            out[spelling] = (phonemes, primary)
-        elif old[0] != phonemes and primary == old[1]:
-            out[spelling] = (None, primary)  # two readings: drop it
-
-    for name, phonemes in own.items():
-        add(name, phonemes, True)
-    for name, phonemes in own.items():
-        words, readings = name.split(), phonemes.split()
-        if len(words) > 1 and len(words) == len(readings):
-            for w, p in zip(words, readings):
-                if w[0].isupper():
-                    add(w, p, w in own)
-    for spelling, (phonemes, primary) in list(out.items()):
+    """{spelling: (phonemes, countable)}: the source's spellings and their accent-free twins."""
+    twins, clashes = {}, set()
+    for spelling, entry in own.items():
         plain = strip_accents(spelling)
-        if plain != spelling and phonemes is not None:
-            add(plain, phonemes, False)
-    return {s: p for s, (p, _) in out.items() if p is not None}
+        if plain != spelling and plain not in own:
+            # Two names that only differ in accents may be read differently: then the twin is ambiguous.
+            if twins.setdefault(plain, entry)[0] != entry[0]:
+                clashes.add(plain)
+    return {**own, **{s: e for s, e in twins.items() if s not in clashes}}
 
 
 def plural(spelling, phonemes):
@@ -112,9 +99,10 @@ def main():
                 raise SystemExit(f"{spelling}: two sources read it differently")
             return True
 
-        kept = {s: p for s, p in candidates(module.names(args.cache, english)).items() if keep(s, p)}
-        # Plurals of the names that are kept, checked the same way ("Regions" never comes from "Region").
-        plurals = dict(filter(None, (plural(s, p) for s, p in kept.items())))
+        entries = candidates(module.names(args.cache, english))
+        kept = {s: p for s, (p, _) in entries.items() if keep(s, p)}
+        # Plurals of the countable names that are kept (Silmarils, not Celebrimbors), checked the same way.
+        plurals = dict(filter(None, (plural(s, p) for s, p in kept.items() if entries[s][1])))
         kept.update({s: p for s, p in plurals.items() if s not in kept and keep(s, p)})
         names.update(kept)
         if unreviewed:

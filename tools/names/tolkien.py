@@ -19,6 +19,8 @@ ELDAMO_SHA256 = "5f35fdd3a51a7a0f2f055cf7ae740413885e668c92f7370f320795dafec3fa8
 # Silmarillion spells its names in (Valinor, Valmar); not the earliest conceptions (Gnomish, Qenya).
 LANGUAGES = {"s", "q", "n", "mq"}
 SINDARIN = {"s", "n"}
+# Eldamo's kinds of word for one person or place, which take no plural.
+COUNT_NOT = {"masc-name", "fem-name", "place-name"}
 LETTERS = set("abcdefghijklmnopqrstuvwxyzáéíóúâêîôûäëïöüý")
 
 LONG = set("áéíóúâêîôûý")
@@ -132,22 +134,30 @@ def pronounce(name, sindarin=False):
 
 def names(cache: Path, english):
     """Every capitalized word Eldamo has in these languages (names, and proper nouns such as Maia and Eä), and
-    the capitalized forms Tolkien wrote of them ("Valar", "Teleri"), with their pronunciations."""
+    the capitalized forms Tolkien wrote of them ("Valar", "Teleri"), as {spelling: (phonemes, countable)}.
+    A word's own spelling is countable if it names a kind of thing or being rather than one person or place."""
     words = [w for w in ET.parse(fetch(cache)).getroot().iter("word") if w.get("l") in LANGUAGES]
 
     def forms_of(w):
-        return [(re.sub("[¹²³]", "", v or "").strip(), w.get("l")) for v in [w.get("v")] + [r.get("v") for r in w.iter("ref")]]
+        own = re.sub("[¹²³]", "", w.get("v", "")).strip()
+        refs = [re.sub("[¹²³]", "", r.get("v") or "").strip() for r in w.iter("ref")]
+        countable = not COUNT_NOT & set(w.get("speech", "").split())
+        return [(own, w.get("l"), countable)] + [(v, w.get("l"), False) for v in refs]
 
     forms = [f for w in words for f in forms_of(w)]
     # Every single word Tolkien wrote in these languages, names or not. Eldamo also has a few English phrases
     # ("Praises of Cormallen"): a phrase with an English word that isn't also Elvish is left out ("Amon Hen" stays).
-    elvish = {f.lower() for v, _ in forms if " " not in v for f in v.split("-")}
+    elvish = {f.lower() for v, _, _ in forms if " " not in v for f in v.split("-")}
     out = {}
-    for name, language in (f for w in words if w.get("v", "")[:1].isupper() for f in forms_of(w)):
-        # Leave out reconstructed forms ("Argol(do)"), all-caps inscriptions and letters the rules don't cover.
+    for name, language, countable in (f for w in words if w.get("v", "")[:1].isupper() for f in forms_of(w)):
+        # Leave out reconstructed forms ("Argol(do)"), word pieces ("Ban-"), all-caps inscriptions and letters
+        # the rules don't cover.
         if (not name[:1].isupper() or (len(name) > 1 and name.isupper())
                 or not all(c.lower() in LETTERS or c in " -" for c in name)
+                or not all(name.replace("-", " ").split(" "))
                 or any(w.lower() in english and w.lower() not in elvish for w in name.replace("-", " ").split())):
             continue
-        out.setdefault(name, pronounce(name, sindarin=language in SINDARIN))
+        phonemes = pronounce(name, sindarin=language in SINDARIN)
+        old = out.get(name)
+        out[name] = (phonemes, countable or (old is not None and old[1])) if old is None or old[0] == phonemes else old
     return out
