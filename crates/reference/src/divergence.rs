@@ -931,33 +931,36 @@ pub fn has_dropped_abbreviation(text: &str) -> bool {
         .any(|w| (w.eq_ignore_ascii_case("dr") || w.eq_ignore_ascii_case("mr")) && !matches!(w, "Dr" | "Mr"))
 }
 
-/// How many words of `text` belong to names from `crates/g2p-en/data/names.json` written as words
-/// of their own, which the port reads in their own language (`docs/divergences.md`, "misaki
-/// English: names").
-pub fn name_words(text: &str) -> usize {
-    static NAMES: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+/// The phonemes of each name from `crates/g2p-en/data/names.json` that `text` writes as a word of its
+/// own, which the port reads in their own language (`docs/divergences.md`, "misaki English: names").
+pub fn names_read(text: &str) -> Vec<&'static str> {
+    static NAMES: std::sync::OnceLock<Vec<(String, String)>> = std::sync::OnceLock::new();
     let names = NAMES.get_or_init(|| {
         let map: std::collections::HashMap<String, String> =
             serde_json::from_str(include_str!("../../g2p-en/data/names.json")).expect("valid names.json");
-        map.into_keys().collect()
+        map.into_iter().collect()
     });
     let alnum = |c: Option<char>| c.is_some_and(char::is_alphanumeric);
     names
         .iter()
-        .map(|name| {
-            let matches = text.match_indices(name.as_str()).filter(|(i, _)| {
-                !alnum(text[..*i].chars().next_back()) && !alnum(text[i + name.len()..].chars().next())
-            });
-            matches.count() * name.split(' ').count()
+        .filter(|(name, _)| {
+            text.match_indices(name.as_str())
+                .any(|(i, _)| !alnum(text[..i].chars().next_back()) && !alnum(text[i + name.len()..].chars().next()))
         })
-        .sum()
+        .map(|(_, phonemes)| phonemes.as_str())
+        .collect()
 }
 
-/// Whether two phoneme strings for `text` differ only in as many words as `text` has names' words.
+/// Whether two phoneme strings for `text` differ only in words that are the phonemes of a name `text`
+/// has (with any ending: "Sauron's" is sˈauronz).
 pub fn differs_only_in_names(text: &str, reference: &str, ours: &str) -> bool {
+    let names: Vec<&str> = names_read(text).iter().flat_map(|p| p.split(' ')).collect();
     let (a, b): (Vec<&str>, Vec<&str>) = (reference.split(' ').collect(), ours.split(' ').collect());
-    let differing = a.iter().zip(&b).filter(|(x, y)| x != y).count();
-    a.len() == b.len() && differing > 0 && differing <= name_words(text)
+    let is_name = |w: &str| {
+        let w = w.trim_matches(|c: char| !c.is_alphabetic() && !"ˈˌː".contains(c));
+        names.iter().any(|n| w.starts_with(n) && w.len() - n.len() <= "ᵻz".len())
+    };
+    a.len() == b.len() && a.iter().zip(&b).any(|(x, y)| x != y) && a.iter().zip(&b).all(|(x, y)| x == y || is_name(y))
 }
 
 /// Why `ours` differs from the reference's normalized text of `input`: the divergences that
@@ -1091,6 +1094,16 @@ pub fn explain(input: &str, reference: &str, ours: &str) -> Result<BTreeSet<Kind
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_the_names_words_may_differ() {
+        let gondor = names_read("Gondor")[0];
+        assert!(differs_only_in_names("Gondor cat", "ɡˈɑndɔɹ kˈæt", &format!("{gondor} kˈæt")));
+        assert!(differs_only_in_names("Gondor's cat", "ɡˈɑndɔɹz kˈæt", &format!("{gondor}z kˈæt")));
+        assert!(!differs_only_in_names("Gondor cat", "ɡˈɑndɔɹ kˈæt", &format!("{gondor} dˈɔɡ")));
+        assert!(!differs_only_in_names("Gondor cat", &format!("{gondor} kˈæt"), &format!("{gondor} kˈæt")));
+        assert!(!differs_only_in_names("the cat", "ðə kˈæt", "ðə dˈɔɡ"));
+    }
 
     #[test]
     fn explains_number_and_symbol_changes_only() {

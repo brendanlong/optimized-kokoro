@@ -81,9 +81,10 @@ def candidates(own):
 
 def plural(spelling, phonemes):
     """ "Silmarils", "Balrogs", with misaki's ending; none for names ending in a hissing sound (English writes "-es")."""
-    if " " in spelling or spelling[-1] in "sxzh" or phonemes[-1] in "sz":
+    hissing = spelling[-1] in "sxz" or spelling.endswith(("sh", "h")) and not spelling.endswith(("th", "dh", "ch"))
+    if " " in spelling or hissing or phonemes[-1] in "sz":
         return None
-    return spelling + "s", phonemes + ("s" if phonemes[-1] in "ptkfθxç" else "z")
+    return spelling + "s", phonemes + ("s" if phonemes[-1] in "ptkfθxç" else "z")  # as lexicon.rs's s()
 
 
 def main():

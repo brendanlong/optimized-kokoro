@@ -18,6 +18,7 @@ ELDAMO_SHA256 = "5f35fdd3a51a7a0f2f055cf7ae740413885e668c92f7370f320795dafec3fa8
 # Sindarin and Quenya, and the Noldorin and Middle Quenya of the 1930s-50s that much of the published
 # Silmarillion spells its names in (Valinor, Valmar); not the earliest conceptions (Gnomish, Qenya).
 LANGUAGES = {"s", "q", "n", "mq"}
+SINDARIN = {"s", "n"}
 LETTERS = set("abcdefghijklmnopqrstuvwxyzáéíóúâêîôûäëïöüý")
 
 LONG = set("áéíóúâêîôûý")
@@ -48,7 +49,7 @@ def base(ch):
     return unicodedata.normalize("NFD", ch)[0]
 
 
-def segment(word):
+def segment(word, sindarin):
     """(phonemes, kind) pieces: 'V' short vowel, 'L' long vowel or diphthong, 'C' consonant."""
     w = word.lower()
     segs, i = [], 0
@@ -57,6 +58,9 @@ def segment(word):
         # w before a vowel is a consonant: "Tawar" is ta-war, not tau-ar.
         if unit and unit[0] == "aw" and i + 2 < len(w) and base(w[i + 2]) in VOWELS:
             unit = None
+        # lh and rh are one sound only starting a word; inside one they are two ("Edhel-harn", "Dír-hael").
+        if unit and unit[0] in ("lh", "rh") and i > 0:
+            unit = None
         if unit:
             segs.append((unit[1], "L" if unit[0] in DIPHTHONGS else "C"))
             i += len(unit[0])
@@ -64,6 +68,10 @@ def segment(word):
         ch, b = w[i], base(w[i])
         if b == "y" and i + 1 < len(w) and base(w[i + 1]) in "aeiou":
             segs.append(("j", "C"))
+        elif sindarin and i == 0 and b == "i" and len(w) > 1 and base(w[1]) in "aeiou":
+            segs.append(("j", "C"))  # Sindarin initial i before a vowel: "Ioreth", "Iarwain"
+        elif sindarin and i == len(w) - 1 and b == "f" and w[i - 1:i] != "f":
+            segs.append(("v", "C"))  # Sindarin final f is v: "Nindalf"
         elif b in VOWELS:
             segs.append((VOWELS[b] + ("ː" if ch in LONG else ""), "L" if ch in LONG else "V"))
         elif b == "n" and w.startswith("ng", i):
@@ -87,8 +95,8 @@ def heavy(segs, k):
     return following >= 2
 
 
-def stressed(part, mark):
-    segs = segment(part)
+def stressed(part, mark, sindarin):
+    segs = segment(part, sindarin)
     nuclei = [k for k, (_, kind) in enumerate(segs) if kind != "C"]
     if part in PARTICLES or not nuclei:
         target = None
@@ -113,12 +121,12 @@ def relocate_stress(p):
     return "".join(out)
 
 
-def pronounce(name):
+def pronounce(name, sindarin=False):
     words = []
     for word in name.split():
         parts = word.split("-")
         main = max((i for i, p in enumerate(parts) if p not in PARTICLES), default=len(parts) - 1)
-        words.append("".join(stressed(p, "ˈ" if i == main else "ˌ") for i, p in enumerate(parts)))
+        words.append("".join(stressed(p, "ˈ" if i == main else "ˌ", sindarin) for i, p in enumerate(parts)))
     return relocate_stress(" ".join(words))
 
 
@@ -127,16 +135,16 @@ def names(cache: Path):
     the capitalized forms Tolkien wrote of them ("Valar", "Teleri"), with their pronunciations."""
     out = {}
 
-    def add(spelling):
+    def add(spelling, language):
         name = re.sub("[¹²³]", "", spelling or "").strip()
         # Leave out reconstructed forms ("Argol(do)") and letters the rules don't cover.
         if name[:1].isupper() and not (len(name) > 1 and name.isupper()) and all(c.lower() in LETTERS or c in " -" for c in name):
-            out.setdefault(name, pronounce(name))
+            out.setdefault(name, pronounce(name, sindarin=language in SINDARIN))
 
     for w in ET.parse(fetch(cache)).getroot().iter("word"):
         if w.get("l") not in LANGUAGES or not w.get("v", "")[:1].isupper():
             continue
-        add(w.get("v"))
+        add(w.get("v"), w.get("l"))
         for ref in w.iter("ref"):
-            add(ref.get("v"))
+            add(ref.get("v"), w.get("l"))
     return out
