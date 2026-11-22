@@ -2,7 +2,8 @@
 
     python3 tools/names/build.py [--cache DIR]
 
-Each source module (SOURCES) gives {spelling: phonemes}. Every word of a multi-word name becomes an entry
+Each source module (SOURCES) gives {spelling: phonemes} from names(cache, english), where english is the set
+of words misaki's dictionaries have (lowercase and as written). Every word of a multi-word name becomes an entry
 too, and every spelling gets an accent-free twin ("Earendil" for "Eärendil"). Each single word that's kept
 also gets its plural ("Silmarils"), which goes through the same checks. A spelling is left out when:
 - English already has it: misaki's dictionaries know it in any case ("Region", "Luna", "Turin");
@@ -36,7 +37,7 @@ def english_words():
     words = set()
     for f in ("us_gold.json", "us_silver.json", "gb_gold.json", "gb_silver.json"):
         words.update(json.load(open(ROOT / "crates/g2p-en/data" / f)))
-    return words
+    return words | {w.lower() for w in words}
 
 
 def excluded():
@@ -111,7 +112,7 @@ def main():
                 raise SystemExit(f"{spelling}: two sources read it differently")
             return True
 
-        kept = {s: p for s, p in candidates(module.names(args.cache)).items() if keep(s, p)}
+        kept = {s: p for s, p in candidates(module.names(args.cache, english)).items() if keep(s, p)}
         # Plurals of the names that are kept, checked the same way ("Regions" never comes from "Region").
         plurals = dict(filter(None, (plural(s, p) for s, p in kept.items())))
         kept.update({s: p for s, p in plurals.items() if s not in kept and keep(s, p)})

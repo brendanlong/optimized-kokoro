@@ -130,21 +130,24 @@ def pronounce(name, sindarin=False):
     return relocate_stress(" ".join(words))
 
 
-def names(cache: Path):
+def names(cache: Path, english):
     """Every capitalized word Eldamo has in these languages (names, and proper nouns such as Maia and Eä), and
     the capitalized forms Tolkien wrote of them ("Valar", "Teleri"), with their pronunciations."""
+    words = [w for w in ET.parse(fetch(cache)).getroot().iter("word") if w.get("l") in LANGUAGES]
+
+    def forms_of(w):
+        return [(re.sub("[¹²³]", "", v or "").strip(), w.get("l")) for v in [w.get("v")] + [r.get("v") for r in w.iter("ref")]]
+
+    forms = [f for w in words for f in forms_of(w)]
+    # Every single word Tolkien wrote in these languages, names or not. Eldamo also has a few English phrases
+    # ("Praises of Cormallen"): a phrase with an English word that isn't also Elvish is left out ("Amon Hen" stays).
+    elvish = {f.lower() for v, _ in forms if " " not in v for f in v.split("-")}
     out = {}
-
-    def add(spelling, language):
-        name = re.sub("[¹²³]", "", spelling or "").strip()
-        # Leave out reconstructed forms ("Argol(do)") and letters the rules don't cover.
-        if name[:1].isupper() and not (len(name) > 1 and name.isupper()) and all(c.lower() in LETTERS or c in " -" for c in name):
-            out.setdefault(name, pronounce(name, sindarin=language in SINDARIN))
-
-    for w in ET.parse(fetch(cache)).getroot().iter("word"):
-        if w.get("l") not in LANGUAGES or not w.get("v", "")[:1].isupper():
+    for name, language in (f for w in words if w.get("v", "")[:1].isupper() for f in forms_of(w)):
+        # Leave out reconstructed forms ("Argol(do)"), all-caps inscriptions and letters the rules don't cover.
+        if (not name[:1].isupper() or (len(name) > 1 and name.isupper())
+                or not all(c.lower() in LETTERS or c in " -" for c in name)
+                or any(w.lower() in english and w.lower() not in elvish for w in name.replace("-", " ").split())):
             continue
-        add(w.get("v"), w.get("l"))
-        for ref in w.iter("ref"):
-            add(ref.get("v"), w.get("l"))
+        out.setdefault(name, pronounce(name, sindarin=language in SINDARIN))
     return out
