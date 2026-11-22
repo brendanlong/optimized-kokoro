@@ -35,7 +35,7 @@ def main(scores_path, plan_path, wav_dir, out_dir):
     for name in names:
         h.append(f"<h3>{html.escape(name)}</h3><table class='arms'><tbody>")
         for r in (r for r in plan if r["name"] == name):
-            k = hashlib.sha1(bytes(r["ids"])).hexdigest()[:16]
+            k = hashlib.sha1(bytes(r["ids"]) + r.get("voice", "af_heart").encode()).hexdigest()[:16]
             src = Path(wav_dir) / f"{k}.wav"
             if src.exists():
                 shutil.copy(src, out / "audio" / f"{k}.wav")

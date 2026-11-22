@@ -1,6 +1,6 @@
 """Render each row of a name-pronunciation plan (experiments/names/listen_plan.py) through the worker.
 
-    python bench/name_listen.py SOCKET PLAN OUT_DIR   -> OUT_DIR/<sha1 of ids>.wav
+    python bench/name_listen.py SOCKET PLAN OUT_DIR   -> OUT_DIR/<clip_id>.wav
 """
 
 import hashlib
@@ -15,16 +15,20 @@ from kokoro_worker.client import write_wav  # noqa: E402
 from load import wait_for  # noqa: E402
 
 
+def clip_id(ids, voice):
+    return hashlib.sha1(bytes(ids) + voice.encode()).hexdigest()[:16]
+
+
 def main(sock, plan, out):
     client = wait_for(sock, 900)
-    voice = client.hello.voices.index("af_heart")
     os.makedirs(out, exist_ok=True)
     done = set()
     for row in json.load(open(plan, encoding="utf-8")):
-        k = hashlib.sha1(bytes(row["ids"])).hexdigest()[:16]
+        voice = row.get("voice", "af_heart")
+        k = clip_id(row["ids"], voice)
         if k in done or os.path.exists(f"{out}/{k}.wav"):
             continue
-        client.send(P.synthesize(0, row["ids"], voice, 100))
+        client.send(P.synthesize(0, row["ids"], client.hello.voices.index(voice), 100))
         kind, _, payload = client.receive()
         assert kind == "result", (kind, payload)
         write_wav(f"{out}/{k}.wav", payload[1], client.hello.sample_rate)
