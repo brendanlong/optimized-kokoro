@@ -1,0 +1,50 @@
+# Names a pipeline doesn't read as names, because they're common words in its language.
+# language<TAB>spelling<TAB>reason. Claude's picks from review/common_words.tsv (2026-11-22), for
+# Brendan to review. Left out of this list, though candidates: es Moria and Mordor, pt Rohan and
+# Sauron, which are frequent there as Tolkien's (or, for Rohan, a given name read the same way).
+es	Este	"this"
+es	Fui	"I was/went"
+es	Aldea	"village"
+es	Aldeas	"villages"
+es	Foros	"forums"
+es	Unen	"they join"
+es	Celos	"jealousy"
+es	Casar	"to marry"
+es	Aulas	"classrooms"
+es	Mandos	"controls"
+es	Guiar	"to guide"
+es	Poros	"pores"
+es	Aros	"rings, hoops"
+es	Sil	the river Sil
+es	Vana	"vain"
+fr	Sûr	"sure"
+fr	Fui	"fled"
+fr	Rohan	French family and town, said ro-AN
+fr	Sil	"s'il" written without its apostrophe
+fr	Elu	"élu" (elected) in capitals, which French often writes without accents
+fr	Este	the Este family and town
+fr	Corollaire	"corollary"
+fr	Brandir	"to brandish"
+it	Vai	"go!"
+it	Aule	"halls, classrooms"
+it	Fui	"I was"
+it	Este	the Este family and town
+it	Vali	"you're worth"
+it	Vana	"vain"
+it	Verna	given name; "of spring"
+pt	Vai	"goes"
+pt	Este	"this"
+pt	Fui	"I was/went"
+pt	Vê	"sees"
+pt	Nessa	"in that"
+pt	Aulas	"classes"
+pt	Casar	"to marry"
+pt	Nua	"naked"
+pt	Falas	"you speak"
+pt	Falasse	"spoke" (subjunctive)
+pt	Guiar	"to guide"
+pt	Vala	"ditch"
+pt	Valas	"ditches"
+pt	Idh	too short to trust as a name in Portuguese text (frequent in wordfreq's list)
+pt	Poros	"pores"
+pt	Sil	the river Sil

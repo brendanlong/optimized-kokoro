@@ -657,7 +657,12 @@ impl<'p> Request<'p> {
             Lang::Chinese | Lang::Japanese => text.into(),
             _ => foreign::translate_cjk_punctuation(text),
         };
-        let graphemes = self.pipeline.g2p.link_names(&graphemes);
+        // Latin text is the pipeline's own in Spanish, French, Italian and Portuguese.
+        let latin = match lang.native() {
+            foreign::Native::Espeak(Script::Latin) => lang.espeak_voice().and_then(|v| v.get(..2)).unwrap_or("en"),
+            _ => "en",
+        };
+        let graphemes = self.pipeline.g2p.link_names(&graphemes, latin);
         let mut tokens: Vec<Token> = Vec::new();
         let mut placeholders = Vec::new();
         let chinese = self.pipeline.foreign.get(&Language::Chinese);

@@ -187,6 +187,8 @@ fn requests_match_the_reference() {
                         if english {
                             assert_eq!(dropped, d, "{}", case.id);
                         }
+                        // After the port's spacing where runs join (docs/divergences.md).
+                        let phonemes = &kokoro_reference::divergence::respaced(phonemes, p);
                         let (ew, aw): (Vec<&str>, Vec<&str>) = (phonemes.split(' ').collect(), p.split(' ').collect());
                         assert_eq!(ew.len(), aw.len(), "{}", case.id);
                         let differ = ew.iter().zip(&aw).filter(|(x, y)| x != y).count();

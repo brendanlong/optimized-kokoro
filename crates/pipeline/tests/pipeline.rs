@@ -490,3 +490,24 @@ fn a_name_starting_with_a_vowel_takes_an_and_thee() {
 fn names_match_with_accents_as_combining_marks() {
     assert_eq!(phonemize("Ea\u{308}rendil"), name("Eärendil"));
 }
+
+#[test]
+fn names_and_links_are_read_in_every_language() {
+    let galadriel = name("Galadriel");
+    for lang in [Lang::French, Lang::Spanish, Lang::Italian, Lang::BrazilianPortuguese, Lang::Hindi, Lang::Japanese] {
+        if lang == Lang::Japanese && !kokoro_pipeline::japanese_available() {
+            continue;
+        }
+        let pipeline = Pipeline::new(lang).unwrap();
+        let ps = read(&pipeline.phonemize("Galadriel [Kokoro](/ˈko͡ʊkəɹo͡ʊ/)").unwrap().0);
+        assert_eq!(ps, format!("{galadriel} kˈOkəɹO"), "{lang:?}");
+    }
+}
+
+#[test]
+fn a_name_that_is_a_common_word_in_the_pipelines_language_is_read_as_the_word() {
+    let portuguese = Pipeline::new(Lang::BrazilianPortuguese).unwrap();
+    let ps = read(&portuguese.phonemize("Este livro").unwrap().0);
+    assert!(!ps.starts_with(&name("Este")), "{ps}");
+    assert!(phonemize("Este").starts_with(&name("Este")));
+}

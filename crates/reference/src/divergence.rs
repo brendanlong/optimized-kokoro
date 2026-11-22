@@ -931,12 +931,12 @@ pub fn has_dropped_abbreviation(text: &str) -> bool {
         .any(|w| (w.eq_ignore_ascii_case("dr") || w.eq_ignore_ascii_case("mr")) && !matches!(w, "Dr" | "Mr"))
 }
 
-/// Whether a record of a pipeline whose reference read `[word](/phonemes/)` links as text (all but
-/// English and Chinese) has one, which the port reads (`docs/divergences.md`, "Pipeline: one way
-/// to join runs").
+/// Whether a record of a pipeline whose reference read `[word](...)` links as text, markup and all
+/// (every pipeline but English and Chinese), has one: the port reads a link's phonemes, and the
+/// text of any other link (`docs/divergences.md`, "Pipeline: links and names in every language").
 pub fn has_link_read_as_text(lang: &str, text: &str) -> bool {
     static LINK: std::sync::LazyLock<regex::Regex> =
-        std::sync::LazyLock::new(|| regex::Regex::new(r"\[[^\]]+\]\(/[^\)]+/\)").unwrap());
+        std::sync::LazyLock::new(|| regex::Regex::new(r"\[[^\]]+\]\([^\)]*\)").unwrap());
     !matches!(lang, "a" | "b" | "z") && LINK.is_match(text)
 }
 

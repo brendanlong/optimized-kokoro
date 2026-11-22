@@ -11,6 +11,8 @@ countable name its plural ("Silmarils"). A spelling is left out when:
 - it's on exclude.tsv: an English reader could meet it outside the source's world (reviewed by hand from
   the flags flag.py collects in review/);
 - two names that differ only in accents are read differently, for their shared accent-free twin.
+A pipeline that reads Latin text in another language also skips the names exclude_languages.tsv lists
+for it, common words there ("Este" in Portuguese), written to names_skip.json.
 Single words must have been through flag.py; the build stops if one hasn't.
 """
 
@@ -26,6 +28,8 @@ import tolkien
 ROOT = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
 OUT = ROOT / "crates/g2p-en/data/names.json"
+# Names each espeak pipeline that reads Latin text as its own language skips: common words there.
+OUT_SKIP = ROOT / "crates/g2p-en/data/names_skip.json"
 SOURCES = {"tolkien": tolkien}
 VOCAB_RS = ROOT / "crates/phonemes/src/lib.rs"
 
@@ -47,6 +51,15 @@ def excluded():
         if line.strip() and not line.startswith("#"):
             spelling, _, reason = line.rstrip("\n").partition("\t")
             out[spelling] = reason
+    return out
+
+
+def excluded_by_language():
+    out = {}
+    for line in open(HERE / "exclude_languages.tsv", encoding="utf-8"):
+        if line.strip() and not line.startswith("#"):
+            language, spelling, _ = line.rstrip("\n").split("\t", 2)
+            out.setdefault(language, set()).add(spelling)
     return out
 
 
@@ -113,6 +126,13 @@ def main():
             raise SystemExit(f"{len(unreviewed)} {source} words haven't been checked for other meanings: "
                              f"run flag.py {source}, then review its flags into exclude.tsv")
     OUT.write_text(json.dumps(dict(sorted(names.items())), ensure_ascii=False, indent=0) + "\n", encoding="utf-8")
+    skip = {}
+    for language, spellings in sorted(excluded_by_language().items()):
+        missing = spellings - names.keys()
+        if missing:
+            raise SystemExit(f"exclude_languages.tsv: {language} {sorted(missing)} aren't in names.json")
+        skip[language] = sorted(spellings)
+    OUT_SKIP.write_text(json.dumps(skip, ensure_ascii=False, indent=0) + "\n", encoding="utf-8")
     print(f"{len(names)} entries ({sum(' ' in n for n in names)} of several words) -> {OUT.relative_to(ROOT)}")
 
 

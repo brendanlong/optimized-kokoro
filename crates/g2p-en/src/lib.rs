@@ -499,11 +499,15 @@ impl G2p {
     }
 
     /// `text` with each name from `data/names.json` that stands as a word of its own made a
-    /// `[name](/phonemes/)` link, outside the links it has: so every G2P reads names alike. "'s"
-    /// after a name takes misaki's ending ("Sauron's").
-    pub fn link_names<'t>(&self, text: &'t str) -> std::borrow::Cow<'t, str> {
+    /// `[name](/phonemes/)` link, outside the links it has: so every G2P reads names alike. In text
+    /// of `language` (espeak's code for the pipeline's own language, `en` for English) the names
+    /// that are common words there are left alone (`data/names_skip.json`). "'s" after a name takes
+    /// misaki's ending ("Sauron's").
+    pub fn link_names<'t>(&self, text: &'t str, language: &str) -> std::borrow::Cow<'t, str> {
         let links: Vec<(usize, usize)> = link_regex().find_iter(text).map(|m| (m.start(), m.end())).collect();
-        self.names.link(text, &links, |ps| self.lexicon.s(Some(ps.to_owned())).expect("a name's phonemes aren't empty"))
+        self.names.link(text, language, &links, |ps| {
+            self.lexicon.s(Some(ps.to_owned())).expect("a name's phonemes aren't empty")
+        })
     }
 
     /// `fold_left`: each non-head token is merged into the token before it. Merging one pair at a time
