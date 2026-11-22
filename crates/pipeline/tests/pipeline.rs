@@ -511,3 +511,39 @@ fn a_name_that_is_a_common_word_in_the_pipelines_language_is_read_as_the_word() 
     assert!(!ps.starts_with(&name("Este")), "{ps}");
     assert!(phonemize("Este").starts_with(&name("Este")));
 }
+
+#[test]
+fn names_beside_brackets_contractions_and_other_scripts() {
+    let sauron = name("Sauron");
+    // A stray "[" before a name keeps the words between them.
+    assert!(phonemize("[see Sauron.").starts_with("sˈi "), "{}", phonemize("[see Sauron."));
+    // A contraction makes the name part of another word, as spaCy reads it; "'s" is its possessive.
+    assert!(!phonemize("Sauron'll come.").contains(&sauron), "{}", phonemize("Sauron'll come."));
+    assert_eq!(phonemize("Sauron's"), format!("{sauron}z"));
+    // A link misaki doesn't read is its text, which is a name.
+    assert_eq!(phonemize("[Sauron](foo)"), sauron);
+    // Japanese and Chinese write a Latin word without spaces around it.
+    if kokoro_pipeline::japanese_available() {
+        let japanese = Pipeline::new(Lang::Japanese).unwrap();
+        assert!(
+            read(&japanese.phonemize("私はGaladrielです").unwrap().0).contains(&format!(" {} ", name("Galadriel")))
+        );
+    }
+    assert!(phonemize("我和Galadriel去").contains(&name("Galadriel")));
+}
+
+#[test]
+fn a_stress_link_outside_english_is_read_as_its_words() {
+    let chinese = Pipeline::new(Lang::Chinese).unwrap();
+    let ps = read(&chinese.phonemize("你好[hello](+1)世界").unwrap().0);
+    assert!(ps.contains("həlˈO"), "{ps}");
+}
+
+#[test]
+fn a_skipped_name_matches_with_its_accent_as_a_combining_mark() {
+    let french = Pipeline::new(Lang::French).unwrap();
+    for text in ["Sûr.", "Su\u{302}r."] {
+        let ps = read(&french.phonemize(text).unwrap().0);
+        assert!(!ps.contains(&name("Sûr")), "{text:?}: {ps}");
+    }
+}

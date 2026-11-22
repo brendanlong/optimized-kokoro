@@ -231,10 +231,12 @@ fn reference_records() {
                             && kokoro_reference::canonical(expected) != *phonemes
                             && kokoro_reference::stress_moved(expected) != *phonemes
                             && !divergence::differs_only_in_run_spacing(
+                                text,
                                 &kokoro_reference::canonical(expected),
                                 phonemes,
                             )
                             && !divergence::differs_only_in_run_spacing(
+                                text,
                                 &kokoro_reference::stress_moved(expected),
                                 phonemes,
                             )

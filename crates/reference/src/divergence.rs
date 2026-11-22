@@ -949,31 +949,36 @@ pub fn has_link_with_tap_or_glottal_stop(lang: &str, text: &str) -> bool {
     matches!(lang, "a" | "b" | "z") && LINK.is_match(text)
 }
 
-/// Whether `ours` is the reference's phonemes, both in `config.json` symbols, spaced as the port
-/// joins runs of different G2Ps (`docs/divergences.md`, "Pipeline: one way to join runs"): each
-/// run of whitespace one space, and a space where two words met with none between them.
-pub fn differs_only_in_run_spacing(reference: &str, ours: &str) -> bool {
-    let mut collapsed = String::with_capacity(reference.len());
-    for c in reference.chars() {
-        if c.is_whitespace() {
-            if !collapsed.ends_with(' ') {
-                collapsed.push(' ');
+/// Whether `text` has a join where the port spaces runs differently from the reference: a letter
+/// of a script other than Latin (or a link) beside others, or whitespace other than single spaces.
+fn joins_runs(text: &str) -> bool {
+    let latin = |c: char| matches!(c as u32, 0..=0x24f | 0x1e00..=0x1eff);
+    text.chars().any(|c| c.is_alphabetic() && !latin(c))
+        || text.contains("](")
+        || text.chars().any(|c| c.is_whitespace() && c != ' ' && c != '\n')
+        || text.contains("  ")
+}
+
+/// Whether `ours` is the reference's phonemes for `text`, both in `config.json` symbols, spaced as
+/// the port joins runs of different G2Ps (`docs/divergences.md`, "Pipeline: one way to join
+/// runs"): each run of whitespace one space, and a space where two words met with none between
+/// them. Only where `text` has such a join: English text alone must match exactly.
+pub fn differs_only_in_run_spacing(text: &str, reference: &str, ours: &str) -> bool {
+    if !joins_runs(text) || reference == ours {
+        return false;
+    }
+    // The same words, some of the reference's split in two or more where runs met.
+    let mut words = ours.split_whitespace();
+    reference.split_whitespace().all(|word| {
+        let mut joined = String::new();
+        while joined.len() < word.len() {
+            match words.next() {
+                Some(w) => joined.push_str(w),
+                None => return false,
             }
-        } else {
-            collapsed.push(c);
         }
-    }
-    let (mut a, mut b) = (collapsed.chars().peekable(), ours.chars().peekable());
-    let mut previous = None;
-    while let Some(c) = b.next() {
-        if a.peek() == Some(&c) {
-            a.next();
-        } else if c != ' ' || previous.is_none() || b.peek().is_none() {
-            return false;
-        }
-        previous = Some(c);
-    }
-    a.next().is_none() && reference != ours
+        joined == word
+    }) && words.next().is_none()
 }
 
 /// Whether two lists of (text, phonemes) chunks differ only as [`differs_only_in_run_spacing`]
@@ -984,7 +989,7 @@ pub fn chunks_differ_only_in_run_spacing(reference: &[(String, String)], ours: &
         && reference
             .iter()
             .zip(ours)
-            .all(|(r, o)| r.0 == o.0 && (r.1 == o.1 || differs_only_in_run_spacing(&r.1, &o.1)))
+            .all(|(r, o)| r.0 == o.0 && (r.1 == o.1 || differs_only_in_run_spacing(&r.0, &r.1, &o.1)))
 }
 
 /// The reference's phonemes with the port's spacing where `ours` reads the same words, so that a
@@ -1170,11 +1175,13 @@ mod tests {
 
     #[test]
     fn run_spacing() {
-        assert!(differs_only_in_run_spacing("toβakˈA", "toβa kˈA"));
-        assert!(differs_only_in_run_spacing("dˈaʁ  ( e", "dˈaʁ ( e"));
-        assert!(!differs_only_in_run_spacing("toβakˈA", "toβakˈO"));
-        assert!(!differs_only_in_run_spacing("a b", "a b"));
-        assert!(!differs_only_in_run_spacing("ab", " ab"));
+        assert!(differs_only_in_run_spacing("とＫ", "toβakˈA", "toβa kˈA"));
+        assert!(differs_only_in_run_spacing("d'art  ( et", "dˈaʁ  ( e", "dˈaʁ ( e"));
+        assert!(!differs_only_in_run_spacing("とＫ", "toβakˈA", "toβakˈO"));
+        assert!(!differs_only_in_run_spacing("とＫ", "a b", "a b"));
+
+        // English text alone has no joins to space differently.
+        assert!(!differs_only_in_run_spacing("hello world", "həlˈO wˈɜɹld", "hə lˈO wˈɜɹld"));
     }
 
     #[test]

@@ -251,7 +251,7 @@ fn requests_match_the_reference() {
             ) if e != a => {
                 // A space now where the reference had whitespace the vocabulary lacks (U+2009) or
                 // none: the dropped count and the word spans follow.
-                let respaced = kokoro_reference::divergence::differs_only_in_run_spacing(phonemes, p);
+                let respaced = kokoro_reference::divergence::differs_only_in_run_spacing(text, phonemes, p);
                 // Outside English both the reference's and the port's word spans are a guess that
                 // pairs text words with phoneme words, which espeak sometimes merges ("from the"):
                 // they aren't compared there. Nor is the dropped count, where whitespace the

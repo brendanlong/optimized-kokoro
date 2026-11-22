@@ -18,8 +18,30 @@ pub(crate) struct Names {
     prefixes: FxHashSet<Box<str>>,
 }
 
+/// A Latin letter: other scripts end a name's word, as Japanese and Chinese write a Latin word
+/// without spaces around it ("私はGaladrielです").
+fn is_latin(c: char) -> bool {
+    c.is_alphabetic()
+        && matches!(c as u32, 0..=0x24f | 0x1e00..=0x1eff | 0x2c60..=0x2c7f | 0xa720..=0xa7ff | 0xab30..=0xab6f | 0xff21..=0xff5a)
+}
+
 fn is_word_char(c: char) -> bool {
-    c.is_alphanumeric() || unicode_normalization::char::is_combining_mark(c)
+    is_latin(c) || c.is_numeric() || unicode_normalization::char::is_combining_mark(c)
+}
+
+/// Whether a name may end where `rest` starts: not inside a word, nor before a contraction
+/// ("Sauron'll" is one word), though "'s" is the possessive the caller takes.
+fn ends_word(rest: &str) -> bool {
+    let mut chars = rest.chars();
+    match chars.next() {
+        Some(c) if is_word_char(c) || c == ']' => false,
+        Some('\'' | '’') => match chars.next() {
+            Some('s') => !chars.next().is_some_and(is_word_char),
+            Some(c) => !is_word_char(c),
+            None => true,
+        },
+        _ => true,
+    }
 }
 
 impl Names {
@@ -66,8 +88,8 @@ impl Names {
             }
             let end = chars.peek().map_or(text.len(), |&(j, _)| j);
             if let Some(&p) = self.phonemes.get(spelled.as_str())
-                && !text[end..].chars().next().is_some_and(is_word_char)
-                && !skip.is_some_and(|s| s.contains(&text[..end]))
+                && ends_word(&text[end..])
+                && !skip.is_some_and(|s| s.contains(text[..end].nfc().collect::<String>().as_str()))
             {
                 found = Some((end, p));
             }
@@ -76,7 +98,8 @@ impl Names {
     }
 
     /// `text` with each name made a link, outside the links it has, but for the names that are
-    /// common words in `language`. "'s" after a name joins it, with `possessive` adding misaki's
+    /// common words in `language`. A `[` not yet closed before a name is left out, as the link
+    /// would close it (the model has no sound for it). "'s" after a name joins it, with `possessive` adding misaki's
     /// ending to its phonemes ("Sauron's").
     pub(crate) fn link<'t>(
         &self,
@@ -90,6 +113,7 @@ impl Names {
         let mut copied = 0;
         let mut i = 0;
         let mut link = links.iter().peekable();
+        let mut open: Option<usize> = None;
         while i < text.len() {
             while link.next_if(|&&(_, end)| end <= i).is_some() {}
             if let Some(&&(start, end)) = link.peek()
@@ -99,6 +123,11 @@ impl Names {
                 continue;
             }
             let c = text[i..].chars().next().expect("in the text");
+            match c {
+                '[' => open = Some(i),
+                ']' => open = None,
+                _ => {}
+            }
             let starts_word = !text[..i].chars().next_back().is_some_and(is_word_char);
             // Every name starts with a capital (`names_start_with_a_capital`).
             let found = if starts_word && c.is_uppercase() { self.longest(&text[i..], skip) } else { None };
@@ -115,6 +144,10 @@ impl Names {
                     end += s.len();
                     break;
                 }
+            }
+            if let Some(bracket) = open.take() {
+                out.push_str(&text[copied..bracket]);
+                copied = bracket + 1;
             }
             out.push_str(&text[copied..i]);
             out.push('[');

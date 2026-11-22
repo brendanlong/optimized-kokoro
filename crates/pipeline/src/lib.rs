@@ -459,6 +459,25 @@ fn word_spans(tokens: &[Token], kept: &[usize]) -> Vec<Word> {
     words
 }
 
+/// The first and last characters of `segment` as read: a link at either end by its text.
+fn spoken_edges(segment: &str) -> (Option<char>, Option<char>) {
+    static LINK: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r"\[([^\]]+)\]\(([^\)]*)\)").expect("valid regex"));
+    let (mut first, mut last) = (segment.chars().next(), segment.chars().next_back());
+    if segment.contains('[') {
+        for m in LINK.captures_iter(segment) {
+            let whole = m.get(0).expect("match");
+            if whole.start() == 0 {
+                first = m[1].chars().next();
+            }
+            if whole.end() == segment.len() {
+                last = m[1].chars().next_back();
+            }
+        }
+    }
+    (first, last)
+}
+
 /// Two runs whose letters meet are still two words: scripts without spaces ("東京Tokyo").
 fn space_where_letters_meet(tokens: &mut [Token], before: char, after: char) {
     if kokoro_g2p_en::is_alpha(before)
@@ -475,8 +494,9 @@ enum Piece {
     Phonemes { text: String, ipa: String },
 }
 
-/// `segment` cut at its links. A link with phonemes (misaki's `/phonemes/`, IPA's syllable breaks
-/// left out) is its own piece; any other link (a stress mark, which only misaki reads) is its text.
+/// `segment` cut at its links, each read as its phonemes (misaki's `/phonemes/`, IPA's syllable
+/// breaks left out). Outside English every other link is plain text already
+/// ([`G2p::plain_links`]).
 fn link_pieces(segment: &str) -> Vec<Piece> {
     static LINK: std::sync::LazyLock<regex::Regex> =
         std::sync::LazyLock::new(|| regex::Regex::new(r"\[([^\]]+)\]\(([^\)]*)\)").expect("valid regex"));
@@ -662,6 +682,7 @@ impl<'p> Request<'p> {
             foreign::Native::Espeak(Script::Latin) => lang.espeak_voice().and_then(|v| v.get(..2)).unwrap_or("en"),
             _ => "en",
         };
+        let graphemes = G2p::plain_links(&graphemes, lang.english());
         let graphemes = self.pipeline.g2p.link_names(&graphemes, latin);
         let mut tokens: Vec<Token> = Vec::new();
         let mut placeholders = Vec::new();
@@ -671,7 +692,7 @@ impl<'p> Request<'p> {
         while i < segments.len() {
             let (segment, language) = segments[i];
             if i > 0
-                && let (Some(a), Some(b)) = (segments[i - 1].0.chars().next_back(), segment.chars().next())
+                && let (Some(a), Some(b)) = (spoken_edges(segments[i - 1].0).1, spoken_edges(segment).0)
             {
                 space_where_letters_meet(&mut tokens, a, b);
             }

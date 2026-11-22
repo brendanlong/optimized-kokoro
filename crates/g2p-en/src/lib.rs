@@ -498,6 +498,17 @@ impl G2p {
         Ok(tokens)
     }
 
+    /// `text` with each link misaki doesn't read as phonemes or stress (`[Sauron](foo)`) written as
+    /// its text, as misaki reads it; with `stress` false, stress links too (`[word](+1)`), for G2Ps
+    /// that don't take stress, so their text is split by script and read like any other.
+    pub fn plain_links(text: &str, stress: bool) -> std::borrow::Cow<'_, str> {
+        link_regex().replace_all(text, |m: &regex::Captures| match parse_feature(&m[2]) {
+            Some(Feature::Phonemes(_)) => m[0].to_owned(),
+            Some(Feature::Stress(_)) if stress => m[0].to_owned(),
+            _ => m[1].to_owned(),
+        })
+    }
+
     /// `text` with each name from `data/names.json` that stands as a word of its own made a
     /// `[name](/phonemes/)` link, outside the links it has: so every G2P reads names alike. In text
     /// of `language` (espeak's code for the pipeline's own language, `en` for English) the names
