@@ -1,0 +1,15 @@
+# gpuc submit bench/job_join_listen.yaml --host local   (from worker/); the plan is experiments/joins'.
+name: kokoro-join-listen
+setup: uv sync --frozen
+command: bash bench/job_name_listen.sh
+python: .venv/bin/python
+gpus: 1
+env:
+  REQUIRE_CUDA: "1"
+  PLAN: bench/join_listen/plan.json
+  OUT: results/join_listen
+outputs:
+  - path: results
+priority: 40
+estimated_runtime_min: 5
+max_runtime_min: 30
