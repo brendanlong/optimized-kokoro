@@ -464,6 +464,12 @@ fn names_need_their_exact_spelling_and_lose_to_overrides() {
 }
 
 #[test]
+fn a_name_starting_with_a_vowel_takes_an_and_thee() {
+    assert_eq!(phonemize("the Eldar"), format!("ði {}", name("Eldar")));
+    assert_eq!(phonemize("the Noldor"), format!("ðə {}", name("Noldor")));
+}
+
+#[test]
 fn names_match_with_accents_as_combining_marks() {
     assert_eq!(phonemize("Ea\u{308}rendil"), name("Eärendil"));
 }

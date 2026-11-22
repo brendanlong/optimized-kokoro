@@ -10,12 +10,13 @@ use std::borrow::Cow;
 pub(crate) const PRIMARY_STRESS: char = 'ˈ';
 pub(crate) const SECONDARY_STRESS: char = 'ˌ';
 
+/// With e, o and y, and r, x and ç, which only names use (`data/names.json`), so "the Eldar" is "thee".
 pub(crate) fn is_vowel(c: char) -> bool {
-    "AIOQWYaiuæɑɒɔəɛɜɪʊʌᵻ".contains(c)
+    "AIOQWYaeiouyæɑɒɔəɛɜɪʊʌᵻ".contains(c)
 }
 
 pub(crate) fn is_consonant(c: char) -> bool {
-    "bdfhjklmnpstvwzðŋɡɹɾʃʒʤʧθ".contains(c)
+    "bdfhjklmnprstvwxzçðŋɡɹɾʃʒʤʧθ".contains(c)
 }
 
 fn is_us_tau(c: char) -> bool {

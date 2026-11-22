@@ -15,9 +15,9 @@ WORLD = "Tolkien's legendarium"
 ELDAMO_COMMIT = "35c48268993dcab6365c731d7b04883f3166a644"
 ELDAMO_URL = f"https://raw.githubusercontent.com/pfstrack/eldamo/{ELDAMO_COMMIT}/src/data/eldamo-data.xml"
 ELDAMO_SHA256 = "5f35fdd3a51a7a0f2f055cf7ae740413885e668c92f7370f320795dafec3fa85"
-# Sindarin and Quenya as in the published works, not Tolkien's earlier conceptions (Noldorin, Gnomish, Qenya).
-LANGUAGES = {"s", "q"}
-NAME_KINDS = {"masc-name", "fem-name", "place-name", "proper-name", "collective-name"}
+# Sindarin and Quenya, and the Noldorin and Middle Quenya of the 1930s-50s that much of the published
+# Silmarillion spells its names in (Valinor, Valmar); not the earliest conceptions (Gnomish, Qenya).
+LANGUAGES = {"s", "q", "n", "mq"}
 LETTERS = set("abcdefghijklmnopqrstuvwxyzáéíóúâêîôûäëïöüý")
 
 LONG = set("áéíóúâêîôûý")
@@ -29,7 +29,7 @@ VOWELS = {"a": "a", "e": "e", "i": "i", "o": "o", "u": "u", "y": "y"}
 CONSONANTS = {"c": "k", "g": "ɡ", "x": "ks"}
 TWO_CONSONANTS = {"ks", "ŋɡ", "ŋk", "xt", "kw", "ŋkw"}
 KOKORO_VOWELS = set("aeiouyAIOWYɑæəɛɪʊʌɔɜᵊᵻ")
-# Unstressed little words inside names: "Gwaith-i-Mírdain", "Taur-im-Duinath", "Haudh-en-Elleth".
+# Unstressed little words inside names, written lowercase: "Gwaith-i-Mírdain", "Taur-im-Duinath" (but "Nan Elmoth").
 PARTICLES = {"i", "in", "im", "en", "na", "nan", "e", "o"}
 
 
@@ -90,7 +90,7 @@ def heavy(segs, k):
 def stressed(part, mark):
     segs = segment(part)
     nuclei = [k for k, (_, kind) in enumerate(segs) if kind != "C"]
-    if part.lower() in PARTICLES or not nuclei:
+    if part in PARTICLES or not nuclei:
         target = None
     elif len(nuclei) <= 2:
         target = nuclei[0]
@@ -117,20 +117,26 @@ def pronounce(name):
     words = []
     for word in name.split():
         parts = word.split("-")
-        main = max((i for i, p in enumerate(parts) if p.lower() not in PARTICLES), default=len(parts) - 1)
+        main = max((i for i, p in enumerate(parts) if p not in PARTICLES), default=len(parts) - 1)
         words.append("".join(stressed(p, "ˈ" if i == main else "ˌ") for i, p in enumerate(parts)))
     return relocate_stress(" ".join(words))
 
 
 def names(cache: Path):
-    """Every name as Eldamo spells it, with its pronunciation."""
+    """Every capitalized word Eldamo has in these languages (names, and proper nouns such as Maia and Eä), and
+    the capitalized forms Tolkien wrote of them ("Valar", "Teleri"), with their pronunciations."""
     out = {}
+
+    def add(spelling):
+        name = re.sub("[¹²³]", "", spelling or "").strip()
+        # Leave out reconstructed forms ("Argol(do)") and letters the rules don't cover.
+        if name[:1].isupper() and not (len(name) > 1 and name.isupper()) and all(c.lower() in LETTERS or c in " -" for c in name):
+            out.setdefault(name, pronounce(name))
+
     for w in ET.parse(fetch(cache)).getroot().iter("word"):
-        if w.get("l") not in LANGUAGES or not NAME_KINDS & set(w.get("speech", "").split()):
+        if w.get("l") not in LANGUAGES or not w.get("v", "")[:1].isupper():
             continue
-        name = re.sub("[¹²³]", "", w.get("v", "")).strip()
-        # Leave out reconstructed forms ("Argol(do)"), names that start lowercase, and letters the rules don't cover.
-        if not name[:1].isupper() or not all(c.lower() in LETTERS or c in " -" for c in name):
-            continue
-        out[name] = pronounce(name)
+        add(w.get("v"))
+        for ref in w.iter("ref"):
+            add(ref.get("v"))
     return out
