@@ -31,7 +31,7 @@ pub const SOFT_MAX_PHONEMES: usize = 130;
 pub const MIN_CHUNK: usize = kokoro_text::MIN_CLAUSE_CHUNK;
 
 fn len(chunk: &Chunk) -> usize {
-    chunk.phonemes.chars().count()
+    chunk.ids.len()
 }
 
 fn fits(a: &Chunk, b: &Chunk, max: usize) -> bool {

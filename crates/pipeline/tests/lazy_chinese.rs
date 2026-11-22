@@ -8,6 +8,6 @@ fn english_text_never_loads_the_chinese_g2p() {
     let pipeline = Pipeline::new(Lang::AmericanEnglish).unwrap();
     pipeline.phonemize("Hello there, Привет, カナ and ー.").unwrap();
     assert!(!chinese_g2p_loaded());
-    assert_eq!(pipeline.phonemize("He saw 北京.").unwrap().0, "hˌi sˈɔ bˈeiʨˈiŋ.");
+    assert_eq!(pipeline.phonemize("He saw 北京.").unwrap().0, "hˌi ˈsɔ bˈeit͡ɕˈiŋ.");
     assert!(chinese_g2p_loaded());
 }

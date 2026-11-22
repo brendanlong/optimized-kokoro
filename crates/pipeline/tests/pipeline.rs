@@ -39,18 +39,23 @@ fn japanese_runs_are_read_by_the_japanese_g2p() {
         ("The wordカナmeans hello.", "ðə wˈɜɹdkanamˈinz həlˈO."),
         ("東京\u{200d}へ", "dˈʊŋʨˈiŋe"),
     ] {
-        assert_eq!(pipeline.phonemize(text).unwrap().0, expected, "{text}");
+        assert_eq!(read(&pipeline.phonemize(text).unwrap().0), expected, "{text}");
     }
     let unread: Vec<usize> = pipeline.chunks("ありがとう, Goodbye 你好. ゃ").map(|c| c.unwrap().unread).collect();
     assert_eq!(unread, [0]);
 }
 
+/// What the model reads for `ipa`, in `config.json` symbols: the expectations below are written so.
+fn read(ipa: &str) -> String {
+    kokoro_reference::ours(ipa)
+}
+
 fn phonemize(text: &str) -> String {
-    pipeline().phonemize(text).unwrap().0
+    read(&pipeline().phonemize(text).unwrap().0)
 }
 
 fn espeak(language: &str, text: &str) -> String {
-    EspeakG2P::new(language).unwrap().phonemize(text)
+    read(&EspeakG2P::new(language).unwrap().phonemize(text))
 }
 
 struct Spacy(Nlp);
@@ -78,20 +83,29 @@ fn upstream(text: &str) -> String {
     let mut tokens = Vec::new();
     let mut fallback = Espeak(EspeakFallback::new(false).unwrap());
     kokoro::append_segment(&G2p::new(false), &mut tokens, text, &mut Spacy(Nlp::new()), Some(&mut fallback)).unwrap();
-    kokoro::tokens_to_ps(&tokens)
+    read(&kokoro::tokens_to_ps(&tokens))
 }
 
 #[test]
 fn text_in_native_script_unchanged() {
-    let text = "The β-catenin level rose by Δ, about π percent. Call [Kokoro](/kˈOkəɹO/) now.";
+    let text = "The β-catenin level rose by Δ, about π percent. Call [Kokoro](/ˈko͡ʊkəɹo͡ʊ/) now.";
     assert_eq!(phonemize(text), upstream(text));
 }
 
 #[test]
 fn overrides_and_greek_symbols_unchanged() {
-    for text in ["Go to [东京](/tˈOkjO/) or [Ελλάδα](/ɛlˈɑdə/) now.", "αβ T cells and ΔΔCt values."] {
+    for text in ["Go to [东京](/ˈto͡ʊkjo͡ʊ/) or [Ελλάδα](/ɛˈlɑdə/) now.", "αβ T cells and ΔΔCt values."]
+    {
         assert_eq!(phonemize(text), upstream(text));
     }
+}
+
+/// A link's IPA reaches the model as written, the Spanish tap and glottal stop included.
+#[test]
+fn links_are_read_as_written() {
+    assert_eq!(phonemize("Say [pero](/ˈpeɾo/) and [uh-oh](/ˈʔʌʔo͜ʊ/)."), "sˈA pˈeɾo ænd ʔˈʌʔO.");
+    // A dot is a syllable break, not a full stop.
+    assert_eq!(phonemize("Pour [water](/ˈwɔ.t̬əɹ/)."), "pˈɔɹ wˈɔTəɹ.");
 }
 
 #[test]
@@ -115,7 +129,7 @@ fn spacing_follows_source_text() {
 fn arabic_sounds_missing_from_vocab_use_nearest_phoneme() {
     let ps = phonemize("He said مرحبا to علي.");
     assert!(!ps.contains('ħ') && !ps.contains('ʕ'), "{ps}");
-    assert!(ps.contains(&espeak("ar", "مرحبا").replace('ħ', "h")), "{ps}");
+    assert!(ps.contains(&read(&EspeakG2P::new("ar").unwrap().phonemize("مرحبا").replace('ħ', "h"))), "{ps}");
 }
 
 #[test]
@@ -212,7 +226,7 @@ fn scripts_a_voices_alphabet_holds_but_it_doesnt_read_are_unread() {
         ("ⴂⴀⴋⴀ", "ʤˈɔɹʤᵊn"),
     ] {
         let chunks: Vec<_> = pipeline().chunks(text).map(Result::unwrap).collect();
-        assert_eq!((chunks[0].phonemes.as_str(), chunks[0].unread), (format!("{name} tˈɛkst").as_str(), 1), "{text}");
+        assert_eq!((read(&chunks[0].phonemes), chunks[0].unread), (format!("{name} tˈɛkst"), 1), "{text}");
     }
 }
 
@@ -239,8 +253,8 @@ fn a_run_its_g2p_reads_as_nothing_is_unread() {
         .unwrap()
         .with_foreign_g2p(Language::Script(Script::Thai), Box::new(Silent))
         .with_foreign_g2p(Language::Script(Script::Cyrillic), Box::new(Silent));
-    assert_eq!(pipeline.phonemize("x สวัสดี y").unwrap().0, "ˈɛks tˈI tˈɛkst wˈI");
-    assert_eq!(pipeline.phonemize("x Привет y").unwrap().0, "ˈɛks wˈI");
+    assert_eq!(read(&pipeline.phonemize("x สวัสดี y").unwrap().0), "ˈɛks tˈI tˈɛkst wˈI");
+    assert_eq!(read(&pipeline.phonemize("x Привет y").unwrap().0), "ˈɛks wˈI");
 }
 
 /// Stands in for misaki's Chinese G2P: one syllable per character, with a tone arrow.
@@ -252,7 +266,7 @@ impl ForeignG2p for FakeChinese {
             .chars()
             .map(|c| match c {
                 '北' => "pei↓",
-                '京' => "ʨiŋ→",
+                '京' => "t͡ɕiŋ→",
                 '他' => "tʰa→",
                 '、' => ",",
                 _ => "ni↓",
@@ -274,7 +288,8 @@ fn with_chinese() -> Pipeline {
 fn han_is_read_by_misakis_chinese_g2p() {
     for (text, expected) in [
         ("He saw 北京 today.", "hˌi sˈɔ bˈeiʨˈiŋ tədˈA."),
-        ("The bank's 银行行长 said 你好.", "ðə bˈæŋks ˈinxˈaŋxˈaŋꭧˈaŋ sˈɛd ˈnixˈau."),
+        // The tone's stress mark moves from before n to the vowel (docs/divergences.md).
+        ("The bank's 银行行长 said 你好.", "ðə bˈæŋks ˈinxˈaŋxˈaŋꭧˈaŋ sˈɛd nˈixˈau."),
     ] {
         assert_eq!(phonemize(text), expected, "{text}");
     }
@@ -284,21 +299,21 @@ fn han_is_read_by_misakis_chinese_g2p() {
 fn han_uses_a_supplied_chinese_g2p() {
     let pipeline = with_chinese();
     let ps = pipeline.phonemize("他说：“我们走吧，明天见。”").unwrap().0;
-    assert!(ps.starts_with("tˈa ˈni"), "{ps}");
+    assert!(read(&ps).starts_with("tˈa nˈi"), "{ps}");
 }
 
 #[test]
 fn chinese_tones_become_stress_for_english_voices() {
     let ps = with_chinese().phonemize("He saw 北京 today.").unwrap().0;
     assert!(!ps.contains(['↓', '↗', '↘', '→', 'ʰ']), "{ps}");
-    assert!(ps.contains("bˈei ʨˈiŋ"), "{ps}");
+    assert!(read(&ps).contains("bˈei ʨˈiŋ"), "{ps}");
 }
 
 #[test]
 fn han_without_mandarin_reading_is_chinese_text() {
     let (ps, tokens) = with_chinese().phonemize("我兙你").unwrap();
     assert_eq!(tokens.iter().filter(|t| t.text == "我" || t.text == "你").count(), 2, "{tokens:?}");
-    assert_eq!(ps, "ˈni ʧˌInˈiz tˈɛkst ˈni");
+    assert_eq!(read(&ps), "nˈi ʧˌInˈiz tˈɛkst nˈi");
 }
 
 #[test]
@@ -307,7 +322,7 @@ fn the_chinese_pipeline_reads_unread_runs_as_the_english_ones_do() {
     for (text, expected) in
         [("カナ カナ", "ʤˌæpənˈiz tˈɛkst"), ("カナ\u{200b}カナ", "ʤˌæpənˈiz tˈɛkst"), ("，カナ", ", ʤˌæpənˈiz tˈɛkst")]
     {
-        assert_eq!(pipeline.phonemize(text).unwrap().0, expected, "{text:?}");
+        assert_eq!(read(&pipeline.phonemize(text).unwrap().0), expected, "{text:?}");
     }
     let unread: Vec<usize> = pipeline.chunks("他说カナ カナ。").map(|c| c.unwrap().unread).collect();
     assert_eq!(unread, [1]);
@@ -341,15 +356,16 @@ fn pauses_ids_and_words() {
     assert_eq!(chunks.len(), 3);
     assert_eq!(chunks[1].pause, Some(1.5));
     let hello = &chunks[0];
-    assert_eq!(hello.phonemes, "həlˈO wˈɜɹld!");
-    assert_eq!(hello.ids, hello.phonemes.chars().map(|c| kokoro_pipeline::id(c).unwrap()).collect::<Vec<_>>());
-    assert_eq!(hello.dropped(), 0);
+    assert_eq!(hello.phonemes, "həˈlo͡ʊ ˈwɜɹld!");
+    assert_eq!(kokoro_reference::ours(&hello.phonemes), "həlˈO wˈɜɹld!");
+    assert_eq!((hello.ids.len(), hello.dropped), (13, 0));
     let words = hello.words();
     let words: Vec<_> = words.iter().map(|w| (w.text.as_str(), w.phonemes.clone(), w.ids.clone())).collect();
-    assert_eq!(words, [("Hello", 0..5, 0..5), ("world", 6..12, 6..12), ("!", 12..13, 12..13)]);
+    assert_eq!(words, [("Hello", 0..7, 0..5), ("world", 8..14, 6..12), ("!", 14..15, 12..13)]);
+    // "¡" isn't in the vocabulary.
     let russian = &chunks[2];
-    assert_eq!(russian.dropped(), russian.phonemes.chars().filter(|&c| kokoro_pipeline::id(c).is_none()).count());
-    assert_eq!(russian.ids.len() + russian.dropped(), russian.phonemes.chars().count());
+    assert!(russian.phonemes.starts_with('¡'));
+    assert_eq!(russian.dropped, 1);
 }
 
 /// The reference fails the whole request with `OverflowError` on a number of 400 digits, after
@@ -428,7 +444,7 @@ fn cancelling_stops_at_the_next_g2p_call() {
 fn name(spelling: &str) -> String {
     static NAMES: OnceLock<std::collections::HashMap<String, String>> = OnceLock::new();
     let names = NAMES.get_or_init(|| serde_json::from_str(include_str!("../../g2p-en/data/names.json")).unwrap());
-    names.get(spelling).unwrap_or_else(|| panic!("{spelling} isn't in names.json")).clone()
+    read(names.get(spelling).unwrap_or_else(|| panic!("{spelling} isn't in names.json")))
 }
 
 #[test]
@@ -438,7 +454,7 @@ fn names_are_read_in_their_own_language() {
         let text = format!("Then {spelling} came.");
         let expected = format!("{} kˈAm.", name(spelling));
         assert!(phonemize(&text).ends_with(&expected), "{}", phonemize(&text));
-        assert!(british.phonemize(&text).unwrap().0.contains(&name(spelling)), "{spelling} in British English");
+        assert!(read(&british.phonemize(&text).unwrap().0).contains(&name(spelling)), "{spelling} in British English");
     }
     assert_eq!(phonemize("Earendil"), phonemize("Eärendil"));
 }

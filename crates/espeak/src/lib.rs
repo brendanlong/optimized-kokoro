@@ -12,6 +12,36 @@
 pub mod phonemizer;
 
 use phonemizer::{Backend, py_strip};
+
+/// Sounds misaki's rewrites of espeak's phonemes write as one of Kokoro's symbols (`a^ɪ` as `I`).
+/// While the rewrites run, each is a private-use stand-in, so the later ones (`o` → `ɔ`, `e` →
+/// e͡ɪ) can't reach into its letters; [`ipa`] then writes it with a tie bar.
+mod merged {
+    pub const AI: &str = "\u{e000}";
+    pub const AU: &str = "\u{e001}";
+    pub const DZ: &str = "\u{e002}";
+    pub const DZH: &str = "\u{e003}";
+    pub const EI: &str = "\u{e004}";
+    pub const OU: &str = "\u{e005}";
+    pub const EU: &str = "\u{e006}";
+    pub const SS: &str = "\u{e007}";
+    pub const TS: &str = "\u{e008}";
+    pub const TSH: &str = "\u{e009}";
+    pub const OI: &str = "\u{e00a}";
+    const IPA: [&str; 11] = ["a͡ɪ", "a͡ʊ", "d͡z", "d͡ʒ", "e͡ɪ", "o͡ʊ", "ə͡ʊ", "s͡s", "t͡s", "t͡ʃ", "ɔ͡ɪ"];
+
+    pub fn ipa(ps: &str) -> String {
+        let mut out = String::with_capacity(ps.len() + 8);
+        for c in ps.chars() {
+            match (c as usize).checked_sub(0xe000).and_then(|i| IPA.get(i)) {
+                Some(ipa) => out.push_str(ipa),
+                None => out.push(c),
+            }
+        }
+        out
+    }
+}
+use merged::*;
 use std::sync::{Arc, OnceLock};
 
 pub use kokoro_espeak_ng::{Error, EspeakData, Result, alphabet_languages};
@@ -46,13 +76,13 @@ impl EspeakFallback {
         let mut e2m = vec![
             ("ʔˌn\u{329}", "ʔn"),
             ("ʔn\u{329}", "ʔn"),
-            ("a^ɪ", "I"),
-            ("a^ʊ", "W"),
-            ("d^ʒ", "ʤ"),
-            ("e^ɪ", "A"),
-            ("e", "A"),
-            ("t^ʃ", "ʧ"),
-            ("ɔ^ɪ", "Y"),
+            ("a^ɪ", AI),
+            ("a^ʊ", AU),
+            ("d^ʒ", DZH),
+            ("e^ɪ", EI),
+            ("e", EI),
+            ("t^ʃ", TSH),
+            ("ɔ^ɪ", OI),
             ("ə^l", "ᵊl"),
             ("ʲo", "jo"),
             ("ʲə", "jə"),
@@ -76,27 +106,27 @@ impl EspeakFallback {
     /// Phonemes for one token's text, or `None` when espeak has nothing to say.
     pub fn phonemize(&mut self, word: &str) -> Option<String> {
         let raw = phonemizer::phonemize(word, |chunk| self.backend.espeak(chunk))?;
-        Some(self.espeak_to_misaki(&raw))
+        Some(self.espeak_to_ipa(&raw))
     }
 
     /// [`phonemize`](Self::phonemize) with `espeak` standing in for the engine.
     pub fn phonemize_with(&self, word: &str, espeak: impl FnMut(&str) -> String) -> Option<String> {
         let raw = phonemizer::phonemize(word, espeak)?;
-        Some(self.espeak_to_misaki(&raw))
+        Some(self.espeak_to_ipa(&raw))
     }
 
-    fn espeak_to_misaki(&self, raw: &str) -> String {
+    fn espeak_to_ipa(&self, raw: &str) -> String {
         let mut ps = py_strip(raw).to_string();
         for (old, new) in &self.e2m {
             ps = ps.replace(old, new);
         }
         ps = syllabic_to_schwa(&ps).replace('\u{329}', "");
         if self.british {
-            ps = ps.replace("e^ə", "ɛː").replace("iə", "ɪə").replace("ə^ʊ", "Q");
+            ps = ps.replace("e^ə", "ɛː").replace("iə", "ɪə").replace("ə^ʊ", EU);
         } else {
-            ps = ps.replace("o^ʊ", "O").replace("ɜːɹ", "ɜɹ").replace("ɜː", "ɜɹ").replace("ɪə", "iə").replace('ː', "");
+            ps = ps.replace("o^ʊ", OU).replace("ɜːɹ", "ɜɹ").replace("ɜː", "ɜɹ").replace("ɪə", "iə").replace('ː', "");
         }
-        ps.replace('o', "ɔ").replace('ɾ', "T").replace('ʔ', "t").replace('^', "")
+        merged::ipa(&ps.replace('o', "ɔ").replace('ɾ', "t̬").replace('ʔ', "t").replace('^', ""))
     }
 }
 
@@ -128,17 +158,17 @@ impl EspeakG2P {
     pub fn with_data(language: &str, data: Arc<EspeakData>) -> Result<Self> {
         let backend = Backend::new(language, data)?;
         let mut e2m = vec![
-            ("a^ɪ", "I"),
-            ("a^ʊ", "W"),
-            ("d^z", "ʣ"),
-            ("d^ʒ", "ʤ"),
-            ("e^ɪ", "A"),
-            ("o^ʊ", "O"),
-            ("ə^ʊ", "Q"),
-            ("s^s", "S"),
-            ("t^s", "ʦ"),
-            ("t^ʃ", "ʧ"),
-            ("ɔ^ɪ", "Y"),
+            ("a^ɪ", AI),
+            ("a^ʊ", AU),
+            ("d^z", DZ),
+            ("d^ʒ", DZH),
+            ("e^ɪ", EI),
+            ("o^ʊ", OU),
+            ("ə^ʊ", EU),
+            ("s^s", SS),
+            ("t^s", TS),
+            ("t^ʃ", TSH),
+            ("ɔ^ɪ", OI),
         ];
         e2m.sort();
         Ok(Self { backend, e2m })
@@ -154,21 +184,21 @@ impl EspeakG2P {
     /// nothing but `«»` in the text, which come out as `“”`; that is all this does.
     pub fn phonemize(&mut self, text: &str) -> String {
         let raw = phonemizer::phonemize(&swap_guillemets(text), |chunk| self.backend.espeak(chunk));
-        self.espeak_to_misaki(&raw.unwrap_or_default())
+        self.espeak_to_ipa(&raw.unwrap_or_default())
     }
 
     /// [`phonemize`](Self::phonemize) with `espeak` standing in for the engine.
     pub fn phonemize_with(&self, text: &str, espeak: impl FnMut(&str) -> String) -> String {
         let raw = phonemizer::phonemize(&swap_guillemets(text), espeak);
-        self.espeak_to_misaki(&raw.unwrap_or_default())
+        self.espeak_to_ipa(&raw.unwrap_or_default())
     }
 
-    fn espeak_to_misaki(&self, raw: &str) -> String {
+    fn espeak_to_ipa(&self, raw: &str) -> String {
         let mut ps = py_strip(raw).to_string();
         for (old, new) in &self.e2m {
             ps = ps.replace(old, new);
         }
-        ps.replace(['^', '-'], "")
+        merged::ipa(&ps.replace(['^', '-'], ""))
     }
 }
 

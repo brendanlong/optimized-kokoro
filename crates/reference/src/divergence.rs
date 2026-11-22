@@ -931,6 +931,15 @@ pub fn has_dropped_abbreviation(text: &str) -> bool {
         .any(|w| (w.eq_ignore_ascii_case("dr") || w.eq_ignore_ascii_case("mr")) && !matches!(w, "Dr" | "Mr"))
 }
 
+/// Whether an English or Chinese record's text has a `[word](/phonemes/)` link with `ɾ` or `ʔ`,
+/// which the reference read as the English flap and t and the port reads as written
+/// (`docs/divergences.md`, "Phonemes: standard IPA").
+pub fn has_link_with_tap_or_glottal_stop(lang: &str, text: &str) -> bool {
+    static LINK: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r"\]\(/[^\)]*[ɾʔ][^\)]*/\)").unwrap());
+    matches!(lang, "a" | "b" | "z") && LINK.is_match(text)
+}
+
 /// The phonemes of each name from `crates/g2p-en/data/names.json` that `text` writes as a word of its
 /// own, which the port reads in their own language (`docs/divergences.md`, "misaki English: names").
 pub fn names_read(text: &str) -> Vec<&'static str> {
@@ -951,10 +960,12 @@ pub fn names_read(text: &str) -> Vec<&'static str> {
         .collect()
 }
 
-/// Whether two phoneme strings for `text` differ only in words that are the phonemes of a name `text`
-/// has (with any ending: "Sauron's" is sˈauronz).
+/// Whether two phoneme strings for `text`, in `config.json` symbols ([`crate::canonical`],
+/// [`crate::ours`]), differ only in words that are the phonemes of a name `text` has (with any
+/// ending: "Sauron's" is sˈauronz).
 pub fn differs_only_in_names(text: &str, reference: &str, ours: &str) -> bool {
-    let names: Vec<&str> = names_read(text).iter().flat_map(|p| p.split(' ')).collect();
+    let names: Vec<String> = names_read(text).iter().map(|p| crate::ours(p)).collect();
+    let names: Vec<&str> = names.iter().flat_map(|p| p.split(' ')).collect();
     let (a, b): (Vec<&str>, Vec<&str>) = (reference.split(' ').collect(), ours.split(' ').collect());
     let is_name = |w: &str| {
         let w = w.trim_matches(|c: char| !c.is_alphabetic() && !"ˈˌː".contains(c));
@@ -1097,7 +1108,7 @@ mod tests {
 
     #[test]
     fn only_the_names_words_may_differ() {
-        let gondor = names_read("Gondor")[0];
+        let gondor = crate::ours(names_read("Gondor")[0]);
         assert!(differs_only_in_names("Gondor cat", "ɡˈɑndɔɹ kˈæt", &format!("{gondor} kˈæt")));
         assert!(differs_only_in_names("Gondor's cat", "ɡˈɑndɔɹz kˈæt", &format!("{gondor}z kˈæt")));
         assert!(!differs_only_in_names("Gondor cat", "ɡˈɑndɔɹ kˈæt", &format!("{gondor} dˈɔɡ")));

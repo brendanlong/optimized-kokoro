@@ -9,6 +9,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
+kokoro-phonemes = { path = "../phonemes" }
 serde.workspace = true
 serde_json.workspace = true
 regex = "1"

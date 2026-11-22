@@ -6,8 +6,10 @@ edition.workspace = true
 rust-version.workspace = true
 repository.workspace = true
 license = "Apache-2.0"
+publish = false
 
 [dependencies]
+kokoro-phonemes = { path = "../phonemes" }
 fancy-regex = "0.20"
 regex = "1.12"
 unicode-segmentation = "=1.13.3"

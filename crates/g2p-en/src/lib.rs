@@ -68,7 +68,8 @@ impl std::error::Error for Error {}
 #[derive(Debug, Clone, PartialEq)]
 enum Feature {
     Stress(f64),
-    /// `/phonemes/`, kept with its leading slash as misaki does.
+    /// `/phonemes/`, kept with its leading slash as misaki does, without IPA's syllable breaks (`.`):
+    /// a link is one word's pronunciation, and a full stop can go after it.
     Phonemes(String),
 }
 
@@ -103,7 +104,8 @@ fn parse_feature(f: &str) -> Option<Feature> {
     }
     let n = f.chars().count();
     if n > 1 && f.starts_with('/') && f.ends_with('/') {
-        return Some(Feature::Phonemes(format!("/{}", f[1..].trim_end_matches('/'))));
+        let ipa: String = f[1..].trim_end_matches('/').chars().filter(|&c| c != '.').collect();
+        return Some(Feature::Phonemes(format!("/{ipa}")));
     }
     None
 }
@@ -266,7 +268,7 @@ fn token_context(ctx: &TokenContext, ps: Option<&str>, token: &MToken) -> TokenC
 }
 
 fn stress_weight(ps: &str) -> usize {
-    ps.chars().map(|c| if "AIOQWYʤʧ".contains(c) { 2 } else { 1 }).sum()
+    ps.chars().filter(|c| !matches!(c, '\u{361}' | '\u{32c}')).count()
 }
 
 fn resolve_tokens(tokens: &mut [MToken]) {
@@ -336,7 +338,9 @@ fn resolve_tokens(tokens: &mut [MToken]) {
 /// separators longer than this read differently (docs/divergences.md).
 const MAX_SPAN: usize = 16;
 
-/// misaki's English `G2P` as kokoro configures it (`version=None`, so `ɾ` and `ʔ` become `T` and `t`).
+/// misaki's English `G2P` as kokoro configures it. With `version=None` kokoro reads misaki's `ɾ` and `ʔ`
+/// as the English flap and `t`; the dictionaries here already say `t̬` and `t`, and a link's IPA is
+/// read as written.
 pub struct G2p {
     lexicon: Lexicon,
     names: names::Names,
@@ -392,13 +396,10 @@ impl G2p {
         let tokens: Vec<Token> = words
             .into_iter()
             .map(|w| {
-                let mut tk = match w {
+                let tk = match w {
                     Word::One(tk) => tk,
                     Word::Many(tks) => merge_tokens(&tks, true),
                 };
-                if let Some(ps) = tk.phonemes.as_mut().filter(|p| p.contains(['ɾ', 'ʔ'])) {
-                    *ps = ps.replace('ɾ', "T").replace('ʔ', "t");
-                }
                 out.push_str(tk.phonemes.as_deref().unwrap_or_default());
                 out.push_str(&tk.whitespace);
                 tk.into_token()

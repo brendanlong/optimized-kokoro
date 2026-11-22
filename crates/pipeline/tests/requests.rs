@@ -69,7 +69,25 @@ fn cases() -> Vec<Case> {
         })
         // The committed fixtures are the start of the dumps in `out/requests`: each request once.
         .filter(|case| seen.insert(case.id.clone()))
+        .map(as_the_port_reads)
         .collect()
+}
+
+/// A recorded request as the port takes it and the model reads it: links' phonemes in IPA in the
+/// pipelines that read links, and the chunks' phonemes as the model's ids in `config.json` symbols.
+fn as_the_port_reads(mut case: Case) -> Case {
+    if matches!(case.lang.as_str(), "a" | "b" | "z") {
+        case.text = kokoro_reference::with_ipa_links(&case.text);
+    }
+    for chunk in &mut case.chunks {
+        if let Expected::Speech { text, phonemes, .. } = chunk {
+            if matches!(case.lang.as_str(), "a" | "b" | "z") {
+                *text = kokoro_reference::with_ipa_links(text);
+            }
+            *phonemes = kokoro_reference::canonical(phonemes);
+        }
+    }
+    case
 }
 
 /// Requests of `request_cases.py 2 1500 efhip` whose reference phonemes depend on espeak state an
@@ -107,9 +125,14 @@ fn requests_match_the_reference() {
     let (mut flagged, mut rechunked, mut new_script, mut stateful, mut numbers, mut fuzzed) = (0, 0, 0, 0, 0, 0);
     let mut roman = 0;
     let mut regrouped = 0;
+    let mut links = 0;
     for case in &cases {
         if uses_new_script(&case.text) {
             new_script += 1;
+            continue;
+        }
+        if kokoro_reference::divergence::has_link_with_tap_or_glottal_stop(&case.lang, &case.text) {
+            links += 1;
             continue;
         }
         let pipeline = pipelines.iter().find(|p| p.lang().code() == case.lang).expect("a pipeline language");
@@ -119,10 +142,10 @@ fn requests_match_the_reference() {
                 Ok(c) => match c.pause {
                     Some(pause) => Expected::Pause { pause },
                     None => Expected::Speech {
-                        dropped: c.dropped(),
+                        dropped: c.dropped,
                         words: c.words().into_iter().map(|w| (w.text, w.ids.start, w.ids.end)).collect(),
                         text: c.text,
-                        phonemes: c.phonemes,
+                        phonemes: kokoro_reference::ours(&c.phonemes),
                         ids: c.ids,
                     },
                 },
@@ -276,13 +299,13 @@ fn requests_match_the_reference() {
             ));
         }
     }
-    let compared = cases.len() - new_script - rechunked - stateful - numbers - fuzzed - regrouped;
+    let compared = cases.len() - new_script - rechunked - stateful - numbers - fuzzed - regrouped - links;
     println!(
         "{} of {compared} requests match ({flagged} of them once espeak's language-switch flags are dropped from the reference's); \
          not compared: {rechunked} chunked differently without the flags, {new_script} with other scripts, \
          {stateful} where the reference's espeak read a word by an earlier call's state, \
          {numbers} with numbers or symbols read differently ({roman} with Roman numerals), {fuzzed} more fuzzed ones with digits or symbols, \
-         {regrouped} with short clauses regrouped",
+         {regrouped} with short clauses regrouped, {links} with a link's ɾ or ʔ read as written",
         compared - failures.len(),
     );
     for f in failures.iter().take(10) {

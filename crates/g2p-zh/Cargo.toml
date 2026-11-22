@@ -13,5 +13,6 @@ kokoro-text = { path = "../text" }
 rustc-hash = "2"
 
 [dev-dependencies]
+kokoro-reference = { path = "../reference" }
 serde.workspace = true
 serde_json.workspace = true

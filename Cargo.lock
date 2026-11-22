@@ -224,6 +224,7 @@ name = "kokoro-espeak"
 version = "0.1.0"
 dependencies = [
  "kokoro-espeak-ng",
+ "kokoro-reference",
  "serde",
  "serde_json",
 ]
@@ -240,6 +241,7 @@ dependencies = [
 name = "kokoro-g2p-en"
 version = "0.1.0"
 dependencies = [
+ "kokoro-phonemes",
  "kokoro-reference",
  "regex",
  "rustc-hash",
@@ -264,11 +266,16 @@ dependencies = [
 name = "kokoro-g2p-zh"
 version = "0.1.0"
 dependencies = [
+ "kokoro-reference",
  "kokoro-text",
  "rustc-hash",
  "serde",
  "serde_json",
 ]
+
+[[package]]
+name = "kokoro-phonemes"
+version = "0.1.0"
 
 [[package]]
 name = "kokoro-pipeline"
@@ -278,6 +285,7 @@ dependencies = [
  "kokoro-g2p-en",
  "kokoro-g2p-ja",
  "kokoro-g2p-zh",
+ "kokoro-phonemes",
  "kokoro-reference",
  "kokoro-spacy-en",
  "kokoro-text",
@@ -290,6 +298,7 @@ dependencies = [
 name = "kokoro-reference"
 version = "0.1.0"
 dependencies = [
+ "kokoro-phonemes",
  "regex",
  "serde",
  "serde_json",
@@ -304,6 +313,7 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
+ "kokoro-phonemes",
  "kokoro-pipeline",
  "kokoro-text",
  "serde",
@@ -330,6 +340,7 @@ name = "kokoro-text"
 version = "0.1.0"
 dependencies = [
  "fancy-regex",
+ "kokoro-phonemes",
  "kokoro-reference",
  "regex",
  "serde",

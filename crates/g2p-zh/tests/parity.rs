@@ -39,10 +39,18 @@ fn matches_misaki() {
     let g2p = ZhG2p::new();
     let cases = cases();
     let mut failures = Vec::new();
+    let mut stress = 0;
     for (file, case) in &cases {
         let got = g2p.phonemize(&case.text);
         let ok = match (&got, &case.phonemes, &case.error) {
-            (Ok(ps), Some(expected), _) => ps == expected,
+            (Ok(ps), Some(expected), _) => {
+                let (ours, expected) = (kokoro_reference::ours(ps), kokoro_reference::without_capitals(expected));
+                // Stress marks before a consonant (IPA in the text, passed through) move to the vowel.
+                let moved =
+                    ours != kokoro_reference::canonical(&expected) && ours == kokoro_reference::stress_moved(&expected);
+                stress += usize::from(moved);
+                ours == kokoro_reference::canonical(&expected) || moved
+            }
             (Err(_), None, Some(_)) => true,
             _ => false,
         };
@@ -53,7 +61,11 @@ fn matches_misaki() {
             ));
         }
     }
-    eprintln!("{} of {} cases match", cases.len() - failures.len(), cases.len());
+    eprintln!(
+        "{} of {} cases match ({stress} once stress marks move to their vowel)",
+        cases.len() - failures.len(),
+        cases.len()
+    );
     for f in failures.iter().take(20) {
         eprintln!("{f}");
     }

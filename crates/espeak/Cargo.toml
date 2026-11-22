@@ -12,5 +12,6 @@ publish = false
 kokoro-espeak-ng = { path = "../espeak-ng" }
 
 [dev-dependencies]
+kokoro-reference = { path = "../reference" }
 serde.workspace = true
 serde_json.workspace = true

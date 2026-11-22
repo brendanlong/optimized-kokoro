@@ -1,7 +1,8 @@
 //! Line joining, sentence splitting and chunking (`text_processor.py`'s `smart_split`).
 //!
 //! G2P lives in other crates, so chunking takes the phonemizer as a function. Chunk limits count
-//! phoneme characters, as the reference does.
+//! the model's input ids, where the reference counts phoneme characters (the same but for symbols
+//! the vocabulary lacks, which count there and not here).
 
 use crate::normalize::{Options, english};
 use crate::py::{self, parse_float};
@@ -91,10 +92,14 @@ fn index_of(digits: &str) -> Option<usize> {
     digits.chars().try_fold(0usize, |n, c| n.checked_mul(10)?.checked_add(py::digit_value(c)? as usize))
 }
 
-/// What a G2P returns: at least its phoneme string, whose length in characters is what chunk
-/// limits count.
+/// What a G2P returns: at least its IPA, and how many ids it reads as, which is what chunk limits
+/// count.
 pub trait Phonemes {
     fn phonemes(&self) -> &str;
+
+    fn ids(&self) -> usize {
+        kokoro_phonemes::count(self.phonemes())
+    }
 }
 
 impl Phonemes for String {
@@ -104,7 +109,7 @@ impl Phonemes for String {
 }
 
 fn phoneme_len<P: Phonemes>(p: &P) -> usize {
-    p.phonemes().chars().count()
+    p.ids()
 }
 
 /// A phonemized piece of text: `Phonemes(text, ...)` in the reference.

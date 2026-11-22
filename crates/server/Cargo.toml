@@ -23,5 +23,6 @@ tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "sync"
 toml = { version = "1", default-features = false, features = ["std", "parse", "serde"] }
 
 [dev-dependencies]
+kokoro-phonemes = { path = "../phonemes" }
 hyper = { version = "1", features = ["client", "http1"] }
 tempfile = "3"

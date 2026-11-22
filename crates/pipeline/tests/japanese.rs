@@ -39,12 +39,12 @@ fn japanese_reference_records() {
             .chunks(&record.text)
             .filter_map(|c| {
                 let c = c.unwrap_or_else(|e| panic!("{}: {e}", record.id));
-                c.pause.is_none().then_some((c.text, c.phonemes))
+                c.pause.is_none().then_some((c.text, kokoro_reference::ours(&c.phonemes)))
             })
             .collect();
         chunks += actual.len();
         let expected: Vec<(String, String)> =
-            record.chunks.iter().map(|c| (c.text.clone(), c.phonemes.clone())).collect();
+            record.chunks.iter().map(|c| (c.text.clone(), kokoro_reference::canonical(&c.phonemes))).collect();
         if uses_new_script(&record.text) {
             skipped += 1;
             if actual != expected && std::env::var_os("SHOW_SKIPPED").is_some() {

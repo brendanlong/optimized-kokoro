@@ -354,7 +354,7 @@ pub fn finish(phonemes: &str, language: Language, english: bool) -> String {
 
 /// `MANDARIN_TONE.sub(r'ˈ\1', ps)`, then in English `MANDARIN_UNASPIRATED` and `ʰ` removal:
 /// each syllable's tone arrow becomes a stress mark before its vowels, and p/t/k without `ʰ`
-/// become b/d/ɡ.
+/// become b/d/ɡ. The t of an affricate (t͡s, t͡ɕ: one symbol in the reference) stays.
 fn mandarin(ps: &str, english: bool) -> String {
     const VOWELS: &str = "aeiouyɛəɤɨʊɚɔmnŋ";
     let chars: Vec<char> = ps.chars().collect();
@@ -371,6 +371,10 @@ fn mandarin(ps: &str, english: bool) -> String {
                 toned.push('ˈ');
             }
             toned.extend(&chars[start..i]);
+            // A syllable of nasals alone (嗯 n) is written syllabic, so its stress mark stays on it.
+            if tone && chars[start..i].iter().all(|c| "mnŋ".contains(*c)) {
+                toned.push('\u{329}');
+            }
             i += usize::from(tone);
         } else {
             toned.push(chars[i]);
@@ -383,7 +387,7 @@ fn mandarin(ps: &str, english: bool) -> String {
     let chars: Vec<char> = toned.chars().collect();
     let mut out = String::with_capacity(toned.len());
     for (i, &c) in chars.iter().enumerate() {
-        let aspirated = chars.get(i + 1) == Some(&'ʰ');
+        let aspirated = matches!(chars.get(i + 1), Some('ʰ' | '\u{361}'));
         match c {
             'p' if !aspirated => out.push('b'),
             't' if !aspirated => out.push('d'),
@@ -563,8 +567,8 @@ mod tests {
     #[test]
     fn links_are_the_english_g2ps() {
         assert_eq!(
-            shape("Go to [东京](/tˈOkjO/) or [Ελλάδα](/ɛlˈɑdə/) now."),
-            [("Go to [东京](/tˈOkjO/) or [Ελλάδα](/ɛlˈɑdə/) now.", None)]
+            shape("Go to [东京](/ˈto͡ʊkjo͡ʊ/) or [Ελλάδα](/ɛˈlɑdə/) now."),
+            [("Go to [东京](/ˈto͡ʊkjo͡ʊ/) or [Ελλάδα](/ɛˈlɑdə/) now.", None)]
         );
         assert_eq!(shape("[a](/b/) Привет"), [("[a](/b/) ", None), ("Привет", Some("ru"))]);
     }
@@ -572,10 +576,11 @@ mod tests {
     #[test]
     fn nearest_phonemes_and_mandarin() {
         assert_eq!(finish(" maɾħaba ʕali ", Language::Script(Script::Arabic), true), "maɾhaba ʔali");
-        assert_eq!(finish("pei↓ʨiŋ→", Chinese, true), "bˈeiʨˈiŋ");
-        assert_eq!(finish("tʰa→ n↗", Chinese, true), "tˈa ˈn");
+        assert_eq!(finish("pei↓t͡ɕiŋ→", Chinese, true), "bˈeit͡ɕˈiŋ");
+        assert_eq!(finish("t͡sʰai↘", Chinese, true), "t͡sˈai");
+        assert_eq!(finish("tʰa→ n↗", Chinese, true), "tˈa ˈn̩");
         assert_eq!(finish("pei↓", Language::Script(Script::Cyrillic), true), "pei↓");
-        assert_eq!(finish("pei↓ʨʰiŋ→", Chinese, false), "pˈeiʨʰˈiŋ");
+        assert_eq!(finish("pei↓t͡ɕʰiŋ→", Chinese, false), "pˈeit͡ɕʰˈiŋ");
     }
 
     #[test]

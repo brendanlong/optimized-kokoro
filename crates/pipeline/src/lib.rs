@@ -6,8 +6,8 @@
 //! [`Pipeline::chunks`] runs the text crate's tags, normalization, sentence splitting and chunking,
 //! with Kokoro-FastAPI's `phonemize` as the G2P: kokoro's `KPipeline.en_g2p_tokens` (runs of other
 //! scripts read by their own language, the rest by misaki's English G2P on spaCy's tags, with
-//! espeak for unknown words) and `tokens_to_ps`. Each chunk's phonemes are then mapped to
-//! Kokoro-82M's input ids, dropping what the vocabulary lacks as `KModel` does.
+//! espeak for unknown words) and `tokens_to_ps`. The G2Ps write IPA, which [`kokoro_phonemes`]
+//! reads into Kokoro-82M's input ids, dropping what the vocabulary lacks as `KModel` does.
 //!
 //! Han runs are read by misaki's Chinese G2P ([`kokoro_g2p_zh`]), in every pipeline, and Japanese
 //! runs (Han and kana, with kana) by its Japanese G2P ([`kokoro_g2p_ja`]), whose dictionary is
@@ -20,7 +20,6 @@
 mod chinese;
 pub mod foreign;
 mod tables;
-mod vocab;
 
 use foreign::{Language, Script};
 use kokoro_espeak::{EspeakData, EspeakFallback, EspeakG2P};
@@ -35,7 +34,6 @@ pub use kokoro_g2p_en::Token;
 #[doc(hidden)]
 pub use kokoro_g2p_ja::skip_without_dictionary;
 pub use kokoro_text::{DEFAULT_MAX_TOKENS, Split};
-pub use vocab::id;
 
 /// Whether this process has loaded misaki's Chinese G2P yet: only Han text or a Chinese request
 /// loads it.
@@ -178,7 +176,7 @@ impl From<kokoro_espeak::Error> for Error {
 /// A G2P for runs of another language's script, for the languages espeak doesn't read here
 /// (Chinese and Japanese). It must not keep state between calls.
 pub trait ForeignG2p: Send + Sync {
-    /// The language's phonemes for a run, before `foreign.py`'s post-processing.
+    /// The language's phonemes for a run, in IPA, before `foreign.py`'s post-processing.
     fn phonemize(&self, text: &str) -> Result<String, String>;
 
     /// Chinese only: whether the character has a reading. The reference leaves characters
@@ -198,11 +196,13 @@ pub trait ForeignG2p: Send + Sync {
 pub struct Chunk {
     /// The chunk's text after normalization; empty for a pause.
     pub text: String,
-    /// Kokoro phonemes, as the reference server hands them to the model.
+    /// The chunk's phonemes in IPA.
     pub phonemes: String,
-    /// `phonemes` as Kokoro-82M input ids, without the padding id 0 at either end. Phonemes the
+    /// `phonemes` as Kokoro-82M input ids, without the padding id 0 at either end. Sounds the
     /// vocabulary lacks are dropped, as `KModel` does ([`Chunk::dropped`]).
     pub ids: Vec<u8>,
+    /// Letters and marks of `phonemes` the vocabulary lacks, left out of `ids`.
+    pub dropped: usize,
     /// Seconds of silence, for a pause chunk.
     pub pause: Option<f64>,
     /// How many runs with no G2P for their language or script were read as "<name> text".
@@ -215,14 +215,9 @@ pub struct Chunk {
 }
 
 impl Chunk {
-    /// Phonemes the vocabulary lacks, left out of `ids`.
-    pub fn dropped(&self) -> usize {
-        self.phonemes.chars().count() - self.ids.len()
-    }
-
     /// The words with phonemes, for word timestamps (Kokoro-FastAPI's `_word_spans`).
     pub fn words(&self) -> Vec<Word> {
-        let (_, kept) = vocab::ids(&self.phonemes);
+        let kept = kokoro_phonemes::tokenize(&self.phonemes).kept;
         match &self.tokens {
             Some(tokens) => word_spans(tokens, &kept),
             None => text_word_spans(&self.text, &self.phonemes, &kept),
@@ -373,6 +368,7 @@ impl Pipeline {
                     text: String::new(),
                     phonemes: String::new(),
                     ids: Vec::new(),
+                    dropped: 0,
                     pause: Some(seconds),
                     unread: 0,
                     split: Split::default(),
@@ -400,23 +396,34 @@ fn espeak_voice(code: &str, lang: Lang) -> &str {
     }
 }
 
-/// G2P output: the phoneme string chunking measures, misaki's tokens (English only), and how many
-/// runs were read as a placeholder for want of a G2P.
+/// G2P output: the IPA, the ids it reads as (which chunking measures), misaki's tokens (English
+/// only), and how many runs were read as a placeholder for want of a G2P.
 struct Phonemes {
     phonemes: String,
+    read: kokoro_phonemes::Tokens,
     tokens: Option<Vec<Token>>,
     unread: usize,
+}
+
+impl Phonemes {
+    fn new(phonemes: String, tokens: Option<Vec<Token>>, unread: usize) -> Self {
+        Phonemes { read: kokoro_phonemes::tokenize(&phonemes), phonemes, tokens, unread }
+    }
 }
 
 impl kokoro_text::Phonemes for Phonemes {
     fn phonemes(&self) -> &str {
         &self.phonemes
     }
+
+    fn ids(&self) -> usize {
+        self.read.ids.len()
+    }
 }
 
 fn speech(text: String, p: Phonemes, split: Split) -> Chunk {
-    let (ids, _) = vocab::ids(&p.phonemes);
-    Chunk { text, phonemes: p.phonemes, ids, pause: None, unread: p.unread, split, tokens: p.tokens }
+    let kokoro_phonemes::Tokens { ids, dropped, .. } = p.read;
+    Chunk { text, phonemes: p.phonemes, ids, dropped, pause: None, unread: p.unread, split, tokens: p.tokens }
 }
 
 /// `_word_spans` without misaki's tokens (every pipeline but English): the text's words paired
@@ -637,7 +644,7 @@ impl<'p> Request<'p> {
         for token in &mut tokens {
             token.phonemes.get_or_insert_with(String::new);
         }
-        Ok(Phonemes { phonemes, tokens: Some(tokens), unread: placeholders.len() })
+        Ok(Phonemes::new(phonemes, Some(tokens), placeholders.len()))
     }
 
     fn reads(&self, language: Language) -> bool {
@@ -734,7 +741,7 @@ impl<'p> Request<'p> {
             ps.push_str(&p);
             previous = last;
         }
-        Ok(Phonemes { phonemes: kokoro_text::py::strip(&ps).to_owned(), tokens: None, unread })
+        Ok(Phonemes::new(kokoro_text::py::strip(&ps).to_owned(), None, unread))
     }
 
     /// misaki's English `G2P()(text)[0]` (American, with the espeak fallback), as
@@ -826,7 +833,7 @@ mod tests {
         let tokens = [token("", "", " "), token("¡Hola", "¡ola", " "), token("x", "ab", "")];
         let ps = kokoro::tokens_to_ps(&tokens);
         assert_eq!(ps, "¡ola ab");
-        let (ids, kept) = vocab::ids(&ps);
+        let kokoro_phonemes::Tokens { ids, kept, .. } = kokoro_phonemes::tokenize(&ps);
         assert_eq!(ids.len(), 6);
         let words = word_spans(&tokens, &kept);
         assert_eq!(

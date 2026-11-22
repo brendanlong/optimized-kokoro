@@ -24,7 +24,7 @@ fn child() {
     }
     let english = Pipeline::new(Lang::AmericanEnglish).unwrap();
     let chunks: Vec<_> = english.chunks("She said こんにちは.").map(Result::unwrap).collect();
-    assert_eq!((chunks[0].phonemes.as_str(), chunks[0].unread), ("ʃˌi sˈɛd ʤˌæpənˈiz tˈɛkst.", 1));
+    assert_eq!((chunks[0].phonemes.as_str(), chunks[0].unread), ("ʃˌi ˈsɛd ˌd͡ʒæpəˈniz ˈtɛkst.", 1));
     let japanese = Pipeline::new(Lang::Japanese).unwrap();
     let chunks: Vec<_> = japanese.chunks("東京へ行きます。大阪へ。").collect();
     assert_eq!(chunks.len(), 2);

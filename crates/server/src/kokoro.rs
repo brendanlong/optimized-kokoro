@@ -64,15 +64,20 @@ mod tests {
             .map(Result::unwrap)
             .collect();
         assert_eq!(chunks[0].text, "Hello there.");
-        assert!(!chunks[0].ids.is_empty() && chunks[0].ids.len() == chunks[0].phonemes.chars().count());
+        assert_eq!(read(&chunks[0].ids), "həlˈO ðˈɛɹ.");
         assert_eq!(chunks[1].pause, Some(0.5));
-        assert_eq!((chunks[2].phonemes.as_str(), chunks[2].unread), ("dˈʊŋʨˈiŋ ɪz bˈɪɡ.", 0));
+        assert_eq!((read(&chunks[2].ids).as_str(), chunks[2].unread), ("dˈʊŋʨˈiŋ ɪz bˈɪɡ.", 0));
         let kana = if kokoro_pipeline::japanese_available() {
             ("kana tˈu.", 0)
         } else {
             ("ʤˌæpənˈiz tˈɛkst tˈu.", 1)
         };
-        assert_eq!((chunks[3].phonemes.as_str(), chunks[3].unread), kana);
+        assert_eq!((read(&chunks[3].ids).as_str(), chunks[3].unread), kana);
+    }
+
+    /// What the model reads, in `config.json` symbols.
+    fn read(ids: &[u8]) -> String {
+        kokoro_phonemes::symbols(ids)
     }
 
     #[test]
@@ -82,8 +87,8 @@ mod tests {
             .chunks(Lang::Chinese, "银行行长在长城上。", DEFAULT_MAX_TOKENS, DEFAULT_MAX_TOKENS, &|| false)
             .map(Result::unwrap)
             .collect();
-        assert_eq!(chunks[0].phonemes, "i↗nxa↗ŋxa↗ŋꭧa↓ŋ ʦai↘ ꭧʰa↗ŋꭧʰə↗ŋ ʂa↘ŋ.");
-        assert_eq!(chunks[0].ids.len(), chunks[0].phonemes.chars().count());
+        assert_eq!(chunks[0].phonemes, "i↗nxa↗ŋxa↗ŋʈ͡ʂa↓ŋ t͡sai↘ ʈ͡ʂʰa↗ŋʈ͡ʂʰə↗ŋ ʂa↘ŋ.");
+        assert_eq!(read(&chunks[0].ids), "i↗nxa↗ŋxa↗ŋꭧa↓ŋ ʦai↘ ꭧʰa↗ŋꭧʰə↗ŋ ʂa↘ŋ.");
     }
 
     #[test]
@@ -105,7 +110,7 @@ mod tests {
             .next()
             .unwrap()
             .unwrap();
-        assert_eq!((chunk.phonemes.as_str(), chunk.unread), ("ʃˌi sˈɛd koɲɲiʨiβa.", 0));
+        assert_eq!((read(&chunk.ids).as_str(), chunk.unread), ("ʃˌi sˈɛd koɲɲiʨiβa.", 0));
     }
 
     #[test]
@@ -123,8 +128,7 @@ mod tests {
                 .next()
                 .unwrap()
                 .unwrap();
-            assert_eq!((chunk.phonemes.as_str(), chunk.unread), (phonemes, 0), "{lang:?}");
-            assert_eq!(chunk.ids.len(), chunk.phonemes.chars().count(), "{lang:?}");
+            assert_eq!((read(&chunk.ids).as_str(), chunk.unread), (phonemes, 0), "{lang:?}");
         }
     }
 

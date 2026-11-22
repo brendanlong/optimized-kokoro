@@ -225,11 +225,13 @@ fn single_mapping(pk: Option<char>, kk: char, nk: Option<char>, out: &mut String
         'っ' => out.push('ʔ'),
         'ん' => {
             let tnk = nk.and_then(table_char).filter(|t| !t.is_empty());
+            // misaki tests the next kana's first symbol, and t͡s and d͡z are one: they take ɴ.
+            let affricate = |t: &str| t.chars().nth(1) == Some('\u{361}');
             let n = match tnk {
                 Some(t) if t.starts_with(['m', 'p', 'b']) => 'm',
                 Some(t) if t.starts_with(['k', 'ɡ']) => 'ŋ',
-                Some(t) if t.starts_with(['ɲ', 'ʨ', 'ʥ']) => 'ɲ',
-                Some(t) if t.starts_with(['n', 't', 'd', 'ɾ', 'z']) => 'n',
+                Some(t) if t.starts_with('ɲ') || t.starts_with("t͡ɕ") || t.starts_with("d͡ʑ") => 'ɲ',
+                Some(t) if !affricate(t) && t.starts_with(['n', 't', 'd', 'ɾ', 'z']) => 'n',
                 _ => 'ɴ',
             };
             out.push(n);
