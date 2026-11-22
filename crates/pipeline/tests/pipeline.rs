@@ -446,16 +446,24 @@ fn names_are_read_in_their_own_language() {
 #[test]
 fn a_name_takes_possessive_and_plural_endings() {
     assert_eq!(phonemize("Sauron's"), format!("{}z", name("Sauron")));
-    assert_eq!(phonemize("Silmarils"), format!("{}z", name("Silmaril")));
+    assert_eq!(phonemize("Minas Tirith's"), format!("{}s", name("Minas Tirith")));
+    // A plural is its own reviewed entry, not a rule: "Estes" isn't Este's plural.
+    assert_eq!(phonemize("Silmarils"), name("Silmarils"));
+    assert!(!phonemize("Estes Park").contains(&format!("{}z", name("Este"))), "{}", phonemize("Estes Park"));
 }
 
 #[test]
 fn names_need_their_exact_spelling_and_lose_to_overrides() {
     let gondor = name("Gondor");
-    for text in ["gondor", "GONDOR", "Gondorian", "[Gondor](/ɡˈɑndɔɹ/)"] {
+    for text in ["gondor", "Gondorian", "[Gondor](/ɡˈɑndɔɹ/)", "[Gondor](+2)"] {
         assert!(!phonemize(text).contains(&gondor), "{text}: {}", phonemize(text));
     }
     // "Minas" alone is left out as ambiguous (Minas Gerais); "Minas Tirith" is a name.
     let minas = name("Minas Tirith").split(' ').next().unwrap().to_string();
     assert!(!phonemize("Minas Gerais").contains(&minas), "{}", phonemize("Minas Gerais"));
+}
+
+#[test]
+fn names_match_with_accents_as_combining_marks() {
+    assert_eq!(phonemize("Ea\u{308}rendil"), name("Eärendil"));
 }

@@ -301,7 +301,10 @@ fn reference_records() {
             dropped_abbreviations += 1;
         } else if error.is_some() == record.error.is_some()
             && expected.len() == actual.len()
-            && expected.iter().zip(&actual).all(|(e, a)| e == a || e.0 == a.0 && divergence::has_name(&e.0))
+            && expected
+                .iter()
+                .zip(&actual)
+                .all(|(e, a)| e == a || e.0 == a.0 && divergence::differs_only_in_names(&e.0, &e.1, &a.1))
         {
             // Names are read in their own language (docs/divergences.md, "misaki English: names").
             names += 1;

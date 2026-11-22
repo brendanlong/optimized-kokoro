@@ -22,12 +22,12 @@ LETTERS = set("abcdefghijklmnopqrstuvwxyzáéíóúâêîôûäëïöüý")
 
 LONG = set("áéíóúâêîôûý")
 DIPHTHONGS = {"ai": "ai", "ae": "ae", "au": "au", "aw": "au", "ei": "ei", "oi": "oi", "oe": "oe", "ui": "ui"}
-CONSONANT_UNITS = {"th": "θ", "dh": "ð", "ch": "x", "ht": "xt", "ph": "f", "hw": "w", "lh": "l", "rh": "r",
+CONSONANT_UNITS = {"nqu": "ŋkw", "th": "θ", "dh": "ð", "ch": "x", "ht": "xt", "ph": "f", "hw": "w", "lh": "l", "rh": "r",
                    "qu": "kw", "nc": "ŋk", "hy": "ç"}
 UNITS = sorted({**DIPHTHONGS, **CONSONANT_UNITS}.items(), key=lambda kv: -len(kv[0]))
 VOWELS = {"a": "a", "e": "e", "i": "i", "o": "o", "u": "u", "y": "y"}
 CONSONANTS = {"c": "k", "g": "ɡ", "x": "ks"}
-TWO_CONSONANTS = {"ks", "ŋɡ", "ŋk", "xt"}
+TWO_CONSONANTS = {"ks", "ŋɡ", "ŋk", "xt", "kw", "ŋkw"}
 KOKORO_VOWELS = set("aeiouyAIOWYɑæəɛɪʊʌɔɜᵊᵻ")
 # Unstressed little words inside names: "Gwaith-i-Mírdain", "Taur-im-Duinath", "Haudh-en-Elleth".
 PARTICLES = {"i", "in", "im", "en", "na", "nan", "e", "o"}
@@ -54,6 +54,9 @@ def segment(word):
     segs, i = [], 0
     while i < len(w):
         unit = next(((src, dst) for src, dst in UNITS if w.startswith(src, i)), None)
+        # w before a vowel is a consonant: "Tawar" is ta-war, not tau-ar.
+        if unit and unit[0] == "aw" and i + 2 < len(w) and base(w[i + 2]) in VOWELS:
+            unit = None
         if unit:
             segs.append((unit[1], "L" if unit[0] in DIPHTHONGS else "C"))
             i += len(unit[0])
@@ -80,7 +83,7 @@ def heavy(segs, k):
     for p, kind in segs[k + 1:]:
         if kind != "C":
             break
-        following += (p != "j") + (p in TWO_CONSONANTS)  # ny, ly, ry are one consonant; x, ŋɡ two
+        following += (p != "j") + (p in TWO_CONSONANTS)  # ny, ly, ry are one consonant; x, ŋɡ, qu two
     return following >= 2
 
 

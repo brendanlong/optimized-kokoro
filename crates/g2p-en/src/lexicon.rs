@@ -342,7 +342,8 @@ impl Lexicon {
     pub(crate) fn s(&self, stem: Option<String>) -> Option<String> {
         let mut stem = stem.filter(|s| !s.is_empty())?;
         let last = stem.chars().next_back().expect("non-empty");
-        if "ptkfθ".contains(last) {
+        // x and ç are only in names (crates/g2p-en/data/names.json): "Anach's".
+        if "ptkfθxç".contains(last) {
             stem.push('s');
         } else if "szʃʒʧʤ".contains(last) {
             stem.push(if self.british { 'ɪ' } else { 'ᵻ' });

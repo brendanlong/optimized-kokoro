@@ -504,13 +504,14 @@ impl G2p {
     fn read_names(&self, tokens: &mut [MToken]) {
         let mut i = 0;
         while i < tokens.len() {
-            let free = tokens[i..].iter().take_while(|t| t.phonemes.is_none());
+            let free = tokens[i..].iter().take_while(|t| t.phonemes.is_none() && t.stress.is_none());
             match self.names.longest(free.map(|t| (t.text.as_str(), t.whitespace.as_str()))) {
                 Some((mut n, phonemes)) => {
                     let mut phonemes = phonemes.to_string();
                     // "Sauron's": the lexicon adds 's to words it knows, which a name isn't.
-                    let possessive =
-                        tokens.get(i + n).filter(|t| matches!(t.text.as_str(), "'s" | "’s") && t.phonemes.is_none());
+                    let possessive = tokens.get(i + n).filter(|t| {
+                        matches!(t.text.as_str(), "'s" | "’s") && t.phonemes.is_none() && t.stress.is_none()
+                    });
                     if possessive.is_some() && tokens[i + n - 1].whitespace.is_empty() {
                         phonemes = self.lexicon.s(Some(phonemes)).expect("a name's phonemes aren't empty");
                         n += 1;
@@ -521,19 +522,7 @@ impl G2p {
                     }
                     i += n;
                 }
-                None => {
-                    // "Silmarils", "Balrogs": a name's plural, if English doesn't have the word.
-                    let tk = &mut tokens[i];
-                    if tk.phonemes.is_none()
-                        && let Some(name) = tk.text.strip_suffix('s')
-                        && let Some(phonemes) = self.names.get(name)
-                        && !name.contains(' ')
-                        && !self.lexicon.is_known(&tk.text)
-                    {
-                        tk.phonemes = self.lexicon.s(Some(phonemes.to_string()));
-                    }
-                    i += 1;
-                }
+                None => i += 1,
             }
         }
     }

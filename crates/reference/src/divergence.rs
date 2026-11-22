@@ -931,9 +931,10 @@ pub fn has_dropped_abbreviation(text: &str) -> bool {
         .any(|w| (w.eq_ignore_ascii_case("dr") || w.eq_ignore_ascii_case("mr")) && !matches!(w, "Dr" | "Mr"))
 }
 
-/// Whether `text` spells a name from `crates/g2p-en/data/names.json` as a word of its own, which
-/// the port reads in its own language (`docs/divergences.md`, "misaki English: names").
-pub fn has_name(text: &str) -> bool {
+/// How many words of `text` belong to names from `crates/g2p-en/data/names.json` written as words
+/// of their own, which the port reads in their own language (`docs/divergences.md`, "misaki
+/// English: names").
+pub fn name_words(text: &str) -> usize {
     static NAMES: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
     let names = NAMES.get_or_init(|| {
         let map: std::collections::HashMap<String, String> =
@@ -941,10 +942,22 @@ pub fn has_name(text: &str) -> bool {
         map.into_keys().collect()
     });
     let alnum = |c: Option<char>| c.is_some_and(char::is_alphanumeric);
-    names.iter().any(|name| {
-        text.match_indices(name.as_str())
-            .any(|(i, _)| !alnum(text[..i].chars().next_back()) && !alnum(text[i + name.len()..].chars().next()))
-    })
+    names
+        .iter()
+        .map(|name| {
+            let matches = text.match_indices(name.as_str()).filter(|(i, _)| {
+                !alnum(text[..*i].chars().next_back()) && !alnum(text[i + name.len()..].chars().next())
+            });
+            matches.count() * name.split(' ').count()
+        })
+        .sum()
+}
+
+/// Whether two phoneme strings for `text` differ only in as many words as `text` has names' words.
+pub fn differs_only_in_names(text: &str, reference: &str, ours: &str) -> bool {
+    let (a, b): (Vec<&str>, Vec<&str>) = (reference.split(' ').collect(), ours.split(' ').collect());
+    let differing = a.iter().zip(&b).filter(|(x, y)| x != y).count();
+    a.len() == b.len() && differing > 0 && differing <= name_words(text)
 }
 
 /// Why `ours` differs from the reference's normalized text of `input`: the divergences that

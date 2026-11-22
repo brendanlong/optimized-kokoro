@@ -3,7 +3,8 @@
     python3 tools/names/build.py [--cache DIR]
 
 Each source module (SOURCES) gives {spelling: phonemes}. Every word of a multi-word name becomes an entry
-too, and every spelling gets an accent-free twin ("Earendil" for "Eärendil"). A spelling is left out when:
+too, and every spelling gets an accent-free twin ("Earendil" for "Eärendil"). Each single word that's kept
+also gets its plural ("Silmarils"), which goes through the same checks. A spelling is left out when:
 - English already has it: misaki's dictionaries know it in any case ("Region", "Luna", "Turin");
 - it's on exclude.tsv: an English reader could meet it outside the source's world (reviewed by hand from
   the flags flag.py collects in review/);
@@ -78,6 +79,13 @@ def candidates(own):
     return {s: p for s, (p, _) in out.items() if p is not None}
 
 
+def plural(spelling, phonemes):
+    """ "Silmarils", "Balrogs", with misaki's ending; none for names ending in a hissing sound (English writes "-es")."""
+    if " " in spelling or spelling[-1] in "sxzh" or phonemes[-1] in "sz":
+        return None
+    return spelling + "s", phonemes + ("s" if phonemes[-1] in "ptkfθxç" else "z")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--cache", type=Path, default=Path.home() / ".cache/kokoro-names")
@@ -87,21 +95,26 @@ def main():
     names, unreviewed = {}, []
     for source, module in SOURCES.items():
         seen = reviewed(source)
-        for spelling, phonemes in candidates(module.names(args.cache)).items():
+
+        def keep(spelling, phonemes):
             single = " " not in spelling
-            if single and (spelling in english or spelling.lower() in english):
-                continue
-            if spelling in exclude:
-                continue
+            if single and (spelling in english or spelling.lower() in english) or spelling in exclude:
+                return False
             if single and spelling not in seen:
                 unreviewed.append(spelling)
-                continue
+                return False
             bad = set(phonemes) - vocab
             if bad:
                 raise SystemExit(f"{spelling}: {phonemes} has symbols Kokoro doesn't know: {bad}")
             if names.get(spelling, phonemes) != phonemes:
                 raise SystemExit(f"{spelling}: two sources read it differently")
-            names[spelling] = phonemes
+            return True
+
+        kept = {s: p for s, p in candidates(module.names(args.cache)).items() if keep(s, p)}
+        # Plurals of the names that are kept, checked the same way ("Regions" never comes from "Region").
+        plurals = dict(filter(None, (plural(s, p) for s, p in kept.items())))
+        kept.update({s: p for s, p in plurals.items() if s not in kept and keep(s, p)})
+        names.update(kept)
         if unreviewed:
             json.dump(sorted(unreviewed), open(HERE / "review" / f"{source}.todo.json", "w"), ensure_ascii=False, indent=0)
             raise SystemExit(f"{len(unreviewed)} {source} words haven't been checked for other meanings: "

@@ -3,13 +3,14 @@
 //! `[Minas Tirith](/mˈinas tˈiriθ/)` link would, and the lexicon and espeak never see it.
 
 use rustc_hash::{FxHashMap, FxHashSet};
+use unicode_normalization::UnicodeNormalization;
 
 static NAMES: &str = include_str!("../data/names.json");
 
 pub(crate) struct Names {
-    phonemes: FxHashMap<&'static str, &'static str>,
+    phonemes: FxHashMap<Box<str>, &'static str>,
     /// Every way a name can start that ends where a token can: "Minas", "Gil", "Gil-".
-    prefixes: FxHashSet<&'static str>,
+    prefixes: FxHashSet<Box<str>>,
 }
 
 /// Where spaCy may end a token inside a name: before a space, and around hyphens and apostrophes.
@@ -23,17 +24,21 @@ fn token_ends(name: &str) -> impl Iterator<Item = usize> + '_ {
 
 impl Names {
     pub(crate) fn new() -> Self {
-        let phonemes: FxHashMap<&'static str, &'static str> =
+        let names: FxHashMap<&'static str, &'static str> =
             serde_json::from_str(NAMES).expect("bundled names are valid");
+        let mut phonemes = FxHashMap::default();
+        for (name, p) in names {
+            // Text may write an accent as a separate combining mark ("Eärendil" as e, a, U+0308, ...).
+            if !name.is_ascii() {
+                phonemes.entry(name.nfd().collect::<String>().into_boxed_str()).or_insert(p);
+            }
+            phonemes.insert(Box::from(name), p);
+        }
         let mut prefixes = FxHashSet::default();
         for name in phonemes.keys() {
-            prefixes.extend(token_ends(name).map(|i| &name[..i]));
+            prefixes.extend(token_ends(name).map(|i| Box::from(&name[..i])));
         }
         Names { phonemes, prefixes }
-    }
-
-    pub(crate) fn get(&self, name: &str) -> Option<&'static str> {
-        self.phonemes.get(name).copied()
     }
 
     /// The longest name the first `n` tokens spell (each `(text, whitespace after it)`), as `(n, phonemes)`.

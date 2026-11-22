@@ -112,11 +112,6 @@ fn matches_reference() {
                 dropped += 1;
                 continue;
             }
-            // Names are read in their own language (docs/divergences.md, "misaki English: names").
-            if kokoro_reference::divergence::has_name(&call.input) {
-                names += 1;
-                continue;
-            }
             calls += 1;
             let (got, problems) = replay(g2p, call);
             let expected: Vec<Token> = call
@@ -139,6 +134,16 @@ fn matches_reference() {
             tokens_ok += if same_tokens { token_matches } else { 0 };
             let ps = kokoro::tokens_to_ps(&got);
             let ok = problems.is_empty() && same_tokens && token_matches == expected.len() && ps == call.phonemes;
+            // Names are read in their own language (docs/divergences.md, "misaki English: names"); a
+            // multi-word name is one token, so only the phonemes are compared, word by word.
+            if !ok
+                && problems.is_empty()
+                && kokoro_reference::divergence::differs_only_in_names(&call.input, &call.phonemes, &ps)
+            {
+                calls -= 1;
+                names += 1;
+                continue;
+            }
             calls_ok += usize::from(ok);
             if !ok && shown < show_max {
                 shown += 1;
