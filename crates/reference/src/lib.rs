@@ -133,11 +133,16 @@ pub fn all() -> Vec<Record> {
     paths.iter().flat_map(read).collect()
 }
 
-/// The reference's phonemes as the port's tokenizer reads them, in `config.json` symbols: the
-/// symbols the model has ids for, with each stress mark before its vowel. The reference puts a few
-/// before a consonant (a Chinese tone's mark before a syllable's n, m or ŋ), which the tokenizer
-/// moves (docs/divergences.md, "Phonemes: stress marks before a consonant").
+/// The reference's phonemes as the model reads them: the `config.json` symbols it has ids for.
 pub fn canonical(reference: &str) -> String {
+    reference.chars().filter(|&c| kokoro_phonemes::symbol_id(c).is_some()).collect()
+}
+
+/// [`canonical`] with each stress mark moved as the port's tokenizer moves it, to just before the
+/// next vowel. The reference puts a few before a consonant (a Chinese tone's mark before a
+/// syllable's n, m or ŋ), which reads differently (docs/divergences.md, "Phonemes: stress marks
+/// before a consonant"): tests count a record that matches only this way apart.
+pub fn stress_moved(reference: &str) -> String {
     ours(&ipa(reference))
 }
 
@@ -240,6 +245,8 @@ mod tests {
     fn reference_phonemes_as_ipa() {
         assert_eq!(super::ipa("ʧˈIm ˈʌTəɹ ʦa"), "t͡ʃˈa͡ɪm ˈʌt̬əɹ t͡sa");
         assert_eq!(super::ours(&super::ipa("ʧˈIm ˈʌTəɹ ʦa ɫ")), super::canonical("ʧˈIm ˈʌTəɹ ʦa ɫ"));
+        assert_eq!(super::canonical("ˈnixˈau"), "ˈnixˈau");
+        assert_eq!(super::stress_moved("ˈnixˈau"), "nˈixˈau");
         assert_eq!(super::with_ipa_links("[Kokoro](/kˈOkəɹO/) [x](#y)"), "[Kokoro](/kˈo͡ʊkəɹo͡ʊ/) [x](#y)");
     }
 

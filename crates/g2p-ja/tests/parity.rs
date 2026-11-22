@@ -126,11 +126,9 @@ fn jag2p_matches_misaki() {
             let theirs = r["phonemes"].as_str().unwrap();
             // Compared as the model reads them; misaki passes capital letters through, which the
             // reference reads as the symbols some of them are (docs/divergences.md).
-            let (ours, theirs) = (
-                kokoro_reference::ours(&ours),
-                kokoro_reference::canonical(&kokoro_reference::without_capitals(theirs)),
-            );
-            if ours != theirs {
+            let (ours, theirs) = (kokoro_reference::ours(&ours), kokoro_reference::without_capitals(theirs));
+            // Stress marks before a consonant (IPA in the text, passed through) move to the vowel.
+            if ours != kokoro_reference::canonical(&theirs) && ours != kokoro_reference::stress_moved(&theirs) {
                 bad += 1;
                 if bad <= show() {
                     eprintln!("{}: {text:?}\n  ours   {ours:?}\n  theirs {theirs:?}", path.display());
@@ -161,11 +159,9 @@ fn jag2p_matches_misaki_with_the_listed_fixes() {
             let theirs = r["phonemes"].as_str().unwrap_or_else(|| panic!("{text:?}: {}", r["error"]));
             // Compared as the model reads them; misaki passes capital letters through, which the
             // reference reads as the symbols some of them are (docs/divergences.md).
-            let (ours, theirs) = (
-                kokoro_reference::ours(&ours),
-                kokoro_reference::canonical(&kokoro_reference::without_capitals(theirs)),
-            );
-            if ours != theirs {
+            let (ours, theirs) = (kokoro_reference::ours(&ours), kokoro_reference::without_capitals(theirs));
+            // Stress marks before a consonant (IPA in the text, passed through) move to the vowel.
+            if ours != kokoro_reference::canonical(&theirs) && ours != kokoro_reference::stress_moved(&theirs) {
                 bad += 1;
                 if bad <= show() {
                     eprintln!("{}: {text:?}\n  ours   {ours:?}\n  theirs {theirs:?}", path.display());

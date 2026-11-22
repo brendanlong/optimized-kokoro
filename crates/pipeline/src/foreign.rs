@@ -371,6 +371,10 @@ fn mandarin(ps: &str, english: bool) -> String {
                 toned.push('ˈ');
             }
             toned.extend(&chars[start..i]);
+            // A syllable of nasals alone (嗯 n) is written syllabic, so its stress mark stays on it.
+            if tone && chars[start..i].iter().all(|c| "mnŋ".contains(*c)) {
+                toned.push('\u{329}');
+            }
             i += usize::from(tone);
         } else {
             toned.push(chars[i]);
@@ -574,7 +578,7 @@ mod tests {
         assert_eq!(finish(" maɾħaba ʕali ", Language::Script(Script::Arabic), true), "maɾhaba ʔali");
         assert_eq!(finish("pei↓t͡ɕiŋ→", Chinese, true), "bˈeit͡ɕˈiŋ");
         assert_eq!(finish("t͡sʰai↘", Chinese, true), "t͡sˈai");
-        assert_eq!(finish("tʰa→ n↗", Chinese, true), "tˈa ˈn");
+        assert_eq!(finish("tʰa→ n↗", Chinese, true), "tˈa ˈn̩");
         assert_eq!(finish("pei↓", Language::Script(Script::Cyrillic), true), "pei↓");
         assert_eq!(finish("pei↓t͡ɕʰiŋ→", Chinese, false), "pˈeit͡ɕʰˈiŋ");
     }

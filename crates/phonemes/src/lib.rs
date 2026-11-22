@@ -136,11 +136,15 @@ pub const SECONDARY_STRESS: char = 'ˌ';
 const TIE: char = '\u{361}';
 const VOICED: char = '\u{32c}';
 
-const VOWELS: &str = "aeiouyæɐɑɒɔəɚɛɜɤɨɪɯʊʌøœᵊᵻ";
+/// IPA's vowels, those the vocabulary lacks too (Russian ё is ɵ): a stress mark before one stays
+/// with its syllable.
+const VOWELS: &str = "aeiouyæɐɑɒɔəɚɝɛɜɞɘɵɤɨʉɪʏɯʊʌøœɶᵊᵻᵿ";
+/// Marks a consonant as a syllable's nucleus (n̩, m̍): a stress mark stops there too.
+const SYLLABIC: [char; 2] = ['\u{329}', '\u{30d}'];
 
-/// What stops a stress mark looking for its vowel: a space, punctuation or another stress mark.
-fn is_boundary(id: u8) -> bool {
-    id <= 16 || id == 156 || id == 157
+/// What stops a stress mark looking for its vowel: whitespace, punctuation or another stress mark.
+fn is_boundary(c: char, id: Option<u8>) -> bool {
+    c.is_whitespace() || id.is_some_and(|id| id <= 16 || id == 156 || id == 157)
 }
 
 /// Each IPA string's id, sorted for binary search: one letter, or a letter and a mark.
@@ -171,6 +175,7 @@ fn joined(first: char, mark: char, second: Option<char>) -> Option<u8> {
 struct Unit {
     start: usize,
     vowel: bool,
+    boundary: bool,
     id: Option<u8>,
 }
 
@@ -180,15 +185,21 @@ fn units(chars: &[char]) -> (Vec<Unit>, usize) {
     let mut i = 0;
     while i < chars.len() {
         let c = chars[i];
+        let mut vowel = VOWELS.contains(c);
         let (len, id) = match chars.get(i + 1) {
             Some(&TIE) if let Some(id) = chars.get(i + 2).and_then(|&d| joined(c, TIE, Some(d))) => (3, Some(id)),
             Some(&VOICED) if let Some(id) = joined(c, VOICED, None) => (2, Some(id)),
+            // The model has no syllabic mark: it places the stress, and the letter is read.
+            Some(m) if SYLLABIC.contains(m) => {
+                vowel = true;
+                (2, single(c))
+            }
             _ => (1, single(c)),
         };
         if id.is_none() && c != TIE {
             dropped += 1;
         }
-        units.push(Unit { start: i, vowel: VOWELS.contains(c), id });
+        units.push(Unit { start: i, vowel, boundary: is_boundary(c, id), id });
         i += len;
     }
     (units, dropped)
@@ -202,8 +213,8 @@ pub struct Tokens {
     /// written, which is in the same word as where it moves to.
     pub kept: Vec<usize>,
     /// Letters and marks the vocabulary lacks, left out as `KModel` leaves out symbols it doesn't
-    /// know. A tie bar between letters the model has no one symbol for isn't counted: the letters
-    /// are read apart.
+    /// know. Tie bars and syllabic marks aren't counted: the tokenizer reads them (letters tied
+    /// with no one symbol for them are read apart).
     pub dropped: usize,
 }
 
@@ -222,7 +233,7 @@ pub fn tokenize(ipa: &str) -> Tokens {
         let Some(id) = unit.id else { continue };
         if id == 156 || id == 157 {
             let rest = &units[k + 1..];
-            let vowel = rest.iter().position(|u| u.vowel || u.id.is_some_and(is_boundary));
+            let vowel = rest.iter().position(|u| u.vowel || u.boundary);
             if let Some(v) = vowel.filter(|&v| rest[v].vowel && v > 0) {
                 held = Some((k + 1 + v, id));
                 continue;
@@ -300,7 +311,14 @@ mod tests {
         assert_eq!(read("ˈt͡ʃa͡ɪnə"), "ʧˈInə");
         // No vowel before the word ends: the mark stays.
         assert_eq!(read("ˈst ˈa"), "ˈst ˈa");
+        assert_eq!(read("ˈst\u{a0}a"), "ˈsta");
         assert_eq!(read("hˈm."), "hˈm.");
+        // A vowel the vocabulary lacks still holds its syllable's stress (Russian ё).
+        assert_eq!(read("fʲˈɵdʌr"), "fʲˈdʌr");
+        assert_eq!(read("ˈhɝdəl"), "hˈdəl");
+        // So does a syllabic consonant, read without its mark.
+        assert_eq!(read("ˈn̩ðə"), "ˈnðə");
+        assert_eq!(tokenize("ˈn̩").dropped, 0);
     }
 
     #[test]

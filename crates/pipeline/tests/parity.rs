@@ -173,6 +173,7 @@ fn reference_records() {
     let (mut changed, mut unchanged_chunks) = (0, 0);
     let mut by_kind: std::collections::BTreeMap<Kind, usize> = std::collections::BTreeMap::new();
     let mut dropped_abbreviations = 0;
+    let mut stress_moved = 0;
     let mut names = 0;
     let start = Instant::now();
     for record in &records {
@@ -221,15 +222,13 @@ fn reference_records() {
             match divergence::explain(&record.text, &record.normalized, &normalized) {
                 Ok(kinds) => {
                     // Chunks whose text is unchanged must still be read exactly as before.
-                    let reference: HashMap<&str, String> = record
-                        .chunks
-                        .iter()
-                        .map(|c| (c.text.as_str(), kokoro_reference::canonical(&c.phonemes)))
-                        .collect();
+                    let reference: HashMap<&str, &str> =
+                        record.chunks.iter().map(|c| (c.text.as_str(), c.phonemes.as_str())).collect();
                     let placeholders = uses_cjk(record) && !japanese_read;
                     for (text, phonemes) in actual.iter().filter(|_| !placeholders) {
-                        if let Some(expected) = reference.get(text.as_str())
-                            && expected != phonemes
+                        if let Some(&expected) = reference.get(text.as_str())
+                            && kokoro_reference::canonical(expected) != *phonemes
+                            && kokoro_reference::stress_moved(expected) != *phonemes
                             && !divergence::has_dropped_abbreviation(text)
                         {
                             mismatches.push(format!(
@@ -258,7 +257,8 @@ fn reference_records() {
             }
             continue;
         }
-        let expected: Vec<(String, String)> = if uses_cjk(record) && !chinese_with_japanese && !japanese_read {
+        let placeholders = uses_cjk(record) && !chinese_with_japanese && !japanese_read;
+        if placeholders {
             cjk += 1;
             if record.calls.len() != record.chunks.len()
                 || record.calls.iter().zip(&record.chunks).any(|(call, chunk)| call.input != chunk.text)
@@ -266,20 +266,30 @@ fn reference_records() {
                 cjk_skipped += 1;
                 continue;
             }
-            let placeholder = |name: &str| {
-                let ipa = pipeline.phonemize(&format!("{name} text")).unwrap().0;
-                ipa.split(' ').map(kokoro_reference::ours).collect()
-            };
-            record
-                .calls
-                .iter()
-                .map(|c| (c.input.clone(), kokoro_reference::canonical(&with_placeholders(c, placeholder))))
-                .collect()
         } else {
             compared += 1;
             zh += usize::from(record.lang == "z");
             failing += usize::from(record.error.is_some());
-            record.chunks.iter().map(|c| (c.text.clone(), kokoro_reference::canonical(&c.phonemes))).collect()
+        }
+        let placeholder = |name: &str| {
+            let ipa = pipeline.phonemize(&format!("{name} text")).unwrap().0;
+            ipa.split(' ').map(kokoro_reference::ours).collect()
+        };
+        let reference = |form: fn(&str) -> String| -> Vec<(String, String)> {
+            if placeholders {
+                record.calls.iter().map(|c| (c.input.clone(), form(&with_placeholders(c, placeholder)))).collect()
+            } else {
+                record.chunks.iter().map(|c| (c.text.clone(), form(&c.phonemes))).collect()
+            }
+        };
+        // Stress marks the reference put before a consonant move to the vowel (docs/divergences.md,
+        // "Phonemes: stress marks before a consonant"); such a record is compared moved, and counted.
+        let (exact, moved) = (reference(kokoro_reference::canonical), reference(kokoro_reference::stress_moved));
+        let expected = if actual != exact && moved != exact {
+            stress_moved += 1;
+            moved
+        } else {
+            exact
         };
         if error.is_some() == record.error.is_some() && actual == expected {
             if uses_cjk(record) && !chinese_with_japanese && !japanese_read {
@@ -352,7 +362,7 @@ fn reference_records() {
         "normalized differently, by the number reader and symbol pass: {changed} records, whose {unchanged_chunks} chunks with unchanged text match"
     );
     println!(
-        "by kind: {by_kind:?}; {dropped_abbreviations} more read \"dr\" or \"mr\" without misaki's lexicon entry, {names} with names read in their own language"
+        "by kind: {by_kind:?}; {dropped_abbreviations} more read \"dr\" or \"mr\" without misaki's lexicon entry, {names} with names read in their own language; {stress_moved} compared with stress marks moved to their vowel"
     );
     println!("{} records, {chars} characters in {:.2?}", records.len(), elapsed);
     for m in mismatches.iter().take(show) {

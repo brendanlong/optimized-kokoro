@@ -100,6 +100,7 @@ fn matches_reference() {
     let mut numbers = 0;
     let mut dropped = 0;
     let mut names = 0;
+    let mut stress = 0;
     for record in records.iter().filter(|r| r.lang == "a" || r.lang == "b") {
         let g2p = if record.lang == "b" { &gb } else { &us };
         for call in &record.calls {
@@ -117,16 +118,18 @@ fn matches_reference() {
             }
             calls += 1;
             let (got, problems) = replay(g2p, call);
-            let expected: Vec<Token> = call
-                .tokens
-                .iter()
-                .map(|t| Token {
-                    text: t.text.clone(),
-                    tag: t.tag.clone(),
-                    whitespace: t.whitespace.clone(),
-                    phonemes: t.phonemes.as_deref().map(kokoro_reference::canonical),
-                })
-                .collect();
+            let expect = |form: fn(&str) -> String| -> Vec<Token> {
+                call.tokens
+                    .iter()
+                    .map(|t| Token {
+                        text: t.text.clone(),
+                        tag: t.tag.clone(),
+                        whitespace: t.whitespace.clone(),
+                        phonemes: t.phonemes.as_deref().map(form),
+                    })
+                    .collect()
+            };
+            let expected = expect(kokoro_reference::canonical);
             let got_norm: Vec<Token> = got
                 .iter()
                 .map(|t| Token {
@@ -141,6 +144,17 @@ fn matches_reference() {
             let ps = kokoro_reference::ours(&kokoro::tokens_to_ps(&got));
             let reference = kokoro_reference::canonical(&call.phonemes);
             let ok = problems.is_empty() && same_tokens && token_matches == expected.len() && ps == reference;
+            // Stress marks the reference put before a consonant move to the vowel
+            // (docs/divergences.md, "Phonemes: stress marks before a consonant").
+            if !ok
+                && problems.is_empty()
+                && got_norm == expect(kokoro_reference::stress_moved)
+                && ps == kokoro_reference::stress_moved(&call.phonemes)
+            {
+                calls -= 1;
+                stress += 1;
+                continue;
+            }
             // Names are read in their own language (docs/divergences.md, "misaki English: names"); a
             // multi-word name is one token, so only the phonemes are compared, word by word.
             if !ok
@@ -176,7 +190,7 @@ fn matches_reference() {
     }
     let pct = |a: usize, b: usize| 100.0 * a as f64 / b.max(1) as f64;
     println!(
-        "not compared: {numbers} calls with numbers, money or symbols misaki read, {dropped} with \"dr\" or \"mr\" in a case other than \"Dr\" and \"Mr\", {names} with a name from names.json"
+        "not compared: {numbers} calls with numbers, money or symbols misaki read, {dropped} with \"dr\" or \"mr\" in a case other than \"Dr\" and \"Mr\", {names} with a name from names.json, {stress} with stress marks moved to their vowel"
     );
     println!(
         "calls: {calls_ok}/{calls} exact ({:.3}%); tokens: {tokens_ok}/{tokens} exact ({:.3}%)",
