@@ -336,7 +336,9 @@ fn resolve_tokens(tokens: &mut [MToken]) {
 /// separators longer than this read differently (docs/divergences.md).
 const MAX_SPAN: usize = 16;
 
-/// misaki's English `G2P` as kokoro configures it (`version=None`, so `ɾ` and `ʔ` become the English flap `t̬` and `t`).
+/// misaki's English `G2P` as kokoro configures it. With `version=None` kokoro reads misaki's `ɾ` and `ʔ`
+/// as the English flap and `t`; the dictionaries here already say `t̬` and `t`, and a link's IPA is
+/// read as written.
 pub struct G2p {
     lexicon: Lexicon,
     names: names::Names,
@@ -392,13 +394,10 @@ impl G2p {
         let tokens: Vec<Token> = words
             .into_iter()
             .map(|w| {
-                let mut tk = match w {
+                let tk = match w {
                     Word::One(tk) => tk,
                     Word::Many(tks) => merge_tokens(&tks, true),
                 };
-                if let Some(ps) = tk.phonemes.as_mut().filter(|p| p.contains(['ɾ', 'ʔ'])) {
-                    *ps = ps.replace('ɾ', "t̬").replace('ʔ', "t");
-                }
                 out.push_str(tk.phonemes.as_deref().unwrap_or_default());
                 out.push_str(&tk.whitespace);
                 tk.into_token()

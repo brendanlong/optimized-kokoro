@@ -3,8 +3,9 @@
 usage: lexicon_to_ipa.py MISAKI_DATA_DIR OUT_DIR
 
 misaki writes for Kokoro's vocabulary: one letter per sound (A for e͡ɪ, ʧ for t͡ʃ), the American flap
-as ɾ (which kokoro reads as Kokoro's English flap), and stress marks just before the vowel. This
-writes the same sounds as IPA: tie bars for sounds of two letters, t̬ for the flap, and stress marks
+as ɾ and some t's as ʔ (which kokoro's `version=None` makes the English flap and t), and stress marks
+just before the vowel. This writes what kokoro reads as IPA: tie bars for sounds of two letters, t̬
+for the flap, t for ʔ, and stress marks
 at the start of the syllable, taking the longest onset English allows. kokoro-phonemes reads the
 result as the same ids as misaki's, but for 3 entries whose stress mark misaki put before a
 consonant (docs/divergences.md, "Phonemes: stress marks before a consonant"); that was checked
@@ -24,7 +25,7 @@ SHA256 = {
     "gb_silver.json": "48131e2d92ccc41655f4543e87e0f938e71463eb5a54be7f0693bb712ebb6bce",
 }
 
-SYMBOLS = {"A": "e͡ɪ", "I": "a͡ɪ", "O": "o͡ʊ", "Q": "ə͡ʊ", "W": "a͡ʊ", "Y": "ɔ͡ɪ", "ʤ": "d͡ʒ", "ʧ": "t͡ʃ", "ɾ": "t̬"}
+SYMBOLS = {"A": "e͡ɪ", "I": "a͡ɪ", "O": "o͡ʊ", "Q": "ə͡ʊ", "W": "a͡ʊ", "Y": "ɔ͡ɪ", "ʤ": "d͡ʒ", "ʧ": "t͡ʃ", "ɾ": "t̬", "ʔ": "t"}
 VOWELS = set("AIOQWYaeiouæɑɒɔəɛɜɪʊʌᵊᵻ")
 CONSONANTS = set("bdfhjklmnpstvwzðŋɡɹɾʃʒʔθʤʧ")
 STRESS = "ˈˌ"

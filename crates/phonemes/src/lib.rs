@@ -134,6 +134,8 @@ const VOCAB: [(u8, char, &str); 114] = [
 pub const PRIMARY_STRESS: char = 'ˈ';
 pub const SECONDARY_STRESS: char = 'ˌ';
 const TIE: char = '\u{361}';
+/// The tie bar written below the letters, which IPA allows too.
+const TIE_BELOW: char = '\u{35c}';
 const VOICED: char = '\u{32c}';
 
 /// IPA's vowels, those the vocabulary lacks too (Russian ё is ɵ): a stress mark before one stays
@@ -187,7 +189,9 @@ fn units(chars: &[char]) -> (Vec<Unit>, usize) {
         let c = chars[i];
         let mut vowel = VOWELS.contains(c);
         let (len, id) = match chars.get(i + 1) {
-            Some(&TIE) if let Some(id) = chars.get(i + 2).and_then(|&d| joined(c, TIE, Some(d))) => (3, Some(id)),
+            Some(&(TIE | TIE_BELOW)) if let Some(id) = chars.get(i + 2).and_then(|&d| joined(c, TIE, Some(d))) => {
+                (3, Some(id))
+            }
             Some(&VOICED) if let Some(id) = joined(c, VOICED, None) => (2, Some(id)),
             // The model has no syllabic mark: it places the stress, and the letter is read.
             Some(m) if SYLLABIC.contains(m) => {
@@ -196,7 +200,7 @@ fn units(chars: &[char]) -> (Vec<Unit>, usize) {
             }
             _ => (1, single(c)),
         };
-        if id.is_none() && c != TIE {
+        if id.is_none() && c != TIE && c != TIE_BELOW {
             dropped += 1;
         }
         units.push(Unit { start: i, vowel, boundary: is_boundary(c, id), id });
@@ -295,6 +299,8 @@ mod tests {
         assert_eq!(read("ʈ͡ʂʰa↘ŋ"), "ꭧʰa↘ŋ");
         // A tie the model has no symbol for leaves both letters.
         assert_eq!(read("k͡p"), "kp");
+        assert_eq!(read("t͜ʃa͜ɪ"), "ʧI");
+        assert_eq!(tokenize("t͜ʃa͜ɪ").dropped, 0);
     }
 
     #[test]

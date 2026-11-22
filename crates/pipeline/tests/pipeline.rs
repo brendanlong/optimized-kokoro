@@ -100,6 +100,12 @@ fn overrides_and_greek_symbols_unchanged() {
     }
 }
 
+/// A link's IPA reaches the model as written, the Spanish tap and glottal stop included.
+#[test]
+fn links_are_read_as_written() {
+    assert_eq!(phonemize("Say [pero](/ˈpeɾo/) and [uh-oh](/ˈʔʌʔo͜ʊ/)."), "sˈA pˈeɾo ænd ʔˈʌʔO.");
+}
+
 #[test]
 fn cyrillic_uses_russian() {
     assert!(phonemize("Привет").contains(&espeak("ru", "Привет")));

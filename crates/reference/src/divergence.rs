@@ -931,6 +931,15 @@ pub fn has_dropped_abbreviation(text: &str) -> bool {
         .any(|w| (w.eq_ignore_ascii_case("dr") || w.eq_ignore_ascii_case("mr")) && !matches!(w, "Dr" | "Mr"))
 }
 
+/// Whether an English or Chinese record's text has a `[word](/phonemes/)` link with `ɾ` or `ʔ`,
+/// which the reference read as the English flap and t and the port reads as written
+/// (`docs/divergences.md`, "Phonemes: standard IPA").
+pub fn has_link_with_tap_or_glottal_stop(lang: &str, text: &str) -> bool {
+    static LINK: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r"\]\(/[^\)]*[ɾʔ][^\)]*/\)").unwrap());
+    matches!(lang, "a" | "b" | "z") && LINK.is_match(text)
+}
+
 /// The phonemes of each name from `crates/g2p-en/data/names.json` that `text` writes as a word of its
 /// own, which the port reads in their own language (`docs/divergences.md`, "misaki English: names").
 pub fn names_read(text: &str) -> Vec<&'static str> {

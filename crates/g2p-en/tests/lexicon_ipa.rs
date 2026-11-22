@@ -30,8 +30,8 @@ fn every_pronunciation_is_ipa_the_vocabulary_reads() {
         include_str!("../data/names.json"),
     ];
     for (word, ps) in files.into_iter().flat_map(entries) {
-        // Kokoro's one-letter stand-ins, and the flap misaki writes as ɾ for kokoro to make T.
-        assert!(!ps.contains(['A', 'I', 'O', 'Q', 'W', 'Y', 'T', 'ʤ', 'ʧ', 'ɾ']), "{word}: {ps}");
+        // Kokoro's one-letter stand-ins, and the ɾ and ʔ misaki writes for kokoro to read as the flap and t.
+        assert!(!ps.contains(['A', 'I', 'O', 'Q', 'W', 'Y', 'T', 'ʤ', 'ʧ', 'ɾ', 'ʔ']), "{word}: {ps}");
         assert_eq!(kokoro_phonemes::tokenize(&ps).dropped, 0, "{word}: {ps}");
     }
 }
