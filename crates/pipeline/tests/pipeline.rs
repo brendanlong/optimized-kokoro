@@ -104,6 +104,8 @@ fn overrides_and_greek_symbols_unchanged() {
 #[test]
 fn links_are_read_as_written() {
     assert_eq!(phonemize("Say [pero](/ˈpeɾo/) and [uh-oh](/ˈʔʌʔo͜ʊ/)."), "sˈA pˈeɾo ænd ʔˈʌʔO.");
+    // A dot is a syllable break, not a full stop.
+    assert_eq!(phonemize("Pour [water](/ˈwɔ.t̬əɹ/)."), "pˈɔɹ wˈɔTəɹ.");
 }
 
 #[test]

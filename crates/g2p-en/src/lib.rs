@@ -68,7 +68,8 @@ impl std::error::Error for Error {}
 #[derive(Debug, Clone, PartialEq)]
 enum Feature {
     Stress(f64),
-    /// `/phonemes/`, kept with its leading slash as misaki does.
+    /// `/phonemes/`, kept with its leading slash as misaki does, without IPA's syllable breaks (`.`):
+    /// a link is one word's pronunciation, and a full stop can go after it.
     Phonemes(String),
 }
 
@@ -103,7 +104,8 @@ fn parse_feature(f: &str) -> Option<Feature> {
     }
     let n = f.chars().count();
     if n > 1 && f.starts_with('/') && f.ends_with('/') {
-        return Some(Feature::Phonemes(format!("/{}", f[1..].trim_end_matches('/'))));
+        let ipa: String = f[1..].trim_end_matches('/').chars().filter(|&c| c != '.').collect();
+        return Some(Feature::Phonemes(format!("/{ipa}")));
     }
     None
 }
