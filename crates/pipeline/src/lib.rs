@@ -459,32 +459,25 @@ fn word_spans(tokens: &[Token], kept: &[usize]) -> Vec<Word> {
     words
 }
 
-/// The first and last characters of `segment` as read: a link at either end by its text.
-fn spoken_edges(segment: &str) -> (Option<char>, Option<char>) {
-    static LINK: std::sync::LazyLock<regex::Regex> =
-        std::sync::LazyLock::new(|| regex::Regex::new(r"\[([^\]]+)\]\(([^\)]*)\)").expect("valid regex"));
-    let (mut first, mut last) = (segment.chars().next(), segment.chars().next_back());
-    if segment.contains('[') {
-        for m in LINK.captures_iter(segment) {
-            let whole = m.get(0).expect("match");
-            if whole.start() == 0 {
-                first = m[1].chars().next();
-            }
-            if whole.end() == segment.len() {
-                last = m[1].chars().next_back();
-            }
-        }
-    }
-    (first, last)
-}
-
-/// Two runs whose letters meet are still two words: scripts without spaces ("東京Tokyo").
-fn space_where_letters_meet(tokens: &mut [Token], before: char, after: char) {
-    if kokoro_g2p_en::is_alpha(before)
-        && kokoro_g2p_en::is_alpha(after)
-        && let Some(last) = tokens.last_mut().filter(|t| t.whitespace.is_empty())
-    {
-        last.whitespace.push(' ');
+/// Two runs are two words where nothing parts them: scripts written without spaces ("東京Tokyo"),
+/// or punctuation the run's G2P reads as nothing ("昨日は、meeting" in Japanese). So the run whose
+/// first token is `tokens[start]` gets a space before it when it starts with a sound and the
+/// token before ends with one, or with clause punctuation.
+fn part_runs(tokens: &mut [Token], start: usize) {
+    let Some(first) = tokens.get(start).and_then(|t| t.phonemes.as_deref()).and_then(|p| p.chars().next()) else {
+        return;
+    };
+    let Some(before) = tokens[..start]
+        .iter_mut()
+        .rev()
+        .find(|t| t.phonemes.as_deref().is_some_and(|p| !p.is_empty()) || !t.whitespace.is_empty())
+    else {
+        return;
+    };
+    let last = before.phonemes.as_deref().and_then(|p| p.chars().next_back());
+    let sound = |c: char| c.is_alphabetic() || "ˈˌːʰʲ↓→↗↘\u{303}\u{361}".contains(c);
+    if before.whitespace.is_empty() && sound(first) && last.is_some_and(|c| sound(c) || ",;:.!?…".contains(c)) {
+        before.whitespace.push(' ');
     }
 }
 
@@ -689,24 +682,21 @@ impl<'p> Request<'p> {
         let mut i = 0;
         while i < segments.len() {
             let (segment, language) = segments[i];
-            if i > 0
-                && let (Some(a), Some(b)) = (spoken_edges(segments[i - 1].0).1, spoken_edges(segment).0)
-            {
-                space_where_letters_meet(&mut tokens, a, b);
-            }
+            let start = tokens.len();
             i += 1;
             let run = match language {
                 None if lang.english() => {
                     self.english(&mut tokens, segment)?;
+                    part_runs(&mut tokens, start);
                     continue;
                 }
                 Some(Language::English) => {
                     self.english(&mut tokens, &foreign::prepare(segment, Language::English))?;
+                    part_runs(&mut tokens, start);
                     continue;
                 }
                 None => {
                     // misaki reads links in English; elsewhere a link is a run of its own.
-                    let mut previous: Option<char> = None;
                     for piece in link_pieces(segment) {
                         let (text, ps) = match piece {
                             Piece::Text(text) => {
@@ -715,11 +705,9 @@ impl<'p> Request<'p> {
                             }
                             Piece::Phonemes { text, ipa } => (text, ipa),
                         };
-                        if let (Some(a), Some(b)) = (previous, text.chars().next()) {
-                            space_where_letters_meet(&mut tokens, a, b);
-                        }
+                        let start = tokens.len();
                         append_run(&mut tokens, &text, &ps);
-                        previous = text.chars().next_back().or(previous);
+                        part_runs(&mut tokens, start);
                     }
                     continue;
                 }
@@ -729,6 +717,7 @@ impl<'p> Request<'p> {
                         || matches!(language, Language::Script(s) if foreign::in_foreign_py(s));
                     if !ps.is_empty() || reference {
                         append_run(&mut tokens, segment, &ps);
+                        part_runs(&mut tokens, start);
                         continue;
                     }
                     segment.to_owned()
@@ -740,7 +729,6 @@ impl<'p> Request<'p> {
                 }
             };
             let language = language.expect("the pipeline's own runs are read");
-            let start = tokens.len();
             tokens.extend(self.placeholder(language, run)?);
             placeholders.push(start..tokens.len());
         }

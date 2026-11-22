@@ -38,7 +38,8 @@ fn japanese_runs_are_read_by_the_japanese_g2p() {
         ("東京へ行く", "toːkʲoː e ikɯ"),
         // Runs whose letters meet are words of their own.
         ("The wordカナmeans hello.", "ðə wˈɜɹd kana mˈinz həlˈO."),
-        ("東京\u{200d}へ", "dˈʊŋʨˈiŋe"),
+        // Runs are two words even with a joiner between them.
+        ("東京\u{200d}へ", "dˈʊŋʨˈiŋ e"),
     ] {
         assert_eq!(read(&pipeline.phonemize(text).unwrap().0), expected, "{text}");
     }

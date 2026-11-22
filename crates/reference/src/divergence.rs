@@ -950,12 +950,21 @@ pub fn has_link_with_tap_or_glottal_stop(lang: &str, text: &str) -> bool {
 }
 
 /// Whether `text` has a join where the port spaces runs differently from the reference: a letter
-/// of a script other than Latin (or a link) beside others, or whitespace other than single spaces.
+/// of a script other than Latin (or a link) beside others, a digit against a letter (digits are
+/// read by another G2P outside English), an invisible format character, or whitespace other than
+/// single spaces.
 fn joins_runs(text: &str) -> bool {
     let latin = |c: char| matches!(c as u32, 0..=0x24f | 0x1e00..=0x1eff);
-    text.chars().any(|c| c.is_alphabetic() && !latin(c))
+    let chars: Vec<char> = text.chars().collect();
+    chars.iter().any(|&c| c.is_alphabetic() && !latin(c))
         || text.contains("](")
-        || text.chars().any(|c| c.is_whitespace() && c != ' ' && c != '\n')
+        || chars.iter().any(|&c| c.is_whitespace() && c != ' ' && c != '\n')
+        || chars.iter().any(|&c| matches!(c as u32, 0x200b..=0x200f | 0x2060..=0x2064 | 0xfeff))
+        // CJK punctuation and symbols, which other G2Ps read or drop.
+        || chars.iter().any(|&c| matches!(c as u32, 0x2100..=0x214f | 0x3000..=0x303f | 0xff00..=0xffef))
+        || chars
+            .windows(2)
+            .any(|w| w[0].is_numeric() && w[1].is_alphabetic() || w[0].is_alphabetic() && w[1].is_numeric())
         || text.contains("  ")
 }
 
