@@ -31,7 +31,6 @@ fn is_lexicon_char(c: char) -> bool {
 pub(crate) struct LexToken<'a> {
     pub text: &'a str,
     pub tag: &'a str,
-    pub stress: Option<f64>,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -517,7 +516,7 @@ impl Lexicon {
         } else {
             Some(0.5)
         };
-        self.get_word(&word, tk.tag, stress, ctx).map(|ps| apply_stress(&ps, tk.stress))
+        self.get_word(&word, tk.tag, stress, ctx)
     }
 }
 

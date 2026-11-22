@@ -472,7 +472,7 @@ fn a_name_takes_possessive_and_plural_endings() {
 #[test]
 fn names_need_their_exact_spelling_and_lose_to_overrides() {
     let gondor = name("Gondor");
-    for text in ["gondor", "Gondorian", "[Gondor](/ɡˈɑndɔɹ/)", "[Gondor](+2)"] {
+    for text in ["gondor", "Gondorian", "[Gondor](/ɡˈɑndɔɹ/)"] {
         assert!(!phonemize(text).contains(&gondor), "{text}: {}", phonemize(text));
     }
     // "Minas" alone is left out as ambiguous (Minas Gerais); "Minas Tirith" is a name.
@@ -532,11 +532,14 @@ fn names_beside_brackets_contractions_and_other_scripts() {
     assert!(phonemize("我和Galadriel去").contains(&name("Galadriel")));
 }
 
+/// Only `/phonemes/` links are read; any other (misaki's stress links, which the normalizer turns
+/// into words anyway) is its text, split by script like the rest.
 #[test]
-fn a_stress_link_outside_english_is_read_as_its_words() {
+fn a_link_without_phonemes_is_read_as_its_text() {
     let chinese = Pipeline::new(Lang::Chinese).unwrap();
     let ps = read(&chinese.phonemize("你好[hello](+1)世界").unwrap().0);
     assert!(ps.contains("həlˈO"), "{ps}");
+    assert_eq!(phonemize("[read](+2) it"), phonemize("read it"));
 }
 
 #[test]

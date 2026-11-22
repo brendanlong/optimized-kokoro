@@ -65,21 +65,15 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
-#[derive(Debug, Clone, PartialEq)]
-enum Feature {
-    Stress(f64),
-    /// `/phonemes/`, kept with its leading slash as misaki does, without IPA's syllable breaks (`.`):
-    /// a link is one word's pronunciation, and a full stop can go after it.
-    Phonemes(String),
-}
-
 /// `G2P.preprocess`: the text with `[text](feature)` links replaced by their text, its whitespace-separated
-/// words, and each link's feature keyed by the index of its word.
+/// words, and each phoneme link's phonemes keyed by the index of its word. misaki's stress links
+/// (`[word](+1)`) aren't read: the text normalizer reads their numbers as words before G2P, so
+/// they never worked through the server (docs/divergences.md).
 #[derive(Debug, Clone)]
 pub struct Preprocessed {
     pub text: String,
     words: Vec<String>,
-    features: Vec<(usize, Feature)>,
+    features: Vec<(usize, String)>,
 }
 
 fn link_regex() -> &'static regex::Regex {
@@ -91,23 +85,11 @@ fn python_split(s: &str) -> impl Iterator<Item = &str> {
     s.split(text::is_space).filter(|w| !w.is_empty())
 }
 
-fn parse_feature(f: &str) -> Option<Feature> {
-    let unsigned = f.strip_prefix(['-', '+']).unwrap_or(f);
-    if text::is_ascii_digits(unsigned) {
-        let value: f64 = f.trim_end_matches('\n').parse().expect("signed digits");
-        return Some(Feature::Stress(value));
-    }
-    match f {
-        "0.5" | "+0.5" => return Some(Feature::Stress(0.5)),
-        "-0.5" => return Some(Feature::Stress(-0.5)),
-        _ => {}
-    }
-    let n = f.chars().count();
-    if n > 1 && f.starts_with('/') && f.ends_with('/') {
-        let ipa: String = f[1..].trim_end_matches('/').chars().filter(|&c| c != '.').collect();
-        return Some(Feature::Phonemes(format!("/{ipa}")));
-    }
-    None
+/// A link's phonemes, for `/phonemes/` (without IPA's syllable breaks: a link is one word's
+/// pronunciation, and a full stop can go after it).
+pub fn link_phonemes(feature: &str) -> Option<String> {
+    (feature.chars().count() > 1 && feature.starts_with('/') && feature.ends_with('/'))
+        .then(|| feature[1..].trim_end_matches('/').chars().filter(|&c| c != '.').collect())
 }
 
 impl Preprocessed {
@@ -122,7 +104,7 @@ impl Preprocessed {
             let before = &text[last_end..whole.start()];
             out.push_str(before);
             words.extend(python_split(before).map(str::to_string));
-            if let Some(f) = parse_feature(&m[2]) {
+            if let Some(f) = link_phonemes(&m[2]) {
                 features.push((words.len(), f));
             }
             out.push_str(&m[1]);
@@ -144,13 +126,12 @@ struct MToken {
     whitespace: String,
     phonemes: Option<String>,
     is_head: bool,
-    stress: Option<f64>,
     prespace: bool,
 }
 
 impl MToken {
     fn lex(&self) -> LexToken<'_> {
-        LexToken { text: &self.text, tag: &self.tag, stress: self.stress }
+        LexToken { text: &self.text, tag: &self.tag }
     }
 
     fn into_token(self) -> Token {
@@ -177,12 +158,6 @@ fn push_phonemes(ps: &mut String, tk: &MToken) {
 fn merge_tokens(tokens: &[MToken], join_phonemes: bool) -> MToken {
     let first = &tokens[0];
     let last = tokens.last().expect("non-empty");
-    let mut stresses: Vec<f64> = Vec::new();
-    for s in tokens.iter().filter_map(|t| t.stress) {
-        if !stresses.contains(&s) {
-            stresses.push(s);
-        }
-    }
     let phonemes = join_phonemes.then(|| {
         let mut ps = String::new();
         for tk in tokens {
@@ -211,7 +186,6 @@ fn merge_tokens(tokens: &[MToken], join_phonemes: bool) -> MToken {
         whitespace: last.whitespace.clone(),
         phonemes,
         is_head: first.is_head,
-        stress: if stresses.len() == 1 { Some(stresses[0]) } else { None },
         prespace: first.prespace,
     }
 }
@@ -470,7 +444,6 @@ impl G2p {
                 whitespace: t.whitespace,
                 phonemes: None,
                 is_head: true,
-                stress: None,
                 prespace: false,
             })
             .collect();
@@ -486,26 +459,19 @@ impl G2p {
         for (k, v) in &pre.features {
             for (i, &j) in positions.get(*k).into_iter().flatten().enumerate() {
                 let Some(tk) = tokens.get_mut(j) else { continue };
-                match v {
-                    Feature::Stress(s) => tk.stress = Some(*s),
-                    Feature::Phonemes(p) => {
-                        tk.is_head = i == 0;
-                        tk.phonemes = Some(if i == 0 { p.trim_start_matches('/').to_string() } else { String::new() });
-                    }
-                }
+                tk.is_head = i == 0;
+                tk.phonemes = Some(if i == 0 { v.clone() } else { String::new() });
             }
         }
         Ok(tokens)
     }
 
-    /// `text` with each link misaki doesn't read as phonemes or stress (`[Sauron](foo)`) written as
-    /// its text, as misaki reads it; with `stress` false, stress links too (`[word](+1)`), for G2Ps
-    /// that don't take stress, so their text is split by script and read like any other.
-    pub fn plain_links(text: &str, stress: bool) -> std::borrow::Cow<'_, str> {
-        link_regex().replace_all(text, |m: &regex::Captures| match parse_feature(&m[2]) {
-            Some(Feature::Phonemes(_)) => m[0].to_owned(),
-            Some(Feature::Stress(_)) if stress => m[0].to_owned(),
-            _ => m[1].to_owned(),
+    /// `text` with each link that isn't a `/phonemes/` link (`[Sauron](foo)`) written as its text,
+    /// as misaki reads it, so the text is split by script and read like any other.
+    pub fn plain_links(text: &str) -> std::borrow::Cow<'_, str> {
+        link_regex().replace_all(text, |m: &regex::Captures| match link_phonemes(&m[2]) {
+            Some(_) => m[0].to_owned(),
+            None => m[1].to_owned(),
         })
     }
 
@@ -544,10 +510,6 @@ impl G2p {
             acc.text.push_str(&acc.whitespace);
             acc.text.push_str(&tk.text);
             acc.whitespace = tk.whitespace;
-            acc.stress = match (acc.stress, tk.stress) {
-                (Some(a), Some(b)) if a != b => None,
-                (a, b) => a.or(b),
-            };
         }
         result
     }
@@ -565,7 +527,6 @@ fn retokenize(tokens: Vec<MToken>) -> Result<Vec<Word>, Error> {
                     whitespace: String::new(),
                     phonemes: None,
                     is_head: true,
-                    stress: token.stress,
                     prespace: false,
                 })
                 .collect()

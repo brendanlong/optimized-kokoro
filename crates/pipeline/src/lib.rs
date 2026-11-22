@@ -495,8 +495,7 @@ enum Piece {
 }
 
 /// `segment` cut at its links, each read as its phonemes (misaki's `/phonemes/`, IPA's syllable
-/// breaks left out). Outside English every other link is plain text already
-/// ([`G2p::plain_links`]).
+/// breaks left out). Every other link is plain text already ([`G2p::plain_links`]).
 fn link_pieces(segment: &str) -> Vec<Piece> {
     static LINK: std::sync::LazyLock<regex::Regex> =
         std::sync::LazyLock::new(|| regex::Regex::new(r"\[([^\]]+)\]\(([^\)]*)\)").expect("valid regex"));
@@ -507,15 +506,14 @@ fn link_pieces(segment: &str) -> Vec<Piece> {
         let whole = m.get(0).expect("match");
         text.push_str(&segment[last..whole.start()]);
         last = whole.end();
-        let feature = &m[2];
-        if feature.chars().count() > 1 && feature.starts_with('/') && feature.ends_with('/') {
-            if !text.is_empty() {
-                pieces.push(Piece::Text(std::mem::take(&mut text)));
+        match kokoro_g2p_en::link_phonemes(&m[2]) {
+            Some(ipa) => {
+                if !text.is_empty() {
+                    pieces.push(Piece::Text(std::mem::take(&mut text)));
+                }
+                pieces.push(Piece::Phonemes { text: m[1].to_owned(), ipa });
             }
-            let ipa = feature[1..].trim_end_matches('/').chars().filter(|&c| c != '.').collect();
-            pieces.push(Piece::Phonemes { text: m[1].to_owned(), ipa });
-        } else {
-            text.push_str(&m[1]);
+            None => text.push_str(&m[1]),
         }
     }
     text.push_str(&segment[last..]);
@@ -682,7 +680,7 @@ impl<'p> Request<'p> {
             foreign::Native::Espeak(Script::Latin) => lang.espeak_voice().and_then(|v| v.get(..2)).unwrap_or("en"),
             _ => "en",
         };
-        let graphemes = G2p::plain_links(&graphemes, lang.english());
+        let graphemes = G2p::plain_links(&graphemes);
         let graphemes = self.pipeline.g2p.link_names(&graphemes, latin);
         let mut tokens: Vec<Token> = Vec::new();
         let mut placeholders = Vec::new();

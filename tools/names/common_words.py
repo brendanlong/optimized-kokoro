@@ -3,8 +3,8 @@ candidates for exclude_languages.tsv (names a pipeline doesn't read as names).
 
     uv run --with wordfreq==3.1.1 tools/names/common_words.py > tools/names/review/common_words.tsv
 
-A candidate is a single-word name whose lowercase form is used at least once per million words
-(zipf >= 3) in wordfreq's list for the language. wordfreq counts names too, so Tolkien's best-known
+A candidate is a single-word name whose lowercase form is used at least once per hundred million words
+(zipf >= 2) in wordfreq's list for the language. wordfreq counts names too, so Tolkien's best-known
 names (Mordor, Sauron) are candidates for their own fame; exclude_languages.tsv is the reviewed list.
 """
 
@@ -15,7 +15,7 @@ from wordfreq import zipf_frequency
 
 ROOT = Path(__file__).resolve().parents[2]
 LANGUAGES = ["es", "fr", "it", "pt"]
-ZIPF = 3.0
+ZIPF = 2.0
 
 
 def main():

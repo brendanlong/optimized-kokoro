@@ -75,12 +75,6 @@ pub fn re_digit(c: char) -> bool {
     if c.is_ascii() { c.is_ascii_digit() } else { in_table(c, RE_DIGIT) }
 }
 
-/// `re.match(r'^[0-9]+$', s)`; `$` also matches before a final newline.
-pub fn is_ascii_digits(s: &str) -> bool {
-    let s = s.strip_suffix('\n').unwrap_or(s);
-    !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit())
-}
-
 /// Applies `f` to the runs of `s` between characters `keep` selects, which are copied unchanged.
 /// Rust's case and normalization tables follow a newer Unicode version than the reference Python, which
 /// leaves characters it doesn't know (and a few whose case pairs are newer) alone.
@@ -169,7 +163,6 @@ mod tests {
         assert!(!str_is_alpha(""));
         assert!(is_space('\x1c') && is_space('\u{3000}') && !is_space('\u{200b}'));
         assert!(re_upper('É') && re_lower('é') && !re_upper('ǅ') && re_letter('ǅ'));
-        assert!(is_ascii_digits("12\n") && !is_ascii_digits("\n") && !is_ascii_digits("1a"));
         assert!(is_upper("ÉCOLE") && is_lower("1-2") && is_upper("1-2"));
         assert_eq!(upper("ɤé"), "ɤÉ");
         assert_eq!(nfkc("\u{1ccd6}ﬁ"), "\u{1ccd6}fi");
