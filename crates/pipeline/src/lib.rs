@@ -837,6 +837,9 @@ impl<'p> Request<'p> {
 /// and misaki reads its pieces as quotes. The rest of the text is unchanged: NFC would rewrite
 /// Devanagari's composition exclusions (U+0958 "क़" as "क" + U+093C).
 fn compose_latin(text: &str) -> std::borrow::Cow<'_, str> {
+    if !text.chars().any(is_combining_mark) {
+        return text.into();
+    }
     let is_latin = |c: char| std::iter::once(c).nfd().next().is_some_and(|b| b.is_alphabetic() && b <= '\u{24f}');
     let mut chars = text.char_indices().peekable();
     let mut out = String::new();
