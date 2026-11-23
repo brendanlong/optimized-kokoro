@@ -364,6 +364,7 @@ mod tests {
         }
         let mut russian = Backend::new("ru", data.clone()).unwrap();
         assert_eq!(russian.letters_espeak_names("\u{438}\u{300} \u{45d} Йорк"), "и и Йорк");
+        assert_eq!(russian.letters_espeak_names("ư Ư"), "u U");
         let mut hebrew = Backend::new("he", data.clone()).unwrap();
         assert_eq!(hebrew.letters_espeak_names("\u{fb31}\u{5d9}\u{5ea}"), "\u{5d1}\u{5d9}\u{5ea}");
         let mut hindi = Backend::new("hi", data).unwrap();

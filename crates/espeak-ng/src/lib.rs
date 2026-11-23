@@ -127,17 +127,27 @@ impl Espeak {
     }
 
     /// Whether the voice has a name for `letter`, as `TranslateLetter` reads it when spelling a
-    /// word: no for a letter it reads as "letter" and its code point ("ễ" in every voice).
+    /// word, in the language it switches to for the letter if it does: no for a letter it reads
+    /// as "letter" and its code point ("ễ" in every voice, "ư" in Russian, which switches to
+    /// English for it).
     pub fn names_letter(&mut self, letter: char) -> bool {
         self.start_call();
-        self.read_code_point = false;
         let mut word = [0u8; 8];
         word[0] = b' ';
         let len = letter.encode_utf8(&mut word[1..]).len();
         word[1 + len] = b' ';
-        let mut phonemes = [0u8; crate::defs::N_WORD_PHONEMES];
-        self.translate_letter(engine::Tr::Main, &word, 1, &mut phonemes, 0);
-        !self.read_code_point
+        let mut tr = Tr::Main;
+        loop {
+            self.read_code_point = false;
+            let mut phonemes = [0u8; defs::N_WORD_PHONEMES];
+            self.translate_letter(tr, &word, 1, &mut phonemes, 0);
+            if phonemes[0] != defs::PHON_SWITCH || tr == Tr::Third {
+                return !self.read_code_point;
+            }
+            let language = common::cstr(&phonemes, 1).to_vec();
+            self.set_translator3(&language);
+            tr = Tr::Third;
+        }
     }
 
     /// Puts the state back to the one after `espeak_SetVoiceByName` if a call has used it.
