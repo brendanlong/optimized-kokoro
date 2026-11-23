@@ -5,7 +5,8 @@
 Each source module (SOURCES) has names(cache, english) -> {spelling: (phonemes, countable)}: the spellings
 the source attests, where english is the set of words misaki's dictionaries have (as written and
 lowercase) and countable says whether the name takes a plural (Silmaril and Balrog do; Celebrimbor and
-Gondor don't). Each countable name also gets its plural ("Silmarils"). A spelling is left out when:
+Gondor don't). A spelling with phonemes None is attested but isn't the name ("Nguyen" beside "Nguyễn", real.py).
+Each countable name also gets its plural ("Silmarils"). A spelling is left out when:
 - English already has it: misaki's dictionaries know it in any case ("Region", "Luna"), unless override.tsv
   says misaki's entry is only its guess at the name ("Thrain");
 - it's on exclude.tsv: an English reader could meet it outside the source's world (reviewed by hand from
@@ -28,6 +29,7 @@ from pathlib import Path
 
 import dwarves
 import orkish
+import real
 import rohan
 import tolkien
 from spelling import accents_within, fold, marks
@@ -37,7 +39,7 @@ HERE = Path(__file__).resolve().parent
 OUT = ROOT / "crates/g2p-en/data/names.json"
 # Names each espeak pipeline that reads Latin text as its own language skips: common words there.
 OUT_SKIP = ROOT / "crates/g2p-en/data/names_skip.json"
-SOURCES = {"tolkien": tolkien, "dwarves": dwarves, "rohan": rohan, "orkish": orkish}
+SOURCES = {"tolkien": tolkien, "dwarves": dwarves, "rohan": rohan, "orkish": orkish, "real": real}
 VOCAB_RS = ROOT / "crates/phonemes/src/lib.rs"
 
 
@@ -113,6 +115,8 @@ def main():
         seen = reviewed(source)
 
         def keep(spelling, phonemes):
+            if phonemes is None:
+                return False
             single = " " not in spelling
             if single and (spelling in english or spelling.lower() in english) or spelling in exclude:
                 return False
