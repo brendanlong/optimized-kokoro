@@ -6,7 +6,7 @@
 use crate::numbers::{self, cardinal};
 use crate::py;
 use crate::pyre::{Captures, Pattern, compile, compile_i};
-use crate::{footnotes, roman, scan, symbols};
+use crate::{capitals, footnotes, roman, scan, symbols};
 use std::ops::Range;
 use std::sync::LazyLock;
 
@@ -124,10 +124,25 @@ fn pass_order(options: &Options) -> Vec<(&'static str, Pass)> {
     all.into_iter().filter(|(_, on, _)| *on).map(|(name, _, pass)| (name, pass)).collect()
 }
 
-/// `EnglishNormalizer().normalize(text, options)`.
+/// `EnglishNormalizer().normalize(text, options)`, but for text in capitals, which is normalized
+/// a run at a time and written in capitals ("DR. WHO AT 5" as "DOCTOR WHO AT FIVE"), so the words
+/// the passes write don't make it look like text in lowercase to the G2P (`capitals.rs`).
 pub fn english(text: &str, options: &Options) -> String {
     let p = &*PATTERNS;
-    pass_order(options).into_iter().fold(text.to_owned(), |text, (_, pass)| pass(p, &text))
+    let passes = pass_order(options);
+    let normalize = |text: &str| passes.iter().fold(text.to_owned(), |text, (_, pass)| pass(p, &text));
+    let mut out = String::with_capacity(text.len());
+    let mut copied = 0;
+    for run in capitals::runs(text) {
+        out.push_str(&normalize(&text[copied..run.start]));
+        out.push_str(&normalize(&text[run.clone()]).to_uppercase());
+        copied = run.end;
+    }
+    if copied == 0 {
+        return normalize(text);
+    }
+    out.push_str(&normalize(&text[copied..]));
+    out
 }
 
 /// Each enabled pass of [`english`] on its own, by name, for timing tests.
@@ -289,10 +304,15 @@ mod tests {
     }
 
     #[test]
-    fn roman_numerals_in_capitals() {
+    fn text_in_capitals_is_written_in_capitals() {
         let n = |t: &str| english(t, &Options::default());
         assert_eq!(n("BOOK I. (Folio), CHAPTER XXXV."), "BOOK one. (Folio), CHAPTER thirty-five.");
-        assert_eq!(n("WORLD WAR II"), "WORLD WAR two");
+        assert_eq!(n("CHAPTER XXXV. THE END."), "CHAPTER THIRTY-FIVE. THE END.");
+        assert_eq!(n("WORLD WAR II"), "WORLD WAR TWO");
+        assert_eq!(
+            n("DR. WATSON MET HOLMES IN 1812. He left at 5."),
+            "DOCTOR WATSON MET HOLMES IN EIGHTEEN TWELVE. He left at five."
+        );
         assert_eq!(n("Henry VIII's wives and an IV drip"), "Henry eight's wives and an IV drip");
     }
 
@@ -306,6 +326,7 @@ mod tests {
                 "Doctor Who on Mulholland Drive and Saint Louis on Main Street.",
             ),
             ("DR. SMITH and MR. JONES", "Doctor SMITH and Mister JONES"),
+            ("DR. SMITH AND MR. JONES", "DOCTOR SMITH AND MISTER JONES"),
             (
                 "No. 5 in Dec. 2025, see pp. 230-232",
                 "Number five in December twenty twenty-five, see pages two hundred and thirty to two hundred and thirty-two",

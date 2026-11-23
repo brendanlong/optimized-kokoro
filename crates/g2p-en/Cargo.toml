@@ -9,6 +9,7 @@ license = "Apache-2.0"
 publish = false
 
 [dependencies]
+kokoro-text = { path = "../text" }
 regex = "1"
 rustc-hash = "2"
 serde.workspace = true

@@ -12,6 +12,7 @@ mod subtokenize;
 mod text;
 mod unicode_tables;
 
+use kokoro_text::capitals::{self, words};
 use lexicon::{LexToken, Lexicon, TokenContext, is_consonant, is_vowel};
 use std::borrow::Cow;
 use std::fmt;
@@ -307,58 +308,9 @@ fn resolve_tokens(tokens: &mut [MToken]) {
     }
 }
 
-fn is_word_char(c: char) -> bool {
-    c.is_alphabetic() || c == '\'' || c == '’' || unicode_normalization::char::is_combining_mark(c)
-}
-
-/// `text` in words and what is between them, in order. A hyphen or dot between letters joins them,
-/// so a compound or a spelled-out acronym is one word ("WELL-KNOWN", "S-H-A-D-E").
-fn words(text: &str) -> impl Iterator<Item = (&str, bool)> {
-    let mut rest = text;
-    std::iter::from_fn(move || {
-        let first = rest.chars().next()?;
-        let word = is_word_char(first);
-        let mut end = first.len_utf8();
-        let mut chars = rest[end..].chars().peekable();
-        while let Some(c) = chars.next() {
-            let joins = word && "-.".contains(c) && chars.peek().is_some_and(|&n| n.is_alphabetic());
-            if is_word_char(c) != word && !joins {
-                break;
-            }
-            end += c.len_utf8();
-        }
-        let (piece, after) = rest.split_at(end);
-        rest = after;
-        Some((piece, word))
-    })
-}
-
 fn one_char(mut chars: impl Iterator<Item = char>) -> Option<char> {
     let c = chars.next()?;
     chars.next().is_none().then_some(c)
-}
-
-/// The sentences of `text`: each ends at a line break, or at whitespace after `.`, `!`, `?` or `…`
-/// and any closing quotes or brackets.
-fn sentences(text: &str) -> impl Iterator<Item = std::ops::Range<usize>> + '_ {
-    let mut start = 0;
-    let mut ended = false;
-    let mut chars = text.char_indices();
-    std::iter::from_fn(move || {
-        for (i, c) in chars.by_ref() {
-            if c == '\n' || ended && text::is_space(c) {
-                let end = i + c.len_utf8();
-                ended = false;
-                return Some(std::mem::replace(&mut start, end)..end);
-            }
-            if ".!?…".contains(c) {
-                ended = true;
-            } else if !"\"'”’)]»".contains(c) {
-                ended = false;
-            }
-        }
-        (start < text.len()).then(|| std::mem::replace(&mut start, text.len())..text.len())
-    })
 }
 
 /// Puts back the case of `original` that [`G2p::sentence_case`] changed in `cased`.
@@ -411,35 +363,16 @@ impl G2p {
         Ok((ps, tokens))
     }
 
-    /// `text` with each sentence written all in capitals cased the way English usually is:
-    /// lowercase but for its first letter, "I", and the short words in ASCII capitals that no
-    /// dictionary has, which are acronyms. spaCy's tagger and misaki's lexicon both read case as a clue (a
-    /// capital starts a sentence or a name, and stresses a word), which capitals everywhere don't
-    /// give. It takes two words of two capitals or more, in a run of sentences without lowercase:
-    /// one alone, like "OK" or "NASA.", is an acronym as much as a sentence. Each character keeps its place,
-    /// so tokens map back to the text.
+    /// `text` with each sentence written in capitals ([`capitals::sentences_in_capitals`]) cased
+    /// the way English usually is: lowercase but for its first letter, "I", and the short words in
+    /// ASCII capitals that no dictionary has, which are acronyms. spaCy's tagger and misaki's
+    /// lexicon both read case as a clue (a capital starts a sentence or a name, and stresses a
+    /// word), which capitals everywhere don't give. Each character keeps its place, so tokens map
+    /// back to the text.
     pub fn sentence_case<'t>(&self, text: &'t str) -> Cow<'t, str> {
-        let mut previous = false;
-        let two_capitals = text.chars().any(|c| std::mem::replace(&mut previous, c.is_uppercase()) && previous);
-        if !two_capitals {
-            return Cow::Borrowed(text);
-        }
-        let mut runs: Vec<(Vec<std::ops::Range<usize>>, usize)> = vec![(Vec::new(), 0)];
-        for range in sentences(text) {
-            let sentence = &text[range.clone()];
-            if sentence.chars().any(char::is_lowercase) {
-                runs.push((Vec::new(), 0));
-                continue;
-            }
-            let (run, capitals) = runs.last_mut().expect("never empty");
-            *capitals += words(sentence)
-                .filter(|&(w, word)| word && w.chars().filter(|c| c.is_uppercase()).nth(1).is_some())
-                .count();
-            run.push(range);
-        }
         let mut out = String::new();
         let mut copied = 0;
-        for range in runs.into_iter().filter(|(_, capitals)| *capitals >= 2).flat_map(|(run, _)| run) {
+        for range in capitals::sentences_in_capitals(text) {
             out.push_str(&text[copied..range.start]);
             self.recase(&text[range.clone()], &mut out);
             copied = range.end;

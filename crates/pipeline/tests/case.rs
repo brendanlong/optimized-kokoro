@@ -4,10 +4,8 @@
 //! Machine, Pride and Prejudice, The Adventures of Sherlock Holmes, Frankenstein), written by
 //! `reference/case_sentences.py`.
 //!
-//! The score is the share of words read alike, word by word in order. The misses left are mostly
-//! abbreviations the normalizer reads in full only before a word ("MR." and "ST." at a sentence's
-//! end), short words no dictionary has, spelled out as acronyms ("DE" in "Miss de Bourgh"), and
-//! the light stress of a capital after "!" or "?".
+//! The score is the share of words read alike, word by word in order. The few misses left are
+//! the light stress of a capital after "!" or "?", which isn't always a sentence's start.
 
 use kokoro_pipeline::{Lang, Pipeline};
 
@@ -38,7 +36,7 @@ fn capitals_read_as_normal_case() {
     let pipeline = Pipeline::new(Lang::AmericanEnglish).unwrap();
     let (mut words, mut same) = (0, 0);
     let mut differ = Vec::new();
-    for sentence in include_str!("case_sentences.txt").lines() {
+    for sentence in include_str!("case_sentences.txt").lines().chain(NUMBERS) {
         let (normal, capitals) = (read(&pipeline, sentence), read(&pipeline, &sentence.to_uppercase()));
         let k = kept(&normal, &capitals);
         words += normal.len();
@@ -55,5 +53,16 @@ fn capitals_read_as_normal_case() {
     assert!(share >= TARGET, "{:.1}% of words read alike, below {:.1}%", 100.0 * share, 100.0 * TARGET);
 }
 
-/// main read 72.8% alike, before the caps pass was replaced (issue #69).
-const TARGET: f64 = 0.99;
+/// Sentences with what the normalizer writes words for, which the books hardly have: numbers,
+/// money, times, percentages and abbreviations.
+const NUMBERS: [&str; 6] = [
+    "Dr. Watson met Holmes in 1812.",
+    "Mr. Bennet paid $5 for 3 books at 10:30 in the morning.",
+    "The 2nd edition sold 40% more copies than the first.",
+    "St. Louis is 300 miles from Chicago, and the trip takes 5 hours.",
+    "In 1999, Mrs. Hudson rented the rooms for £12 a week.",
+    "Chapter XXXV begins on page 412 of the 1818 edition.",
+];
+
+/// main read 73.4% alike, before the caps pass was replaced (issue #69); this reads 99.96%.
+const TARGET: f64 = 0.995;

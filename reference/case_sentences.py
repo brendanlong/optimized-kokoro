@@ -4,8 +4,9 @@ public-domain Project Gutenberg books, for the case test (crates/pipeline/tests/
     python3 reference/case_sentences.py
 
 The books come from the gutenberg.pglaf.org mirror (www.gutenberg.org refuses scripts). A sentence is
-kept if it has 6 to 35 words, is ASCII without digits, underscores, brackets or asterisks, starts with
-a capital, ends with ".", "!" or "?", and isn't already in capitals.
+kept if it has 6 to 35 words, is ASCII without underscores, brackets or asterisks, starts with a
+capital, ends with ".", "!" or "?", and isn't already in capitals. Sentences end at ".", "!" or "?" and
+whitespace, but not after "Mr.", "Mrs.", "Dr." or "St.".
 """
 
 import random
@@ -26,11 +27,12 @@ def sentences(text):
     start = re.search(r"\*\*\* START OF .*?\*\*\*", text, re.S)
     end = re.search(r"\*\*\* END OF .*?\*\*\*", text, re.S)
     for paragraph in re.split(r"\r?\n\s*\r?\n", text[start.end() : end.start()]):
-        for sentence in re.split(r'(?<=[.!?])\s+(?=[A-Z"“])', " ".join(paragraph.split())):
+        ends = r'(?<=[.!?])(?<!\bMr\.)(?<!\bMrs\.)(?<!\bDr\.)(?<!\bSt\.)\s+(?=[A-Z"“])'
+        for sentence in re.split(ends, " ".join(paragraph.split())):
             if (
                 6 <= len(sentence.split()) <= 35
                 and sentence.isascii()
-                and not re.search(r"[0-9_\[\]*]", sentence)
+                and not re.search(r"[_\[\]*]", sentence)
                 and sentence[0].isupper()
                 and sentence[-1] in ".!?"
                 and sentence.upper() != sentence
