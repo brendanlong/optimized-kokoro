@@ -26,6 +26,7 @@ import unicodedata
 from pathlib import Path
 
 import tolkien
+from spelling import accents_within, fold, marks
 
 ROOT = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
@@ -38,11 +39,6 @@ VOCAB_RS = ROOT / "crates/phonemes/src/lib.rs"
 
 def strip_accents(s):
     return unicodedata.normalize("NFC", "".join(c for c in unicodedata.normalize("NFD", s) if not unicodedata.combining(c)))
-
-
-def fold(s):
-    """A spelling as the G2P keys it: lowercase, without accents."""
-    return strip_accents(s).lower()
 
 
 def english_words():
@@ -139,7 +135,9 @@ def main():
                 by_key[fold(s)][s] = None
         for spellings in by_key.values():
             if len(set(spellings.values())) == 1:
-                spellings = dict([min(spellings.items(), key=lambda e: (strip_accents(e[0]) == e[0], e[0]))])
+                # A spelling the G2P finds through another ("Earendil" through "Eärendil") isn't needed.
+                covered = lambda s: any(t != s and marks(t) > marks(s) and accents_within(s, t) for t in spellings)
+                spellings = {s: p for s, p in spellings.items() if not covered(s)}
             names.update(spellings)
         if unreviewed:
             json.dump(sorted(unreviewed), open(HERE / "review" / f"{source}.todo.json", "w"), ensure_ascii=False, indent=0)

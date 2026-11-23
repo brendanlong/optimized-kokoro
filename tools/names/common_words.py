@@ -14,6 +14,7 @@ import json
 import unicodedata
 from pathlib import Path
 
+from spelling import accents_within, fold
 from wordfreq import iter_wordlist, zipf_frequency
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -21,24 +22,16 @@ LANGUAGES = ["es", "fr", "it", "pt"]
 ZIPF = 2.0
 
 
-def clusters(s):
-    """Each letter, lowercase, with its accents."""
-    out = []
-    for c in unicodedata.normalize("NFD", s):
-        if unicodedata.category(c).startswith("M") and out:
-            out[-1][1].append(c)
-        else:
-            out.append([c.lower(), []])
-    return out
-
-
-def fold(s):
-    return "".join(letter for letter, _ in clusters(s))
-
-
-def accents_within(word, name):
-    a, b = clusters(word), clusters(name)
-    return len(a) == len(b) and all(x[0] == y[0] and (not x[1] or x[1] == y[1]) for x, y in zip(a, b))
+def resolve(names, written):
+    """The name `written` reads as, as names.rs `resolve` picks it: the one spelled so, else the reading
+    the names spelled so in another case share, else the one every name whose accents it keeps shares."""
+    written = unicodedata.normalize("NFC", written)
+    for name, phonemes in names:
+        if name == written:
+            return phonemes and name
+    found = [(n, p) for n, p in names if n.lower() == written.lower()]
+    found = found or [(n, p) for n, p in names if accents_within(written, n)]
+    return found and len({p for _, p in found}) == 1 and found[0][1] and found[0][0]
 
 
 def main():
@@ -53,9 +46,9 @@ def main():
             zipf = zipf_frequency(word, lang)
             if zipf < ZIPF:
                 break
-            found = [(n, p) for n, p in by_key.get(fold(word), []) if accents_within(word, n)]
-            if found and len({p for _, p in found}) == 1 and found[0][1]:
-                print(f"{lang}\t{word}\t{found[0][0]}\t{zipf:.2f}")
+            name = resolve(by_key.get(fold(word), []), word)
+            if name:
+                print(f"{lang}\t{word}\t{name}\t{zipf:.2f}")
 
 
 if __name__ == "__main__":

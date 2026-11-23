@@ -15,6 +15,7 @@ es	aros	Aros	3.33
 es	moria	Moria	3.22
 es	sil	Sil	3.21
 es	mordor	Mordor	3.18
+es	vana	Vana	3.03
 es	rían	Rían	2.99
 es	arda	Arda	2.98
 es	atan	Atan	2.96
@@ -23,9 +24,11 @@ es	rohan	Rohan	2.94
 es	vai	Vai	2.93
 es	elda	Elda	2.90
 es	sauron	Sauron	2.88
+es	idh	Idh	2.84
 es	taras	Taras	2.73
 es	verna	Verna	2.73
 es	ambar	Ambar	2.71
+es	bor	Bor	2.70
 es	hallas	Hallas	2.69
 es	gondor	Gondor	2.68
 es	aragorn	Aragorn	2.59
@@ -33,6 +36,7 @@ es	borlas	Borlas	2.52
 es	vala	Vala	2.51
 es	vali	Vali	2.46
 es	olo	Olo	2.45
+es	kor	Kor	2.43
 es	nessa	Nessa	2.41
 es	anar	Anar	2.38
 es	celebras	Celebras	2.33
@@ -53,6 +57,7 @@ es	dru	Drû	2.15
 es	elin	Elin	2.13
 es	elrond	Elrond	2.13
 es	isildur	Isildur	2.09
+es	endor	Endor	2.05
 es	edel	Edel	2.04
 es	galadriel	Galadriel	2.03
 es	eru	Eru	2.01
@@ -66,6 +71,7 @@ fr	este	Estë	3.13
 fr	corollaire	Corollairë	3.11
 fr	brandir	Brandir	3.01
 fr	aulas	Aulas	2.87
+fr	bor	Bor	2.87
 fr	aurel	Aurel	2.77
 fr	sauron	Sauron	2.77
 fr	avallon	Avallon	2.73
@@ -77,6 +83,7 @@ fr	dru	Drû	2.60
 fr	moria	Moria	2.56
 fr	auron	Auron	2.55
 fr	nanar	Nanar	2.50
+fr	idh	Idh	2.48
 fr	vala	Vala	2.48
 fr	arda	Arda	2.47
 fr	galion	Galion	2.45
@@ -84,14 +91,17 @@ fr	andros	Andros	2.44
 fr	aragorn	Aragorn	2.41
 fr	dûr	Dûr	2.37
 fr	gondor	Gondor	2.34
+fr	kor	Kor	2.34
 fr	anar	Anar	2.31
 fr	verna	Verna	2.31
 fr	mariel	Máriel	2.29
 fr	edel	Edel	2.28
 fr	legolas	Legolas	2.28
 fr	nessa	Nessa	2.28
+fr	arien	Arien	2.25
 fr	vali	Vali	2.25
 fr	taras	Taras	2.23
+fr	endor	Endor	2.22
 fr	thil	Thil	2.21
 fr	belair	Belair	2.20
 fr	elin	Elin	2.17
@@ -119,6 +129,7 @@ it	aule	Aulë	3.73
 it	este	Estë	3.72
 it	fui	Fui	3.72
 it	vali	Vali	3.39
+it	vana	Vana	3.36
 it	verna	Verna	3.02
 it	sil	Sil	2.94
 it	moria	Moria	2.91
@@ -132,6 +143,7 @@ it	arda	Arda	2.68
 it	orma	Orma	2.66
 it	edel	Edel	2.63
 it	nuo	Nuo	2.61
+it	bor	Bor	2.59
 it	aragorn	Aragorn	2.57
 it	nessa	Nessa	2.52
 it	cobas	Cobas	2.49
@@ -139,6 +151,7 @@ it	eldar	Eldar	2.39
 it	alari	Alari	2.38
 it	dann	Dann	2.37
 it	elda	Elda	2.37
+it	kor	Kor	2.37
 it	gondor	Gondor	2.36
 it	olo	Olo	2.36
 it	avallone	Avallónë	2.34
@@ -174,6 +187,7 @@ pt	falas	Falas	3.91
 pt	falasse	Falassë	3.71
 pt	guiar	Guiar	3.64
 pt	vala	Vala	3.53
+pt	idh	Idh	3.34
 pt	poros	Poros	3.21
 pt	sil	Sil	3.16
 pt	valas	Valas	3.09
@@ -192,6 +206,7 @@ pt	aragorn	Aragorn	2.62
 pt	mordor	Mordor	2.62
 pt	dru	Drû	2.60
 pt	andor	Andor	2.53
+pt	kor	Kor	2.51
 pt	mandos	Mandos	2.50
 pt	gondor	Gondor	2.48
 pt	verna	Verna	2.48
@@ -206,7 +221,9 @@ pt	ambar	Ambar	2.33
 pt	andros	Andros	2.33
 pt	balrog	Balrog	2.32
 pt	elrond	Elrond	2.31
+pt	vana	Vana	2.31
 pt	eru	Eru	2.30
+pt	bor	Bor	2.29
 pt	ilmar	Ilmar	2.28
 pt	morgoth	Morgoth	2.28
 pt	elen	Elen	2.27
@@ -214,7 +231,9 @@ pt	borlas	Borlas	2.24
 pt	olo	Olo	2.24
 pt	vanya	Vanya	2.24
 pt	arwen	Arwen	2.23
+pt	lorien	Lorien	2.23
 pt	sistar	Sistar	2.22
+pt	endor	Endor	2.19
 pt	ond	Ond	2.18
 pt	elda	Elda	2.16
 pt	boromir	Boromir	2.14
