@@ -1,21 +1,42 @@
 //! Names read in their own language (`data/names.json`, built by `tools/names/build.py`), in text of
-//! any language: each name, exactly as written and standing as a word of its own, becomes a
-//! `[Minas Tirith](/ˈminas ˈtiriθ/)` link, so every G2P reads it as the link says.
+//! any language: each name standing as a word of its own, in any case and with or without its
+//! accents, becomes a `[Minas Tirith](/ˈminas ˈtiriθ/)` link, so every G2P reads it as the link says.
 
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::borrow::Cow;
 use unicode_normalization::UnicodeNormalization;
+use unicode_normalization::char::is_combining_mark;
 
 static NAMES: &str = include_str!("../data/names.json");
 static SKIP: &str = include_str!("../data/names_skip.json");
 
+struct Name {
+    spelling: &'static str,
+    /// None for a spelling that finds a name but isn't it ("Dior" for "Díor").
+    phonemes: Option<&'static str>,
+}
+
 pub(crate) struct Names {
-    phonemes: FxHashMap<Box<str>, &'static str>,
+    /// The names by [`fold`]ed spelling.
+    names: FxHashMap<Box<str>, Box<[Name]>>,
     /// For each language whose text espeak reads (`es`, `fr`, ...), the names that are common words
-    /// in it ("Este" in Portuguese), which its pipeline reads as words.
-    skip: FxHashMap<&'static str, FxHashSet<&'static str>>,
-    /// Every prefix of a name, so a match can stop as soon as the text leaves them.
+    /// in it ("Este" in Portuguese), which its pipeline reads as words, [`fold`]ed.
+    skip: FxHashMap<&'static str, FxHashSet<Box<str>>>,
+    /// Every prefix of a folded name, so a match can stop as soon as the text leaves them.
     prefixes: FxHashSet<Box<str>>,
+}
+
+/// `c` lowercase and without accents, as a name's key spells it.
+fn fold(c: char, out: &mut String) {
+    for d in std::iter::once(c).nfd().filter(|&d| !is_combining_mark(d)) {
+        out.extend(d.to_lowercase());
+    }
+}
+
+fn folded(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    s.chars().for_each(|c| fold(c, &mut out));
+    out
 }
 
 /// A Latin letter: other scripts end a name's word, as Japanese and Chinese write a Latin word
@@ -26,7 +47,7 @@ fn is_latin(c: char) -> bool {
 }
 
 fn is_word_char(c: char) -> bool {
-    is_latin(c) || c.is_numeric() || unicode_normalization::char::is_combining_mark(c)
+    is_latin(c) || c.is_numeric() || is_combining_mark(c)
 }
 
 /// Whether a name may end where `rest` starts: not inside a word, nor before a contraction
@@ -46,52 +67,67 @@ fn ends_word(rest: &str) -> bool {
 
 impl Names {
     pub(crate) fn new() -> Self {
-        let names: FxHashMap<&'static str, &'static str> =
-            serde_json::from_str(NAMES).expect("bundled names are valid");
-        let mut phonemes = FxHashMap::default();
-        for (name, p) in names {
-            // Text may write an accent as a separate combining mark ("Eärendil" as e, a, U+0308, ...).
-            if !name.is_ascii() {
-                phonemes.entry(name.nfd().collect::<String>().into_boxed_str()).or_insert(p);
-            }
-            phonemes.insert(Box::from(name), p);
+        let list: Vec<(&'static str, Option<&'static str>)> =
+            serde_json::from_str::<FxHashMap<_, _>>(NAMES).expect("bundled names are valid").into_iter().collect();
+        let mut names: FxHashMap<Box<str>, Vec<Name>> = FxHashMap::default();
+        for (spelling, phonemes) in list {
+            names.entry(folded(spelling).into_boxed_str()).or_default().push(Name { spelling, phonemes });
         }
         let mut prefixes = FxHashSet::default();
-        for name in phonemes.keys() {
+        for name in names.keys() {
             prefixes.extend(name.char_indices().map(|(i, _)| Box::from(&name[..i])).skip(1));
             prefixes.insert(name.clone());
         }
         let skip: FxHashMap<&'static str, Vec<&'static str>> =
             serde_json::from_str(SKIP).expect("bundled name skips are valid");
-        let skip = skip.into_iter().map(|(l, names)| (l, names.into_iter().collect())).collect();
-        Names { phonemes, prefixes, skip }
+        let skip =
+            skip.into_iter().map(|(l, names)| (l, names.into_iter().map(|n| folded(n).into()).collect())).collect();
+        let names = names.into_iter().map(|(k, v)| (k, v.into_boxed_slice())).collect();
+        Names { names, prefixes, skip }
+    }
+
+    /// The phonemes of the name `written` spells: the one spelled so, else the reading the names
+    /// spelled so in another case share, else the one every name with these letters shares.
+    fn resolve(names: &[Name], written: &str) -> Option<&'static str> {
+        let written: String = written.split_whitespace().collect::<Vec<_>>().join(" ").nfc().collect();
+        if let Some(name) = names.iter().find(|n| n.spelling == written) {
+            return name.phonemes;
+        }
+        let one = |mut names: Vec<&Name>| {
+            let first = names.pop()?;
+            names.iter().all(|n| n.phonemes == first.phonemes).then_some(first.phonemes)?
+        };
+        let lower = written.to_lowercase();
+        let same_case: Vec<_> = names.iter().filter(|n| n.spelling.to_lowercase() == lower).collect();
+        one(if same_case.is_empty() { names.iter().collect() } else { same_case })
     }
 
     /// The longest name at the start of `text` that `skip` doesn't hold, as `(bytes of text,
     /// phonemes)`. Whitespace between a name's words may be any run of it but a line break.
-    fn longest(&self, text: &str, skip: Option<&FxHashSet<&'static str>>) -> Option<(usize, &'static str)> {
-        let mut spelled = String::new();
+    fn longest(&self, text: &str, skip: Option<&FxHashSet<Box<str>>>) -> Option<(usize, &'static str)> {
+        let mut key = String::new();
         let mut found = None;
         let mut chars = text.char_indices().peekable();
         while let Some((_, c)) = chars.next() {
             if c.is_whitespace() {
-                if c == '\n' || spelled.ends_with(' ') {
+                if c == '\n' || key.ends_with(' ') {
                     break;
                 }
-                spelled.push(' ');
+                key.push(' ');
                 while chars.next_if(|&(_, c)| c.is_whitespace() && c != '\n').is_some() {}
             } else {
-                spelled.push(c);
+                fold(c, &mut key);
             }
-            if !self.prefixes.contains(spelled.as_str()) {
+            if !self.prefixes.contains(key.as_str()) {
                 break;
             }
             let end = chars.peek().map_or(text.len(), |&(j, _)| j);
-            if let Some(&p) = self.phonemes.get(spelled.as_str())
+            if let Some(names) = self.names.get(key.as_str())
                 && ends_word(&text[end..])
-                && !skip.is_some_and(|s| s.contains(text[..end].nfc().collect::<String>().as_str()))
+                && !skip.is_some_and(|s| s.contains(key.as_str()))
+                && let Some(phonemes) = Self::resolve(names, &text[..end])
             {
-                found = Some((end, p));
+                found = Some((end, phonemes));
             }
         }
         found
@@ -129,8 +165,7 @@ impl Names {
                 _ => {}
             }
             let starts_word = !text[..i].chars().next_back().is_some_and(is_word_char);
-            // Every name starts with a capital (`names_start_with_a_capital`).
-            let found = if starts_word && c.is_uppercase() { self.longest(&text[i..], skip) } else { None };
+            let found = if starts_word && is_latin(c) { self.longest(&text[i..], skip) } else { None };
             let Some((n, phonemes)) = found.filter(|&(n, _)| link.peek().is_none_or(|&&(start, _)| i + n <= start))
             else {
                 i += c.len_utf8();
@@ -168,9 +203,30 @@ impl Names {
 
 #[cfg(test)]
 mod tests {
+    use super::Names;
+
     #[test]
-    fn names_start_with_a_capital() {
-        let names = super::Names::new();
-        assert!(names.phonemes.keys().all(|n| n.chars().next().is_some_and(char::is_uppercase)));
+    fn names_are_found_in_any_case_and_without_their_accents() {
+        let names = Names::new();
+        let link = |t: &str| names.link(t, "en", &[], |p| format!("{p}z")).into_owned();
+        let galadriel = link("Galadriel");
+        assert!(galadriel.starts_with("[Galadriel](/"));
+        for t in ["GALADRIEL", "galadriel"] {
+            assert_eq!(link(t), galadriel.replace("Galadriel]", &format!("{t}]")));
+        }
+        assert_eq!(link("Eärendil"), link("Earendil").replace("Earendil]", "Eärendil]"));
+        assert_eq!(link("Ea\u{308}rendil"), link("Earendil").replace("Earendil]", "Ea\u{308}rendil]"));
+        assert_eq!(link("EÄRENDIL"), link("Earendil").replace("Earendil]", "EÄRENDIL]"));
+        // Tolkien wrote both Círdan and Cirdan, said differently: each is read as written, and a
+        // spelling with accents of neither is left alone.
+        assert_ne!(link("CÍRDAN").replace("CÍRDAN", "Círdan"), link("CIRDAN").replace("CIRDAN", "Círdan"));
+        assert_eq!(link("Cîrdan"), "Cîrdan");
+        // An English word isn't the name it spells without accents.
+        assert_eq!(link("Turin"), "Turin");
+        assert_eq!(link("TURIN"), "TURIN");
+        assert!(link("Túrin").starts_with("[Túrin](/"));
+        // Nor is a name a common word of the text's language, in any case.
+        let spanish = |t: &str| names.link(t, "es", &[], |p| format!("{p}z")).into_owned();
+        assert_eq!(spanish("fui y ESTE"), "fui y ESTE");
     }
 }

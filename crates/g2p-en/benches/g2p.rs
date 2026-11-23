@@ -1,5 +1,5 @@
-//! Time per G2P call over the recorded English calls (`cargo bench -p kokoro-g2p-en`), excluding spaCy
-//! and espeak, whose recorded answers are replayed. Set `KOKORO_REFERENCE_OUT` to include corpus dumps.
+//! Time per G2P call over the recorded English calls (`cargo bench -p kokoro-g2p-en`), with the
+//! check for sentences in capitals, excluding spaCy and espeak, whose recorded answers are replayed. Set `KOKORO_REFERENCE_OUT` to include corpus dumps.
 
 use kokoro_g2p_en::{Fallback, G2p, Preprocessed, TaggedToken};
 use std::collections::HashMap;
@@ -44,6 +44,7 @@ fn main() {
         let start = Instant::now();
         for (british, pre, tagged) in &cases {
             let g2p = if *british { &gb } else { &us };
+            black_box(g2p.sentence_case(&pre.text));
             black_box(g2p.phonemize_tagged(pre, tagged.clone(), Some(&mut fallback)).unwrap());
         }
         best = best.min(start.elapsed().as_secs_f64());

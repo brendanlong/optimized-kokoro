@@ -7,7 +7,7 @@
 //!
 //! Prints match rates and mismatches (`PARITY_SHOW=n` shows up to n, default 30).
 
-use kokoro_g2p_en::{Fallback, G2p, TaggedToken, Tagger, Token, kokoro};
+use kokoro_g2p_en::{Fallback, G2p, Preprocessed, TaggedToken, Tagger, Token, kokoro};
 use kokoro_reference::{Call, SpacyToken};
 use std::collections::{HashMap, VecDeque};
 
@@ -23,12 +23,18 @@ impl Tagger for Recorded<'_> {
             return Vec::new();
         };
         let joined: String = tokens.iter().flat_map(|t| [t.text.as_str(), t.whitespace.as_str()]).collect();
-        if joined != text {
+        // A sentence in capitals is tagged in the usual case: the recorded tokens, spelled as given.
+        let recased = joined.chars().count() == text.chars().count() && joined.to_lowercase() == text.to_lowercase();
+        if joined != text && !recased {
             self.problems.push(format!("spaCy input differs: recorded {joined:?}, got {text:?}"));
         }
+        let mut chars = text.chars();
+        let mut take = |s: &str| -> String {
+            if recased { chars.by_ref().take(s.chars().count()).collect() } else { s.to_owned() }
+        };
         tokens
             .iter()
-            .map(|t| TaggedToken { text: t.text.clone(), tag: t.tag.clone(), whitespace: t.whitespace.clone() })
+            .map(|t| TaggedToken { text: take(&t.text), tag: t.tag.clone(), whitespace: take(&t.whitespace) })
             .collect()
     }
 }
@@ -101,6 +107,8 @@ fn matches_reference() {
     let mut dropped = 0;
     let mut names = 0;
     let mut stress = 0;
+    let mut recased = 0;
+    let mut capitals = 0;
     for record in records.iter().filter(|r| r.lang == "a" || r.lang == "b") {
         let g2p = if record.lang == "b" { &gb } else { &us };
         for call in &record.calls {
@@ -114,6 +122,21 @@ fn matches_reference() {
             // (docs/divergences.md, "misaki English: lowercase abbreviations").
             if kokoro_reference::divergence::has_dropped_abbreviation(&call.input) {
                 dropped += 1;
+                continue;
+            }
+            // A sentence in capitals is read in the usual case, which misaki never saw
+            // (docs/divergences.md, "misaki English: case"): only the text must come back as written.
+            if call
+                .segments
+                .iter()
+                .any(|(s, l)| l.is_none() && g2p.sentence_case(&Preprocessed::new(s).text) != Preprocessed::new(s).text)
+            {
+                recased += 1;
+                let (got, _) = replay(g2p, call);
+                let texts =
+                    |t: &[_]| -> String { t.iter().map(|t: &Token| format!("{}{}", t.text, t.whitespace)).collect() };
+                let recorded: String = call.tokens.iter().map(|t| format!("{}{}", t.text, t.whitespace)).collect();
+                assert_eq!(texts(&got), recorded, "{}: tokens' text", record.id);
                 continue;
             }
             calls += 1;
@@ -155,6 +178,24 @@ fn matches_reference() {
                 stress += 1;
                 continue;
             }
+            // A word in capitals is stressed as if only its first letter were, where misaki
+            // raised its stress (docs/divergences.md, "misaki English: case").
+            let shouted = |t: &Token| {
+                t.text.chars().filter(|c| c.is_alphabetic()).count() > 1 && t.text.chars().all(|c| !c.is_lowercase())
+            };
+            let raised = |ps: &Option<String>| ps.as_deref().map(|p| p.replace('ˌ', "ˈ"));
+            if !ok
+                && problems.is_empty()
+                && same_tokens
+                && got_norm
+                    .iter()
+                    .zip(&expected)
+                    .all(|(a, b)| a == b || shouted(a) && raised(&a.phonemes) == b.phonemes)
+            {
+                calls -= 1;
+                capitals += 1;
+                continue;
+            }
             // Names are read in their own language (docs/divergences.md, "misaki English: names"); a
             // multi-word name is one token, so only the phonemes are compared, word by word.
             if !ok
@@ -190,7 +231,7 @@ fn matches_reference() {
     }
     let pct = |a: usize, b: usize| 100.0 * a as f64 / b.max(1) as f64;
     println!(
-        "not compared: {numbers} calls with numbers, money or symbols misaki read, {dropped} with \"dr\" or \"mr\" in a case other than \"Dr\" and \"Mr\", {names} with a name from names.json, {stress} with stress marks moved to their vowel"
+        "not compared: {numbers} calls with numbers, money or symbols misaki read, {dropped} with \"dr\" or \"mr\" in a case other than \"Dr\" and \"Mr\", {names} with a name from names.json, {stress} with stress marks moved to their vowel, {recased} with a sentence in capitals, {capitals} with a word in capitals stressed less"
     );
     println!(
         "calls: {calls_ok}/{calls} exact ({:.3}%); tokens: {tokens_ok}/{tokens} exact ({:.3}%)",

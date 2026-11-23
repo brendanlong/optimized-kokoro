@@ -55,48 +55,6 @@ impl<'t> Chars<'t> {
     }
 }
 
-/// `CAPS_RUN_PATTERN`, `\b[A-Z]+(?:[^A-Za-z]+[A-Z]+)+\b`.
-///
-/// From a start (an uppercase letter after a non-word character), the pattern walks a chain of
-/// uppercase runs separated by runs of anything but ASCII letters, and backtracks to the last
-/// run end (from the second run on) followed by a non-word character. If there's none, every
-/// later start in the same chain fails too, since its ends are a subset, so the scan skips the
-/// chain instead of retrying each position, which made the regex quadratic.
-pub fn caps_runs(text: &str) -> Vec<Range<usize>> {
-    let t = Chars::new(text);
-    let upper = |i: usize| t.is(i, |c| c.is_ascii_uppercase());
-    let mut out = Vec::new();
-    let mut i = 0;
-    while i < t.len() {
-        if !upper(i) || t.word_before(i) {
-            i += 1;
-            continue;
-        }
-        let mut end = t.run(i, usize::MAX, |c| c.is_ascii_uppercase());
-        let mut runs = 1;
-        let mut best = None;
-        loop {
-            if runs >= 2 && !t.is(end, is_word) {
-                best = Some(end);
-            }
-            let next = t.run(end, usize::MAX, |c| !c.is_ascii_alphabetic());
-            if next == end || !upper(next) {
-                break;
-            }
-            end = t.run(next, usize::MAX, |c| c.is_ascii_uppercase());
-            runs += 1;
-        }
-        match best {
-            Some(best) => {
-                out.push(t.span(i..best));
-                i = best;
-            }
-            None => i = end,
-        }
-    }
-    out
-}
-
 /// `[a-z]` under IGNORECASE in Python: ASCII letters, plus ı, İ, ſ and the Kelvin sign.
 fn ci_letter(c: char) -> bool {
     c.is_ascii_alphabetic() || matches!(c, 'ı' | 'İ' | 'ſ' | 'K')
@@ -209,14 +167,6 @@ pub(crate) mod tests {
         let expected: Groups =
             reference(text).into_iter().map(|m| groups.iter().map(|&g| m[g].clone()).collect()).collect();
         assert_eq!(actual, expected, "{text:?}");
-    }
-
-    #[test]
-    fn caps_runs_match_the_regex() {
-        let re = crate::pyre::compile(r"\b[A-Z]+(?:[^A-Za-z]+[A-Z]+)+\b").reference();
-        for text in random_texts(&["A", "B", "a", "1", " ", "_", "-", "é", "²", ".", "AB"], 20000, 1) {
-            assert_same(&re, &text, caps_runs(&text).into_iter().map(|r| vec![Some(r)]).collect(), &[0]);
-        }
     }
 
     #[test]

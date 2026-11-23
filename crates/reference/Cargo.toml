@@ -13,3 +13,4 @@ kokoro-phonemes = { path = "../phonemes" }
 serde.workspace = true
 serde_json.workspace = true
 regex = "1"
+unicode-normalization = "0.1"

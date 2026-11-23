@@ -7,6 +7,8 @@ use std::collections::HashMap;
 enum Entry {
     Plain(String),
     Tagged(HashMap<String, Option<String>>),
+    /// A spelling in `names.json` that isn't a name.
+    None(()),
 }
 
 fn entries(json: &str) -> Vec<(String, String)> {
@@ -16,6 +18,7 @@ fn entries(json: &str) -> Vec<(String, String)> {
         .flat_map(|(word, entry)| match entry {
             Entry::Plain(ps) => vec![(word, ps)],
             Entry::Tagged(tags) => tags.into_values().flatten().map(|ps| (word.clone(), ps)).collect(),
+            Entry::None(()) => vec![],
         })
         .collect()
 }
