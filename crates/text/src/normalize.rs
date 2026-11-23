@@ -6,7 +6,7 @@
 use crate::numbers::{self, cardinal};
 use crate::py;
 use crate::pyre::{Captures, Pattern, compile, compile_i};
-use crate::{footnotes, roman, scan, symbols};
+use crate::{capitals, footnotes, roman, scan, symbols};
 use std::ops::Range;
 use std::sync::LazyLock;
 
@@ -18,7 +18,6 @@ pub struct Options {
     pub email_normalization: bool,
     pub optional_pluralization_normalization: bool,
     pub phone_normalization: bool,
-    pub caps_normalization: bool,
     pub replace_remaining_symbols: bool,
     pub remove_emoji: bool,
 }
@@ -31,7 +30,6 @@ impl Default for Options {
             email_normalization: true,
             optional_pluralization_normalization: true,
             phone_normalization: true,
-            caps_normalization: true,
             replace_remaining_symbols: true,
             remove_emoji: false,
         }
@@ -43,8 +41,6 @@ struct Patterns {
     non_space_whitespace: Pattern,
     ellipsis_word: Pattern,
     spaces: Pattern,
-    caps_word: Pattern,
-    long_caps: Pattern,
     contraction: Pattern,
     contraction_bare: Pattern,
     url: Pattern,
@@ -74,8 +70,6 @@ static PATTERNS: LazyLock<Patterns> = LazyLock::new(|| Patterns {
     non_space_whitespace: compile(r"[^\S ]"),
     ellipsis_word: compile(r"…(?=\w)"),
     spaces: compile(r"  +"),
-    caps_word: compile(r"(?<![0-9A-Za-z])[A-Z]{4,}(?![0-9A-Za-z])"),
-    long_caps: compile(r"(?<![0-9A-Za-z])[A-Z]{6,}(?![0-9A-Za-z])"),
     contraction: compile_i(r"\b(how|what|where|who|when|why|there|these|those)['’]re\b"),
     contraction_bare: compile_i(r"\b(how|what|where|when|why|there|these|those|you|they)re\b"),
     url: compile_i(&format!(
@@ -103,16 +97,7 @@ fn pass_order(options: &Options) -> Vec<(&'static str, Pass)> {
     let all: [(&str, bool, Pass); 17] = [
         // Footnote marks go first, before other passes read their digits ("4:20.91" as a time).
         ("footnotes", true, |_, t| footnotes::footnotes(t)),
-        // Roman numerals are read where the caps pass runs: on the text before it, replaced after.
-        (
-            "roman_numerals_and_caps_words",
-            true,
-            if options.caps_normalization {
-                |p, t| replace_spans(&caps_words(p, t), roman::readings(t))
-            } else {
-                |_, t| replace_spans(t, roman::readings(t))
-            },
-        ),
+        ("roman_numerals", true, |_, t| replace_spans(t, roman::readings(t))),
         ("contractions", true, |p, t| {
             let t = p.contraction.sub(t, |c| format!("{} are", &c[1]));
             p.contraction_bare.sub(&t, |c| format!("{} are", &c[1]))
@@ -139,10 +124,25 @@ fn pass_order(options: &Options) -> Vec<(&'static str, Pass)> {
     all.into_iter().filter(|(_, on, _)| *on).map(|(name, _, pass)| (name, pass)).collect()
 }
 
-/// `EnglishNormalizer().normalize(text, options)`.
+/// `EnglishNormalizer().normalize(text, options)`, but for text in capitals, which is normalized
+/// a run at a time and written in capitals ("DR. WHO AT 5" as "DOCTOR WHO AT FIVE"), so the words
+/// the passes write don't make it look like text in lowercase to the G2P (`capitals.rs`).
 pub fn english(text: &str, options: &Options) -> String {
     let p = &*PATTERNS;
-    pass_order(options).into_iter().fold(text.to_owned(), |text, (_, pass)| pass(p, &text))
+    let passes = pass_order(options);
+    let normalize = |text: &str| passes.iter().fold(text.to_owned(), |text, (_, pass)| pass(p, &text));
+    let mut out = String::with_capacity(text.len());
+    let mut copied = 0;
+    for run in capitals::runs(text) {
+        out.push_str(&normalize(&text[copied..run.start]));
+        out.push_str(&normalize(&text[run.clone()]).to_uppercase());
+        copied = run.end;
+    }
+    if copied == 0 {
+        return normalize(text);
+    }
+    out.push_str(&normalize(&text[copied..]));
+    out
 }
 
 /// Each enabled pass of [`english`] on its own, by name, for timing tests.
@@ -197,17 +197,6 @@ fn whitespace(p: &Patterns, text: &str) -> String {
     let text = p.non_space_whitespace.sub_str(text, " ");
     let text = p.ellipsis_word.sub_str(&text, "… ");
     p.spaces.sub_str(&text, " ")
-}
-
-fn caps_words(p: &Patterns, text: &str) -> String {
-    let lower = |c: &Captures| {
-        let word = &c[0];
-        if word.chars().all(|c| "IVXLCDM".contains(c)) { word.to_owned() } else { word.to_lowercase() }
-    };
-    let runs = scan::caps_runs(text);
-    let text = replace_spans(text, runs.into_iter().map(|r| (r.clone(), p.caps_word.sub(&text[r], lower))));
-    // Only ASCII capitals are lowercased, so the Roman numerals' spans still hold.
-    p.long_caps.sub(&text, lower)
 }
 
 /// The text with each (sorted, disjoint) span replaced.
@@ -315,14 +304,16 @@ mod tests {
     }
 
     #[test]
-    fn roman_numerals_around_the_caps_pass() {
+    fn text_in_capitals_is_written_in_capitals() {
         let n = |t: &str| english(t, &Options::default());
-        // Decided on the capitals, read after the caps pass lowercased the phrase.
-        assert_eq!(n("BOOK I. (Folio), CHAPTER XXXV."), "book one. (Folio), chapter thirty-five.");
-        assert_eq!(n("WORLD WAR II"), "world WAR two");
+        assert_eq!(n("BOOK I. (Folio), CHAPTER XXXV."), "BOOK one. (Folio), CHAPTER thirty-five.");
+        assert_eq!(n("CHAPTER XXXV. THE END."), "CHAPTER THIRTY-FIVE. THE END.");
+        assert_eq!(n("WORLD WAR II"), "WORLD WAR TWO");
+        assert_eq!(
+            n("DR. WATSON MET HOLMES IN 1812. He left at 5."),
+            "DOCTOR WATSON MET HOLMES IN EIGHTEEN TWELVE. He left at five."
+        );
         assert_eq!(n("Henry VIII's wives and an IV drip"), "Henry eight's wives and an IV drip");
-        let none = Options { caps_normalization: false, ..Options::default() };
-        assert_eq!(english("BOOK I. (Folio)", &none), "BOOK one. (Folio)");
     }
 
     #[test]
@@ -334,7 +325,8 @@ mod tests {
                 "Dr. Who on Mulholland Dr. and St. Louis on Main St.",
                 "Doctor Who on Mulholland Drive and Saint Louis on Main Street.",
             ),
-            ("DR. SMITH and MR. JONES", "Doctor smith and Mister jones"),
+            ("DR. SMITH and MR. JONES", "Doctor SMITH and Mister JONES"),
+            ("DR. SMITH AND MR. JONES", "DOCTOR SMITH AND MISTER JONES"),
             (
                 "No. 5 in Dec. 2025, see pp. 230-232",
                 "Number five in December twenty twenty-five, see pages two hundred and thirty to two hundred and thirty-two",
@@ -368,8 +360,6 @@ mod tests {
             &p.non_space_whitespace,
             &p.ellipsis_word,
             &p.spaces,
-            &p.caps_word,
-            &p.long_caps,
             &p.contraction,
             &p.contraction_bare,
             &p.url,

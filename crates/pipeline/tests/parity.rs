@@ -167,6 +167,9 @@ fn reference_records() {
         Pipeline::new(Lang::Chinese).unwrap().with_foreign_g2p(Language::Japanese, Box::new(Recorded(japanese)));
     let show: usize = std::env::var("PARITY_SHOW").ok().and_then(|s| s.parse().ok()).unwrap_or(20);
     let (mut matched, mut compared, mut chars, mut regrouped) = (0, 0, 0, 0);
+    let mut cased = 0;
+    let (us, gb) = (kokoro_g2p_en::G2p::new(false), kokoro_g2p_en::G2p::new(true));
+    let english = |record: &Record| if record.lang == "b" { &gb } else { &us };
     let (mut cjk, mut cjk_matched, mut cjk_skipped, mut new_script, mut flagged) = (0, 0, 0, Vec::new(), Vec::new());
     let (mut zh, mut zh_matched, mut failing, mut failing_matched, mut unreadable) = (0, 0, 0, 0, Vec::new());
     let mut mismatches = Vec::new();
@@ -241,6 +244,7 @@ fn reference_records() {
                                 phonemes,
                             )
                             && !divergence::has_dropped_abbreviation(text)
+                            && !english(record).differs_from_misaki_by_case(text)
                         {
                             mismatches.push(format!(
                                 "{}: unchanged chunk {text:?} read differently\n  expected: {expected}\n  actual:   {phonemes}",
@@ -345,6 +349,10 @@ fn reference_records() {
         {
             // Names are read in their own language (docs/divergences.md, "misaki English: names").
             names += 1;
+        } else if error.is_some() == record.error.is_some() && english(record).differs_from_misaki_by_case(&record.text)
+        {
+            // Case is read differently on purpose (docs/divergences.md, "misaki English: case").
+            cased += 1;
         } else {
             let first =
                 expected.iter().zip(&actual).position(|(e, a)| e != a).unwrap_or(expected.len().min(actual.len()));
@@ -379,7 +387,7 @@ fn reference_records() {
         "normalized differently, by the number reader and symbol pass: {changed} records, whose {unchanged_chunks} chunks with unchanged text match"
     );
     println!(
-        "by kind: {by_kind:?}; {dropped_abbreviations} more read \"dr\" or \"mr\" without misaki's lexicon entry, {names} with names read in their own language; {stress_moved} compared with stress marks moved to their vowel, {respaced} spaced as runs join"
+        "by kind: {by_kind:?}; {dropped_abbreviations} more read \"dr\" or \"mr\" without misaki's lexicon entry, {names} with names read in their own language, {cased} with case read differently; {stress_moved} compared with stress marks moved to their vowel, {respaced} spaced as runs join"
     );
     println!("{} records, {chars} characters in {:.2?}", records.len(), elapsed);
     for m in mismatches.iter().take(show) {

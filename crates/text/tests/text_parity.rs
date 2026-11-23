@@ -16,7 +16,6 @@ fn options(name: &str) -> Options {
             email_normalization: false,
             optional_pluralization_normalization: false,
             phone_normalization: false,
-            caps_normalization: false,
             replace_remaining_symbols: false,
             ..default
         },

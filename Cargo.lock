@@ -243,6 +243,7 @@ version = "0.1.0"
 dependencies = [
  "kokoro-phonemes",
  "kokoro-reference",
+ "kokoro-text",
  "regex",
  "rustc-hash",
  "serde",
@@ -302,6 +303,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "unicode-normalization",
 ]
 
 [[package]]
@@ -345,6 +347,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "unicode-normalization",
  "unicode-segmentation",
 ]
 

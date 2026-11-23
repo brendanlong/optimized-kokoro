@@ -9,6 +9,7 @@
 #![forbid(unsafe_code)]
 
 mod abbreviations;
+pub mod capitals;
 mod footnotes;
 pub mod normalize;
 mod numbers;

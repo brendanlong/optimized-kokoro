@@ -1,7 +1,8 @@
 //! Checks that a difference from the reference's normalized text is one `docs/divergences.md`
 //! lists: the number reader ("Numbers"), the symbol pass ("Symbols"), dashes ("Dashes"), Roman
 //! numerals ("Roman"), abbreviations ("Abbreviations"), footnote marks ("Footnotes"), rates
-//! ("Rates") or money before what it buys ("AttributiveMoney").
+//! ("Rates"), money before what it buys ("AttributiveMoney") or words left in capitals
+//! ("Capitals").
 //!
 //! Both texts are split into words and punctuation and compared token by token. Every run of
 //! tokens that differs must hold, on the reference's side, a digit (a number the reference left
@@ -33,6 +34,8 @@ pub enum Kind {
     Rates,
     /// An amount of money in the singular before what it buys: "a five dollar bill".
     AttributiveMoney,
+    /// Words left in capitals, which the reference's caps pass lowercased: "UNESCO", "THE QUICK".
+    Capitals,
 }
 
 /// Punctuation both normalizers leave as it is.
@@ -1016,17 +1019,34 @@ pub fn respaced(reference: &str, ours: &str) -> String {
     if rest.is_empty() { out.join(" ") } else { reference.to_owned() }
 }
 
-/// The phonemes of each name from `crates/g2p-en/data/names.json` that `text` writes as a word of its
-/// own, which the port reads in their own language (`docs/divergences.md`, "misaki English: names").
-pub fn names_read(text: &str) -> Vec<&'static str> {
+fn fold_name(s: &str) -> String {
+    use unicode_normalization::UnicodeNormalization;
+    s.nfd().filter(|&c| !unicode_normalization::char::is_combining_mark(c)).collect::<String>().to_lowercase()
+}
+
+/// The names of `crates/g2p-en/data/names.json`, lowercase and without accents, with their phonemes.
+fn names() -> &'static [(String, String)] {
     static NAMES: std::sync::OnceLock<Vec<(String, String)>> = std::sync::OnceLock::new();
-    let names = NAMES.get_or_init(|| {
-        let map: std::collections::HashMap<String, String> =
+    NAMES.get_or_init(|| {
+        let map: std::collections::HashMap<String, Option<String>> =
             serde_json::from_str(include_str!("../../g2p-en/data/names.json")).expect("valid names.json");
-        map.into_iter().collect()
-    });
+        map.into_iter().filter_map(|(name, p)| Some((fold_name(&name), p?))).collect()
+    })
+}
+
+/// The phonemes of the name spelled `spelling`, in any case and with or without its accents.
+pub fn name(spelling: &str) -> Option<&'static str> {
+    let key = fold_name(spelling);
+    names().iter().find(|(name, _)| *name == key).map(|(_, p)| p.as_str())
+}
+
+/// The phonemes of each name from `crates/g2p-en/data/names.json` that `text` writes as a word of its
+/// own, in any case and with or without its accents, which the port reads in their own language
+/// (`docs/divergences.md`, "misaki English: names").
+pub fn names_read(text: &str) -> Vec<&'static str> {
+    let text = fold_name(text);
     let alnum = |c: Option<char>| c.is_some_and(char::is_alphanumeric);
-    names
+    names()
         .iter()
         .filter(|(name, _)| {
             text.match_indices(name.as_str())
@@ -1102,6 +1122,10 @@ pub fn explain(input: &str, reference: &str, ours: &str) -> Result<BTreeSet<Kind
         let (theirs, mine) = (&ma[ra.clone()], &mb[rb.clone()]);
         let show = |side: &[Masked]| side.iter().map(|m| m.text.as_str()).collect::<Vec<_>>().join(" ");
         let what = || format!("reference {:?}, ours {:?}", show(theirs), show(mine));
+        if show(theirs) != show(mine) && show(theirs).to_lowercase() == show(mine).to_lowercase() {
+            kinds.insert(Kind::Capitals);
+            continue;
+        }
         // Dashes: the same text but for hyphens, en dashes, em dashes and spaces ("of - a" against
         // "of — a", "US- China" against "US-China").
         let dashless = |side: &[Masked]| -> String {

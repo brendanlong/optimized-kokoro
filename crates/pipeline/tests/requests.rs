@@ -135,6 +135,8 @@ fn requests_match_the_reference() {
     let mut regrouped = 0;
     let mut links = 0;
     let mut runs_joined = 0;
+    let mut cased = 0;
+    let (us, gb) = (kokoro_g2p_en::G2p::new(false), kokoro_g2p_en::G2p::new(true));
     for case in &cases {
         if uses_new_script(&case.text) {
             new_script += 1;
@@ -333,6 +335,13 @@ fn requests_match_the_reference() {
                 fuzzed += 1;
                 continue;
             }
+            // Case is read differently on purpose (docs/divergences.md, "misaki English: case").
+            if case.lang == "a" && us.differs_from_misaki_by_case(&case.text)
+                || case.lang == "b" && gb.differs_from_misaki_by_case(&case.text)
+            {
+                cased += 1;
+                continue;
+            }
             let first =
                 expected.iter().zip(&actual).position(|(e, a)| !same(e, a)).unwrap_or(expected.len().min(actual.len()));
             failures.push(format!(
@@ -344,13 +353,15 @@ fn requests_match_the_reference() {
             ));
         }
     }
-    let compared = cases.len() - new_script - rechunked - stateful - numbers - fuzzed - regrouped - links - runs_joined;
+    let compared =
+        cases.len() - new_script - rechunked - stateful - numbers - fuzzed - regrouped - links - runs_joined - cased;
     println!(
         "{} of {compared} requests match ({flagged} of them once espeak's language-switch flags are dropped from the reference's); \
          not compared: {rechunked} chunked differently without the flags, {new_script} with other scripts, \
          {stateful} where the reference's espeak read a word by an earlier call's state, \
          {numbers} with numbers or symbols read differently ({roman} with Roman numerals), {fuzzed} more fuzzed ones with digits or symbols, \
-         {regrouped} with short clauses regrouped, {links} with a link the reference read otherwise (as text, or ɾ and ʔ as the English flap and t), {runs_joined} with runs joined by the port's rule",
+         {regrouped} with short clauses regrouped, {links} with a link the reference read otherwise (as text, or ɾ and ʔ as the English flap and t), {runs_joined} with runs joined by the port's rule, \
+         {cased} with case read differently",
         compared - failures.len(),
     );
     for f in failures.iter().take(10) {

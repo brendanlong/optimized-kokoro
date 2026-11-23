@@ -12,6 +12,7 @@ publish = false
 kokoro-phonemes = { path = "../phonemes" }
 fancy-regex = "0.20"
 regex = "1.12"
+unicode-normalization = "0.1"
 unicode-segmentation = "=1.13.3"
 
 [dev-dependencies]

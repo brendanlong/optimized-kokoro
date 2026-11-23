@@ -388,11 +388,6 @@ fn is_number(text: &str, start: usize, end: usize, previous: Option<usize>) -> b
 }
 
 /// Each numeral the context shows to be a number, as its span in `text` and its words.
-///
-/// The normalizer decides on the text before its caps pass, which lowercases the words of an
-/// all-caps phrase ("CHAPTER XXXV." as "chapter XXXV.") and would hide the capital that is the
-/// evidence, and replaces the spans after it (the caps pass changes no lengths). Reading first
-/// would hide the phrase from the caps pass instead ("BOOK one" would stay in capitals).
 pub fn readings(text: &str) -> Vec<(Range<usize>, String)> {
     let mut out = Vec::new();
     if !text.contains(['I', 'V', 'X', 'L', 'C', 'D', 'M']) {

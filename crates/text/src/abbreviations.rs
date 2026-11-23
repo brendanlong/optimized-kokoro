@@ -198,10 +198,6 @@ fn reading(x: &Text, start: usize, end: usize, word: &str) -> Option<(String, us
             if dot && capital && !(street_before && starter) || !dot && !caps && next.is_some_and(is_name) {
                 return Some((title.to_owned(), after));
             }
-            // "DR. SMITH", whose name the caps pass has lowercased.
-            if word == "DR" && dot && next.is_some_and(|n| n.iter().all(|c| c.is_lowercase())) {
-                return Some((title.to_owned(), after));
-            }
             // A street's name ends there: the text ends, or a space or closing punctuation follows
             // ("Neville St.—" is a name cut short).
             let ends = x.get(after).is_none_or(|c| c == ' ' || ",;:)!?\"'”’".contains(c));

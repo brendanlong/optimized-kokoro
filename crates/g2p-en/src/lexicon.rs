@@ -39,7 +39,7 @@ pub(crate) struct TokenContext {
     pub future_to: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq)]
 enum Entry {
     Plain(&'static str),
     /// Phonemes by tag; always has `DEFAULT`.
@@ -89,36 +89,45 @@ fn parse(json: &'static str) -> Vec<(&'static str, Entry)> {
     serde::Deserializer::deserialize_map(&mut de, V).expect("bundled lexicon is valid")
 }
 
-type Dict = FxHashMap<Cow<'static, str>, Entry>;
+/// A spelling the dictionary has, and which of misaki's two dictionaries has it.
+#[derive(Debug)]
+struct Variant {
+    spelling: &'static str,
+    gold: bool,
+    entry: Entry,
+}
 
-/// `Lexicon.grow_dictionary`: adds the capitalized form of lowercase keys and the lowercase form of
-/// capitalized keys, without overriding existing keys. Keys are ASCII.
-fn grow(raw: Vec<(&'static str, Entry)>) -> Dict {
-    let mut dict = Dict::with_capacity_and_hasher(raw.len() * 2, Default::default());
-    let mut extra = Vec::new();
-    for (k, v) in &raw {
-        if k.len() < 2 {
-            continue;
-        }
-        let first = k.as_bytes()[0];
-        let rest_lower = !k[1..].bytes().any(|b| b.is_ascii_uppercase());
-        if !first.is_ascii_uppercase() && rest_lower {
-            if first.is_ascii_lowercase() {
-                let mut cap = k.to_string();
-                cap[..1].make_ascii_uppercase();
-                extra.push((cap, v.clone()));
-            }
-        } else if first.is_ascii_uppercase() && rest_lower {
-            extra.push((k.to_ascii_lowercase(), v.clone()));
+/// Every spelling of a word, gold first.
+enum Group {
+    One(Variant),
+    Many(Vec<Variant>),
+}
+
+impl Group {
+    fn variants(&self) -> &[Variant] {
+        match self {
+            Group::One(v) => std::slice::from_ref(v),
+            Group::Many(v) => v,
         }
     }
-    for (k, v) in extra {
-        dict.insert(Cow::Owned(k), v);
-    }
-    for (k, v) in raw {
-        dict.insert(Cow::Borrowed(k), v);
-    }
-    dict
+}
+
+/// The words keyed by their lowercase form: so case never hides a word ("mcdonald",
+/// "MCDONALD"), and only the words whose spellings read differently ("Polish", "polish") look at
+/// how it's written.
+type Dict = FxHashMap<Cow<'static, str>, Group>;
+
+/// Whether misaki's `grow_dictionary` gives `key` the spelling `word`: the capitalized form of a
+/// lowercase key, or the lowercase form of a capitalized one.
+fn grown(key: &str, word: &str) -> bool {
+    let (Some(k), Some(w)) = (key.as_bytes().first(), word.as_bytes().first()) else { return false };
+    let rest_lower = |s: &str| !s[1..].bytes().any(|b| b.is_ascii_uppercase());
+    key.len() >= 2
+        && word.is_ascii()
+        && key[1..] == word[1..]
+        && rest_lower(key)
+        && (k.is_ascii_lowercase() && *w == k.to_ascii_uppercase()
+            || k.is_ascii_uppercase() && *w == k.to_ascii_lowercase())
 }
 
 /// Lowercase abbreviations the lexicons expand without the period or capital that would say
@@ -128,12 +137,43 @@ fn grow(raw: Vec<(&'static str, Entry)>) -> Dict {
 /// spelled out. "Dr" and "Mr" stay, as do "mrs" and "vs", which have one reading.
 const GUESSES: [&str; 2] = ["dr", "mr"];
 
-fn load(json: &'static str) -> Dict {
-    let mut dict = grow(parse(json));
-    for key in GUESSES {
-        dict.remove(key);
+fn load(gold: &'static str, silver: &'static str) -> Dict {
+    let (gold, silver) = (parse(gold), parse(silver));
+    let mut dict = Dict::with_capacity_and_hasher(gold.len() + silver.len(), Default::default());
+    for (entries, gold) in [(gold, true), (silver, false)] {
+        for (spelling, entry) in entries {
+            let key = if spelling.bytes().any(|b| b.is_ascii_uppercase()) {
+                Cow::Owned(spelling.to_ascii_lowercase())
+            } else {
+                Cow::Borrowed(spelling)
+            };
+            let variant = Variant { spelling, gold, entry };
+            match dict.entry(key) {
+                std::collections::hash_map::Entry::Vacant(e) => {
+                    e.insert(Group::One(variant));
+                }
+                std::collections::hash_map::Entry::Occupied(mut e) => match e.get_mut() {
+                    Group::Many(v) => v.push(variant),
+                    group => {
+                        let Group::One(first) = std::mem::replace(group, Group::Many(Vec::new())) else {
+                            unreachable!("matched above")
+                        };
+                        *group = Group::Many(vec![first, variant]);
+                    }
+                },
+            }
+        }
     }
     dict
+}
+
+fn misaki_entry<'a>(variants: &'a [Variant], word: &str, gold: bool) -> Option<&'a Entry> {
+    if GUESSES.contains(&word) {
+        return None;
+    }
+    let mut variants = variants.iter().filter(|v| v.gold == gold);
+    let exact = variants.clone().find(|v| v.spelling == word);
+    exact.or_else(|| variants.find(|v| grown(v.spelling, word))).map(|v| &v.entry)
 }
 
 static US_GOLD: &str = include_str!("../data/us_gold.json");
@@ -186,25 +226,79 @@ pub(crate) fn apply_stress(ps: &str, stress: Option<f64>) -> String {
 
 pub(crate) struct Lexicon {
     british: bool,
-    golds: Dict,
-    silvers: Dict,
+    dict: Dict,
 }
 
 impl Lexicon {
     pub fn new(british: bool) -> Self {
         let (gold, silver) = if british { (GB_GOLD, GB_SILVER) } else { (US_GOLD, US_SILVER) };
-        Lexicon { british, golds: load(gold), silvers: load(silver) }
+        Lexicon { british, dict: load(gold, silver) }
+    }
+
+    fn variants(&self, word: &str) -> &[Variant] {
+        // Every key is ASCII (`every_key_is_ascii`).
+        if !word.is_ascii() {
+            return &[];
+        }
+        let mut buf = [0; 32];
+        let key = match buf.get_mut(..word.len()) {
+            _ if !word.bytes().any(|b| b.is_ascii_uppercase()) => Cow::Borrowed(word),
+            Some(buf) => {
+                buf.copy_from_slice(word.as_bytes());
+                buf.make_ascii_lowercase();
+                Cow::Borrowed(std::str::from_utf8(buf).expect("ASCII"))
+            }
+            None => Cow::Owned(word.to_ascii_lowercase()),
+        };
+        self.dict.get(&*key).map_or(&[], Group::variants)
+    }
+
+    /// misaki's `golds.get(word)` (`gold`) or `silvers.get(word)`: the spelling as written, or
+    /// as `grow_dictionary` adds it.
+    fn misaki_entry(&self, word: &str, gold: bool) -> Option<&Entry> {
+        misaki_entry(self.variants(word), word, gold)
+    }
+
+    /// The word's entry, from the gold dictionary only if `gold_only`: what misaki finds (gold
+    /// first), or else the reading every spelling of it shares, whatever its case.
+    fn entry(&self, word: &str, gold_only: bool) -> Option<&Entry> {
+        let variants = self.variants(word);
+        if let Some(e) = misaki_entry(variants, word, true) {
+            return Some(e);
+        }
+        if !gold_only && let Some(e) = misaki_entry(variants, word, false) {
+            return Some(e);
+        }
+        if GUESSES.iter().any(|g| g.eq_ignore_ascii_case(word)) {
+            return None;
+        }
+        let mut entries = variants.iter().filter(|v| v.gold || !gold_only).map(|v| &v.entry);
+        let first = entries.next()?;
+        entries.all(|e| e == first).then_some(first)
+    }
+
+    /// Whether misaki has no entry for `word` in its case, or lowercase, where one in another case
+    /// reads it ("Mori" for "MORI").
+    pub(crate) fn found_by_case_alone(&self, word: &str) -> bool {
+        let misaki = |w: &str| self.misaki_entry(w, true).is_some() || self.misaki_entry(w, false).is_some();
+        self.entry(word, false).is_some() && !misaki(word) && !misaki(&lower(word))
+    }
+
+    /// Whether misaki's stress for a word in capitals reads `word` differently (`get`).
+    pub(crate) fn shouted_differently(&self, word: &str) -> bool {
+        let read = |stress| self.get_word(word, "NN", Some(stress), &TokenContext::default());
+        is_upper(word) && !is_lower(word) && read(2.0) != read(0.5)
     }
 
     fn gold_plain(&self, word: &str) -> &'static str {
-        match self.golds.get(word) {
+        match self.misaki_entry(word, true) {
             Some(Entry::Plain(ps)) => ps,
             _ => panic!("{word} is a plain gold entry"),
         }
     }
 
     fn gold_tagged(&self, word: &str, tag: &str) -> &'static str {
-        match self.golds.get(word) {
+        match self.misaki_entry(word, true) {
             Some(Entry::Tagged(tags)) => {
                 tags.iter().find(|(t, _)| *t == tag).and_then(|(_, ps)| *ps).expect("tag present")
             }
@@ -216,7 +310,7 @@ impl Lexicon {
         let mut ps = String::new();
         for c in word.chars().filter(|&c| is_alpha(c)) {
             let mut buf = [0; 4];
-            match self.golds.get(&*upper(c.encode_utf8(&mut buf))) {
+            match self.entry(&upper(c.encode_utf8(&mut buf)), true) {
                 Some(Entry::Plain(p)) => ps.push_str(p),
                 _ => return None,
             }
@@ -290,7 +384,7 @@ impl Lexicon {
     }
 
     pub(crate) fn is_known(&self, word: &str) -> bool {
-        if self.golds.contains_key(word) || self.silvers.contains_key(word) {
+        if self.entry(word, false).is_some() {
             return true;
         }
         if !text::str_is_alpha(word) || !word.chars().all(is_lexicon_char) {
@@ -299,24 +393,17 @@ impl Lexicon {
         if word.len() == 1 {
             return true;
         }
-        if is_upper(word) && self.golds.contains_key(&*lower(word)) {
-            return true;
-        }
         is_upper(&word[1..])
     }
 
     fn lookup(&self, word: &str, tag: Option<&str>, stress: Option<f64>, ctx: &TokenContext) -> Option<String> {
         let mut word = Cow::Borrowed(word);
         let mut is_nnp = false;
-        if is_upper(&word) && !self.golds.contains_key(&*word) {
+        if is_upper(&word) && self.misaki_entry(&word, true).is_none() {
             word = Cow::Owned(lower(&word).into_owned());
             is_nnp = tag == Some("NNP");
         }
-        let mut entry = self.golds.get(&*word);
-        if entry.is_none() && !is_nnp {
-            entry = self.silvers.get(&*word);
-        }
-        let ps = match entry {
+        let ps = match self.entry(&word, is_nnp) {
             None => None,
             Some(Entry::Plain(ps)) => Some(*ps),
             Some(Entry::Tagged(tags)) => {
@@ -460,15 +547,15 @@ impl Lexicon {
             && text::str_is_alpha(&word.replace('\'', ""))
             && !is_lower(&word)
             && (tag != "NNP" || word.chars().count() > 7)
-            && !self.golds.contains_key(&*word)
-            && !self.silvers.contains_key(&*word)
+            && self.misaki_entry(&word, true).is_none()
+            && self.misaki_entry(&word, false).is_none()
             && (is_upper(&word) || {
                 let mut cs = word.chars();
                 cs.next();
                 is_lower(cs.as_str())
             })
-            && (self.golds.contains_key(&*wl)
-                || self.silvers.contains_key(&*wl)
+            && (self.misaki_entry(&wl, true).is_some()
+                || self.misaki_entry(&wl, false).is_some()
                 || self.stem_s(&wl, t, stress, ctx).is_some()
                 || self.stem_ed(&wl, t, stress, ctx).is_some()
                 || self.stem_ing(&wl, t, stress, ctx).is_some())
@@ -499,7 +586,9 @@ impl Lexicon {
         self.stem_ing(word, t, Some(stress.unwrap_or(0.5)), ctx)
     }
 
-    /// `Lexicon.__call__`, without misaki's numbers: a word with digits has no reading here.
+    /// `Lexicon.__call__`, without misaki's numbers (a word with digits has no reading here), and
+    /// with a word in capitals stressed as if only its first letter were: shouting doesn't change
+    /// how a word is said.
     pub fn get(&self, tk: &LexToken, ctx: &TokenContext) -> Option<String> {
         let word = tk.text.replace(['‘', '’'], "'");
         let word = text::nfkc(&word);
@@ -509,13 +598,7 @@ impl Lexicon {
         if word.chars().any(|c| !c.is_ascii() && !text::is_alpha(c)) {
             return None;
         }
-        let stress = if is_lower(&word) {
-            None
-        } else if is_upper(&word) {
-            Some(2.0)
-        } else {
-            Some(0.5)
-        };
+        let stress = if is_lower(&word) { None } else { Some(0.5) };
         self.get_word(&word, tk.tag, stress, ctx)
     }
 }
@@ -565,7 +648,7 @@ mod tests {
     fn every_key_is_ascii() {
         for british in [false, true] {
             let lexicon = Lexicon::new(british);
-            assert!(lexicon.golds.keys().chain(lexicon.silvers.keys()).all(|k| k.is_ascii()));
+            assert!(lexicon.dict.values().flat_map(Group::variants).all(|v| v.spelling.is_ascii()));
         }
     }
 
@@ -573,10 +656,26 @@ mod tests {
     fn guessed_abbreviations_are_dropped() {
         for british in [false, true] {
             let lexicon = Lexicon::new(british);
-            let known = |w: &str| lexicon.golds.contains_key(w) || lexicon.silvers.contains_key(w);
-            assert!(!known("dr") && !known("mr"));
+            let known = |w: &str| lexicon.entry(w, false).is_some();
+            assert!(!known("dr") && !known("mr") && !known("DR"));
             assert!(known("Dr") && known("Mr") && known("Dr.") && known("mrs"));
         }
+    }
+
+    #[test]
+    fn case_never_hides_a_word() {
+        let lexicon = Lexicon::new(false);
+        let read = |w: &str| lexicon.entry(w, false);
+        for (word, written) in
+            [("mcdonald", "McDonald"), ("MCDONALD", "McDonald"), ("Mcdonald", "McDonald"), ("javascript", "JavaScript")]
+        {
+            assert!(read(word).is_some_and(|e| Some(e) == read(written)), "{word}");
+        }
+        // Spellings that read differently keep their own readings.
+        assert_ne!(read("Polish"), read("polish"));
+        assert_eq!(read("POLISH"), None);
+        assert_eq!(read("August"), lexicon.misaki_entry("August", true));
+        assert_eq!(read("august"), lexicon.misaki_entry("august", true));
     }
 
     #[test]

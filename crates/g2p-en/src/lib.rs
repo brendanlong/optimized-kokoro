@@ -12,7 +12,9 @@ mod subtokenize;
 mod text;
 mod unicode_tables;
 
+use kokoro_text::capitals::{self, words};
 use lexicon::{LexToken, Lexicon, TokenContext, is_consonant, is_vowel};
+use std::borrow::Cow;
 use std::fmt;
 
 pub use subtokenize::subtokenize;
@@ -306,6 +308,23 @@ fn resolve_tokens(tokens: &mut [MToken]) {
     }
 }
 
+fn one_char(mut chars: impl Iterator<Item = char>) -> Option<char> {
+    let c = chars.next()?;
+    chars.next().is_none().then_some(c)
+}
+
+/// Puts back the case of `original` that [`G2p::sentence_case`] changed in `cased`.
+fn restore_case(tokens: &mut [Token], cased: &str, original: &str) -> Result<(), Error> {
+    // The tokens may leave characters out (misaki's `subtokenize` drops a lone "'" in "X'1").
+    let mut pairs = cased.chars().zip(original.chars());
+    let mut take = |c: char| pairs.find(|&(x, _)| x == c).map(|(_, o)| o).ok_or(Error::Alignment);
+    for token in tokens {
+        token.text = token.text.chars().map(&mut take).collect::<Result<_, _>>()?;
+        token.whitespace.chars().try_for_each(|c| take(c).map(drop))?;
+    }
+    Ok(())
+}
+
 /// The most subtokens of a run without whitespace looked up together. misaki tries every span of the
 /// run, which is cubic in its length; no lexicon key has more than 13 subtokens
 /// ("what-you-see-is-what-you-get"), so only dotted abbreviations and numbers split by repeated
@@ -326,7 +345,8 @@ impl G2p {
         G2p { lexicon: Lexicon::new(british), names: names::Names::new() }
     }
 
-    /// `G2P.__call__`: the phoneme string and the tokens.
+    /// `G2P.__call__`: the phoneme string and the tokens. Sentences in capitals are read in
+    /// [`G2p::sentence_case`], and the tokens keep the text as written.
     pub fn phonemize(
         &self,
         text: &str,
@@ -334,8 +354,77 @@ impl G2p {
         fallback: Option<&mut dyn Fallback>,
     ) -> Result<(String, Vec<Token>), Error> {
         let pre = Preprocessed::new(text);
-        let tagged = tagger.tag(&pre.text);
-        self.phonemize_tagged(&pre, tagged, fallback)
+        let cased = self.sentence_case(&pre.text);
+        let tagged = tagger.tag(&cased);
+        let (ps, mut tokens) = self.phonemize_tagged(&pre, tagged, fallback)?;
+        if let Cow::Owned(cased) = cased {
+            restore_case(&mut tokens, &cased, &pre.text)?;
+        }
+        Ok((ps, tokens))
+    }
+
+    /// `text` with each sentence written in capitals ([`capitals::sentences_in_capitals`]) cased
+    /// the way English usually is: lowercase but for its first letter, "I", and the short words in
+    /// ASCII capitals that no dictionary has, which are acronyms. spaCy's tagger and misaki's
+    /// lexicon both read case as a clue (a capital starts a sentence or a name, and stresses a
+    /// word), which capitals everywhere don't give. Each character keeps its place, so tokens map
+    /// back to the text.
+    pub fn sentence_case<'t>(&self, text: &'t str) -> Cow<'t, str> {
+        let mut out = String::new();
+        let mut copied = 0;
+        for range in capitals::sentences_in_capitals(text) {
+            out.push_str(&text[copied..range.start]);
+            self.recase(&text[range.clone()], &mut out);
+            copied = range.end;
+        }
+        if copied == 0 {
+            return Cow::Borrowed(text);
+        }
+        out.push_str(&text[copied..]);
+        Cow::Owned(out)
+    }
+
+    /// Whether `text` reads differently from misaki for its case (docs/divergences.md, "misaki
+    /// English: case"): a sentence in capitals, a word in capitals misaki stressed more, or a word
+    /// only a spelling in another case reads. For the parity tests.
+    #[doc(hidden)]
+    pub fn differs_from_misaki_by_case(&self, text: &str) -> bool {
+        self.sentence_case(text) != text
+            || words(text).any(|(w, word)| {
+                word && w
+                    .split(['-', '.'])
+                    .any(|w| self.lexicon.found_by_case_alone(w) || self.lexicon.shouted_differently(w))
+            })
+    }
+
+    fn recase(&self, sentence: &str, out: &mut String) {
+        let read = |w: &str| self.lexicon.get(&LexToken { text: w, tag: "NN" }, &TokenContext::default()).is_some();
+        // A compound's words may each be known ("resting-place"); letters alone are spelled ("S-H-A-D-E").
+        let known = |w: &str| read(w) || w.contains('-') && w.split('-').all(|w| w.chars().count() > 1 && read(w));
+        let mut first = true;
+        for (word, is_word) in words(sentence) {
+            if !is_word {
+                out.push_str(word);
+                continue;
+            }
+            let mut cased: String = word.chars().map(|c| one_char(c.to_lowercase()).unwrap_or(c)).collect();
+            // An acronym is short and ASCII, as the caps pass had it: "ZQX" and "S-H-A-D-E", but
+            // "BENNET" and "ÉCOLE" are words the dictionaries don't have.
+            let short = cased.split('-').all(|w| w.chars().filter(|c| c.is_alphabetic()).count() < 4);
+            if cased.is_ascii() && short && !known(&cased) {
+                cased = word.to_owned();
+            }
+            let i = cased.strip_prefix('i').is_some_and(|r| r.is_empty() || r.starts_with(['\'', '’']));
+            if (first || i)
+                && let Some((at, c)) = cased.char_indices().find(|&(_, c)| c.is_alphabetic())
+                && c.is_lowercase()
+                && let Some(u) = one_char(c.to_uppercase())
+            {
+                cased.replace_range(at..at + c.len_utf8(), u.encode_utf8(&mut [0; 4]));
+            }
+            first = false;
+            out.push_str(&cased);
+        }
     }
 
     /// [`G2p::phonemize`] given spaCy's tokens for `pre.text`.
@@ -475,7 +564,8 @@ impl G2p {
         })
     }
 
-    /// `text` with each name from `data/names.json` that stands as a word of its own made a
+    /// `text` with each name from `data/names.json` that stands as a word of its own, in any case
+    /// and with or without its accents, made a
     /// `[name](/phonemes/)` link, outside the links it has: so every G2P reads names alike. In text
     /// of `language` (espeak's code for the pipeline's own language, `en` for English) the names
     /// that are common words there are left alone (`data/names_skip.json`). "'s" after a name takes
@@ -568,4 +658,37 @@ fn retokenize(tokens: Vec<MToken>) -> Result<Vec<Word>, Error> {
             w => w,
         })
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::G2p;
+
+    #[test]
+    fn sentences_in_capitals_are_cased_as_usual() {
+        let g2p = G2p::new(false);
+        let cased = |t: &str| g2p.sentence_case(t).into_owned();
+        assert_eq!(cased("THE QUICK BROWN FOX. AM I IN? I'M OUT."), "The quick brown fox. Am I in? I'm out.");
+        // Words in capitals no dictionary has are acronyms; the dictionaries' words are words.
+        assert_eq!(cased("THE ZQX OF MCDONALD'S"), "The ZQX of mcdonald's");
+        assert_eq!(cased("MISS BENNET"), "Miss bennet");
+        assert_eq!(cased("AINULINDALË, THE MUSIC"), "Ainulindalë, the music");
+        assert_eq!(cased("THE S-H-A-D-E AND U.S. ARMY"), "The S-H-A-D-E and u.s. Army");
+        assert_eq!(cased("THE RESTING-PLACE"), "The resting-place");
+        assert_eq!(cased("İSTANBUL İSTANBUL"), "İstanbul İstanbul");
+        // Other sentences are left as written, and so is one word in capitals: lowercase text may
+        // be a clause cut from a sentence, or follow an abbreviation ("e.g. hammers").
+        for t in [
+            "The FBI said so.",
+            "iPhone sales",
+            "1, 2, 3.",
+            "i saw it. then i left",
+            "Use tools, e.g. hammers.",
+            "OK",
+            "NASA!",
+        ] {
+            assert_eq!(cased(t), t);
+        }
+        assert_eq!(cased("It's fine. NO IT ISN'T!\nCHAPTER ONE"), "It's fine. No it isn't!\nChapter one");
+    }
 }

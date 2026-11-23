@@ -5,14 +5,16 @@
 Each source module (SOURCES) has names(cache, english) -> {spelling: (phonemes, countable)}: the spellings
 the source attests, where english is the set of words misaki's dictionaries have (as written and
 lowercase) and countable says whether the name takes a plural (Silmaril and Balrog do; Celebrimbor and
-Gondor don't). Each spelling with accents also gets an accent-free twin ("Earendil" for "Eärendil"), and each
-countable name its plural ("Silmarils"). A spelling is left out when:
-- English already has it: misaki's dictionaries know it in any case ("Region", "Luna", "Turin");
+Gondor don't). Each countable name also gets its plural ("Silmarils"). A spelling is left out when:
+- English already has it: misaki's dictionaries know it in any case ("Region", "Luna");
 - it's on exclude.tsv: an English reader could meet it outside the source's world (reviewed by hand from
-  the flags flag.py collects in review/);
-- two names that differ only in accents are read differently, for their shared accent-free twin.
+  the flags flag.py collects in review/).
+The G2P finds a name in any case and without its accents ("EARENDIL" is "Eärendil"), so a spelling without
+the accents that is left out for either reason ("Turin" for "Túrin", "Dior" for "Díor"), or that was never
+checked, is written with no phonemes: it isn't the name.
 A pipeline that reads Latin text in another language also skips the names exclude_languages.tsv lists
-for it, common words there ("Este" in Portuguese), written to names_skip.json.
+for it, common words there ("Este" in Portuguese), written to names_skip.json: a skipped spelling without
+accents skips the name written without them, and one with accents only itself ("Estë" is still the name).
 Single words must have been through flag.py; the build stops if one hasn't.
 """
 
@@ -24,6 +26,7 @@ import unicodedata
 from pathlib import Path
 
 import tolkien
+from spelling import accents_within, fold, marks
 
 ROOT = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
@@ -68,16 +71,16 @@ def reviewed(source):
     return set(json.load(open(path))["reviewed"]) if path.exists() else set()
 
 
-def candidates(own):
-    """{spelling: (phonemes, countable)}: the source's spellings and their accent-free twins."""
-    twins, clashes = {}, set()
+def unaccented(own):
+    """{spelling: (phonemes, countable)}: the source's spellings without their accents, where the source
+    doesn't write them so, and the names that differ only in accents read alike."""
+    plain, clashes = {}, set()
     for spelling, entry in own.items():
-        plain = strip_accents(spelling)
-        if plain != spelling and plain not in own:
-            # Two names that only differ in accents may be read differently: then the twin is ambiguous.
-            if twins.setdefault(plain, entry)[0] != entry[0]:
-                clashes.add(plain)
-    return {**own, **{s: e for s, e in twins.items() if s not in clashes}}
+        bare = strip_accents(spelling)
+        if bare != spelling and bare not in own:
+            if plain.setdefault(bare, entry)[0] != entry[0]:
+                clashes.add(bare)
+    return {s: e for s, e in plain.items() if s not in clashes}
 
 
 def plural(spelling, phonemes):
@@ -115,12 +118,27 @@ def main():
                 raise SystemExit(f"{spelling}: two sources read it differently")
             return True
 
-        entries = candidates(module.names(args.cache, english))
+        entries = {**(own := module.names(args.cache, english)), **unaccented(own)}
         kept = {s: p for s, (p, _) in entries.items() if keep(s, p)}
         # Plurals of the countable names that are kept (Silmarils, not Celebrimbors), checked the same way.
         plurals = dict(filter(None, (plural(s, p) for s, p in kept.items() if entries[s][1])))
         kept.update({s: p for s, p in plurals.items() if s not in kept and keep(s, p)})
-        names.update(kept)
+        # The G2P finds a name in any case and without its accents: a spelling that would find a kept name
+        # but wasn't kept itself (left out above, or never checked, like "Quendes" for "Quendës") is written
+        # without phonemes, and where every spelling of a name reads alike, one is enough.
+        rejected = (set(entries) | {strip_accents(s) for s in kept}) - kept.keys()
+        by_key = {}
+        for s, p in kept.items():
+            by_key.setdefault(fold(s), {})[s] = p
+        for s in rejected:
+            if fold(s) in by_key:
+                by_key[fold(s)][s] = None
+        for spellings in by_key.values():
+            if len(set(spellings.values())) == 1:
+                # A spelling the G2P finds through another ("Earendil" through "Eärendil") isn't needed.
+                covered = lambda s: any(t != s and marks(t) > marks(s) and accents_within(s, t) for t in spellings)
+                spellings = {s: p for s, p in spellings.items() if not covered(s)}
+            names.update(spellings)
         if unreviewed:
             json.dump(sorted(unreviewed), open(HERE / "review" / f"{source}.todo.json", "w"), ensure_ascii=False, indent=0)
             raise SystemExit(f"{len(unreviewed)} {source} words haven't been checked for other meanings: "
@@ -128,7 +146,7 @@ def main():
     OUT.write_text(json.dumps(dict(sorted(names.items())), ensure_ascii=False, indent=0) + "\n", encoding="utf-8")
     skip = {}
     for language, spellings in sorted(excluded_by_language().items()):
-        missing = spellings - names.keys()
+        missing = {s for s in spellings if fold(s) not in {fold(n) for n in names}}
         if missing:
             raise SystemExit(f"exclude_languages.tsv: {language} {sorted(missing)} aren't in names.json")
         skip[language] = sorted(spellings)
