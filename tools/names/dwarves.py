@@ -22,14 +22,15 @@ KHUZDUL = [
     "Khazad-dûm", "Khazâd", "Khazad", "Khuzdul", "Baruk Khazâd", "Khazâd ai-mênu", "Uzbad Khazad-dûmu",
     "Mazarbul", "Kheled-zâram", "Kibil-nâla", "Zirakzigil", "Zirak-zigil", "Barazinbar", "Baraz",
     "Bundushathûr", "Shathûr", "Azanulbizar", "Gabilgathol", "Tumunzahar", "Gundabad", "Tharkûn",
-    "Felakgundu", "Nulukkizdîn", "Sigin-tarâg", "Azaghâl", "Gamil Zirak", "Khîm", "Ibun", "Rukhs",
+    "Felakgundu", "Nulukkizdîn", "Sigin-tarâg", "Azaghâl", "Gamil Zirak", "Khîm", "Ibun", "Rukhs", "Rakhâs",
+    "Fundinul",
 ]
 
 # Durin's line and the Dwarves of The Hobbit, The Lord of the Rings and The Silmarillion.
 OUTER = [
     "Durin", "Thorin", "Thráin", "Thrór", "Dáin", "Náin", "Óin", "Glóin", "Balin", "Dwalin", "Fíli", "Kíli",
     "Bifur", "Bofur", "Bombur", "Dori", "Nori", "Ori", "Gimli", "Fundin", "Frár", "Lóni", "Nár", "Flói",
-    "Borin", "Farin", "Grór", "Frerin", "Dís", "Narvi", "Mîm", "Gróin",
+    "Borin", "Farin", "Grór", "Frerin", "Dís", "Narvi", "Mîm", "Gróin", "Náli", "Frór",
 ]
 
 
