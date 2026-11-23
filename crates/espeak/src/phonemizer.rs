@@ -87,10 +87,10 @@ impl Backend {
     }
 }
 
-/// `text` with each character and the combining marks after it written as the fewest characters
+/// `text` with each letter and the combining marks after it written as the fewest characters
 /// they compose to (NFC), in every script: "e" + U+0302 + U+0303 is "ễ", "И" + U+0306 is "Й".
 /// Characters are only ever joined, never split: NFC would write U+0958 "क़" (a composition
-/// exclusion) as "क" + U+093C.
+/// exclusion) as "क" + U+093C. Symbols keep their marks ("=" + U+0338 isn't "≠").
 pub fn compose_marks(text: &str) -> Cow<'_, str> {
     if !text.chars().any(is_combining_mark) {
         return text.into();
@@ -105,7 +105,7 @@ pub fn compose_marks(text: &str) -> Cow<'_, str> {
             chars.next();
         }
         let cluster = &text[start..end];
-        if cluster.nfc().count() < cluster.chars().count() {
+        if c.is_alphabetic() && cluster.nfc().count() < cluster.chars().count() {
             out.push_str(&text[copied..start]);
             out.extend(cluster.nfc());
             copied = end;
@@ -122,7 +122,7 @@ pub fn compose_marks(text: &str) -> Cow<'_, str> {
 /// letter and combining marks ("ễ" is "e", "क़" is "क"; "한", whose decomposition is jamo, is
 /// none).
 fn accented_letter_base(c: char) -> Option<char> {
-    if c.is_ascii() {
+    if c.is_ascii() || !c.is_alphabetic() {
         return None;
     }
     let mut d = std::iter::once(c).nfd();
@@ -339,8 +339,16 @@ mod tests {
             compose_marks("Nguye\u{302}\u{303}n cafe\u{301} \u{418}\u{306}\u{43e}\u{440}\u{43a} \u{3b1}\u{301}."),
             "Nguyễn café Йорк ά."
         );
-        for other in ["Nguyễn", "\u{915}\u{93c}", "\u{958}", "\u{958}\u{94d}", "\u{212a}", "\u{5d1}\u{5bc}", "\u{301}a"]
-        {
+        for other in [
+            "Nguyễn",
+            "\u{915}\u{93c}",
+            "\u{958}",
+            "\u{958}\u{94d}",
+            "\u{212a}",
+            "\u{5d1}\u{5bc}",
+            "\u{301}a",
+            "=\u{338}",
+        ] {
             assert_eq!(compose_marks(other), other);
         }
     }
@@ -351,11 +359,13 @@ mod tests {
         let mut english = Backend::new("en-us", data.clone()).unwrap();
         assert_eq!(english.letters_espeak_names("Nguyễn Thị Phạm Đồng"), "Nguyen Thi Pham Đong");
         assert_eq!(english.letters_espeak_names("cafe\u{301} ṣe\u{323}"), "café se");
-        for other in ["café Dvořák", "Привет", "한국어", "a\u{2003}b"] {
+        for other in ["café Dvořák", "Привет", "한국어", "a\u{2003}b", "∉ ≮ \u{385}", "=\u{338}"] {
             assert_eq!(english.letters_espeak_names(other), other);
         }
         let mut russian = Backend::new("ru", data.clone()).unwrap();
         assert_eq!(russian.letters_espeak_names("\u{438}\u{300} \u{45d} Йорк"), "и и Йорк");
+        let mut hebrew = Backend::new("he", data.clone()).unwrap();
+        assert_eq!(hebrew.letters_espeak_names("\u{fb31}\u{5d9}\u{5ea}"), "\u{5d1}\u{5d9}\u{5ea}");
         let mut hindi = Backend::new("hi", data).unwrap();
         for other in ["क़िला", "\u{915}\u{93c}िला"] {
             assert_eq!(hindi.letters_espeak_names(other), other);
