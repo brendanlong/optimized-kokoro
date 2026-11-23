@@ -1,0 +1,24 @@
+# Listening test for joins between languages. `snakemake -c1 plan` writes the plan the GPU job reads
+# (worker/bench/job_join_listen.yaml, submitted from worker/ with gpuc); after `gpuc fetch`, put the
+# clips in results/clips and run `snakemake -c1 page`.
+R = "results"
+PHONEMIZE = "../../target/release/examples/phonemize"
+PLAN = "../../worker/bench/join_listen/plan.json"
+
+
+rule phonemize_binary:
+    output: PHONEMIZE
+    shell: "cargo build --release -p kokoro-pipeline --example phonemize"
+
+
+rule plan:
+    input: sentences="sentences.json", binary=PHONEMIZE
+    output: PLAN
+    shell: "python3 plan.py {input.sentences} {input.binary} {output}"
+
+
+rule page:
+    input: plan=PLAN, clips=f"{R}/clips"
+    output: f"{R}/page/index.html"
+    params: out=f"{R}/page"
+    shell: "python3 page.py {input.plan} {input.clips} {params.out}"

@@ -210,18 +210,14 @@ pub struct Chunk {
     /// Which sides of the chunk were cut from its sentence at clause punctuation, for a sentence
     /// longer than the chunk limit.
     pub split: Split,
-    /// misaki's tokens (English only), for [`Chunk::words`].
-    tokens: Option<Vec<Token>>,
+    /// The words' tokens, for [`Chunk::words`]; none for a pause.
+    tokens: Vec<Token>,
 }
 
 impl Chunk {
     /// The words with phonemes, for word timestamps (Kokoro-FastAPI's `_word_spans`).
     pub fn words(&self) -> Vec<Word> {
-        let kept = kokoro_phonemes::tokenize(&self.phonemes).kept;
-        match &self.tokens {
-            Some(tokens) => word_spans(tokens, &kept),
-            None => text_word_spans(&self.text, &self.phonemes, &kept),
-        }
+        word_spans(&self.tokens, &kokoro_phonemes::tokenize(&self.phonemes).kept)
     }
 }
 
@@ -372,7 +368,7 @@ impl Pipeline {
                     pause: Some(seconds),
                     unread: 0,
                     split: Split::default(),
-                    tokens: None,
+                    tokens: Vec::new(),
                 },
             })
         })
@@ -382,7 +378,7 @@ impl Pipeline {
     /// phoneme string and misaki's tokens.
     pub fn phonemize(&self, text: &str) -> Result<(String, Vec<Token>), Error> {
         let p = Request::new(self).phonemize(text)?;
-        Ok((p.phonemes, p.tokens.unwrap_or_default()))
+        Ok((p.phonemes, p.tokens))
     }
 }
 
@@ -396,17 +392,17 @@ fn espeak_voice(code: &str, lang: Lang) -> &str {
     }
 }
 
-/// G2P output: the IPA, the ids it reads as (which chunking measures), misaki's tokens (English
-/// only), and how many runs were read as a placeholder for want of a G2P.
+/// G2P output: the IPA, the ids it reads as (which chunking measures), the words' tokens,
+/// and how many runs were read as a placeholder for want of a G2P.
 struct Phonemes {
     phonemes: String,
     read: kokoro_phonemes::Tokens,
-    tokens: Option<Vec<Token>>,
+    tokens: Vec<Token>,
     unread: usize,
 }
 
 impl Phonemes {
-    fn new(phonemes: String, tokens: Option<Vec<Token>>, unread: usize) -> Self {
+    fn new(phonemes: String, tokens: Vec<Token>, unread: usize) -> Self {
         Phonemes { read: kokoro_phonemes::tokenize(&phonemes), phonemes, tokens, unread }
     }
 }
@@ -424,35 +420,6 @@ impl kokoro_text::Phonemes for Phonemes {
 fn speech(text: String, p: Phonemes, split: Split) -> Chunk {
     let kokoro_phonemes::Tokens { ids, dropped, .. } = p.read;
     Chunk { text, phonemes: p.phonemes, ids, dropped, pause: None, unread: p.unread, split, tokens: p.tokens }
-}
-
-/// `_word_spans` without misaki's tokens (every pipeline but English): the text's words paired
-/// with the phonemes' space-separated groups, when there are as many of each, else none.
-fn text_word_spans(text: &str, phonemes: &str, kept: &[usize]) -> Vec<Word> {
-    let words: Vec<&str> = text.split(kokoro_text::py::is_space).filter(|w| !w.is_empty()).collect();
-    let mut groups = Vec::new();
-    let mut start = None;
-    for (i, c) in phonemes.chars().chain([' ']).enumerate() {
-        match (kokoro_text::py::is_space(c), start) {
-            (true, Some(s)) => {
-                groups.push(s..i);
-                start = None;
-            }
-            (false, None) => start = Some(i),
-            _ => {}
-        }
-    }
-    if groups.len() != words.len() {
-        return Vec::new();
-    }
-    words
-        .into_iter()
-        .zip(groups)
-        .filter_map(|(word, phonemes)| {
-            let ids = kept[phonemes.start]..kept[phonemes.end];
-            (!ids.is_empty()).then(|| Word { text: word.to_owned(), phonemes, ids })
-        })
-        .collect()
 }
 
 /// `_word_spans` followed by the vocabulary filter `_render_stitched` applies: each word with
@@ -492,16 +459,107 @@ fn word_spans(tokens: &[Token], kept: &[usize]) -> Vec<Word> {
     words
 }
 
-/// Puts a space between each placeholder and a word right against it on either side, unless
-/// there's whitespace already: the run it stands for may have been written without spaces, or
-/// with only invisible characters around it.
+/// Two runs are two words where nothing parts them: scripts written without spaces ("東京Tokyo"),
+/// or punctuation the run's G2P reads as nothing ("昨日は、meeting" in Japanese). So the run whose
+/// first token is `tokens[start]` gets a space before it when it starts with a sound and the
+/// token before ends with one, or with clause punctuation.
+fn part_runs(tokens: &mut [Token], start: usize) {
+    let Some(first) = tokens.get(start).and_then(|t| t.phonemes.as_deref()).and_then(|p| p.chars().next()) else {
+        return;
+    };
+    let Some(before) = tokens[..start]
+        .iter_mut()
+        .rev()
+        .find(|t| t.phonemes.as_deref().is_some_and(|p| !p.is_empty()) || !t.whitespace.is_empty())
+    else {
+        return;
+    };
+    let last = before.phonemes.as_deref().and_then(|p| p.chars().next_back());
+    let sound = |c: char| c.is_alphabetic() || "ˈˌːʰʲ↓→↗↘\u{303}\u{361}".contains(c);
+    if before.whitespace.is_empty() && sound(first) && last.is_some_and(|c| sound(c) || ",;:.!?…".contains(c)) {
+        before.whitespace.push(' ');
+    }
+}
+
+/// A piece of a run outside English: text for the run's G2P, or a `[text](/phonemes/)` link's.
+enum Piece {
+    Text(String),
+    Phonemes { text: String, ipa: String },
+}
+
+/// `segment` cut at its links, each read as its phonemes (misaki's `/phonemes/`, IPA's syllable
+/// breaks left out). Every other link is plain text already ([`G2p::plain_links`]).
+fn link_pieces(segment: &str) -> Vec<Piece> {
+    static LINK: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r"\[([^\]]+)\]\(([^\)]*)\)").expect("valid regex"));
+    let mut pieces = Vec::new();
+    let mut text = String::new();
+    let mut last = 0;
+    for m in LINK.captures_iter(segment) {
+        let whole = m.get(0).expect("match");
+        text.push_str(&segment[last..whole.start()]);
+        last = whole.end();
+        match kokoro_g2p_en::link_phonemes(&m[2]) {
+            Some(ipa) => {
+                if !text.is_empty() {
+                    pieces.push(Piece::Text(std::mem::take(&mut text)));
+                }
+                pieces.push(Piece::Phonemes { text: m[1].to_owned(), ipa });
+            }
+            None => text.push_str(&m[1]),
+        }
+    }
+    text.push_str(&segment[last..]);
+    if !text.is_empty() {
+        pieces.push(Piece::Text(text));
+    }
+    pieces
+}
+
+/// Appends a run read by a G2P other than misaki's English: one token per word of `phonemes`,
+/// each holding its word of the text when the run has as many words as phoneme words, else the
+/// first holding the run's text. The run's whitespace at either end joins it to its neighbours,
+/// as misaki's tokens are joined.
+fn append_run(tokens: &mut Vec<Token>, segment: &str, phonemes: &str) {
+    let words: Vec<&str> = phonemes.split(kokoro_text::py::is_space).filter(|w| !w.is_empty()).collect();
+    let stripped = segment.trim_start_matches(kokoro_text::py::is_space);
+    let trailing = &stripped[stripped.trim_end_matches(kokoro_text::py::is_space).len()..];
+    if let Some(last) = tokens.last_mut() {
+        last.whitespace.push_str(&segment[..segment.len() - stripped.len()]);
+        // A run read as nothing still parts its neighbours where it has whitespace.
+        if words.is_empty() {
+            last.whitespace.push_str(trailing);
+        }
+    }
+    let n = words.len();
+    let texts: Vec<&str> = segment.split(kokoro_text::py::is_space).filter(|w| !w.is_empty()).collect();
+    let text = |i: usize| match texts.len() == n {
+        true => texts[i].to_owned(),
+        false if i == 0 => kokoro_text::py::strip(segment).to_owned(),
+        false => String::new(),
+    };
+    tokens.extend(words.iter().enumerate().map(|(i, w)| Token {
+        text: text(i),
+        tag: String::new(),
+        whitespace: if i + 1 < n { " ".to_owned() } else { trailing.to_owned() },
+        phonemes: Some((*w).to_owned()),
+    }));
+}
+
+/// Puts a space between each placeholder and a word right against it on either side, or clause
+/// punctuation before it, unless there's whitespace already: the run it stands for may have been
+/// written without spaces ("，カナ" in Chinese), or with only invisible characters around it.
 fn separate(tokens: &mut [Token], placeholders: &[Range<usize>]) {
     let spoken = |t: &Token| t.phonemes.as_deref().is_some_and(|p| !p.is_empty()) || !t.whitespace.is_empty();
     let word = |c: Option<char>| c.is_some_and(char::is_alphabetic);
     for range in placeholders {
         if let Some(before) = tokens[..range.start].iter().rposition(spoken)
             && tokens[before].whitespace.is_empty()
-            && word(tokens[before].phonemes.as_deref().and_then(|p| p.chars().next_back()))
+            && tokens[before]
+                .phonemes
+                .as_deref()
+                .and_then(|p| p.chars().next_back())
+                .is_some_and(|c| c.is_alphabetic() || ",;:.!?—…".contains(c))
         {
             tokens[before].whitespace.push(' ');
         }
@@ -582,60 +640,95 @@ impl<'p> Request<'p> {
         Request { pipeline, fallback: None, espeak: HashMap::new(), native: None }
     }
 
-    /// Kokoro-FastAPI's `phonemize` for English: CJK punctuation made Western, then
-    /// `en_g2p_tokens` and `tokens_to_ps`.
+    /// Kokoro-FastAPI's `phonemize`, one way for every pipeline: CJK punctuation made Western
+    /// (but in Chinese and Japanese, whose G2Ps do their own), the text split into runs
+    /// (`foreign.py`), each run read by its language's G2P into word tokens, and the tokens joined
+    /// (`tokens_to_ps`): a space between two runs where the text has whitespace at the join, or
+    /// two letters meet there.
+    /// The pipeline's own runs go to misaki's English G2P (`lang` a, b), misaki's Chinese or
+    /// Japanese G2P, or `EspeakG2P` in the pipeline's language; Latin runs elsewhere go to misaki's
+    /// American English G2P.
     ///
-    /// A run with no G2P for its language or script (so far Chinese and Japanese, and the letters
+    /// A run with no G2P for its language or script (Japanese without UniDic, and the letters
     /// espeak has no voice for) is read as "<name> text" instead: once for runs of one language
     /// with only joiners, marks or format characters between them, and kept apart from the words
     /// on either side. So is a run its G2P reads as nothing, outside `foreign.py`'s scripts (where
     /// the reference reads it as nothing too).
     fn phonemize(&mut self, text: &str) -> Result<Phonemes, Error> {
-        if self.pipeline.lang == Lang::Chinese {
-            // No CJK punctuation mapping: `ZHG2P` does its own.
-            return self.g2p_phonemes(text);
+        let lang = self.pipeline.lang;
+        if lang == Lang::Japanese {
+            let g2p = self.pipeline.foreign.get(&Language::Japanese).expect("every pipeline has a Japanese G2P");
+            if !g2p.available() {
+                return Err(Error::Dictionary(
+                    kokoro_g2p_ja::default_dictionary().err().map_or_else(String::new, |e| e.to_string()),
+                ));
+            }
         }
-        if self.pipeline.lang == Lang::Japanese {
-            return self.japanese(text);
-        }
-        if self.pipeline.lang.espeak_voice().is_some() {
-            return self.g2p_phonemes(&foreign::translate_cjk_punctuation(text));
-        }
-        let graphemes = foreign::translate_cjk_punctuation(text);
+        let graphemes = match lang {
+            Lang::Chinese | Lang::Japanese => text.into(),
+            _ => foreign::translate_cjk_punctuation(text),
+        };
+        // Latin text is the pipeline's own in Spanish, French, Italian and Portuguese.
+        let latin = match lang.native() {
+            foreign::Native::Espeak(Script::Latin) => lang.espeak_voice().and_then(|v| v.get(..2)).unwrap_or("en"),
+            _ => "en",
+        };
+        let graphemes = G2p::plain_links(&graphemes);
+        let graphemes = self.pipeline.g2p.link_names(&graphemes, latin);
         let mut tokens: Vec<Token> = Vec::new();
         let mut placeholders = Vec::new();
         let chinese = self.pipeline.foreign.get(&Language::Chinese);
-        let segments =
-            foreign::split_in(&graphemes, foreign::Native::English, |c| chinese.is_none_or(|g2p| g2p.reads(c)));
+        let segments = foreign::split_in(&graphemes, lang.native(), |c| chinese.is_none_or(|g2p| g2p.reads(c)));
         let mut i = 0;
         while i < segments.len() {
             let (segment, language) = segments[i];
+            let start = tokens.len();
             i += 1;
-            let Some(language) = language else {
-                self.english(&mut tokens, segment)?;
-                continue;
-            };
-            let run = if self.reads(language) {
-                let ps = self.foreign(segment, language)?;
-                let words: Vec<&str> = ps.split(kokoro_text::py::is_space).filter(|w| !w.is_empty()).collect();
-                let reference = language == Language::Japanese
-                    || matches!(language, Language::Script(s) if foreign::in_foreign_py(s));
-                if !words.is_empty() || reference {
-                    tokens.extend(words.iter().enumerate().map(|(i, w)| Token {
-                        text: if i == 0 { segment.to_owned() } else { String::new() },
-                        tag: String::new(),
-                        whitespace: if i + 1 < words.len() { " ".to_owned() } else { String::new() },
-                        phonemes: Some((*w).to_owned()),
-                    }));
+            let run = match language {
+                None if lang.english() => {
+                    self.english(&mut tokens, segment)?;
+                    part_runs(&mut tokens, start);
                     continue;
                 }
-                segment.to_owned()
-            } else {
-                let start = i - 1;
-                i = unread_run_end(&segments, start);
-                segments[start..i].iter().map(|(s, _)| *s).collect()
+                Some(Language::English) => {
+                    self.english(&mut tokens, &foreign::prepare(segment, Language::English))?;
+                    part_runs(&mut tokens, start);
+                    continue;
+                }
+                None => {
+                    // misaki reads links in English; elsewhere a link is a run of its own.
+                    for piece in link_pieces(segment) {
+                        let (text, ps) = match piece {
+                            Piece::Text(text) => {
+                                let ps = self.native(&text)?;
+                                (text, ps)
+                            }
+                            Piece::Phonemes { text, ipa } => (text, ipa),
+                        };
+                        let start = tokens.len();
+                        append_run(&mut tokens, &text, &ps);
+                        part_runs(&mut tokens, start);
+                    }
+                    continue;
+                }
+                Some(language) if self.reads(language) => {
+                    let ps = self.foreign(segment, language)?;
+                    let reference = language == Language::Japanese
+                        || matches!(language, Language::Script(s) if foreign::in_foreign_py(s));
+                    if !ps.is_empty() || reference {
+                        append_run(&mut tokens, segment, &ps);
+                        part_runs(&mut tokens, start);
+                        continue;
+                    }
+                    segment.to_owned()
+                }
+                Some(_) => {
+                    let start = i - 1;
+                    i = unread_run_end(&segments, start);
+                    segments[start..i].iter().map(|(s, _)| *s).collect()
+                }
             };
-            let start = tokens.len();
+            let language = language.expect("the pipeline's own runs are read");
             tokens.extend(self.placeholder(language, run)?);
             placeholders.push(start..tokens.len());
         }
@@ -644,25 +737,13 @@ impl<'p> Request<'p> {
         for token in &mut tokens {
             token.phonemes.get_or_insert_with(String::new);
         }
-        Ok(Phonemes::new(phonemes, Some(tokens), placeholders.len()))
+        Ok(Phonemes::new(phonemes, tokens, placeholders.len()))
     }
 
     fn reads(&self, language: Language) -> bool {
         language == Language::English
             || language.espeak().is_some()
             || self.pipeline.foreign.get(&language).is_some_and(|g2p| g2p.available())
-    }
-
-    /// Kokoro-FastAPI's `phonemize` for Japanese: [`g2p_phonemes`](Self::g2p_phonemes) on the
-    /// text as is (no CJK punctuation mapping), once UniDic is mapped.
-    fn japanese(&mut self, text: &str) -> Result<Phonemes, Error> {
-        let g2p = self.pipeline.foreign.get(&Language::Japanese).expect("every pipeline has a Japanese G2P");
-        if !g2p.available() {
-            return Err(Error::Dictionary(
-                kokoro_g2p_ja::default_dictionary().err().map_or_else(String::new, |e| e.to_string()),
-            ));
-        }
-        self.g2p_phonemes(text)
     }
 
     /// The pipeline's own G2P on a segment `ForeignScripts` didn't split out: misaki's Chinese or
@@ -684,78 +765,6 @@ impl<'p> Request<'p> {
             }
         };
         Ok(kokoro_text::py::strip(&raw).to_owned())
-    }
-
-    /// `KPipeline.g2p_phonemes` for Chinese, Japanese and the espeak languages (Kokoro-FastAPI's
-    /// `phonemize` maps CJK punctuation first for the latter): the text split into runs, where
-    /// what `foreign.py` doesn't split out goes to the pipeline's own G2P (Chinese: Han without
-    /// kana and the rest; Japanese: Han, kana and the rest; espeak's language: its own script and
-    /// the rest), Latin runs in another script's pipeline to misaki's American English G2P,
-    /// Chinese and Japanese runs to theirs, and the other scripts to espeak, as in the English
-    /// pipelines (so the scripts it has no voice for are "<name> text"). Each run's phonemes are
-    /// stripped and joined with a space where the text has one at the join, or two letters meet
-    /// there. There are no tokens: a chunk's words are its text's, paired with the phoneme groups
-    /// ([`text_word_spans`]).
-    fn g2p_phonemes(&mut self, text: &str) -> Result<Phonemes, Error> {
-        let chinese = self.pipeline.foreign.get(&Language::Chinese);
-        let segments = foreign::split_in(text, self.pipeline.lang.native(), |c| chinese.is_none_or(|g2p| g2p.reads(c)));
-        let mut ps = String::new();
-        let mut previous = "";
-        let mut unread = 0;
-        let mut after_placeholder = false;
-        let mut i = 0;
-        while i < segments.len() {
-            let (segment, language) = segments[i];
-            let start = i;
-            i += 1;
-            let mut placeholder = false;
-            let p = match language {
-                None => self.native(segment)?,
-                Some(Language::English) => {
-                    let text = foreign::prepare(segment, Language::English);
-                    let raw = self.english_string(&text)?;
-                    foreign::finish(&raw, Language::English, true)
-                }
-                Some(language) if self.reads(language) => self.foreign(segment, language)?,
-                Some(language) => {
-                    i = unread_run_end(&segments, start);
-                    unread += 1;
-                    placeholder = true;
-                    let run: String = segments[start..i].iter().map(|(s, _)| *s).collect();
-                    kokoro::tokens_to_ps(&self.placeholder(language, run)?)
-                }
-            };
-            let last = segments[i - 1].0;
-            let mut boundary = String::new();
-            boundary.extend(previous.chars().next_back());
-            boundary.extend(segment.chars().next());
-            let alpha = boundary.chars().count() == 2 && boundary.chars().all(kokoro_g2p_en::is_alpha);
-            // A placeholder is kept apart from its neighbours, as in the English pipelines.
-            let apart = placeholder || after_placeholder;
-            if !ps.is_empty() && !p.is_empty() && (boundary.chars().any(kokoro_text::py::is_space) || alpha || apart) {
-                ps.push(' ');
-            }
-            if !p.is_empty() {
-                after_placeholder = placeholder;
-            }
-            ps.push_str(&p);
-            previous = last;
-        }
-        Ok(Phonemes::new(kokoro_text::py::strip(&ps).to_owned(), None, unread))
-    }
-
-    /// misaki's English `G2P()(text)[0]` (American, with the espeak fallback), as
-    /// `ForeignScripts` reads Latin runs in other pipelines.
-    fn english_string(&mut self, segment: &str) -> Result<String, Error> {
-        let pipeline = self.pipeline;
-        let mut tagger = Spacy(pipeline.nlp);
-        let mut fallback =
-            LazyFallback { data: &pipeline.espeak, british: false, engine: &mut self.fallback, error: None };
-        let (ps, _) = pipeline.g2p.phonemize(segment, &mut tagger, Some(&mut fallback))?;
-        match fallback.error {
-            Some(e) => Err(e.into()),
-            None => Ok(ps),
-        }
     }
 
     /// "<name> text" for an unread run, as English words that make one token group like a foreign

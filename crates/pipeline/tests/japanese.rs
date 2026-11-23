@@ -31,6 +31,7 @@ fn japanese_reference_records() {
     }
     let show: usize = std::env::var("PARITY_SHOW").ok().and_then(|s| s.parse().ok()).unwrap_or(20);
     let (mut matched, mut compared, mut fixed, mut skipped, mut chars, mut chunks) = (0, 0, 0, 0, 0, 0);
+    let mut respaced = 0;
     let mut mismatches = Vec::new();
     let start = Instant::now();
     for record in &records {
@@ -58,8 +59,11 @@ fn japanese_reference_records() {
             actual.len() > expected.len() && actual[..expected.len()] == expected[..]
         } else {
             compared += 1;
-            // Short clauses are regrouped on purpose (docs/divergences.md).
+            // Short clauses are regrouped on purpose, and runs joined with one rule (docs/divergences.md).
+            let spaced = kokoro_reference::divergence::chunks_differ_only_in_run_spacing(&expected, &actual);
+            respaced += usize::from(spaced);
             actual == expected
+                || spaced
                 || kokoro_reference::clause_regrouping(
                     &expected,
                     &actual,
@@ -85,7 +89,7 @@ fn japanese_reference_records() {
     }
     let elapsed = start.elapsed();
     println!(
-        "{matched}/{} Japanese records match ({compared} exactly, {fixed} where the reference raised); {skipped} with other scripts not compared",
+        "{matched}/{} Japanese records match ({compared} compared, {respaced} of them spaced as runs join; {fixed} where the reference raised); {skipped} with other scripts not compared",
         compared + fixed
     );
     println!("{} records, {chars} characters, {chunks} chunks in {elapsed:.2?}", records.len());

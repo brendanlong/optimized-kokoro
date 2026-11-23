@@ -36,8 +36,10 @@ fn japanese_runs_are_read_by_the_japanese_g2p() {
     let pipeline = Pipeline::new(Lang::AmericanEnglish).unwrap();
     for (text, expected) in [
         ("東京へ行く", "toːkʲoː e ikɯ"),
-        ("The wordカナmeans hello.", "ðə wˈɜɹdkanamˈinz həlˈO."),
-        ("東京\u{200d}へ", "dˈʊŋʨˈiŋe"),
+        // Runs whose letters meet are words of their own.
+        ("The wordカナmeans hello.", "ðə wˈɜɹd kana mˈinz həlˈO."),
+        // Runs are two words even with a joiner between them.
+        ("東京\u{200d}へ", "dˈʊŋʨˈiŋ e"),
     ] {
         assert_eq!(read(&pipeline.phonemize(text).unwrap().0), expected, "{text}");
     }
@@ -141,7 +143,7 @@ fn hebrew_points_are_dropped() {
 fn a_foreign_run_is_one_token_per_word() {
     let (ps, tokens) = pipeline().phonemize("Say Москва река now").unwrap();
     let texts: Vec<&str> = tokens.iter().map(|t| t.text.as_str()).collect();
-    assert_eq!(texts, ["Say", "Москва река", "", "now"]);
+    assert_eq!(texts, ["Say", "Москва", "река", "now"]);
     assert_eq!(ps.split(' ').count(), 4);
 }
 
@@ -471,7 +473,7 @@ fn a_name_takes_possessive_and_plural_endings() {
 #[test]
 fn names_need_their_exact_spelling_and_lose_to_overrides() {
     let gondor = name("Gondor");
-    for text in ["gondor", "Gondorian", "[Gondor](/ɡˈɑndɔɹ/)", "[Gondor](+2)"] {
+    for text in ["gondor", "Gondorian", "[Gondor](/ɡˈɑndɔɹ/)"] {
         assert!(!phonemize(text).contains(&gondor), "{text}: {}", phonemize(text));
     }
     // "Minas" alone is left out as ambiguous (Minas Gerais); "Minas Tirith" is a name.
@@ -488,4 +490,64 @@ fn a_name_starting_with_a_vowel_takes_an_and_thee() {
 #[test]
 fn names_match_with_accents_as_combining_marks() {
     assert_eq!(phonemize("Ea\u{308}rendil"), name("Eärendil"));
+}
+
+#[test]
+fn names_and_links_are_read_in_every_language() {
+    let galadriel = name("Galadriel");
+    for lang in [Lang::French, Lang::Spanish, Lang::Italian, Lang::BrazilianPortuguese, Lang::Hindi, Lang::Japanese] {
+        if lang == Lang::Japanese && !kokoro_pipeline::japanese_available() {
+            continue;
+        }
+        let pipeline = Pipeline::new(lang).unwrap();
+        let ps = read(&pipeline.phonemize("Galadriel [Kokoro](/ˈko͡ʊkəɹo͡ʊ/)").unwrap().0);
+        assert_eq!(ps, format!("{galadriel} kˈOkəɹO"), "{lang:?}");
+    }
+}
+
+#[test]
+fn a_name_that_is_a_common_word_in_the_pipelines_language_is_read_as_the_word() {
+    let portuguese = Pipeline::new(Lang::BrazilianPortuguese).unwrap();
+    let ps = read(&portuguese.phonemize("Este livro").unwrap().0);
+    assert!(!ps.starts_with(&name("Este")), "{ps}");
+    assert!(phonemize("Este").starts_with(&name("Este")));
+}
+
+#[test]
+fn names_beside_brackets_contractions_and_other_scripts() {
+    let sauron = name("Sauron");
+    // A stray "[" before a name keeps the words between them.
+    assert!(phonemize("[see Sauron.").starts_with("sˈi "), "{}", phonemize("[see Sauron."));
+    // A contraction makes the name part of another word, as spaCy reads it; "'s" is its possessive.
+    assert!(!phonemize("Sauron'll come.").contains(&sauron), "{}", phonemize("Sauron'll come."));
+    assert_eq!(phonemize("Sauron's"), format!("{sauron}z"));
+    // A link misaki doesn't read is its text, which is a name.
+    assert_eq!(phonemize("[Sauron](foo)"), sauron);
+    // Japanese and Chinese write a Latin word without spaces around it.
+    if kokoro_pipeline::japanese_available() {
+        let japanese = Pipeline::new(Lang::Japanese).unwrap();
+        assert!(
+            read(&japanese.phonemize("私はGaladrielです").unwrap().0).contains(&format!(" {} ", name("Galadriel")))
+        );
+    }
+    assert!(phonemize("我和Galadriel去").contains(&name("Galadriel")));
+}
+
+/// Only `/phonemes/` links are read; any other (misaki's stress links, which the normalizer turns
+/// into words anyway) is its text, split by script like the rest.
+#[test]
+fn a_link_without_phonemes_is_read_as_its_text() {
+    let chinese = Pipeline::new(Lang::Chinese).unwrap();
+    let ps = read(&chinese.phonemize("你好[hello](+1)世界").unwrap().0);
+    assert!(ps.contains("həlˈO"), "{ps}");
+    assert_eq!(phonemize("[read](+2) it"), phonemize("read it"));
+}
+
+#[test]
+fn a_skipped_name_matches_with_its_accent_as_a_combining_mark() {
+    let french = Pipeline::new(Lang::French).unwrap();
+    for text in ["Sûr.", "Su\u{302}r."] {
+        let ps = read(&french.phonemize(text).unwrap().0);
+        assert!(!ps.contains(&name("Sûr")), "{text:?}: {ps}");
+    }
 }

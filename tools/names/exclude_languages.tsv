@@ -1,0 +1,92 @@
+# Names a pipeline doesn't read as names, because they're common words in its language.
+# language<TAB>spelling<TAB>reason. Claude's picks from review/common_words.tsv (2026-11-22), for
+# Brendan to review, leaning toward the word wherever a candidate could be one (his call): every
+# candidate at zipf 3 or more, and the words among those from 2 to 3. Left out, though candidates:
+# names frequent there as Tolkien's (Mordor, Moria, Sauron, Galadriel, Elrond...), and pt Rohan, a
+# given name read about the same way.
+es	Este	"this"
+es	Fui	"I was/went"
+es	Aldea	"village"
+es	Aldeas	"villages"
+es	Foros	"forums"
+es	Unen	"they join"
+es	Celos	"jealousy"
+es	Casar	"to marry"
+es	Aulas	"classrooms"
+es	Mandos	"controls"
+es	Guiar	"to guide"
+es	Poros	"pores"
+es	Aros	"rings, hoops"
+es	Sil	the river Sil
+es	Vana	"vain"
+fr	Sûr	"sure"
+fr	Fui	"fled"
+fr	Rohan	French family and town, said ro-AN
+fr	Sil	"s'il" written without its apostrophe
+fr	Elu	"élu" (elected) in capitals, which French often writes without accents
+fr	Este	the Este family and town
+fr	Corollaire	"corollary"
+fr	Brandir	"to brandish"
+it	Vai	"go!"
+it	Aule	"halls, classrooms"
+it	Fui	"I was"
+it	Este	the Este family and town
+it	Vali	"you're worth"
+it	Vana	"vain"
+it	Verna	given name; "of spring"
+pt	Vai	"goes"
+pt	Este	"this"
+pt	Fui	"I was/went"
+pt	Vê	"sees"
+pt	Nessa	"in that"
+pt	Aulas	"classes"
+pt	Casar	"to marry"
+pt	Nua	"naked"
+pt	Falas	"you speak"
+pt	Falasse	"spoke" (subjunctive)
+pt	Guiar	"to guide"
+pt	Vala	"ditch"
+pt	Valas	"ditches"
+pt	Idh	too short to trust as a name in Portuguese text (frequent in wordfreq's list)
+pt	Poros	"pores"
+pt	Sil	the river Sil
+es	Rían	"they laugh" (subjunctive)
+es	Atan	"they tie"
+es	Taras	"defects"
+es	Ambar	"amber" written without its accent
+es	Hallas	"you find"
+es	Borlas	"tassels"
+es	Celebras	"you celebrate"
+es	Mariel	given name
+es	Andros	the Greek island, read in Spanish
+es	Tiron	"tirón" (pull) without its accent
+es	Vai	Galician "goes"
+es	Verna	given name
+pt	Foros	"forums"
+pt	Aros	"rims"
+pt	Vaia	"boo"
+pt	Mariel	given name
+pt	Taras	"defects"
+pt	Valar	"to dig a ditch"; rare, but a word
+pt	Verna	"vernacular" (adjective)
+pt	Andros	the Greek island, read in Portuguese
+pt	Côr	old spelling of "cor" (colour)
+pt	Nú	"nu" (naked) in old spelling
+fr	Aurel	given name
+fr	Avallon	French town
+fr	Rogner	"to trim"
+fr	Atalante	Atalanta, as French writes her
+fr	Dru	"sturdy, dense"
+fr	Drus	"sturdy, dense" (plural)
+fr	Nanar	"so-bad-it's-good film" (slang)
+fr	Nanars	plural of nanar
+fr	Galion	"galleon"
+fr	Andros	the Greek island, read in French
+fr	Belair	place and family name
+fr	Mariel	given name
+it	Lembi	"edges, flaps"
+it	Avari	"misers"
+it	Orma	"footprint, trace"
+it	Valsi	"waltzes"
+it	Andros	the Greek island, read in Italian
+it	Sil	the river Sil

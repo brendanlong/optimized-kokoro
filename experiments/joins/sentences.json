@@ -1,0 +1,16 @@
+[
+  {"lang": "a", "voice": "af_heart", "segments": ["We stayed near ", "東京駅", " for two nights."]},
+  {"lang": "a", "voice": "af_heart", "segments": ["Her grandmother always said ", "慢慢来", " when we rushed."]},
+  {"lang": "a", "voice": "af_heart", "segments": ["The first word I learned was ", "спасибо", ", and the second was ", "пожалуйста", "."]},
+  {"lang": "a", "voice": "af_heart", "segments": ["He signed every letter ", "Καλημέρα", " and nothing else."]},
+  {"lang": "a", "voice": "af_heart", "segments": ["The sign said ", "출구", " in big red letters."]},
+  {"lang": "f", "voice": "ff_siwis", "segments": ["Nous avons visité ", "京都", " en automne."]},
+  {"lang": "f", "voice": "ff_siwis", "segments": ["Il m'a répondu ", "спасибо", " avant de partir."]},
+  {"lang": "e", "voice": "ef_dora", "segments": ["Ella dijo ", "नमस्ते", " al entrar en la sala."]},
+  {"lang": "i", "voice": "if_sara", "segments": ["Abbiamo mangiato ", "寿司", " a cena."]},
+  {"lang": "j", "voice": "jf_alpha", "segments": ["昨日は", "meeting", "がありました。"]},
+  {"lang": "j", "voice": "jf_alpha", "segments": ["この", "software", "はとても便利です。"]},
+  {"lang": "z", "voice": "zf_xiaobei", "segments": ["我们明天开会讨论这个", "project", "。"]},
+  {"lang": "z", "voice": "zf_xiaobei", "segments": ["他喜欢听", "jazz", "音乐。"]},
+  {"lang": "h", "voice": "hf_alpha", "segments": ["मुझे यह ", "movie", " बहुत पसंद आई।"]}
+]

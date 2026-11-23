@@ -1,4 +1,5 @@
-"""Render each row of a name-pronunciation plan (experiments/names/listen_plan.py) through the worker.
+"""Render each row of a listening plan through the worker: a row's `ids`, or each of its `parts`'
+(experiments/names/listen_plan.py, experiments/joins/plan.py).
 
     python bench/name_listen.py SOCKET PLAN OUT_DIR   -> OUT_DIR/<clip_id>.wav
 """
@@ -25,14 +26,15 @@ def main(sock, plan, out):
     done = set()
     for row in json.load(open(plan, encoding="utf-8")):
         voice = row.get("voice", "af_heart")
-        k = clip_id(row["ids"], voice)
-        if k in done or os.path.exists(f"{out}/{k}.wav"):
-            continue
-        client.send(P.synthesize(0, row["ids"], client.hello.voices.index(voice), 100))
-        kind, _, payload = client.receive()
-        assert kind == "result", (kind, payload)
-        write_wav(f"{out}/{k}.wav", payload[1], client.hello.sample_rate)
-        done.add(k)
+        for ids in [p["ids"] for p in row["parts"]] if "parts" in row else [row["ids"]]:
+            k = clip_id(ids, voice)
+            if k in done or os.path.exists(f"{out}/{k}.wav"):
+                continue
+            client.send(P.synthesize(0, ids, client.hello.voices.index(voice), 100))
+            kind, _, payload = client.receive()
+            assert kind == "result", (kind, payload)
+            write_wav(f"{out}/{k}.wav", payload[1], client.hello.sample_rate)
+            done.add(k)
     print(f"rendered {len(done)}", flush=True)
 
 

@@ -65,9 +65,8 @@ pub struct Token {
     pub phonemes: Option<String>,
 }
 
-/// The records in `path`. In the English and Chinese pipelines, which read `[word](/phonemes/)`
-/// links, the phonemes of every link in the text are written in IPA, as the port takes them
-/// ([`with_ipa_links`]); the other pipelines read a link as text.
+/// The records in `path`, with the phonemes of every `[word](/phonemes/)` link in the text
+/// written in IPA, as the port takes them ([`with_ipa_links`]).
 pub fn read(path: impl AsRef<Path>) -> Vec<Record> {
     let path = path.as_ref();
     let file = File::open(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
@@ -87,9 +86,6 @@ pub fn read(path: impl AsRef<Path>) -> Vec<Record> {
 
 impl Record {
     fn with_ipa_links(mut self) -> Self {
-        if !matches!(self.lang.as_str(), "a" | "b" | "z") {
-            return self;
-        }
         let links = |s: &mut String| *s = with_ipa_links(s);
         links(&mut self.text);
         links(&mut self.normalized);

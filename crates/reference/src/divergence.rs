@@ -931,6 +931,15 @@ pub fn has_dropped_abbreviation(text: &str) -> bool {
         .any(|w| (w.eq_ignore_ascii_case("dr") || w.eq_ignore_ascii_case("mr")) && !matches!(w, "Dr" | "Mr"))
 }
 
+/// Whether a record of a pipeline whose reference read `[word](...)` links as text, markup and all
+/// (every pipeline but English and Chinese), has one: the port reads a link's phonemes, and the
+/// text of any other link (`docs/divergences.md`, "Pipeline: links and names in every language").
+pub fn has_link_read_as_text(lang: &str, text: &str) -> bool {
+    static LINK: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r"\[[^\]]+\]\([^\)]*\)").unwrap());
+    !matches!(lang, "a" | "b" | "z") && LINK.is_match(text)
+}
+
 /// Whether an English or Chinese record's text has a `[word](/phonemes/)` link with `ɾ` or `ʔ`,
 /// which the reference read as the English flap and t and the port reads as written
 /// (`docs/divergences.md`, "Phonemes: standard IPA").
@@ -938,6 +947,73 @@ pub fn has_link_with_tap_or_glottal_stop(lang: &str, text: &str) -> bool {
     static LINK: std::sync::LazyLock<regex::Regex> =
         std::sync::LazyLock::new(|| regex::Regex::new(r"\]\(/[^\)]*[ɾʔ][^\)]*/\)").unwrap());
     matches!(lang, "a" | "b" | "z") && LINK.is_match(text)
+}
+
+/// Whether `text` has a join where the port spaces runs differently from the reference: a letter
+/// of a script other than Latin (or a link) beside others, a digit against a letter (digits are
+/// read by another G2P outside English), an invisible format character, or whitespace other than
+/// single spaces.
+fn joins_runs(text: &str) -> bool {
+    let latin = |c: char| matches!(c as u32, 0..=0x24f | 0x1e00..=0x1eff);
+    let chars: Vec<char> = text.chars().collect();
+    chars.iter().any(|&c| c.is_alphabetic() && !latin(c))
+        || text.contains("](")
+        || chars.iter().any(|&c| c.is_whitespace() && c != ' ' && c != '\n')
+        || chars.iter().any(|&c| matches!(c as u32, 0x200b..=0x200f | 0x2060..=0x2064 | 0xfeff))
+        // CJK punctuation and symbols, which other G2Ps read or drop.
+        || chars.iter().any(|&c| matches!(c as u32, 0x2100..=0x214f | 0x3000..=0x303f | 0xff00..=0xffef))
+        || chars
+            .windows(2)
+            .any(|w| w[0].is_numeric() && w[1].is_alphabetic() || w[0].is_alphabetic() && w[1].is_numeric())
+        || text.contains("  ")
+}
+
+/// Whether `ours` is the reference's phonemes for `text`, both in `config.json` symbols, spaced as
+/// the port joins runs of different G2Ps (`docs/divergences.md`, "Pipeline: one way to join
+/// runs"): each run of whitespace one space, and a space where two words met with none between
+/// them. Only where `text` has such a join: English text alone must match exactly.
+pub fn differs_only_in_run_spacing(text: &str, reference: &str, ours: &str) -> bool {
+    if !joins_runs(text) || reference == ours {
+        return false;
+    }
+    // The same words, some of the reference's split in two or more where runs met.
+    let mut words = ours.split_whitespace();
+    reference.split_whitespace().all(|word| {
+        let mut joined = String::new();
+        while joined.len() < word.len() {
+            match words.next() {
+                Some(w) => joined.push_str(w),
+                None => return false,
+            }
+        }
+        joined == word
+    }) && words.next().is_none()
+}
+
+/// Whether two lists of (text, phonemes) chunks differ only as [`differs_only_in_run_spacing`]
+/// allows: the same texts, and each chunk's phonemes the same or spaced as the port joins runs.
+pub fn chunks_differ_only_in_run_spacing(reference: &[(String, String)], ours: &[(String, String)]) -> bool {
+    reference.len() == ours.len()
+        && reference != ours
+        && reference
+            .iter()
+            .zip(ours)
+            .all(|(r, o)| r.0 == o.0 && (r.1 == o.1 || differs_only_in_run_spacing(&r.0, &r.1, &o.1)))
+}
+
+/// The reference's phonemes with the port's spacing where `ours` reads the same words, so that a
+/// comparison that goes word by word (names) can be made after the port's spacing
+/// ([`differs_only_in_run_spacing`]). A reference word `ours` reads differently is kept whole.
+pub fn respaced(reference: &str, ours: &str) -> String {
+    let collapsed: String = reference.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut rest = collapsed.as_str();
+    let mut out = Vec::new();
+    for word in ours.split(' ') {
+        let taken = if rest.starts_with(word) { word.len() } else { rest.find(' ').unwrap_or(rest.len()) };
+        out.push(&rest[..taken]);
+        rest = rest[taken..].strip_prefix(' ').unwrap_or(&rest[taken..]);
+    }
+    if rest.is_empty() { out.join(" ") } else { reference.to_owned() }
 }
 
 /// The phonemes of each name from `crates/g2p-en/data/names.json` that `text` writes as a word of its
@@ -1105,6 +1181,17 @@ pub fn explain(input: &str, reference: &str, ours: &str) -> Result<BTreeSet<Kind
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn run_spacing() {
+        assert!(differs_only_in_run_spacing("とＫ", "toβakˈA", "toβa kˈA"));
+        assert!(differs_only_in_run_spacing("d'art  ( et", "dˈaʁ  ( e", "dˈaʁ ( e"));
+        assert!(!differs_only_in_run_spacing("とＫ", "toβakˈA", "toβakˈO"));
+        assert!(!differs_only_in_run_spacing("とＫ", "a b", "a b"));
+
+        // English text alone has no joins to space differently.
+        assert!(!differs_only_in_run_spacing("hello world", "həlˈO wˈɜɹld", "hə lˈO wˈɜɹld"));
+    }
 
     #[test]
     fn only_the_names_words_may_differ() {
