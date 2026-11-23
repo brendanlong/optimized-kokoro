@@ -13,11 +13,11 @@ WORLD = tolkien.WORLD
 ENDINGS = tolkien.PARTICLES | {"hai", "ishi"}
 UNITS = sorted({**tolkien.DIPHTHONGS, "kh": "x", "gh": "ɣ", "sh": "ʃ", "th": "θ"}.items(), key=lambda kv: -len(kv[0]))
 
-# Names, and the words of the Ring-inscription other than ash and agh, which English has.
+# Names, and the words of the Ring-inscription; ash and agh, which English has, only with the word after them.
 NAMES = [
     "Nazgûl", "Lugbúrz", "Uruk-hai", "Olog-hai", "Uglúk", "Grishnákh", "Shagrat", "Gorbag", "Lugdush", "Mauhúr",
     "Muzgash", "Lagduf", "Radbug", "Ufthak", "Ghâsh", "Snaga", "Sharkû", "Azog", "Bolg", "Golfimbul", "Golug",
-    "nazg", "durbatulûk", "gimbatul", "thrakatulûk", "burzum-ishi", "krimpatul",
+    "nazg", "ash nazg", "durbatulûk", "gimbatul", "thrakatulûk", "burzum-ishi", "agh burzum-ishi", "krimpatul",
 ]
 
 

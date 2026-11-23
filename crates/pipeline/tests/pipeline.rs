@@ -491,6 +491,10 @@ fn names_are_found_in_any_case_but_lose_to_overrides() {
     // "Minas" alone is left out as ambiguous (Minas Gerais); "Minas Tirith" is a name.
     let minas = name("Minas Tirith").split(' ').next().unwrap().to_string();
     assert!(!phonemize("Minas Gerais").contains(&minas), "{}", phonemize("Minas Gerais"));
+    // "ash" is Black Speech only in "ash nazg".
+    let ash = name("ash nazg").split(' ').next().unwrap().to_string();
+    assert!(phonemize("Ash nazg durbatulûk.").starts_with(&ash), "{}", phonemize("Ash nazg durbatulûk."));
+    assert!(!phonemize("The ash fell.").contains(&ash), "{}", phonemize("The ash fell."));
 }
 
 #[test]
