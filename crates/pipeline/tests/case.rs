@@ -1,7 +1,8 @@
 //! Case doesn't change how a word is read: sentences written all in capitals read as they do
 //! written normally (docs/divergences.md, "misaki English: case"). `case_sentences.txt` is 400
 //! sentences picked at random from four Project Gutenberg books (public domain: The Time
-//! Machine, Pride and Prejudice, The Adventures of Sherlock Holmes, Frankenstein).
+//! Machine, Pride and Prejudice, The Adventures of Sherlock Holmes, Frankenstein), written by
+//! `reference/case_sentences.py`.
 //!
 //! The score is the share of words read alike, word by word in order. The misses left are mostly
 //! abbreviations the normalizer reads in full only before a word ("MR." and "ST." at a sentence's

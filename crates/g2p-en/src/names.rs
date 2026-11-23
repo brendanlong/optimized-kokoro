@@ -33,6 +33,23 @@ fn fold(c: char, out: &mut String) {
     }
 }
 
+/// Whether `written` is `name` in any case, with some of the name's accents left out and no
+/// others added.
+fn accents_within(written: &str, name: &str) -> bool {
+    let clusters = |s: &str| {
+        let mut out: Vec<(String, Vec<char>)> = Vec::new();
+        for c in s.nfd() {
+            match out.last_mut() {
+                Some((_, marks)) if is_combining_mark(c) => marks.push(c),
+                _ => out.push((c.to_lowercase().collect(), Vec::new())),
+            }
+        }
+        out
+    };
+    let (w, n) = (clusters(written), clusters(name));
+    w.len() == n.len() && w.iter().zip(&n).all(|(w, n)| w.0 == n.0 && (w.1.is_empty() || w.1 == n.1))
+}
+
 fn folded(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     s.chars().for_each(|c| fold(c, &mut out));
@@ -87,7 +104,9 @@ impl Names {
     }
 
     /// The phonemes of the name `written` spells: the one spelled so, else the reading the names
-    /// spelled so in another case share, else the one every name with these letters shares.
+    /// spelled so in another case share, else the one every name whose accents `written` leaves
+    /// out, or keeps, shares. An accent the name doesn't have makes another word: Spanish "moría"
+    /// isn't Moria, nor Portuguese "âmbar" Ambar.
     fn resolve(names: &[Name], written: &str) -> Option<&'static str> {
         let written: String = written.split_whitespace().collect::<Vec<_>>().join(" ").nfc().collect();
         if let Some(name) = names.iter().find(|n| n.spelling == written) {
@@ -99,7 +118,10 @@ impl Names {
         };
         let lower = written.to_lowercase();
         let same_case: Vec<_> = names.iter().filter(|n| n.spelling.to_lowercase() == lower).collect();
-        one(if same_case.is_empty() { names.iter().collect() } else { same_case })
+        if !same_case.is_empty() {
+            return one(same_case);
+        }
+        one(names.iter().filter(|n| accents_within(&written, n.spelling)).collect())
     }
 
     /// The longest name at the start of `text` that `skip` doesn't hold, as `(bytes of text,
@@ -221,6 +243,11 @@ mod tests {
         // spelling with accents of neither is left alone.
         assert_ne!(link("CÍRDAN").replace("CÍRDAN", "Círdan"), link("CIRDAN").replace("CIRDAN", "Círdan"));
         assert_eq!(link("Cîrdan"), "Cîrdan");
+        // Accents the name doesn't have make another word.
+        let spanish = |t: &str| names.link(t, "es", &[], |p| format!("{p}z")).into_owned();
+        assert!(spanish("Moria").starts_with("[Moria](/"));
+        assert_eq!(spanish("se moría"), "se moría");
+        assert_eq!(link("âmbar"), "âmbar");
         // An English word isn't the name it spells without accents.
         assert_eq!(link("Turin"), "Turin");
         assert_eq!(link("TURIN"), "TURIN");
