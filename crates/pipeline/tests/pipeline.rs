@@ -452,13 +452,17 @@ fn name(spelling: &str) -> String {
 #[test]
 fn names_are_read_in_their_own_language() {
     let british = Pipeline::new(Lang::BritishEnglish).unwrap();
-    for spelling in ["Celebrimbor", "Minas Tirith", "Gil-galad", "Eärendil"] {
+    for spelling in ["Celebrimbor", "Minas Tirith", "Gil-galad", "Eärendil", "Khazad-dûm", "Glóin", "Théoden", "Nazgûl"]
+    {
         let text = format!("Then {spelling} came.");
         let expected = format!("{} kˈAm.", name(spelling));
         assert!(phonemize(&text).ends_with(&expected), "{}", phonemize(&text));
         assert!(read(&british.phonemize(&text).unwrap().0).contains(&name(spelling)), "{spelling} in British English");
     }
     assert_eq!(phonemize("Earendil"), phonemize("Eärendil"));
+    assert_eq!(phonemize("Khazad-dum"), phonemize("Khazad-dûm"));
+    // misaki's dictionary has "Thrain", but only as its guess at the name.
+    assert_eq!(phonemize("Thrain"), name("Thráin"));
 }
 
 #[test]
@@ -487,6 +491,10 @@ fn names_are_found_in_any_case_but_lose_to_overrides() {
     // "Minas" alone is left out as ambiguous (Minas Gerais); "Minas Tirith" is a name.
     let minas = name("Minas Tirith").split(' ').next().unwrap().to_string();
     assert!(!phonemize("Minas Gerais").contains(&minas), "{}", phonemize("Minas Gerais"));
+    // "ash" is Black Speech only in "ash nazg".
+    let ash = name("ash nazg").split(' ').next().unwrap().to_string();
+    assert!(phonemize("Ash nazg durbatulûk.").starts_with(&ash), "{}", phonemize("Ash nazg durbatulûk."));
+    assert!(!phonemize("The ash fell.").contains(&ash), "{}", phonemize("The ash fell."));
 }
 
 #[test]
