@@ -204,7 +204,7 @@ fn invisible_characters_neither_split_nor_fuse_placeholders() {
         ("兙\u{200b}兙", "ʧˌInˈiz tˈɛkst"),
         ("東京\u{200d}へ", "dˈʊŋʨˈiŋ ʤˌæpənˈiz tˈɛkst"),
         ("Привет\u{200b}สวัสดี", "prʲivʲˈet tˈI tˈɛkst"),
-        ("a\u{301}สวัสดี", "ˈæ tˈI tˈɛkst"),
+        ("a\u{301}สวัสดี", "ˌAəkjˈut tˈI tˈɛkst"),
         ("สวัสดี\u{200b}hello", "tˈI tˈɛkst həlˈO"),
         ("hello\u{2060}สวัสดี", "həlˈO tˈI tˈɛkst"),
         ("(สวัสดี) x", "(tˈI tˈɛkst) ˈɛks"),
