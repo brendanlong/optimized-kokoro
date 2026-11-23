@@ -104,6 +104,8 @@ def main():
     unescape = lambda s: re.sub(r"\\u\{([0-9a-f]+)\}|\\(.)", lambda m: chr(int(m[1], 16)) if m[1] else m[2], s)
     vocab = {c for s in ipa for c in unescape(s)}
     override = set(listed("override.tsv"))
+    if stale := {s for s in override if s.lower() not in english_words()}:
+        raise SystemExit(f"override.tsv: misaki's dictionaries don't have {sorted(stale)}")
     english = english_words() - override - {s.lower() for s in override}
     exclude = listed("exclude.tsv")
     names, unreviewed = {}, []

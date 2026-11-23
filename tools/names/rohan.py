@@ -14,8 +14,9 @@ NAMES = [
     "Eorl", "Eorlingas", "Edoras", "Meduseld", "Erkenbrand", "Elfhelm", "Elfhild", "Grimbold", "Dúnhere", "Háma",
     "Gamling", "Gríma", "Fréaláf", "Fréa", "Fréawine", "Folcwine", "Folca", "Fengel", "Brego", "Baldor",
     "Aldor", "Goldwine", "Déor", "Déorwine", "Léod", "Walda", "Wídfara", "Herefara", "Herubrand", "Fastred",
-    "Guthláf", "Gálmód", "Ceorl", "Hasufel", "Arod", "Felaróf", "Windfola", "Mearas", "Mundburg", "Aldburg",
-    "Halifirien", "Firienfeld", "Eastemnet", "Westemnet", "Folde",
+    "Guthláf", "Gálmód", "Hasufel", "Arod", "Felaróf", "Windfola", "Mearas", "Mundburg", "Aldburg",
+    "Halifirien", "Firienfeld", "Eastemnet", "Westemnet", "Folde", "Dernhelm", "Brytta", "Léofa", "Éofor",
+    "Elfwine", "Freca", "Herugrim", "Gúthwinë", "Stybba", "Holdwine", "Gléowine",
 ]
 
 
