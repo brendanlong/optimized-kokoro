@@ -6,7 +6,8 @@ Each source module (SOURCES) has names(cache, english) -> {spelling: (phonemes, 
 the source attests, where english is the set of words misaki's dictionaries have (as written and
 lowercase) and countable says whether the name takes a plural (Silmaril and Balrog do; Celebrimbor and
 Gondor don't). Each countable name also gets its plural ("Silmarils"). A spelling is left out when:
-- English already has it: misaki's dictionaries know it in any case ("Region", "Luna");
+- English already has it: misaki's dictionaries know it in any case ("Region", "Luna"), unless override.tsv
+  says misaki's entry is only its guess at the name ("Thrain");
 - it's on exclude.tsv: an English reader could meet it outside the source's world (reviewed by hand from
   the flags flag.py collects in review/).
 The G2P finds a name in any case and without its accents ("EARENDIL" is "Eärendil"), so a spelling without
@@ -26,6 +27,8 @@ import unicodedata
 from pathlib import Path
 
 import dwarves
+import orkish
+import rohan
 import tolkien
 from spelling import accents_within, fold, marks
 
@@ -34,7 +37,7 @@ HERE = Path(__file__).resolve().parent
 OUT = ROOT / "crates/g2p-en/data/names.json"
 # Names each espeak pipeline that reads Latin text as its own language skips: common words there.
 OUT_SKIP = ROOT / "crates/g2p-en/data/names_skip.json"
-SOURCES = {"tolkien": tolkien, "dwarves": dwarves}
+SOURCES = {"tolkien": tolkien, "dwarves": dwarves, "rohan": rohan, "orkish": orkish}
 VOCAB_RS = ROOT / "crates/phonemes/src/lib.rs"
 
 
@@ -49,9 +52,9 @@ def english_words():
     return words | {w.lower() for w in words}
 
 
-def excluded():
+def listed(file):
     out = {}
-    for line in open(HERE / "exclude.tsv", encoding="utf-8"):
+    for line in open(HERE / file, encoding="utf-8"):
         if line.strip() and not line.startswith("#"):
             spelling, _, reason = line.rstrip("\n").partition("\t")
             out[spelling] = reason
@@ -100,7 +103,9 @@ def main():
     ipa = re.findall(r'^    \(\d+, \'.*\', "(.*)"\),$', VOCAB_RS.read_text(), re.M)
     unescape = lambda s: re.sub(r"\\u\{([0-9a-f]+)\}|\\(.)", lambda m: chr(int(m[1], 16)) if m[1] else m[2], s)
     vocab = {c for s in ipa for c in unescape(s)}
-    english, exclude = english_words(), excluded()
+    override = set(listed("override.tsv"))
+    english = english_words() - override - {s.lower() for s in override}
+    exclude = listed("exclude.tsv")
     names, unreviewed = {}, []
     for source, module in SOURCES.items():
         seen = reviewed(source)

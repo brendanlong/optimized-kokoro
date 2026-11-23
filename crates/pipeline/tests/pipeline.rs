@@ -452,7 +452,7 @@ fn name(spelling: &str) -> String {
 #[test]
 fn names_are_read_in_their_own_language() {
     let british = Pipeline::new(Lang::BritishEnglish).unwrap();
-    for spelling in ["Celebrimbor", "Minas Tirith", "Gil-galad", "Eärendil", "Khazad-dûm", "Glóin"] {
+    for spelling in ["Celebrimbor", "Minas Tirith", "Gil-galad", "Eärendil", "Khazad-dûm", "Glóin", "Théoden", "Nazgûl"] {
         let text = format!("Then {spelling} came.");
         let expected = format!("{} kˈAm.", name(spelling));
         assert!(phonemize(&text).ends_with(&expected), "{}", phonemize(&text));
@@ -460,6 +460,8 @@ fn names_are_read_in_their_own_language() {
     }
     assert_eq!(phonemize("Earendil"), phonemize("Eärendil"));
     assert_eq!(phonemize("Khazad-dum"), phonemize("Khazad-dûm"));
+    // misaki's dictionary has "Thrain", but only as its guess at the name.
+    assert_eq!(phonemize("Thrain"), name("Thráin"));
 }
 
 #[test]

@@ -96,12 +96,12 @@ def heavy(segs, k):
     return following >= 2
 
 
-def stressed(part, mark, sindarin, units):
+def stressed(part, mark, sindarin, units, first):
     segs = segment(part, sindarin, units)
     nuclei = [k for k, (_, kind) in enumerate(segs) if kind != "C"]
     if part in PARTICLES or not nuclei:
         target = None
-    elif len(nuclei) <= 2:
+    elif first or len(nuclei) <= 2:
         target = nuclei[0]
     else:
         target = nuclei[-2] if heavy(segs, nuclei[-2]) else nuclei[-3]
@@ -118,12 +118,14 @@ def onset(segs, k):
     return start if start == 0 or start == k else k - 1
 
 
-def pronounce(name, sindarin=False, units=UNITS):
+def pronounce(name, sindarin=False, units=UNITS, first=False):
+    """By Appendix E: stress on the first syllable of a word of two, else the second-last if it's long, else
+    the third-last; or, with first, always the first."""
     words = []
     for word in name.split():
         parts = word.split("-")
         main = max((i for i, p in enumerate(parts) if p not in PARTICLES), default=len(parts) - 1)
-        words.append("".join(stressed(p, "ˈ" if i == main else "ˌ", sindarin, units) for i, p in enumerate(parts)))
+        words.append("".join(stressed(p, "ˈ" if i == main else "ˌ", sindarin, units, first) for i, p in enumerate(parts)))
     return " ".join(words)
 
 
