@@ -50,12 +50,12 @@ def base(ch):
     return unicodedata.normalize("NFD", ch)[0]
 
 
-def segment(word, sindarin):
+def segment(word, sindarin, units=UNITS):
     """(phonemes, kind) pieces: 'V' short vowel, 'L' long vowel or diphthong, 'C' consonant."""
     w = word.lower()
     segs, i = [], 0
     while i < len(w):
-        unit = next(((src, dst) for src, dst in UNITS if w.startswith(src, i)), None)
+        unit = next(((src, dst) for src, dst in units if w.startswith(src, i)), None)
         # w before a vowel is a consonant: "Tawar" is ta-war, not tau-ar.
         if unit and unit[0] == "aw" and i + 2 < len(w) and base(w[i + 2]) in VOWELS:
             unit = None
@@ -96,8 +96,8 @@ def heavy(segs, k):
     return following >= 2
 
 
-def stressed(part, mark, sindarin):
-    segs = segment(part, sindarin)
+def stressed(part, mark, sindarin, units):
+    segs = segment(part, sindarin, units)
     nuclei = [k for k, (_, kind) in enumerate(segs) if kind != "C"]
     if part in PARTICLES or not nuclei:
         target = None
@@ -118,12 +118,12 @@ def onset(segs, k):
     return start if start == 0 or start == k else k - 1
 
 
-def pronounce(name, sindarin=False):
+def pronounce(name, sindarin=False, units=UNITS):
     words = []
     for word in name.split():
         parts = word.split("-")
         main = max((i for i, p in enumerate(parts) if p not in PARTICLES), default=len(parts) - 1)
-        words.append("".join(stressed(p, "ˈ" if i == main else "ˌ", sindarin) for i, p in enumerate(parts)))
+        words.append("".join(stressed(p, "ˈ" if i == main else "ˌ", sindarin, units) for i, p in enumerate(parts)))
     return " ".join(words)
 
 

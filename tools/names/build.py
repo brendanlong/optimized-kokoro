@@ -25,6 +25,7 @@ import sys
 import unicodedata
 from pathlib import Path
 
+import dwarves
 import tolkien
 from spelling import accents_within, fold, marks
 
@@ -33,7 +34,7 @@ HERE = Path(__file__).resolve().parent
 OUT = ROOT / "crates/g2p-en/data/names.json"
 # Names each espeak pipeline that reads Latin text as its own language skips: common words there.
 OUT_SKIP = ROOT / "crates/g2p-en/data/names_skip.json"
-SOURCES = {"tolkien": tolkien}
+SOURCES = {"tolkien": tolkien, "dwarves": dwarves}
 VOCAB_RS = ROOT / "crates/phonemes/src/lib.rs"
 
 

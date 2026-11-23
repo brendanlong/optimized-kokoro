@@ -452,13 +452,14 @@ fn name(spelling: &str) -> String {
 #[test]
 fn names_are_read_in_their_own_language() {
     let british = Pipeline::new(Lang::BritishEnglish).unwrap();
-    for spelling in ["Celebrimbor", "Minas Tirith", "Gil-galad", "Eärendil"] {
+    for spelling in ["Celebrimbor", "Minas Tirith", "Gil-galad", "Eärendil", "Khazad-dûm", "Glóin"] {
         let text = format!("Then {spelling} came.");
         let expected = format!("{} kˈAm.", name(spelling));
         assert!(phonemize(&text).ends_with(&expected), "{}", phonemize(&text));
         assert!(read(&british.phonemize(&text).unwrap().0).contains(&name(spelling)), "{spelling} in British English");
     }
     assert_eq!(phonemize("Earendil"), phonemize("Eärendil"));
+    assert_eq!(phonemize("Khazad-dum"), phonemize("Khazad-dûm"));
 }
 
 #[test]
