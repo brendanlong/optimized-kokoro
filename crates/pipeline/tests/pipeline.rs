@@ -509,6 +509,20 @@ fn names_match_with_accents_as_combining_marks() {
 }
 
 #[test]
+fn a_word_reads_the_same_with_accents_as_combining_marks() {
+    for lang in [Lang::AmericanEnglish, Lang::Hindi, Lang::French] {
+        let pipeline = Pipeline::new(lang).unwrap();
+        for (composed, decomposed) in [("Nguyễn", "Nguye\u{302}\u{303}n"), ("Nguyễn.", "Nguye\u{302}\u{303}n.")] {
+            assert_eq!(
+                pipeline.phonemize(decomposed).unwrap().0,
+                pipeline.phonemize(composed).unwrap().0,
+                "{lang:?} {decomposed:?}"
+            );
+        }
+    }
+}
+
+#[test]
 fn names_and_links_are_read_in_every_language() {
     let galadriel = name("Galadriel");
     for lang in [Lang::French, Lang::Spanish, Lang::Italian, Lang::BrazilianPortuguese, Lang::Hindi, Lang::Japanese] {
