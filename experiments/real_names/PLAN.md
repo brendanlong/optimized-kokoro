@@ -27,14 +27,18 @@ The infrastructure is in `tools/names/`; it reads no real names yet, because `re
 - `sounds.py` maps espeak's sounds to Kokoro's;
 - `evaluate.py` compares the readings with Wiktionary.
 
-- **How many names:** 111,988 Latin spellings with 3 or more bearers whose country is known, at least 75% of them from one language's countries. Leaving out English and the spellings misaki already has, about 107,000 are other languages' names. The biggest groups are French 20k, German 17k, Italian 12k, Spanish 9k, Polish 8.5k and Dutch 5.7k.
+- **How many names:** 96,344 Latin spellings get a language. To get one, a spelling needs both:
+  - at least 3 bearers in countries of one language, with that language the most common among them;
+  - at least 75% of its bearers with a citizenship in countries that speak that language. Countries of several languages count here, so Czechoslovakia counts for a Czech name.
+
+  Belgian-only and Swiss-only names get no language, and neither do names of Russians and other peoples written in scripts this doesn't read. The biggest groups are French 16.5k, German 13.7k, Italian 10.8k, Spanish 9k, Polish 7.9k, Dutch and Norwegian 4.2k each, and Finnish 4.1k.
 - **Cost:** a names.json with every language (112k entries, 3.1 MB) adds 0.15 s to startup and 43 MB of memory (0.10 s and 75 MB before, measured with the phonemize example). That's acceptable, so `names.rs` needs no redesign.
 - **espeak against Wiktionary:** names whose sounds all match, compared coarsely (vowel quality, length and how each dictionary writes a sound are ignored):
 
   | Result | Languages |
   |---|---|
-  | Good, 85% or more | Finnish 99%, Polish 97%, Slovak 90%, Spanish 89%, Czech 88%, French 88%, Hungarian 87%, Italian 86%, Romanian 85% (66 names) |
-  | Middling | Estonian 81%, Indonesian 81%, Albanian 78%, Slovene 77% (no stress marks to compare), Turkish 74% (stress 79%), Azerbaijani 73% |
+  | Good, 85% or more | Finnish 99%, Polish 98%, Czech 93%, Slovak 90%, Spanish 89%, French 88%, Hungarian 87%, Italian 86%, Romanian 85% (60 names) |
+  | Middling | Estonian 81%, Indonesian 81%, Albanian 78%, Slovene 76% (no stress marks to compare), Turkish 74% (stress 79%), Azerbaijani (too few names) |
   | Poor, or too few names to tell | German 43%, Portuguese 39%, Dutch 62%, Swedish 24%, Norwegian 31%, Danish 6%, Icelandic 26%, Lithuanian 12% (stress 54%), Vietnamese 38% |
 
   Some of the poor results are differences in how each dictionary writes sounds (German ɐ and ʁ, Portuguese's two standards). Others are real espeak errors. Each language's pilot has to look at its worst cases.
@@ -44,6 +48,7 @@ The infrastructure is in `tools/names/`; it reads no real names yet, because `re
   - Hungarian's old noble spellings (Batthyány, Kovách) come out wrong.
   - Lithuanian stress is a guess.
   - espeak sometimes switches to English partway through a word: 1,221 French names and Vietnamese "Baotixita". Those names are left out.
+  - French espeak reads some names with no vowel at all (Gees as ʒ, Bres as bʁ). Those are left out too.
 
 ## Open questions (Claude's proposals)
 

@@ -29,8 +29,8 @@ COARSE = {"ʂ": "ʃ", "ʐ": "ʒ", "ʑ": "ʒ", "ɫ": "l", "ɭ": "l", "g": "ɡ", "
           # Vowel qualities dictionaries write differently for one sound (Czech e as ɛ, Hungarian a as ɒ).
           "ɛ": "e", "ε": "e", "ɪ": "i", "ɔ": "o", "ɒ": "a", "ɑ": "a", "ɐ": "a", "ʊ": "u"}
 # Nasal vowels are compared without their nasality (Wiktionary writes Polish ę as ɛw̃, espeak as ɛ̃).
-NASAL = ("w\u0303", "j\u0303", "\u0303")
-IGNORED = set("ː.ˌ‿ ˥˦˧˨˩")
+NASAL = ("w\u0303", "j\u0303")
+IGNORED = set("ː.ˌ‿ ˥˦˧˨˩ˀ")
 
 
 def kaikki(cache, language):
@@ -53,8 +53,10 @@ def kaikki(cache, language):
 
 def segments(ipa):
     """(sounds, index of the stressed sound or None)."""
-    s = unicodedata.normalize("NFD", ipa.replace("͜", "͡").replace("ˈˈ", "ˈ"))
-    s = s.replace("͡", "")
+    s = unicodedata.normalize("NFD", ipa.replace("ˈˈ", "ˈ"))
+    s = s.replace("\u035c", "").replace("\u0361", "").replace("r\u031d\u030a", "rʃ").replace("r\u031d", "rʒ")
+    for n in NASAL:
+        s = s.replace(unicodedata.normalize("NFD", n), "")
     out, stress, pending = [], None, False
     for c in s:
         if c in IGNORED or unicodedata.category(c) == "Mn" or c == "ʰ":
@@ -65,18 +67,16 @@ def segments(ipa):
             out.append(c)
             if pending and c in VOWELS:
                 stress, pending = len(out) - 1, False
-    out = [COARSE.get(x, x) for x in out]
+    out = [(COARSE.get(x, x), k == stress) for k, x in enumerate(out)]
     # Long consonants written twice or with ː, and the glide between i and a vowel, as one.
     merged = []
-    for k, x in enumerate(out):
-        if merged and x == merged[-1] and x[0] not in VOWELS:
-            stress = stress - 1 if stress is not None and stress >= k else stress
+    for k, (x, stressed) in enumerate(out):
+        if merged and x == merged[-1][0] and x[0] not in VOWELS:
             continue
-        if x == "j" and merged and merged[-1] == "i" and k + 1 < len(out) and out[k + 1][0] in VOWELS:
-            stress = stress - 1 if stress is not None and stress >= k else stress
+        if x == "j" and merged and merged[-1][0] == "i" and k + 1 < len(out) and out[k + 1][0][0] in VOWELS:
             continue
-        merged.append(x)
-    return merged, stress
+        merged.append((x, stressed))
+    return [x for x, _ in merged], next((k for k, (_, st) in enumerate(merged) if st), None)
 
 
 def vowel_index(segs, i):

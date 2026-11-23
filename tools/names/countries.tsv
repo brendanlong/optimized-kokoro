@@ -1,17 +1,20 @@
 # Countries (Wikidata citizenship, P27) and the languages their people's names are in, as language/espeak voice.
-# Claude's picks, for Brendan to review: a country with no languages here counts its people only as bearers who
-# are no evidence for any language (scripts other than Latin, several languages, empires). English-speaking
-# countries are en: a name their people mostly bear is read as English reads it.
+# Claude's picks, for Brendan to review. A country of one language is evidence that its people's names are in it,
+# and one dominated by one language is listed with that one (Finland, Canada). One listed with several (Belgium,
+# Switzerland, the Austro-Hungarian and Russian empires) is no evidence either way: its citizenship can't tell a
+# Flemish name from a Walloon one. A citizenship with no languages here (scripts other than Latin, countries too
+# small to list) is evidence against every language. English-speaking countries are en: a name their people
+# mostly bear is read as English reads it.
 # qid	country	languages
 Q30	United States	en/en-us
 Q142	France	fr/fr-fr
 Q183	Germany	de/de
 Q17	Japan	
 Q145	United Kingdom	en/en-gb
-Q15180	Soviet Union	
+Q15180	Soviet Union	ru/ru,uk/uk,lt/lt,lv/lv,et/et
 Q29	Spain	es/es
 Q38	Italy	it/it
-Q16	Canada	en/en-us,fr/fr-fr
+Q16	Canada	en/en-us
 Q20	Norway	nb/nb
 Q36	Poland	pl/pl
 Q9903	Ming dynasty	
@@ -23,12 +26,12 @@ Q668	India
 Q155	Brazil	pt/pt-br
 Q43	Turkey	tr/tr
 Q174193	United Kingdom of Great Britain and Ireland	en/en-gb
-Q33	Finland	fi/fi,sv/sv
+Q33	Finland	fi/fi
 Q39	Switzerland	de/de,fr/fr-ch,it/it
 Q148	People's Republic of China	
 Q28	Hungary	hu/hu
 Q31	Belgium	nl/nl,fr/fr-be
-Q34266	Russian Empire	
+Q34266	Russian Empire	ru/ru,pl/pl,fi/fi,lt/lt,lv/lv,et/et
 Q408	Australia	en/en-gb
 Q40	Austria	de/de
 Q172579	Kingdom of Italy	it/it
@@ -45,7 +48,7 @@ Q191	Estonia	et/et
 Q218	Romania	ro/ro
 Q9683	Tang dynasty	
 Q96	Mexico	es/es-419
-Q664	New Zealand	en/en-gb,mi/mi
+Q664	New Zealand	en/en-gb
 Q213	Czech Republic	cs/cs
 Q188712	Empire of Japan	
 Q41	Greece	
@@ -57,7 +60,7 @@ Q794	Iran
 Q258	South Africa	
 Q16957	East Germany	de/de
 Q7313	Yuan dynasty	
-Q27	Ireland	en/en-gb,ga/ga
+Q27	Ireland	en/en-gb
 Q219	Bulgaria	
 Q77	Uruguay	es/es-419
 Q298	Chile	es/es-419
@@ -65,30 +68,30 @@ Q129286	British Raj
 Q739	Colombia	es/es-419
 Q161885	Kingdom of Great Britain	en/en-gb
 Q843	Pakistan	
-Q172107	Polish–Lithuanian Commonwealth	pl/pl
-Q12560	Ottoman Empire	
+Q172107	Polish–Lithuanian Commonwealth	pl/pl,lt/lt
+Q12560	Ottoman Empire	tr/tr,sq/sq
 Q1206012	German Reich	de/de
 Q869	Thailand	
 Q184	Belarus	
 Q79	Egypt	
 Q37	Lithuania	lt/lt
 Q403	Serbia	
-Q28513	Austria–Hungary	
+Q28513	Austria–Hungary	de/de,hu/hu,cs/cs,pl/pl,sk/sk,sl/sl,hr/hr,ro/ro
 Q833	Malaysia	ms/ms
 Q1775277	Dominion of India	
 Q179876	Kingdom of England	en/en-gb
-Q533534	Cisleithania	
+Q533534	Cisleithania	de/de,cs/cs,pl/pl,sl/sl
 Q214	Slovakia	sk/sk
 Q224	Croatia	hr/hr
 Q211	Latvia	lv/lv
-Q83286	Socialist Federal Republic of Yugoslavia	
+Q83286	Socialist Federal Republic of Yugoslavia	sl/sl,hr/hr,bs/bs
 Q717	Venezuela	es/es-419
 Q902	Bangladesh	
 Q928	Philippines	
-Q191077	Kingdom of Yugoslavia	
+Q191077	Kingdom of Yugoslavia	sl/sl,hr/hr,bs/bs
 Q227	Azerbaijan	az/az
 Q1747689	Ancient Rome	
-Q131964	Austrian Empire	de/de
+Q131964	Austrian Empire	de/de,hu/hu,cs/cs,pl/pl,it/it
 Q1028	Morocco	
 Q974	Democratic Republic of the Congo	
 Q1036	Uganda	
@@ -97,7 +100,7 @@ Q262	Algeria
 Q189	Iceland	is/is
 Q27306	Kingdom of Prussia	de/de
 Q241	Cuba	es/es-419
-Q32	Luxembourg	
+Q32	Luxembourg	fr/fr-fr,de/de
 Q1009	Cameroon	
 Q881	Vietnam	vi/vi
 Q232	Kazakhstan	
@@ -118,15 +121,15 @@ Q170072	Dutch Republic	nl/nl
 Q225	Bosnia and Herzegovina	bs/bs
 Q43287	German Empire	de/de
 Q924	Tanzania	sw/sw
-Q15102440	Kingdom of Serbs, Croats and Slovenes	
+Q15102440	Kingdom of Serbs, Croats and Slovenes	sl/sl,hr/hr,bs/bs
 Q858	Syria	
 Q1041	Senegal	
 Q854	Sri Lanka	
 Q115	Ethiopia	
 Q786	Dominican Republic	es/es-419
-Q229	Cyprus	
+Q229	Cyprus	tr/tr,el/el
 Q1008	Ivory Coast	
-Q62633	Grand Duchy of Finland	fi/fi,sv/sv
+Q62633	Grand Duchy of Finland	fi/fi
 Q836	Myanmar	
 Q219060	Palestine	
 Q790	Haiti	ht/ht
@@ -148,8 +151,8 @@ Q916	Angola
 Q1049	Sudan	
 Q912	Mali	
 Q837	Nepal	
-Q12548	Holy Roman Empire	
-Q36704	Yugoslavia	
+Q12548	Holy Roman Empire	de/de,cs/cs,it/it,nl/nl
+Q36704	Yugoslavia	sl/sl,hr/hr,bs/bs
 Q1029	Mozambique	
 Q55	Netherlands	nl/nl
 Q889	Afghanistan	

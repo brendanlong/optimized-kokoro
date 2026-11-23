@@ -16,38 +16,51 @@ NEAREST = {"r\u031d\u030a": "rʃ", "r\u031d": "rʒ", "s^x": "ʃ", "ʐ": "ʒ", "�
 DROPPED = {"\u0329", "\u032f", "\u032a", "#", "-", "ʔ", "?", *"0123456789"}
 
 
+VOWELS = set("aeiouyɑɐɒæɛɜəɘɪɨʉʊʌɔøœɤɯɵʏε")
+
+
 def units(raw):
-    """Each sound espeak wrote: a letter with its marks, and two joined by "^" as one, "a^ɪ"."""
-    out = []
+    """Each sound espeak wrote, in NFD: a letter with its marks, and two letters joined by "^" as one, "a^ɪ"
+    (a "^" beside anything else, as where a dropped stød was, joins nothing)."""
+    out, join = [], False
     for c in unicodedata.normalize("NFD", raw):
         if c in DROPPED:
             continue
-        if out and (unicodedata.category(c) == "Mn" or out[-1].endswith("^")):
+        letter = unicodedata.category(c).startswith("L")
+        if c == "^":
+            join = bool(out) and "^" not in out[-1] and unicodedata.category(out[-1][0]).startswith("L")
+        elif out and unicodedata.category(c) == "Mn":
             out[-1] += c
-        elif c == "^":
-            if out:
-                out[-1] += c
+        elif join and letter:
+            out[-1] += "^" + c
+            join = False
         else:
             out.append(c)
-    return [u.rstrip("^") for u in out]
+            join = False
+    return out
 
 
 def kokoro(raw):
+    """The reading in Kokoro's symbols: decomposed, as Kokoro has ̃ but not ũ, except ç, which it has whole."""
+    us = units(raw)
+    # A palatal mark after a sound already palatal, or before i or j, adds nothing (espeak's Polish "ɲʲ", "bʲˈi").
+    keep = []
+    for k, u in enumerate(us):
+        after = next((v for v in us[k + 1:] if v not in "ˈˌ"), "")
+        if u == "ʲ" and (keep and unicodedata.normalize("NFC", keep[-1])[-1] in "ɲɕʑʎjç" or after[:1] in ("i", "j")):
+            continue
+        keep.append(u)
     out = []
-    for u in units(raw):
+    for u in keep:
         if u in NEAREST:
             out.append(NEAREST[u])
         elif "^" in u:
-            a, b = u.split("^", 1)
+            a, b = u.split("^")
             out.append(a + TIE + b if a + b in TIED else NEAREST.get(a, a) + NEAREST.get(b, b))
         else:
             out.append(NEAREST.get(u, u))
-    # A palatal mark after a sound already palatal, or before i or j, adds nothing (espeak's Polish "ɲʲ", "bʲˈi").
-    keep = []
-    for k, sound in enumerate(out):
-        after = next((u for u in out[k + 1:] if u not in "ˈˌ"), "")
-        if sound == "ʲ" and (keep and keep[-1][-1] in "ɲɕʑʎjç" or after[:1] in ("i", "j")):
-            continue
-        keep.append(sound)
-    out = keep
-    return "".join(out)
+    return unicodedata.normalize("NFD", "".join(out)).replace("c\u0327", "ç")
+
+
+def has_vowel(phonemes):
+    return any(c in VOWELS for c in unicodedata.normalize("NFD", phonemes))

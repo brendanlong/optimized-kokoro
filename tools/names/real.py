@@ -61,11 +61,19 @@ def attributed():
     return out
 
 
+@functools.cache
+def languages_by_fold():
+    out = collections.defaultdict(set)
+    for s, (language, _) in attributed().items():
+        out[fold(s)].add(language)
+    return out
+
+
 def label(spelling):
     """A spelling as flag.py shows it, with the language of the name it reads as: "Wojciech (Polish)"."""
     language = attributed().get(spelling, ("", ""))[0]
     if language not in LANGUAGES:
-        language = next(lang for s, (lang, _) in attributed().items() if lang in LANGUAGES and fold(s) == fold(spelling))
+        language = min(languages_by_fold()[fold(spelling)] & LANGUAGES)
     return f"{spelling} ({LANGUAGE_NAMES[language]})"
 
 
@@ -88,8 +96,9 @@ def read(voice, words, data):
 
 def readings(languages):
     """{spelling: (language, voice, espeak's phonemes)} for the names of `languages`. Left out: a name espeak
-    reads partly in another language (Vietnamese espeak reads "Baotixita" as English), and one with no vowel
-    letter that espeak doesn't read with a syllabic consonant, which it spells ("Vlk" as V-L-K)."""
+    reads partly in another language (Vietnamese espeak reads "Baotixita" as English), one it reads with no
+    vowel (French "Gees" as ʒ), and one with no vowel letter that espeak doesn't read with a syllabic consonant,
+    which it spells ("Vlk" as V-L-K)."""
     names = attributed()
     by_voice = collections.defaultdict(list)
     for spelling, (language, voice) in names.items():
@@ -98,7 +107,8 @@ def readings(languages):
     out, data = {}, espeak_data() if by_voice else None
     for voice, spellings in sorted(by_voice.items()):
         for s, (raw, switched) in zip(spellings, read(voice, spellings, data)):
-            if not switched and (VOWEL_LETTERS & set(s.lower()) or "\u0329" in raw):
+            spelled = not VOWEL_LETTERS & set(s.lower()) and "\u0329" not in raw
+            if not switched and not spelled and sounds.has_vowel(sounds.kokoro(raw)):
                 out[s] = (names[s][0], voice, raw)
     return out
 
