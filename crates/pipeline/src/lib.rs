@@ -29,8 +29,6 @@ use std::collections::HashMap;
 use std::fmt;
 use std::ops::Range;
 use std::sync::{Arc, OnceLock};
-use unicode_normalization::UnicodeNormalization;
-use unicode_normalization::char::is_combining_mark;
 
 pub use kokoro_g2p_en::Token;
 #[doc(hidden)]
@@ -666,7 +664,9 @@ impl<'p> Request<'p> {
                 ));
             }
         }
-        let text = compose_latin(text);
+        // spaCy tags a word written with combining marks as a quote when it stands alone, and misaki
+        // reads its pieces as quotes.
+        let text = kokoro_espeak::compose_marks(text);
         let graphemes = match lang {
             Lang::Chinese | Lang::Japanese => text,
             _ => foreign::translate_cjk_punctuation(&text),
@@ -832,51 +832,9 @@ impl<'p> Request<'p> {
     }
 }
 
-/// `text` with each Latin letter and the combining marks after it composed (NFC): "e" + U+0302 +
-/// U+0303 is "ễ". spaCy tags a word written with combining marks as a quote when it stands alone,
-/// and misaki reads its pieces as quotes. The rest of the text is unchanged: NFC would rewrite
-/// Devanagari's composition exclusions (U+0958 "क़" as "क" + U+093C).
-fn compose_latin(text: &str) -> std::borrow::Cow<'_, str> {
-    if !text.chars().any(is_combining_mark) {
-        return text.into();
-    }
-    let is_latin = |c: char| std::iter::once(c).nfd().next().is_some_and(|b| b.is_alphabetic() && b <= '\u{24f}');
-    let mut chars = text.char_indices().peekable();
-    let mut out = String::new();
-    let mut copied = 0;
-    while let Some((start, c)) = chars.next() {
-        if !is_latin(c) {
-            continue;
-        }
-        let mut end = start + c.len_utf8();
-        while let Some(&(i, m)) = chars.peek().filter(|&&(_, m)| is_combining_mark(m)) {
-            end = i + m.len_utf8();
-            chars.next();
-        }
-        if end > start + c.len_utf8() {
-            out.push_str(&text[copied..start]);
-            out.extend(text[start..end].nfc());
-            copied = end;
-        }
-    }
-    if copied == 0 {
-        return text.into();
-    }
-    out.push_str(&text[copied..]);
-    out.into()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn latin_letters_are_composed_with_their_marks() {
-        assert_eq!(compose_latin("Nguye\u{302}\u{303}n cafe\u{301}."), "Nguyễn café.");
-        for other in ["Nguyễn", "\u{915}\u{93c}", "\u{958}", "\u{212a}", "\u{5d1}\u{5bc}"] {
-            assert_eq!(compose_latin(other), other);
-        }
-    }
 
     fn token(text: &str, phonemes: &str, whitespace: &str) -> Token {
         Token { text: text.into(), tag: String::new(), whitespace: whitespace.into(), phonemes: Some(phonemes.into()) }

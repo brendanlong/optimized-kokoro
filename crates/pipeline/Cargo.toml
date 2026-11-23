@@ -17,7 +17,6 @@ kokoro-phonemes = { path = "../phonemes" }
 kokoro-spacy-en = { path = "../spacy-en" }
 kokoro-text = { path = "../text" }
 regex = "1"
-unicode-normalization = "0.1"
 
 [dev-dependencies]
 kokoro-reference = { path = "../reference" }

@@ -126,16 +126,35 @@ impl Espeak {
         self.translate_text(text, |_| {})
     }
 
-    /// [`text_to_phonemes`](Self::text_to_phonemes), calling `after_clause` after each clause,
-    /// e.g. to print [`debug_phoneme_list`](Self::debug_phoneme_list).
-    #[doc(hidden)]
-    pub fn translate_text(&mut self, text: &str, mut after_clause: impl FnMut(&Self)) -> Vec<String> {
-        let mut out = Vec::new();
+    /// Whether the voice has a name for `letter`, as `TranslateLetter` reads it when spelling a
+    /// word: no for a letter it reads as "letter" and its code point ("ễ" in every voice).
+    pub fn names_letter(&mut self, letter: char) -> bool {
+        self.start_call();
+        self.read_code_point = false;
+        let mut word = [0u8; 8];
+        word[0] = b' ';
+        let len = letter.encode_utf8(&mut word[1..]).len();
+        word[1 + len] = b' ';
+        let mut phonemes = [0u8; crate::defs::N_WORD_PHONEMES];
+        self.translate_letter(engine::Tr::Main, &word, 1, &mut phonemes, 0);
+        !self.read_code_point
+    }
+
+    /// Puts the state back to the one after `espeak_SetVoiceByName` if a call has used it.
+    fn start_call(&mut self) {
         if self.used {
             let after_set_voice = self.after_set_voice.clone().expect("set by new");
             self.reset(after_set_voice);
         }
         self.used = true;
+    }
+
+    /// [`text_to_phonemes`](Self::text_to_phonemes), calling `after_clause` after each clause,
+    /// e.g. to print [`debug_phoneme_list`](Self::debug_phoneme_list).
+    #[doc(hidden)]
+    pub fn translate_text(&mut self, text: &str, mut after_clause: impl FnMut(&Self)) -> Vec<String> {
+        let mut out = Vec::new();
+        self.start_call();
         self.decoder.decode_string(text.as_bytes());
         loop {
             self.translate_clause(Tr::Main);
