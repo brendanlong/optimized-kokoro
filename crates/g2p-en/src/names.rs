@@ -20,8 +20,8 @@ pub(crate) struct Names {
     /// The names by [`fold`]ed spelling.
     names: FxHashMap<Box<str>, Box<[Name]>>,
     /// For each language whose text espeak reads (`es`, `fr`, ...), the names that are common words
-    /// in it ("Este" in Portuguese), which its pipeline reads as words, [`fold`]ed.
-    skip: FxHashMap<&'static str, FxHashSet<Box<str>>>,
+    /// in it ("Este" in Portuguese), which its pipeline reads as words.
+    skip: FxHashMap<&'static str, Skip>,
     /// Every prefix of a folded name, so a match can stop as soon as the text leaves them.
     prefixes: FxHashSet<Box<str>>,
 }
@@ -48,6 +48,27 @@ fn accents_within(written: &str, name: &str) -> bool {
     };
     let (w, n) = (clusters(written), clusters(name));
     w.len() == n.len() && w.iter().zip(&n).all(|(w, n)| w.0 == n.0 && (w.1.is_empty() || w.1 == n.1))
+}
+
+/// Words a language's text reads as words, not as the names they spell.
+struct Skip {
+    /// Lowercase, as written.
+    written: FxHashSet<Box<str>>,
+    /// [`folded`].
+    letters: FxHashSet<Box<str>>,
+}
+
+impl Skip {
+    /// Whether `written` is one of the words: as written if it has accents, so "Estë" is the name
+    /// where "este" is a word, and else by its letters, so "sur" is the French word whatever "Sûr" is.
+    fn holds(&self, written: &str) -> bool {
+        let written: String = written.split_whitespace().collect::<Vec<_>>().join(" ").nfc().collect();
+        if written.nfd().any(is_combining_mark) {
+            self.written.contains(written.to_lowercase().as_str())
+        } else {
+            self.letters.contains(folded(&written).as_str())
+        }
+    }
 }
 
 fn folded(s: &str) -> String {
@@ -97,8 +118,13 @@ impl Names {
         }
         let skip: FxHashMap<&'static str, Vec<&'static str>> =
             serde_json::from_str(SKIP).expect("bundled name skips are valid");
-        let skip =
-            skip.into_iter().map(|(l, names)| (l, names.into_iter().map(|n| folded(n).into()).collect())).collect();
+        let skip = skip
+            .into_iter()
+            .map(|(l, names)| {
+                let written = names.iter().map(|n| n.to_lowercase().into()).collect();
+                (l, Skip { letters: names.iter().map(|n| folded(n).into()).collect(), written })
+            })
+            .collect();
         let names = names.into_iter().map(|(k, v)| (k, v.into_boxed_slice())).collect();
         Names { names, prefixes, skip }
     }
@@ -126,7 +152,7 @@ impl Names {
 
     /// The longest name at the start of `text` that `skip` doesn't hold, as `(bytes of text,
     /// phonemes)`. Whitespace between a name's words may be any run of it but a line break.
-    fn longest(&self, text: &str, skip: Option<&FxHashSet<Box<str>>>) -> Option<(usize, &'static str)> {
+    fn longest(&self, text: &str, skip: Option<&Skip>) -> Option<(usize, &'static str)> {
         let mut key = String::new();
         let mut found = None;
         let mut chars = text.char_indices().peekable();
@@ -146,7 +172,7 @@ impl Names {
             let end = chars.peek().map_or(text.len(), |&(j, _)| j);
             if let Some(names) = self.names.get(key.as_str())
                 && ends_word(&text[end..])
-                && !skip.is_some_and(|s| s.contains(key.as_str()))
+                && !skip.is_some_and(|s| s.holds(&text[..end]))
                 && let Some(phonemes) = Self::resolve(names, &text[..end])
             {
                 found = Some((end, phonemes));
@@ -256,5 +282,10 @@ mod tests {
         // Nor is a name a common word of the text's language, in any case.
         let spanish = |t: &str| names.link(t, "es", &[], |p| format!("{p}z")).into_owned();
         assert_eq!(spanish("fui y ESTE"), "fui y ESTE");
+        // Written with its accents, a name is the name, even where its letters alone are a word.
+        assert!(spanish("Estë").starts_with("[Estë](/"));
+        assert!(spanish("ESTË").starts_with("[ESTË](/"));
+        let french = |t: &str| names.link(t, "fr", &[], |p| format!("{p}z")).into_owned();
+        assert_eq!(french("sur Sur"), "sur Sur");
     }
 }

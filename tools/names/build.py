@@ -13,7 +13,8 @@ The G2P finds a name in any case and without its accents ("EARENDIL" is "Eärend
 the accents that is left out for either reason ("Turin" for "Túrin", "Dior" for "Díor"), or that was never
 checked, is written with no phonemes: it isn't the name.
 A pipeline that reads Latin text in another language also skips the names exclude_languages.tsv lists
-for it, common words there ("Este" in Portuguese), written to names_skip.json.
+for it, common words there ("Este" in Portuguese), written to names_skip.json: a skipped spelling without
+accents skips the name written without them, and one with accents only itself ("Estë" is still the name).
 Single words must have been through flag.py; the build stops if one hasn't.
 """
 
