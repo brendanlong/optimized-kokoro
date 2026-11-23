@@ -57,7 +57,7 @@ fn ends_word(rest: &str) -> bool {
     match chars.next() {
         Some(c) if is_word_char(c) || c == ']' => false,
         Some('\'' | '’') => match chars.next() {
-            Some('s') => !chars.next().is_some_and(is_word_char),
+            Some('s' | 'S') => !chars.next().is_some_and(is_word_char),
             Some(c) => !is_word_char(c),
             None => true,
         },
@@ -173,7 +173,7 @@ impl Names {
             };
             let mut end = i + n;
             let mut phonemes = Cow::Borrowed(phonemes);
-            for s in ["'s", "’s"] {
+            for s in ["'s", "’s", "'S", "’S"] {
                 if text[end..].starts_with(s) && !text[end + s.len()..].chars().next().is_some_and(is_word_char) {
                     phonemes = Cow::Owned(possessive(&phonemes));
                     end += s.len();
@@ -225,6 +225,7 @@ mod tests {
         assert_eq!(link("Turin"), "Turin");
         assert_eq!(link("TURIN"), "TURIN");
         assert!(link("Túrin").starts_with("[Túrin](/"));
+        assert_eq!(link("GALADRIEL'S"), link("Galadriel's").replace("Galadriel's]", "GALADRIEL'S]"));
         // Nor is a name a common word of the text's language, in any case.
         let spanish = |t: &str| names.link(t, "es", &[], |p| format!("{p}z")).into_owned();
         assert_eq!(spanish("fui y ESTE"), "fui y ESTE");

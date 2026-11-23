@@ -363,8 +363,9 @@ fn sentences(text: &str) -> impl Iterator<Item = std::ops::Range<usize>> + '_ {
 
 /// Puts back the case of `original` that [`G2p::sentence_case`] changed in `cased`.
 fn restore_case(tokens: &mut [Token], cased: &str, original: &str) -> Result<(), Error> {
+    // The tokens may leave characters out (misaki's `subtokenize` drops a lone "'" in "X'1").
     let mut pairs = cased.chars().zip(original.chars());
-    let mut take = |c: char| pairs.next().filter(|&(x, _)| x == c).map(|(_, o)| o).ok_or(Error::Alignment);
+    let mut take = |c: char| pairs.find(|&(x, _)| x == c).map(|(_, o)| o).ok_or(Error::Alignment);
     for token in tokens {
         token.text = token.text.chars().map(&mut take).collect::<Result<_, _>>()?;
         token.whitespace.chars().try_for_each(|c| take(c).map(drop))?;
@@ -482,7 +483,8 @@ impl G2p {
             }
             let i = cased.strip_prefix('i').is_some_and(|r| r.is_empty() || r.starts_with(['\'', '’']));
             if (first || i)
-                && let Some((at, c)) = cased.char_indices().find(|&(_, c)| c.is_lowercase())
+                && let Some((at, c)) = cased.char_indices().find(|&(_, c)| c.is_alphabetic())
+                && c.is_lowercase()
                 && let Some(u) = one_char(c.to_uppercase())
             {
                 cased.replace_range(at..at + c.len_utf8(), u.encode_utf8(&mut [0; 4]));
@@ -740,6 +742,7 @@ mod tests {
         assert_eq!(cased("AINULINDALË, THE MUSIC"), "Ainulindalë, the music");
         assert_eq!(cased("THE S-H-A-D-E AND U.S. ARMY"), "The S-H-A-D-E and u.s. Army");
         assert_eq!(cased("THE RESTING-PLACE"), "The resting-place");
+        assert_eq!(cased("İSTANBUL İSTANBUL"), "İstanbul İstanbul");
         // Other sentences are left as written, and so is one word in capitals: lowercase text may
         // be a clause cut from a sentence, or follow an abbreviation ("e.g. hammers").
         for t in [

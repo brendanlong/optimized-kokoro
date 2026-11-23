@@ -476,6 +476,11 @@ fn names_are_found_in_any_case_but_lose_to_overrides() {
     for text in ["gondor", "GONDOR", "OF GONDOR AND ROHAN"] {
         assert!(phonemize(text).contains(&gondor), "{text}: {}", phonemize(text));
     }
+    // Text in capitals keeps its text even where a token leaves a character out ("X'1").
+    for text in ["THE CAT'S X'1 THING IS HERE. YES IT IS.", "THE O'-NEIL CAT. YES IT IS.", "THE CAT‘S X’1 HAT. YES."]
+    {
+        assert!(Pipeline::new(Lang::AmericanEnglish).unwrap().phonemize(text).is_ok(), "{text}");
+    }
     for text in ["Gondorian", "[Gondor](/ɡˈɑndɔɹ/)"] {
         assert!(!phonemize(text).contains(&gondor), "{text}: {}", phonemize(text));
     }
