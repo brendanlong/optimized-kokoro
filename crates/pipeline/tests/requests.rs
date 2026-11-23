@@ -134,6 +134,7 @@ fn requests_match_the_reference() {
     let mut roman = 0;
     let mut regrouped = 0;
     let mut links = 0;
+    let mut latin_accents = 0;
     let mut runs_joined = 0;
     let mut cased = 0;
     let (us, gb) = (kokoro_g2p_en::G2p::new(false), kokoro_g2p_en::G2p::new(true));
@@ -146,6 +147,10 @@ fn requests_match_the_reference() {
             || kokoro_reference::divergence::has_link_read_as_text(&case.lang, &case.text)
         {
             links += 1;
+            continue;
+        }
+        if kokoro_reference::divergence::has_latin_letter_espeak_lacks(&case.text) {
+            latin_accents += 1;
             continue;
         }
         let pipeline = pipelines.iter().find(|p| p.lang().code() == case.lang).expect("a pipeline language");
@@ -361,7 +366,7 @@ fn requests_match_the_reference() {
          {stateful} where the reference's espeak read a word by an earlier call's state, \
          {numbers} with numbers or symbols read differently ({roman} with Roman numerals), {fuzzed} more fuzzed ones with digits or symbols, \
          {regrouped} with short clauses regrouped, {links} with a link the reference read otherwise (as text, or ɾ and ʔ as the English flap and t), {runs_joined} with runs joined by the port's rule, \
-         {cased} with case read differently",
+         {cased} with case read differently, {latin_accents} with Latin letters espeak lacks",
         compared - failures.len(),
     );
     for f in failures.iter().take(10) {

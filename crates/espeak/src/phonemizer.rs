@@ -2,7 +2,10 @@
 //! `with_stress=True`, `tie='^'`, the default separator (words end in a space) and `strip=False`.
 
 use kokoro_espeak_ng::{Error, Espeak, EspeakData, Result};
+use std::borrow::Cow;
 use std::sync::Arc;
+use unicode_normalization::UnicodeNormalization;
+use unicode_normalization::char::is_combining_mark;
 
 /// `phonemizer.punctuation._DEFAULT_MARKS`.
 const MARKS: &str = ";:,.!?¡¿—…\"«»“”(){}[]";
@@ -41,9 +44,53 @@ impl Backend {
     /// `EspeakWrapper.text_to_phonemes`: the non-empty clauses espeak reads in `text`, joined by
     /// spaces.
     pub fn espeak(&mut self, text: &str) -> String {
-        let clauses = self.espeak.text_to_phonemes(text);
+        let clauses = self.espeak.text_to_phonemes(&accents_espeak_knows(text));
         clauses.into_iter().filter(|c| !c.is_empty()).collect::<Vec<_>>().join(" ")
     }
+}
+
+/// The last Latin letter espeak knows with accents (`remove_accent` and `LookupAccentedLetter`
+/// stop at U+024F).
+const LAST_KNOWN_LATIN: char = '\u{24f}';
+
+/// `text` with each accented Latin letter espeak doesn't know written as its letter without
+/// accents. espeak spells out a word with a Latin letter beyond U+024F ("Nguyễn" as "N G U Y
+/// letter 1EC5 N") and reads an accent written as a combining mark as punctuation, so a letter
+/// with accents (precomposed or as combining marks) is kept only when it is one character espeak
+/// knows: "é" and "e" + U+0301 are "é", "ễ" and "ạ" are "e" and "a".
+fn accents_espeak_knows(text: &str) -> Cow<'_, str> {
+    if !text.chars().any(|c| c > LAST_KNOWN_LATIN) {
+        return Cow::Borrowed(text);
+    }
+    let known = |letter: &str| {
+        let mut composed = letter.nfc();
+        match (composed.next(), composed.next()) {
+            (Some(c), None) if c <= LAST_KNOWN_LATIN => c,
+            _ => letter.chars().nfd().next().expect("a letter"),
+        }
+    };
+    let mut out = String::with_capacity(text.len());
+    let mut letter = String::new();
+    for c in text.chars() {
+        if !letter.is_empty() && is_combining_mark(c) {
+            letter.push(c);
+            continue;
+        }
+        if !letter.is_empty() {
+            out.push(known(&letter));
+            letter.clear();
+        }
+        let base = std::iter::once(c).nfd().next().expect("a character");
+        if base.is_alphabetic() && base <= LAST_KNOWN_LATIN {
+            letter.push(c);
+        } else {
+            out.push(c);
+        }
+    }
+    if !letter.is_empty() {
+        out.push(known(&letter));
+    }
+    Cow::Owned(out)
 }
 
 /// `EspeakBackend.phonemize([text])`, as one string, with `espeak` reading each chunk (normally
@@ -247,6 +294,15 @@ fn restore(mut text: Vec<String>, marks: &[Mark]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn latin_letters_keep_only_accents_espeak_knows() {
+        assert_eq!(accents_espeak_knows("Nguyễn Thị Phạm Đồng"), "Nguyen Thi Pham Đong");
+        assert_eq!(accents_espeak_knows("cafe\u{301} ṣe\u{323}"), "café se");
+        for other in ["café Dvořák", "क़िला", "Привет", "한국어", "a\u{2003}b"] {
+            assert_eq!(accents_espeak_knows(other), other);
+        }
+    }
 
     #[test]
     fn preserve_splits_at_marks() {

@@ -934,6 +934,34 @@ pub fn has_dropped_abbreviation(text: &str) -> bool {
         .any(|w| (w.eq_ignore_ascii_case("dr") || w.eq_ignore_ascii_case("mr")) && !matches!(w, "Dr" | "Mr"))
 }
 
+/// Whether `text` has a Latin letter with accents espeak doesn't know: a letter beyond U+024F
+/// ("ễ", "ḥ") or a combining mark after a Latin letter. espeak spelled the word out, code points
+/// and all, or read the mark as punctuation; the port reads the letter without those accents
+/// (`docs/divergences.md`, "espeak: Latin letters it lacks").
+pub fn has_latin_letter_espeak_lacks(text: &str) -> bool {
+    use unicode_normalization::char::{decompose_canonical, is_combining_mark};
+    let latin = |c: char| c.is_alphabetic() && c <= '\u{24f}';
+    let mut after_latin = false;
+    for c in text.chars() {
+        if is_combining_mark(c) {
+            if after_latin {
+                return true;
+            }
+            continue;
+        }
+        let mut base = None;
+        decompose_canonical(c, |d| {
+            base.get_or_insert(d);
+        });
+        let base = base.unwrap_or(c);
+        if c > '\u{24f}' && latin(base) {
+            return true;
+        }
+        after_latin = latin(c);
+    }
+    false
+}
+
 /// Whether a record of a pipeline whose reference read `[word](...)` links as text, markup and all
 /// (every pipeline but English and Chinese), has one: the port reads a link's phonemes, and the
 /// text of any other link (`docs/divergences.md`, "Pipeline: links and names in every language").

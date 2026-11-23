@@ -220,4 +220,12 @@ mod tests {
         let word = russian.phonemize("Привет");
         assert_eq!(russian.phonemize("(Привет)"), format!("({word})"));
     }
+
+    #[test]
+    fn latin_letters_espeak_lacks_are_read_without_their_accents() {
+        let mut fallback = EspeakFallback::new(false).unwrap();
+        assert_eq!(fallback.phonemize("Nguyễn"), fallback.phonemize("Nguyen"));
+        let mut spanish = EspeakG2P::new("es").unwrap();
+        assert_eq!(spanish.phonemize("Phạm Văn Đồng"), spanish.phonemize("Pham Văn Đong"));
+    }
 }
