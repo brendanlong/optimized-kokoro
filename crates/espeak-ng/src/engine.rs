@@ -35,6 +35,8 @@ pub struct Espeak {
     pub(crate) after_set_voice: Option<Arc<Espeak>>,
     /// The state has been used by a call since it was copied from `after_set_voice`.
     pub(crate) used: bool,
+    /// `TranslateLetter` found no name for a letter and read its code point instead.
+    pub(crate) read_code_point: bool,
 
     // synthdata.c
     pub(crate) phoneme_tab: [Option<PhonemeTab>; N_PHONEME_TAB],
@@ -125,6 +127,7 @@ impl Espeak {
             data,
             after_set_voice: None,
             used: false,
+            read_code_point: false,
             phoneme_tab: [None; N_PHONEME_TAB],
             n_phoneme_tab: 0,
             current_phoneme_table: -1,

@@ -45,6 +45,7 @@ use merged::*;
 use std::sync::{Arc, OnceLock};
 
 pub use kokoro_espeak_ng::{Error, EspeakData, Result, alphabet_languages};
+pub use phonemizer::compose_marks;
 
 /// The data in [`kokoro_espeak_ng::default_data_dir`], loaded once per process.
 pub fn default_data() -> Result<Arc<EspeakData>> {
@@ -222,10 +223,12 @@ mod tests {
     }
 
     #[test]
-    fn latin_letters_espeak_lacks_are_read_without_their_accents() {
+    fn letters_espeak_lacks_are_read_without_their_accents() {
         let mut fallback = EspeakFallback::new(false).unwrap();
         assert_eq!(fallback.phonemize("Nguyễn"), fallback.phonemize("Nguyen"));
         let mut spanish = EspeakG2P::new("es").unwrap();
         assert_eq!(spanish.phonemize("Phạm Văn Đồng"), spanish.phonemize("Pham Văn Đong"));
+        let mut russian = EspeakG2P::new("ru").unwrap();
+        assert_eq!(russian.phonemize("\u{45d}"), russian.phonemize("\u{438}"));
     }
 }

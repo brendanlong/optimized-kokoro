@@ -509,6 +509,32 @@ fn names_match_with_accents_as_combining_marks() {
 }
 
 #[test]
+fn a_word_reads_the_same_with_accents_as_combining_marks() {
+    for lang in [Lang::AmericanEnglish, Lang::Hindi, Lang::French] {
+        let pipeline = Pipeline::new(lang).unwrap();
+        for (composed, decomposed) in [
+            ("Nguyễn", "Nguye\u{302}\u{303}n"),
+            ("Nguyễn.", "Nguye\u{302}\u{303}n."),
+            ("Йорк", "\u{418}\u{306}\u{43e}\u{440}\u{43a}"),
+            ("άλφα.", "\u{3b1}\u{301}\u{3bb}\u{3c6}\u{3b1}."),
+        ] {
+            assert_eq!(
+                pipeline.phonemize(decomposed).unwrap().0,
+                pipeline.phonemize(composed).unwrap().0,
+                "{lang:?} {decomposed:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_links_phonemes_keep_their_combining_marks() {
+    let chunk = pipeline().chunks("[word](/a\u{303}/)").next().unwrap().unwrap();
+    assert_eq!(chunk.phonemes, "a\u{303}");
+    assert_eq!(chunk.ids.len(), 2);
+}
+
+#[test]
 fn names_and_links_are_read_in_every_language() {
     let galadriel = name("Galadriel");
     for lang in [Lang::French, Lang::Spanish, Lang::Italian, Lang::BrazilianPortuguese, Lang::Hindi, Lang::Japanese] {
