@@ -18,8 +18,10 @@ import real  # noqa: E402
 
 PICKS = ["Wojciech", "Grzegorz", "Przemysław", "Małgorzata", "Szczepański", "Kieślowski", "Błaszczykowski", "Zbigniew",
          "Räikkönen", "Häkkinen", "Virtanen", "Jääskeläinen", "Mäkelä", "Jukka", "Tuomas", "Dvořák", "Janáček", "Jágr",
-         "Navrátilová", "Kvitová", "Přemysl", "Jiří", "Bohuslav", "Ludmila"]
-SAMPLE = 6
+         "Navrátilová", "Kvitová", "Přemysl", "Jiří", "Bohuslav", "Ludmila", "Joaquín", "Gálvez", "Ibáñez", "Núñez",
+         "Xóchitl", "Pierluigi", "Mastroianni", "Gianluigi", "Thibault", "Geneviève", "Jean-Baptiste", "Lefebvre",
+         "Erzsébet", "Szőke", "Batthyány", "Gyöngyi", "Kovács", "Horváth"]
+SAMPLE = 4
 
 
 def main(binary, out):

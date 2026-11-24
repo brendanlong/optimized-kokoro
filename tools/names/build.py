@@ -134,6 +134,8 @@ def main():
             if bad:
                 raise SystemExit(f"{spelling}: {phonemes} has sounds Kokoro doesn't know: {bad}")
             if names.get(spelling, phonemes) != phonemes:
+                if getattr(module, "YIELDS", False):
+                    return False
                 raise SystemExit(f"{spelling}: two sources read it differently")
             return True
 

@@ -14,7 +14,7 @@ LABELS = {"current": "Today (main pipeline)", "native": "Native", "anglicized": 
           "before": "Before (main)", "after": "After (names.json)"}
 
 
-PILOT_INTRO = ["<p>The pilot languages' names in names.json, each in “Then NAME arrived.” in <code>af_heart</code>: as main reads "
+PILOT_INTRO = ["<p>Real people's names in names.json, each in “Then NAME arrived.” in <code>af_heart</code>: as main reads "
                "it (misaki's dictionary or espeak's English rules), and as the names list now reads it (espeak in the name's own "
                "language, in Kokoro's sounds). The first names of each language are well-known ones; the rest are a random sample.</p>"]
 

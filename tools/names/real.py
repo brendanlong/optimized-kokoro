@@ -14,6 +14,7 @@ import re
 import json
 import os
 import subprocess
+import tempfile
 import unicodedata
 from pathlib import Path
 
@@ -30,8 +31,10 @@ LANGUAGE_NAMES = {"pl": "Polish", "hu": "Hungarian", "cs": "Czech", "sk": "Slova
                   "az": "Azerbaijani", "mt": "Maltese", "mi": "Māori", "ga": "Irish", "bs": "Bosnian",
                   "ht": "Haitian Creole"}
 # The languages whose names are read so far.
-LANGUAGES = {"pl", "fi", "cs"}
+LANGUAGES = {"pl", "fi", "cs", "es", "it", "fr", "hu"}
 WORLD = "real people's family and given names"
+# A spelling an earlier source reads differently is left to it (Tolkien's Martan, Cobas).
+YIELDS = True
 # Too many names to review flags by hand: every spelling flag.py flags is left out. A flagged name is read by
 # espeak's English rules (misaki's dictionaries already have the names English says its own way), which read a
 # famous foreign name worse than its own language does, so the prompt doesn't flag famous people for being famous.
@@ -44,7 +47,8 @@ spelling almost always means someone of that name who says it that language's wa
 Flag every spelling that is also any of these: an English word (including archaic, technical, or plural forms); a \
 name commonly borne by English speakers, or by speakers of another language who say it differently; a place, brand \
 or product English text names that isn't that language's (a city elsewhere, a company); a word commonly borrowed \
-into English; a common word in Spanish, French, Italian or Portuguese; an abbreviation. When in doubt, flag it.
+into English; a common word in Spanish, French, Italian or Portuguese, unless that is the name's own \
+language (a Spanish surname that is a Spanish word, like Moreno, is fine); an abbreviation. When in doubt, flag it.
 
 Don't flag a spelling only because a famous bearer's name is anglicized by English speakers: their own language's \
 pronunciation is what we want for them.
@@ -69,9 +73,17 @@ FIXES = {"cs": [(re.compile(r"v(?=$| )"), "f"), (re.compile("r\u031d(?=$| )"), "
 FOREIGN = {"fi": re.compile(r"th|ph|dt|ae|ehr|^sj|^sv|ström|stedt|roos$|roth$|holm$|hjelm|sköld|skog|lund|strand|vall$|man$"
                             r"|ld$|lm$"),
            "pl": re.compile(r"sch|th|ph|ei|ä|oo|ee|ae|tz|ff"),
-           "cs": re.compile(r"sch|th|ph|ei|ee|oo|ae|tz|ff")}
+           "cs": re.compile(r"sch|th|ph|ei|ee|oo|ae|tz|ff"),
+           "es": re.compile(r"sch|th|ph|ck|tz|ff|ee|oo"), "it": re.compile(r"th|ph|ck|ee|oo|ae"),
+           "fr": re.compile(r"sch|tz|ck|ee|oo|sh")}
 LETTERS = {"fi": set("adeghijklmnoprstuvyäö-"), "pl": set("aąbcćdeęfghijklłmnńoóprsśtuwyzźż-"),
-           "cs": set("aábcčdďeéěfghiíjklmnňoóprřsštťuúůvyýzž-")}
+           "cs": set("aábcčdďeéěfghiíjklmnňoóprřsštťuúůvyýzž-"), "es": set("aábcdeéfghiíjlmnñoópqrstuúüvxyz-"),
+           "it": set("aàbcdeèéfghiìíjlmnoòópqrstuùúvz-"), "fr": set("aàâæbcçdeéèêëfghiîïjklmnoôœpqrstuùûüvwxyÿz-"),
+           "hu": set("aábcdeéfghiíjklmnoóöőpqrstuúüűvwxyz-")}
+# Spellings rewritten before espeak reads them: Hungarian's old ones, which noble families keep and espeak misreads
+# (Batthyány, Horthy, Kovách, Horváth, Balogh): a final thy is ti, and only a final ch is cs (not Richárd's).
+SPELLINGS = {"hu": [(re.compile(r"thy$"), "ti"), (re.compile(r"th"), "t"), (re.compile(r"ch$"), "cs"), (re.compile(r"gh$"), "g"), (re.compile(r"cz"), "c"),
+                    (re.compile(r"aa"), "á"), (re.compile(r"eö"), "ö")]}
 VOWEL_LETTERS = set("aeiouyáéíóúýàèìòùâêîôûäëïöüÿąęåæøœőűěůãõ")
 
 
@@ -119,6 +131,13 @@ def read(voice, words, data):
     return out
 
 
+def respell(spelling, language):
+    word = spelling.lower()
+    for pattern, new in SPELLINGS.get(language, []):
+        word = pattern.sub(new, word)
+    return word if word != spelling.lower() else spelling
+
+
 def readings(languages):
     """{spelling: (language, voice, espeak's phonemes)} for the names of `languages`, one word each (Wikidata's
     names of several words are rare and unreviewed: "von Kraemer", "Matuszewski Ryszard"). Left out: a name with
@@ -135,10 +154,13 @@ def readings(languages):
             by_voice[voice].append(spelling)
     out, data = {}, espeak_data() if by_voice else None
     for voice, spellings in sorted(by_voice.items()):
-        for s, (raw, switched) in zip(spellings, read(voice, spellings, data)):
+        modern = [respell(s, names[s][0]) for s in spellings]
+        for s, (raw, switched) in zip(spellings, read(voice, modern, data)):
             for pattern, sound in FIXES.get(names[s][0], []):
                 raw = pattern.sub(sound, raw)
             spelled = not VOWEL_LETTERS & set(s.lower()) and "\u0329" not in raw
+            # espeak spells out a word it can't read ("Jhon" as J-h-o-n), each letter stressed.
+            spelled = spelled or "-" not in s and raw.count("ˈ") > 1
             if not switched and not spelled and sounds.has_vowel(sounds.kokoro(raw)):
                 out[s] = (names[s][0], voice, raw)
     return out
@@ -155,25 +177,29 @@ def names(cache: Path, english):
 def zipfs(words):
     """{(word, language): wordfreq's zipf frequency} for each (word, language) in `words`."""
     script = ("import json, sys\nfrom wordfreq import zipf_frequency\n"
-              "print(json.dumps([zipf_frequency(w, lang) for w, lang in json.load(sys.stdin)]))")
+              "json.dump([zipf_frequency(w, lang) for w, lang in json.load(sys.stdin)], open(sys.argv[1], 'w'))")
     return dict(zip(words, wordfreq(script, json.dumps(list(words)))))
 
 
 def common_words(languages, zipf):
     """{language: words used at least `zipf` often in it}, from wordfreq."""
     script = ("import json, sys\nfrom wordfreq import iter_wordlist, zipf_frequency\nout = {}\n"
-              "for lang in sys.argv[2:]:\n    out[lang] = []\n    for w in iter_wordlist(lang):\n"
-              "        if zipf_frequency(w, lang) < float(sys.argv[1]):\n            break\n        out[lang].append(w)\n"
-              "print(json.dumps(out))")
+              "for lang in sys.argv[3:]:\n    out[lang] = []\n    for w in iter_wordlist(lang):\n"
+              "        if zipf_frequency(w, lang) < float(sys.argv[2]):\n            break\n        out[lang].append(w)\n"
+              "json.dump(out, open(sys.argv[1], 'w'))")
     return wordfreq(script, "", str(zipf), *languages)
 
 
 def wordfreq(script, stdin, *args):
-    res = subprocess.run(["uv", "run", "-q", "--no-project", "--with", WORDFREQ, "python", "-I", "-c", script, *args],
-                         input=stdin, capture_output=True, text=True, cwd="/")
-    if res.returncode:
-        raise SystemExit(f"wordfreq: {res.stderr}")
-    return json.loads(res.stdout)
+    """What `script` writes as JSON to the file named by its first argument (a pipe can be non-blocking here, and
+    the words don't fit in its buffer)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "out.json"
+        res = subprocess.run(["uv", "run", "-q", "--no-project", "--with", WORDFREQ, "python", "-I", "-c", script,
+                              str(out), *args], input=stdin, capture_output=True, text=True, cwd="/")
+        if res.returncode:
+            raise SystemExit(f"wordfreq: {res.stderr}")
+        return json.loads(out.read_text())
 
 
 def skip(kept):
@@ -198,4 +224,8 @@ def skip(kept):
     for w, language in found:
         if freq[w, language] > max(freq[w, "en"], freq[plain[w], "en"]) + 1:
             out[language].add(w)
+    # A pipeline reads its own language's names itself, in its own accent ("Rodríguez" in Spanish text).
+    for name in kept:
+        if attributed().get(name, ("", ""))[0] in PIPELINES:
+            out[attributed()[name][0]].add(name)
     return dict(out)

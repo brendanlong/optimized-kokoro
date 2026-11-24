@@ -73,9 +73,26 @@ struct Count {
     regrouped: usize,
     /// Matched but for the spacing where runs of different G2Ps join (docs/divergences.md).
     respaced: usize,
+    /// Matched but for a name read in its own language.
+    named: usize,
     chunks: usize,
     chars: usize,
     skipped: BTreeMap<&'static str, Vec<String>>,
+}
+
+/// Whether the record's chunks, taken together, differ only in names and the words beside them (issue #79), after
+/// the port's spacing where runs join.
+fn names_only(expected: &[(String, String)], actual: &[(String, String)]) -> bool {
+    let join = |chunks: &[(String, String)], f: fn(&(String, String)) -> &str| {
+        chunks.iter().map(f).collect::<Vec<_>>().join(" ")
+    };
+    let (text, theirs, ours) = (join(expected, |c| &c.0), join(expected, |c| &c.1), join(actual, |c| &c.1));
+    text == join(actual, |c| &c.0)
+        && kokoro_reference::divergence::differs_only_around_names(
+            &text,
+            &kokoro_reference::divergence::respaced(&theirs, &ours),
+            &ours,
+        )
 }
 
 #[test]
@@ -132,6 +149,11 @@ fn espeak_reference_records() {
         count.compared += 1;
         if actual == expected {
             count.matched += 1;
+        } else if names_only(&expected, &actual) {
+            // A name from names.json, read in its own language (docs/divergences.md, "misaki English: names"),
+            // which may move where a long sentence is cut and how the runs beside it are spaced.
+            count.matched += 1;
+            count.named += 1;
         } else if kokoro_reference::divergence::chunks_differ_only_in_run_spacing(&expected, &actual) {
             count.matched += 1;
             count.respaced += 1;
@@ -161,11 +183,12 @@ fn espeak_reference_records() {
     let elapsed = start.elapsed();
     for (lang, c) in &counts {
         println!(
-            "{lang}: {}/{} compared records match ({} with short clauses regrouped, {} spaced as runs join), of {} ({} chunks, {} characters); not compared: {:?}",
+            "{lang}: {}/{} compared records match ({} with short clauses regrouped, {} spaced as runs join, {} with names), of {} ({} chunks, {} characters); not compared: {:?}",
             c.matched,
             c.compared,
             c.regrouped,
             c.respaced,
+            c.named,
             c.records,
             c.chunks,
             c.chars,

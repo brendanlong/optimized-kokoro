@@ -228,7 +228,12 @@ impl Names {
                 ']' => open = None,
                 _ => {}
             }
-            let starts_word = !text[..i].chars().next_back().is_some_and(is_word_char);
+            // Not inside a word, nor after an elision ("d'Espagne", "O'Brien" are one word, as "Sauron'll" is).
+            let mut before = text[..i].chars().rev();
+            let starts_word = match before.next() {
+                Some('\'' | '’' | 'ʼ') => !before.next().is_some_and(is_word_char),
+                c => !c.is_some_and(is_word_char),
+            };
             let found = if starts_word && is_latin(c) { self.longest(&text[i..], skip) } else { None };
             let found = found.filter(|&(n, _)| !acronym(&text[i..i + n]));
             let Some((n, phonemes)) = found.filter(|&(n, _)| link.peek().is_none_or(|&&(start, _)| i + n <= start))
@@ -297,6 +302,8 @@ mod tests {
         assert!(link("Túrin").starts_with("[Túrin](/"));
         assert_eq!(link("GALADRIEL'S"), link("Galadriel's").replace("Galadriel's]", "GALADRIEL'S]"));
         assert_eq!(link("Galadrielʼs ring"), link("Galadriel's ring").replace("Galadriel's]", "Galadrielʼs]"));
+        assert_eq!(link("d'Galadriel"), "d'Galadriel");
+        assert!(link("'Galadriel'").starts_with("'[Galadriel](/"));
         // A short word in capitals is an acronym in text with lowercase letters, and a name in text without.
         assert_eq!(link("the ARDA and Arda"), format!("the ARDA and {}", link("Arda")));
         assert!(link("ARDA").starts_with("[ARDA](/"));
