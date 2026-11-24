@@ -77,15 +77,23 @@ fn folded(s: &str) -> String {
     out
 }
 
-/// A Latin letter: other scripts end a name's word, as Japanese and Chinese write a Latin word
-/// without spaces around it ("私はGaladrielです").
+/// A Latin letter, IPA's included (not the modifier letters after it, which text uses as
+/// apostrophes and stress marks): other scripts end a name's word, as Japanese and Chinese write a
+/// Latin word without spaces around it ("私はGaladrielです"), but IPA doesn't ("kluk" isn't a word
+/// of "[klukɔˈvʲit͡ʂɛ]").
 fn is_latin(c: char) -> bool {
     c.is_alphabetic()
-        && matches!(c as u32, 0..=0x24f | 0x1e00..=0x1eff | 0x2c60..=0x2c7f | 0xa720..=0xa7ff | 0xab30..=0xab6f | 0xff21..=0xff5a)
+        && matches!(c as u32, 0..=0x2af | 0x1d00..=0x1dbf | 0x1e00..=0x1eff | 0x2c60..=0x2c7f | 0xa720..=0xa7ff
+            | 0xab30..=0xab6f | 0xff21..=0xff5a)
 }
 
+/// The most letters a word in capitals may have and be taken for an acronym.
+const MAX_ACRONYM: usize = 4;
+
+/// A letter, digit or mark of a word, IPA's stress and length marks included, so a name isn't found
+/// inside IPA ("[sauronˈɔ]").
 fn is_word_char(c: char) -> bool {
-    is_latin(c) || c.is_numeric() || is_combining_mark(c)
+    is_latin(c) || c.is_numeric() || is_combining_mark(c) || matches!(c, 'ˈ' | 'ˌ' | 'ː' | 'ˑ')
 }
 
 /// Whether a name may end where `rest` starts: not inside a word, nor before a contraction
@@ -94,7 +102,7 @@ fn ends_word(rest: &str) -> bool {
     let mut chars = rest.chars();
     match chars.next() {
         Some(c) if is_word_char(c) || c == ']' => false,
-        Some('\'' | '’') => match chars.next() {
+        Some('\'' | '’' | 'ʼ') => match chars.next() {
             Some('s' | 'S') => !chars.next().is_some_and(is_word_char),
             Some(c) => !is_word_char(c),
             None => true,
@@ -193,6 +201,14 @@ impl Names {
         possessive: impl Fn(&str) -> String,
     ) -> Cow<'t, str> {
         let skip = self.skip.get(language);
+        // In text with lowercase letters, a short word in capitals is an acronym ("ARRA", "TYC"), not
+        // a name: misaki spells it out.
+        let acronyms = text.chars().any(char::is_lowercase);
+        let acronym = |w: &str| {
+            acronyms
+                && w.chars().filter(|c| c.is_alphabetic()).count() <= MAX_ACRONYM
+                && !w.chars().any(char::is_lowercase)
+        };
         let mut out = String::new();
         let mut copied = 0;
         let mut i = 0;
@@ -214,6 +230,7 @@ impl Names {
             }
             let starts_word = !text[..i].chars().next_back().is_some_and(is_word_char);
             let found = if starts_word && is_latin(c) { self.longest(&text[i..], skip) } else { None };
+            let found = found.filter(|&(n, _)| !acronym(&text[i..i + n]));
             let Some((n, phonemes)) = found.filter(|&(n, _)| link.peek().is_none_or(|&&(start, _)| i + n <= start))
             else {
                 i += c.len_utf8();
@@ -221,7 +238,7 @@ impl Names {
             };
             let mut end = i + n;
             let mut phonemes = Cow::Borrowed(phonemes);
-            for s in ["'s", "’s", "'S", "’S"] {
+            for s in ["'s", "’s", "ʼs", "'S", "’S", "ʼS"] {
                 if text[end..].starts_with(s) && !text[end + s.len()..].chars().next().is_some_and(is_word_char) {
                     phonemes = Cow::Owned(possessive(&phonemes));
                     end += s.len();
@@ -279,6 +296,10 @@ mod tests {
         assert_eq!(link("TURIN"), "TURIN");
         assert!(link("Túrin").starts_with("[Túrin](/"));
         assert_eq!(link("GALADRIEL'S"), link("Galadriel's").replace("Galadriel's]", "GALADRIEL'S]"));
+        assert_eq!(link("Galadrielʼs ring"), link("Galadriel's ring").replace("Galadriel's]", "Galadrielʼs]"));
+        // A short word in capitals is an acronym in text with lowercase letters, and a name in text without.
+        assert_eq!(link("the ARDA and Arda"), format!("the ARDA and {}", link("Arda")));
+        assert!(link("ARDA").starts_with("[ARDA](/"));
         // Nor is a name a common word of the text's language, in any case.
         let spanish = |t: &str| names.link(t, "es", &[], |p| format!("{p}z")).into_owned();
         assert_eq!(spanish("fui y ESTE"), "fui y ESTE");

@@ -136,6 +136,7 @@ fn requests_match_the_reference() {
     let mut roman = 0;
     let mut regrouped = 0;
     let mut links = 0;
+    let mut names = 0;
     let mut changed_letters = 0;
     let mut voices = common::Voices::default();
     let mut runs_joined = 0;
@@ -252,6 +253,7 @@ fn requests_match_the_reference() {
         // words (docs/divergences.md, "Pipeline: one way to join runs"): a chunk spaced so, or
         // with other word spans outside English, is counted apart.
         let joined = std::cell::Cell::new(false);
+        let named = std::cell::Cell::new(false);
         let same = |e: &Expected, a: &Expected| match (e, a) {
             (Expected::Speech { text, phonemes, .. }, Expected::Speech { text: t, phonemes: p, .. }) if flags => {
                 text == t && without_language_flags(phonemes).as_ref().unwrap_or(phonemes) == p
@@ -267,6 +269,12 @@ fn requests_match_the_reference() {
                 // pairs text words with phoneme words, which espeak sometimes merges ("from the"):
                 // they aren't compared there. Nor is the dropped count, where whitespace the
                 // vocabulary lacks inside a run (a tab) is now a space between its words.
+                // A name from names.json, read in its own language (docs/divergences.md, "misaki
+                // English: names"): its phonemes, and so the ids and word spans after it, differ.
+                if text == t && kokoro_reference::divergence::differs_only_in_names(text, phonemes, p) {
+                    named.set(true);
+                    return true;
+                }
                 let ok = text == t
                     && (respaced || phonemes == p && ids == i && (!english || dropped == d && refines(words, w)));
                 joined.set(joined.get() || ok);
@@ -288,6 +296,10 @@ fn requests_match_the_reference() {
             Some(_) => prefix_matches && actual[expected.len()..].iter().any(|a| matches!(a, Expected::Error { .. })),
             None => prefix_matches && expected.len() == actual.len(),
         };
+        if ok && named.get() {
+            names += 1;
+            continue;
+        }
         if ok && joined.get() {
             runs_joined += 1;
             continue;
@@ -379,7 +391,8 @@ fn requests_match_the_reference() {
          {stateful} where the reference's espeak read a word by an earlier call's state, \
          {numbers} with numbers or symbols read differently ({roman} with Roman numerals), {fuzzed} more fuzzed ones with digits or symbols, \
          {regrouped} with short clauses regrouped, {links} with a link the reference read otherwise (as text, or ɾ and ʔ as the English flap and t), {runs_joined} with runs joined by the port's rule, \
-         {cased} with case read differently, {changed_letters} with letters espeak lacks or marks it composes",
+         {cased} with case read differently, {changed_letters} with letters espeak lacks or marks it composes, \
+         {names} with a name read in its own language",
         compared - failures.len(),
     );
     for f in failures.iter().take(10) {

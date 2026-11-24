@@ -466,6 +466,20 @@ fn names_are_read_in_their_own_language() {
 }
 
 #[test]
+fn real_names_are_read_in_their_own_language_where_their_bearers_are() {
+    for spelling in ["Wojciech", "Brzeziński", "Räikkönen", "Dvořák"] {
+        let text = format!("Then {spelling} came.");
+        assert!(phonemize(&text).ends_with(&format!("{} kˈAm.", name(spelling))), "{}", phonemize(&text));
+    }
+    // A name's letters inside IPA aren't a word of their own.
+    assert!(!phonemize("Sauronɔ [sauronˈɔ]").contains(&name("Sauron")), "{}", phonemize("Sauronɔ [sauronˈɔ]"));
+    // These spellings belong mostly to people in English-speaking countries and France, so English reads them.
+    for (plain, accented) in [("Brzezinski", "Brzeziński"), ("Dvorak", "Dvořák")] {
+        assert!(!phonemize(plain).contains(&name(accented)), "{plain}: {}", phonemize(plain));
+    }
+}
+
+#[test]
 fn a_name_takes_possessive_and_plural_endings() {
     assert_eq!(phonemize("Sauron's"), format!("{}z", name("Sauron")));
     assert_eq!(phonemize("Minas Tirith's"), format!("{}s", name("Minas Tirith")));

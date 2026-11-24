@@ -72,6 +72,11 @@ def excluded_by_language():
     return out
 
 
+def flags(source):
+    path = HERE / "review" / f"{source}.json"
+    return set(json.load(open(path))["flagged"]) if path.exists() else set()
+
+
 def reviewed(source):
     path = HERE / "review" / f"{source}.json"
     return set(json.load(open(path))["reviewed"]) if path.exists() else set()
@@ -110,15 +115,17 @@ def main():
         raise SystemExit(f"override.tsv: misaki's dictionaries don't have {sorted(stale)}")
     english = english_words() - override - {s.lower() for s in override}
     exclude = listed("exclude.tsv")
-    names, unreviewed = {}, []
+    names, unreviewed, skips = {}, [], []
     for source, module in SOURCES.items():
         seen = reviewed(source)
+        # A source may leave out every spelling flag.py flags, rather than the ones exclude.tsv picks by hand.
+        flagged = flags(source) if getattr(module, "EXCLUDE_FLAGGED", False) else set()
 
         def keep(spelling, phonemes):
             if phonemes is None:
                 return False
             single = " " not in spelling
-            if single and (spelling in english or spelling.lower() in english) or spelling in exclude:
+            if single and (spelling in english or spelling.lower() in english) or spelling in exclude or spelling in flagged:
                 return False
             if single and spelling not in seen:
                 unreviewed.append(spelling)
@@ -150,18 +157,25 @@ def main():
                 # A spelling the G2P finds through another ("Earendil" through "Eärendil") isn't needed.
                 covered = lambda s: any(t != s and marks(t) > marks(s) and accents_within(s, t) for t in spellings)
                 spellings = {s: p for s, p in spellings.items() if not covered(s)}
-            names.update(spellings)
+            # A spelling a later source has with no phonemes doesn't hide an earlier source's name ("Vana").
+            names.update({s: p for s, p in spellings.items() if p is not None or names.get(s) is None})
         if unreviewed:
             json.dump(sorted(unreviewed), open(HERE / "review" / f"{source}.todo.json", "w"), ensure_ascii=False, indent=0)
             raise SystemExit(f"{len(unreviewed)} {source} words haven't been checked for other meanings: "
                              f"run flag.py {source}, then review its flags into exclude.tsv")
+        if hasattr(module, "skip"):
+            skips.append(module.skip({s for s in kept if " " not in s}))
     OUT.write_text(json.dumps(dict(sorted(names.items())), ensure_ascii=False, indent=0) + "\n", encoding="utf-8")
     skip = {}
     for language, spellings in sorted(excluded_by_language().items()):
         missing = {s for s in spellings if fold(s) not in {fold(n) for n in names}}
         if missing:
             raise SystemExit(f"exclude_languages.tsv: {language} {sorted(missing)} aren't in names.json")
-        skip[language] = sorted(spellings)
+        skip[language] = set(spellings)
+    for source_skip in skips:
+        for language, spellings in source_skip.items():
+            skip.setdefault(language, set()).update(spellings)
+    skip = {language: sorted(spellings) for language, spellings in sorted(skip.items())}
     OUT_SKIP.write_text(json.dumps(skip, ensure_ascii=False, indent=0) + "\n", encoding="utf-8")
     print(f"{len(names)} entries ({sum(' ' in n for n in names)} of several words) -> {OUT.relative_to(ROOT)}")
 

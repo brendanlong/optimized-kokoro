@@ -9,7 +9,8 @@ are the people given that item. A spelling's language is the one most of its bea
 language speak (countries.tsv), if at least BEARERS of them do and SHARE or more of its bearers with a
 citizenship are citizens of countries that speak it, alone or with others (Czechoslovakia, for a Czech name),
 read with the voice most of them speak. Otherwise it has no language: a name of Belgians could be Flemish or
-Walloon, and a name of few people has too little evidence. A spelling most of whose bearers live elsewhere
+Walloon, and a name of few people has too little evidence. Nor is a name with more than ENGLISH_SHARE of
+its bearers in English-speaking countries (Kubiak) read as another language's. A spelling most of whose bearers live elsewhere
 isn't read as its language's: "Nguyen", "Dvorak" and "Brzezinski" belong mostly to Americans and French people,
 "Nguyễn", "Dvořák" and "Brzeziński" to Vietnamese, Czechs and Poles.
 
@@ -44,6 +45,9 @@ QUERIES = {
 }
 SHARE = 0.75
 BEARERS = 3
+# A name with more of its bearers than this in English-speaking countries is often an English speaker's, said
+# their way (Gary Kubiak), which is the one English text most likely means.
+ENGLISH_SHARE = 0.1
 
 
 def run(query):
@@ -125,7 +129,9 @@ def main():
                     voices[language, voice] += n
         language = single.most_common(1)[0][0] if single else ""
         share = speaking[language] / known if known else 0
-        if language and single[language] >= BEARERS and share >= SHARE:
+        english = speaking["en"] / known if known else 0
+        if language not in ("", "en") and single[language] >= BEARERS and share >= SHARE and english <= ENGLISH_SHARE \
+                or language == "en" and single[language] >= BEARERS and share >= SHARE:
             voice = max((v for v in voices if v[0] == language), key=voices.__getitem__)[1]
             rows.append((spelling, language, voice, known, share))
         else:
