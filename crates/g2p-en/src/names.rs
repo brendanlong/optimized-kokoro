@@ -109,7 +109,13 @@ fn ends_word(rest: &str) -> bool {
 }
 
 impl Names {
-    pub(crate) fn new() -> Self {
+    /// The names, loaded once per process: every G2P reads them alike.
+    pub(crate) fn get() -> &'static Names {
+        static NAMES: std::sync::OnceLock<Names> = std::sync::OnceLock::new();
+        NAMES.get_or_init(Names::new)
+    }
+
+    fn new() -> Self {
         let list: Vec<(&'static str, Option<&'static str>)> =
             serde_json::from_str::<FxHashMap<_, _>>(NAMES).expect("bundled names are valid").into_iter().collect();
         let mut names: FxHashMap<Box<str>, Vec<Name>> = FxHashMap::default();

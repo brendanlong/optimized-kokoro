@@ -336,13 +336,12 @@ const MAX_SPAN: usize = 16;
 /// read as written.
 pub struct G2p {
     lexicon: Lexicon,
-    names: names::Names,
 }
 
 impl G2p {
     /// American (`british = false`, kokoro's `a`) or British (`b`) English, with kokoro's `unk=''`.
     pub fn new(british: bool) -> Self {
-        G2p { lexicon: Lexicon::new(british), names: names::Names::new() }
+        G2p { lexicon: Lexicon::new(british) }
     }
 
     /// `G2P.__call__`: the phoneme string and the tokens. Sentences in capitals are read in
@@ -572,7 +571,7 @@ impl G2p {
     /// misaki's ending ("Sauron's").
     pub fn link_names<'t>(&self, text: &'t str, language: &str) -> std::borrow::Cow<'t, str> {
         let links: Vec<(usize, usize)> = link_regex().find_iter(text).map(|m| (m.start(), m.end())).collect();
-        self.names.link(text, language, &links, |ps| {
+        names::Names::get().link(text, language, &links, |ps| {
             self.lexicon.s(Some(ps.to_owned())).expect("a name's phonemes aren't empty")
         })
     }
