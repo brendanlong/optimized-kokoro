@@ -31,7 +31,7 @@ LANGUAGE_NAMES = {"pl": "Polish", "hu": "Hungarian", "cs": "Czech", "sk": "Slova
                   "az": "Azerbaijani", "mt": "Maltese", "mi": "Māori", "ga": "Irish", "bs": "Bosnian",
                   "ht": "Haitian Creole"}
 # The languages whose names are read so far.
-LANGUAGES = {"pl", "fi", "cs", "es", "it", "fr", "hu"}
+LANGUAGES = {"pl", "fi", "cs", "es", "it", "fr", "hu", "ro", "sk", "sl", "et", "tr", "id"}
 WORLD = "real people's family and given names"
 # A spelling an earlier source reads differently is left to it (Tolkien's Martan, Cobas).
 YIELDS = True
@@ -85,11 +85,20 @@ LETTERS = {"fi": set("adeghijklmnoprstuvyäö-"), "pl": set("aąbcćdeęfghijkl�
 # Keszt-hely), and a final thy ti (Horthy); a final y after a consonant not of gy, ly, ny or
 # ty is i (Esterházy, Pálffy); a final ch is cs, but not German sch (Kovách, not Bogsch); gh is g (Balogh,
 # Alszeghy); cz is c; aá and aa are á (Gaál); eö is ö; and a doubled ss or ff before i is one (Andrássy, Pálffy).
+# Indonesian's Dutch-era spellings, which many names keep: oe is u, dj j, tj c, sj sy, ch kh, and in a name spelled
+# so, j alone y (Soekarno, Djojohadikusumo, Alisjahbana, Mochtar, Tjahjono).
+# Romanian's ș and ț with a comma, which espeak knows only with a cedilla (ş, ţ: Lupașcu, Constanța).
 # French ones espeak drops a vowel of: ouë (Halgouët), a final ouil (Fenouil), Gwen- (Gwenaël).
 SPELLINGS = {"hu": [(re.compile(r"thy$"), "ti"), (re.compile(r"^th|th$"), "t"), (re.compile(r"tth"), "tt"), (re.compile(r"(?<=[^aeiouáéíóöőúüűglnt])y$"), "i"),
                     (re.compile(r"(?<!s)ch$"), "cs"), (re.compile(r"gh"), "g"), (re.compile(r"cz"), "c"),
                     (re.compile(r"aá|aa"), "á"), (re.compile(r"eö"), "ö"), (re.compile(r"(ss|ff)(?=i$)"), lambda m: m[1][0])],
+             "ro": [(re.compile("ș"), "ş"), (re.compile("ț"), "ţ")],
+             "id": [(re.compile(r".*(oe|dj|tj|sj|ch).*"), lambda m: old_indonesian(m[0]))],
              "fr": [(re.compile(r"ouë"), "ouè"), (re.compile(r"ouil$"), "ouille"), (re.compile(r"^gwen"), "gwén")]}
+# Sounds a voice of espeak writes as another: Turkish ü as ø, ö as œ and e as æ (Kültür as køltør); German
+# -er as ɜ, English's r-colored vowel, for ɐ; Indonesian sy as ç for ʃ.
+VOICE_SOUNDS = {"tr": str.maketrans({"ø": "y", "œ": "ø", "æ": "e"}), "de": str.maketrans({"ɜ": "ɐ"}),
+                "id": str.maketrans({"ç": "ʃ"})}
 # French readings where espeak still lost a vowel after w (Gouyon as ɡwjɔ̃, Desnoues as denw) are left out.
 BROKEN = {"fr": re.compile(r"w(?![aeiouyɑɛɔøœəɐ])")}
 VOWEL_LETTERS = set("aeiouyáéíóúýàèìòùâêîôûäëïöüÿąęåæøœőűěůãõ")
@@ -139,6 +148,12 @@ def read(voice, words, data):
     return out
 
 
+def old_indonesian(word):
+    for old, new in [("dj", "\0"), ("tj", "c"), ("sj", "sy"), ("j", "y"), ("\0", "j"), ("oe", "u"), ("ch", "kh")]:
+        word = word.replace(old, new)
+    return word
+
+
 def respell(spelling, language):
     word = spelling.lower()
     for pattern, new in SPELLINGS.get(language, []):
@@ -179,6 +194,7 @@ def readings(languages):
     for voice, spellings in sorted(by_voice.items()):
         modern = [respell(s, names[s][0]) for s in spellings]
         for s, (raw, switched) in zip(spellings, read(voice, modern, data)):
+            raw = raw.translate(VOICE_SOUNDS.get(names[s][0], {}))
             for pattern, sound in FIXES.get(names[s][0], []):
                 raw = pattern.sub(sound, raw)
             spelled = not VOWEL_LETTERS & set(s.lower()) and "\u0329" not in raw

@@ -84,6 +84,17 @@ The infrastructure is in `tools/names/`; it reads no real names yet, because `re
 
 - **Brendan's decision (2026-11-24):** names that pass the cutoff but that English text usually uses for English speakers or brands (Giuliani, Rubio, Pujols, Sotomayor, Peugeot, Pirelli) keep their native readings. He found them "about as good or better than the default". The listening page has them.
 
+## Phase 3 results: six more languages (2026-11-24)
+
+- **Languages:** Romanian, Slovak, Slovenian, Estonian, Turkish and Indonesian. names.json has 105,181 names with readings, up from 79,812.
+- **Romanian:** espeak knows ș and ț only with a cedilla, so they're rewritten before it reads them. That takes Romanian from 70% to 84% exact.
+- **Turkish:** espeak writes ü, ö and e as ø, œ and æ, and those are mapped back. That takes Turkish from 75% to 86%.
+- **Indonesian:** Dutch-era spellings are modernized (oe, dj, tj, sj, ch, and a lone j in such names), and espeak's ç for sy becomes ʃ. That takes Indonesian from 85% to 88%.
+- **Slovenian** is at 75%: espeak turns l before a consonant into w more often than Slovenian does. It's included as a mild error.
+- **Held back:** German (63% exact even after mapping -er's ɜ to ɐ, with compounds and Latin names wrong) and Dutch (52%, with stress and "ph" errors). misaki's English guesses for German names are often passable, so a wrong native reading would be a step back. Both wait for hand-written rules, along with Portuguese, the Scandinavian languages, pinyin, Japanese romanization and Vietnamese.
+- **English Wikipedia check** (the same 3,926 paragraphs): 37 more paragraphs change, almost all correctly (Barış Alper Yılmaz, Mihkel, Bambang Yudhoyono, Çankırı). The Kurdish "Gormez" is read as Turkish Görmez.
+- **Issue #79 is fixed in #82.** The text around a link is read whole with a stand-in name.
+
 ## Open questions (Claude's proposals)
 
 - **Thresholds.** What share of a spelling's bearers must come from its language's countries, and the minimum number of bearers to trust that share.

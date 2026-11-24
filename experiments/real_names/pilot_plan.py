@@ -1,6 +1,6 @@
 """Listening plan for the pilot languages: "Then NAME arrived." as main reads it, and as names.json now reads it.
 
-    python3 experiments/real_names/pilot_plan.py PHONEMIZE_BINARY OUT.json
+    python3 experiments/real_names/pilot_plan.py PHONEMIZE_BINARY OUT.json [LANGUAGE...]
 
 Picks PICKS (well-known names) and a fixed random sample of each language's names in names.json; names.json
 must be built (tools/names/build.py) and the binary built from main, so its reading is the one before.
@@ -20,16 +20,18 @@ PICKS = ["Wojciech", "Grzegorz", "Przemysław", "Małgorzata", "Szczepański", "
          "Räikkönen", "Häkkinen", "Virtanen", "Jääskeläinen", "Mäkelä", "Jukka", "Tuomas", "Dvořák", "Janáček", "Jágr",
          "Navrátilová", "Kvitová", "Přemysl", "Jiří", "Bohuslav", "Ludmila", "Joaquín", "Gálvez", "Ibáñez", "Núñez",
          "Xóchitl", "Pierluigi", "Mastroianni", "Gianluigi", "Thibault", "Geneviève", "Jean-Baptiste", "Lefebvre",
-         "Erzsébet", "Szőke", "Batthyány", "Gyöngyi", "Kovács", "Horváth"]
+         "Erzsébet", "Szőke", "Batthyány", "Gyöngyi", "Kovács", "Horváth", "Ionuț", "Constanța", "Ștefănescu",
+         "Štefánik", "Ľubomír", "Janez", "Kranjec", "Jüri", "Õunapuu", "Barış", "Yılmaz", "Çakmak", "Erdoğan",
+         "Soekarno", "Tjahjono", "Bambang"]
 SAMPLE = 4
 
 
-def main(binary, out):
+def main(binary, out, *languages):
     names = json.load(open(ROOT / "crates/g2p-en/data/names.json", encoding="utf-8"))
     attributed = real.attributed()
     rows, texts = [], []
     rng = random.Random(1)
-    for language in sorted(real.LANGUAGES):
+    for language in sorted(set(languages) or real.LANGUAGES):
         theirs = sorted(s for s, (lang, _) in attributed.items() if lang == language and names.get(s))
         picked = [n for n in PICKS if n in theirs] + rng.sample(theirs, SAMPLE)
         for name in picked:
