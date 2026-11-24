@@ -498,6 +498,19 @@ fn the_words_around_a_link_are_read_in_their_sentence() {
     let portuguese = Pipeline::new(Lang::BrazilianPortuguese).unwrap();
     let ps = read(&portuguese.phonemize("e [Kokoro](/kokˈɔɾu/) e [Galadriel](/ɡaˈladriel/).").unwrap().0);
     assert!(ps.starts_with("i kokˈɔɾu i "), "{ps}");
+    // Liaison goes by the link's first sound, not its letter.
+    let french = Pipeline::new(Lang::French).unwrap();
+    let ps = read(&french.phonemize("Les [Hélène](/elˈɛn/) et les [Yoda](/jˈoda/).").unwrap().0);
+    assert!(ps.starts_with("lez elˈɛn e le jˈoda"), "{ps}");
+    // The text's own "Kokoro" keeps its reading, and the link its phonemes.
+    let spanish = Pipeline::new(Lang::Spanish).unwrap();
+    let ps = read(&spanish.phonemize("Kokoro-[Gandalf](/ɡˈændɑlf/) y Kokoro.").unwrap().0);
+    assert_eq!(ps.matches("ɡˈændɑlf").count(), 1, "{ps}");
+    assert_eq!(ps.matches("kokˈoɾo").count(), 2, "{ps}");
+    // Words keep their own timestamps where another word reads as several ("125").
+    let chunk = spanish.chunks("Vi 125 casas con [Gandalf](/ɡˈændɑlf/) ayer.").next().unwrap().unwrap();
+    let words: Vec<String> = chunk.words().into_iter().map(|w| w.text).collect();
+    assert!(words.contains(&"Gandalf".to_owned()) && words.contains(&"ayer.".to_owned()), "{words:?}");
 }
 
 #[test]

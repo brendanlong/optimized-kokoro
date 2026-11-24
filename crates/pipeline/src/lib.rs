@@ -486,9 +486,10 @@ fn part_runs(tokens: &mut [Token], start: usize) {
 const STAND_IN: &str = "Kokoro";
 const STAND_IN_VOWEL: &str = "Okoro";
 
-fn base_letter(c: char) -> char {
-    use unicode_normalization::UnicodeNormalization;
-    std::iter::once(c).nfd().next().unwrap_or(c)
+/// Whether an IPA sound is a vowel, for the stand-in a link takes: French "les Hélène" has liaison
+/// (elˈɛn starts with a vowel) and "les Yoda" hasn't (jˈoda doesn't).
+fn is_vowel_sound(c: char) -> bool {
+    "aeiouyɑɐɒæɛɜəɘɪɨʉʊʌɔøœɤɯɵʏ".contains(c)
 }
 
 fn is_combining(c: char) -> bool {
@@ -628,6 +629,8 @@ struct Request<'p> {
     espeak: HashMap<Language, EspeakG2P>,
     /// `EspeakG2P` in the pipeline's own language, for the espeak pipelines.
     native: Option<EspeakG2P>,
+    /// How that reads the stand-ins for links ([`Request::native_around_links`]), unstressed.
+    stand_ins: Option<[String; 2]>,
 }
 
 struct Spacy<'a>(&'a Nlp);
@@ -671,7 +674,7 @@ impl Fallback for LazyFallback<'_> {
 
 impl<'p> Request<'p> {
     fn new(pipeline: &'p Pipeline) -> Self {
-        Request { pipeline, fallback: None, espeak: HashMap::new(), native: None }
+        Request { pipeline, fallback: None, espeak: HashMap::new(), native: None, stand_ins: None }
     }
 
     /// Kokoro-FastAPI's `phonemize`, one way for every pipeline: CJK punctuation made Western
@@ -734,20 +737,18 @@ impl<'p> Request<'p> {
                     // misaki reads links in English; elsewhere the text around links is read with a
                     // stand-in for each, so its words keep their context, where that can be done.
                     let pieces = link_pieces(segment);
-                    if let Some((text, ps)) = self.native_around_links(&pieces)? {
-                        append_run(&mut tokens, &text, &ps);
-                        part_runs(&mut tokens, start);
-                        continue;
-                    }
-                    // Otherwise a link is a run of its own.
-                    for piece in pieces {
-                        let (text, ps) = match piece {
-                            Piece::Text(text) => {
-                                let ps = self.native(&text)?;
-                                (text, ps)
-                            }
-                            Piece::Phonemes { text, ipa } => (text, ipa),
-                        };
+                    let read = match self.native_around_links(&pieces)? {
+                        Some(read) => read,
+                        // Otherwise a link is a run of its own.
+                        None => pieces
+                            .into_iter()
+                            .map(|piece| match piece {
+                                Piece::Text(text) => self.native(&text).map(|ps| (text, ps)),
+                                Piece::Phonemes { text, ipa } => Ok((text, ipa)),
+                            })
+                            .collect::<Result<_, _>>()?,
+                    };
+                    for (text, ps) in read {
                         let start = tokens.len();
                         append_run(&mut tokens, &text, &ps);
                         part_runs(&mut tokens, start);
@@ -810,53 +811,85 @@ impl<'p> Request<'p> {
         Ok(kokoro_text::py::strip(&raw).to_owned())
     }
 
-    /// A segment with links, read whole by the pipeline's own G2P with a stand-in name where each
-    /// link is, whose phonemes are then the link's: so the words around a link are read in their
+    /// A segment's pieces read whole by the pipeline's espeak with a stand-in name where each link
+    /// is, the stand-ins' phonemes then the links': so the words around a link are read in their
     /// sentence, not as words of their own (Portuguese "e" before a name is "i", not the letter ɛ).
-    /// The stand-in starts with a vowel where the link's text does, for liaison. `None` where the
-    /// segment has no link, or the stand-ins can't all be found in what the G2P read, once each.
-    fn native_around_links(&mut self, pieces: &[Piece]) -> Result<Option<(String, String)>, Error> {
-        if !pieces.iter().any(|p| matches!(p, Piece::Phonemes { .. })) {
+    /// Each piece keeps its own phonemes, cut at the stand-ins, so word timestamps stay per piece.
+    /// The stand-in starts with a vowel where the link's phonemes do, for liaison. `None`, to read
+    /// each piece apart, where the segment has no link, the pipeline isn't espeak's, the text has a
+    /// stand-in's word itself, or the stand-ins can't all be found in what espeak read, once each.
+    fn native_around_links(&mut self, pieces: &[Piece]) -> Result<Option<Vec<(String, String)>>, Error> {
+        let stand_in_word = |t: &str| {
+            t.split(|c: char| !c.is_alphanumeric())
+                .any(|w| w.eq_ignore_ascii_case(STAND_IN) || w.eq_ignore_ascii_case(STAND_IN_VOWEL))
+        };
+        if self.pipeline.lang.espeak_voice().is_none()
+            || !pieces.iter().any(|p| matches!(p, Piece::Phonemes { .. }))
+            || pieces.iter().any(|p| matches!(p, Piece::Text(t) if stand_in_word(t)))
+        {
             return Ok(None);
         }
-        let (mut read, mut text, mut links) = (String::new(), String::new(), Vec::new());
+        let unstressed = |w: &str| w.chars().filter(|&c| c != 'ˈ' && c != 'ˌ').collect::<String>();
+        let stand_in = match &self.stand_ins {
+            Some(s) => s.clone(),
+            None => {
+                let s = [unstressed(&self.native(STAND_IN)?), unstressed(&self.native(STAND_IN_VOWEL)?)];
+                self.stand_ins.insert(s).clone()
+            }
+        };
+        let mut read = String::new();
+        let mut kinds = Vec::new();
         for piece in pieces {
             match piece {
-                Piece::Text(t) => {
-                    read.push_str(t);
-                    text.push_str(t);
-                }
-                Piece::Phonemes { text: t, ipa } => {
-                    let vowel = t.chars().next().is_some_and(|c| "aeiouyAEIOUY".contains(base_letter(c)));
+                Piece::Text(t) => read.push_str(t),
+                Piece::Phonemes { ipa, .. } => {
+                    let vowel = unstressed(ipa).chars().next().is_some_and(is_vowel_sound);
                     read.push_str(if vowel { STAND_IN_VOWEL } else { STAND_IN });
-                    text.push_str(t);
-                    links.push((vowel, ipa));
+                    kinds.push(usize::from(vowel));
                 }
             }
         }
-        let unstressed = |w: &str| w.chars().filter(|&c| c != 'ˈ' && c != 'ˌ').collect::<String>();
-        let stand_in = [unstressed(&self.native(STAND_IN)?), unstressed(&self.native(STAND_IN_VOWEL)?)];
-        let mut words: Vec<String> = self.native(&read)?.split(' ').map(str::to_owned).collect();
-        // The words that are a stand-in, but for punctuation around them: one per link, in order.
+        let words: Vec<String> = self.native(&read)?.split(' ').map(str::to_owned).collect();
+        // The stand-in, but for punctuation around it; its last sound may change with the next
+        // word's (Portuguese kokˈɔɾʊ, kokˈɔɾw before "e").
         let core =
             |w: &str| w.trim_matches(|c: char| !c.is_alphabetic() && !"ˈˌː".contains(c) && !is_combining(c)).to_owned();
-        // Its last sound may change with the next word's (Portuguese kokˈɔɾʊ, kokˈɔɾw before "e").
         let is = |w: &str, s: &str| {
-            let (w, s): (Vec<char>, Vec<char>) = (unstressed(w).chars().collect(), s.chars().collect());
+            let (w, s): (Vec<char>, Vec<char>) = (unstressed(&core(w)).chars().collect(), s.chars().collect());
             w.len() == s.len() && w[..w.len().saturating_sub(1)] == s[..s.len().saturating_sub(1)]
         };
-        let found: Vec<usize> =
-            (0..words.len()).filter(|&i| stand_in.iter().any(|s| is(&core(&words[i]), s))).collect();
-        let matches = found.len() == links.len()
-            && found.iter().zip(&links).all(|(&i, (vowel, _))| is(&core(&words[i]), &stand_in[usize::from(*vowel)]));
-        if !matches {
+        let found: Vec<usize> = (0..words.len()).filter(|&i| stand_in.iter().any(|s| is(&words[i], s))).collect();
+        if found.len() != kinds.len() || !found.iter().zip(&kinds).all(|(&i, &k)| is(&words[i], &stand_in[k])) {
             return Ok(None);
         }
-        for (&i, (_, ipa)) in found.iter().zip(&links) {
-            let c = core(&words[i]);
-            words[i] = words[i].replacen(&c, ipa, 1);
+        // Each piece's words: a text piece's are those up to the next stand-in, a link's its own.
+        let mut out = Vec::new();
+        let (mut at, mut link) = (0, 0);
+        for piece in pieces {
+            match piece {
+                Piece::Text(t) => {
+                    let end = found.get(link).copied().unwrap_or(words.len());
+                    out.push((t.clone(), words[at..end].join(" ")));
+                    at = end;
+                }
+                Piece::Phonemes { text, ipa } => {
+                    if at != found[link] {
+                        return Ok(None);
+                    }
+                    let w = &words[at];
+                    let c = core(w);
+                    // Punctuation espeak put against the stand-in belongs to the text beside it.
+                    let (before, after) = w.split_once(c.as_str()).unwrap_or(("", ""));
+                    if let (false, Some((_, ps))) = (before.is_empty(), out.last_mut()) {
+                        ps.push_str(before);
+                    }
+                    out.push((text.clone(), format!("{ipa}{after}")));
+                    at += 1;
+                    link += 1;
+                }
+            }
         }
-        Ok(Some((text, words.join(" "))))
+        Ok(Some(out))
     }
 
     /// "<name> text" for an unread run, as English words that make one token group like a foreign
