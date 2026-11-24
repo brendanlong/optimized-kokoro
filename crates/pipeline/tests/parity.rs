@@ -145,6 +145,12 @@ impl ForeignG2p for Recorded {
     }
 }
 
+/// The phonemes of the names the G2P links in `text` of `language` (espeak's code, `en` for English).
+fn names_in(text: &str, language: &str) -> Vec<String> {
+    static G2P: std::sync::LazyLock<kokoro_g2p_en::G2p> = std::sync::LazyLock::new(|| kokoro_g2p_en::G2p::new(false));
+    G2P.names_in(text, language)
+}
+
 #[test]
 fn reference_records() {
     let mut records = kokoro_reference::all();
@@ -344,7 +350,7 @@ fn reference_records() {
             && expected.len() == actual.len()
             && expected.iter().zip(&actual).all(|(e, a)| {
                 let spaced = divergence::respaced(&e.1, &a.1);
-                e == a || e.0 == a.0 && divergence::differs_only_in_names(&e.0, &spaced, &a.1)
+                e == a || e.0 == a.0 && divergence::differs_only_in_names(&names_in(&e.0, "en"), &spaced, &a.1)
             })
         {
             // Names are read in their own language (docs/divergences.md, "misaki English: names").

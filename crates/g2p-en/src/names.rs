@@ -52,22 +52,19 @@ fn accents_within(written: &str, name: &str) -> bool {
 
 /// Words a language's text reads as words, not as the names they spell.
 struct Skip {
-    /// Lowercase, as written.
-    written: FxHashSet<Box<str>>,
-    /// [`folded`].
-    letters: FxHashSet<Box<str>>,
+    /// Each word, lowercase as written, by its [`folded`] letters.
+    words: FxHashMap<Box<str>, Vec<Box<str>>>,
 }
 
 impl Skip {
-    /// Whether `written` is one of the words: as written if it has accents, so "Estë" is the name
-    /// where "este" is a word, and else by its letters, so "sur" is the French word whatever "Sûr" is.
+    /// Whether `written` is one of the words: with accents, where it is one with some of the word's
+    /// accents left out and none added, so "Estë" is the name where "este" is a word, but French
+    /// "Alheritière" is the word "alhéritière"; without, by its letters, so "sur" is the French word
+    /// whatever "Sûr" is.
     fn holds(&self, written: &str) -> bool {
         let written: String = written.split_whitespace().collect::<Vec<_>>().join(" ").nfc().collect();
-        if written.nfd().any(is_combining_mark) {
-            self.written.contains(written.to_lowercase().as_str())
-        } else {
-            self.letters.contains(folded(&written).as_str())
-        }
+        let Some(words) = self.words.get(folded(&written).as_str()) else { return false };
+        !written.nfd().any(is_combining_mark) || words.iter().any(|w| accents_within(&written, w))
     }
 }
 
@@ -112,7 +109,13 @@ fn ends_word(rest: &str) -> bool {
 }
 
 impl Names {
-    pub(crate) fn new() -> Self {
+    /// The names, loaded once per process: every G2P reads them alike.
+    pub(crate) fn get() -> &'static Names {
+        static NAMES: std::sync::OnceLock<Names> = std::sync::OnceLock::new();
+        NAMES.get_or_init(Names::new)
+    }
+
+    fn new() -> Self {
         let list: Vec<(&'static str, Option<&'static str>)> =
             serde_json::from_str::<FxHashMap<_, _>>(NAMES).expect("bundled names are valid").into_iter().collect();
         let mut names: FxHashMap<Box<str>, Vec<Name>> = FxHashMap::default();
@@ -129,8 +132,11 @@ impl Names {
         let skip = skip
             .into_iter()
             .map(|(l, names)| {
-                let written = names.iter().map(|n| n.to_lowercase().into()).collect();
-                (l, Skip { letters: names.iter().map(|n| folded(n).into()).collect(), written })
+                let mut words: FxHashMap<Box<str>, Vec<Box<str>>> = FxHashMap::default();
+                for n in names {
+                    words.entry(folded(n).into()).or_default().push(n.to_lowercase().into());
+                }
+                (l, Skip { words })
             })
             .collect();
         let names = names.into_iter().map(|(k, v)| (k, v.into_boxed_slice())).collect();
@@ -228,7 +234,12 @@ impl Names {
                 ']' => open = None,
                 _ => {}
             }
-            let starts_word = !text[..i].chars().next_back().is_some_and(is_word_char);
+            // Not inside a word, nor after an elision ("d'Espagne", "O'Brien" are one word, as "Sauron'll" is).
+            let mut before = text[..i].chars().rev();
+            let starts_word = match before.next() {
+                Some('\'' | '’' | 'ʼ') => !before.next().is_some_and(is_word_char),
+                c => !c.is_some_and(is_word_char),
+            };
             let found = if starts_word && is_latin(c) { self.longest(&text[i..], skip) } else { None };
             let found = found.filter(|&(n, _)| !acronym(&text[i..i + n]));
             let Some((n, phonemes)) = found.filter(|&(n, _)| link.peek().is_none_or(|&&(start, _)| i + n <= start))
@@ -297,6 +308,8 @@ mod tests {
         assert!(link("Túrin").starts_with("[Túrin](/"));
         assert_eq!(link("GALADRIEL'S"), link("Galadriel's").replace("Galadriel's]", "GALADRIEL'S]"));
         assert_eq!(link("Galadrielʼs ring"), link("Galadriel's ring").replace("Galadriel's]", "Galadrielʼs]"));
+        assert_eq!(link("d'Galadriel"), "d'Galadriel");
+        assert!(link("'Galadriel'").starts_with("'[Galadriel](/"));
         // A short word in capitals is an acronym in text with lowercase letters, and a name in text without.
         assert_eq!(link("the ARDA and Arda"), format!("the ARDA and {}", link("Arda")));
         assert!(link("ARDA").starts_with("[ARDA](/"));

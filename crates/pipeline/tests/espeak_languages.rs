@@ -75,9 +75,32 @@ struct Count {
     regrouped: usize,
     /// Matched but for the spacing where runs of different G2Ps join (docs/divergences.md).
     respaced: usize,
+    /// Matched but for a name read in its own language.
+    named: usize,
     chunks: usize,
     chars: usize,
     skipped: BTreeMap<&'static str, Vec<String>>,
+}
+
+/// Whether each chunk differs only in names, and in short words beside them (issue #79), after the port's
+/// spacing where runs join.
+fn names_only(expected: &[(String, String)], actual: &[(String, String)], language: &str) -> bool {
+    expected.len() == actual.len()
+        && expected.iter().zip(actual).all(|(e, a)| {
+            e == a
+                || e.0 == a.0
+                    && kokoro_reference::divergence::differs_only_around_names(
+                        &names_in(&e.0, language),
+                        &kokoro_reference::divergence::respaced(&e.1, &a.1),
+                        &a.1,
+                    )
+        })
+}
+
+/// The phonemes of the names the G2P links in `text` of `language` (espeak's code, `en` for English).
+fn names_in(text: &str, language: &str) -> Vec<String> {
+    static G2P: std::sync::LazyLock<kokoro_g2p_en::G2p> = std::sync::LazyLock::new(|| kokoro_g2p_en::G2p::new(false));
+    G2P.names_in(text, language)
 }
 
 #[test]
@@ -137,6 +160,15 @@ fn espeak_reference_records() {
         count.compared += 1;
         if actual == expected {
             count.matched += 1;
+        } else if names_only(
+            &expected,
+            &actual,
+            pipeline.lang().espeak_voice().and_then(|v| v.get(..2)).unwrap_or("en"),
+        ) {
+            // A name from names.json, read in its own language (docs/divergences.md, "misaki English: names"),
+            // which may move where a long sentence is cut and how the runs beside it are spaced.
+            count.matched += 1;
+            count.named += 1;
         } else if kokoro_reference::divergence::chunks_differ_only_in_run_spacing(&expected, &actual) {
             count.matched += 1;
             count.respaced += 1;
@@ -166,11 +198,12 @@ fn espeak_reference_records() {
     let elapsed = start.elapsed();
     for (lang, c) in &counts {
         println!(
-            "{lang}: {}/{} compared records match ({} with short clauses regrouped, {} spaced as runs join), of {} ({} chunks, {} characters); not compared: {:?}",
+            "{lang}: {}/{} compared records match ({} with short clauses regrouped, {} spaced as runs join, {} with names), of {} ({} chunks, {} characters); not compared: {:?}",
             c.matched,
             c.compared,
             c.regrouped,
             c.respaced,
+            c.named,
             c.records,
             c.chunks,
             c.chars,

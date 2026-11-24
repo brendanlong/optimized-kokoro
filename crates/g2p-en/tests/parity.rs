@@ -200,7 +200,11 @@ fn matches_reference() {
             // multi-word name is one token, so only the phonemes are compared, word by word.
             if !ok
                 && problems.is_empty()
-                && kokoro_reference::divergence::differs_only_in_names(&call.input, &reference, &ps)
+                && kokoro_reference::divergence::differs_only_in_names(
+                    &g2p.names_in(&call.input, "en"),
+                    &reference,
+                    &ps,
+                )
             {
                 calls -= 1;
                 names += 1;

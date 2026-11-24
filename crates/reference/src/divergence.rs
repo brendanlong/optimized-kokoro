@@ -1025,49 +1025,72 @@ fn fold_name(s: &str) -> String {
 }
 
 /// The names of `crates/g2p-en/data/names.json`, lowercase and without accents, with their phonemes.
-fn names() -> &'static [(String, String)] {
-    static NAMES: std::sync::OnceLock<Vec<(String, String)>> = std::sync::OnceLock::new();
+/// The names with phonemes in names.json: (folded spelling, phonemes, spelling).
+fn names() -> &'static [(String, String, String)] {
+    static NAMES: std::sync::OnceLock<Vec<(String, String, String)>> = std::sync::OnceLock::new();
     NAMES.get_or_init(|| {
         let map: std::collections::HashMap<String, Option<String>> =
             serde_json::from_str(include_str!("../../g2p-en/data/names.json")).expect("valid names.json");
-        map.into_iter().filter_map(|(name, p)| Some((fold_name(&name), p?))).collect()
+        map.into_iter().filter_map(|(name, p)| Some((fold_name(&name), p?, name))).collect()
     })
 }
 
-/// The phonemes of the name spelled `spelling`, in any case and with or without its accents.
+/// The phonemes of the name spelled `spelling`: the one spelled so, else one in any case and with or without
+/// its accents.
 pub fn name(spelling: &str) -> Option<&'static str> {
     let key = fold_name(spelling);
-    names().iter().find(|(name, _)| *name == key).map(|(_, p)| p.as_str())
+    let exact = names().iter().find(|(_, _, name)| name == spelling);
+    exact.or_else(|| names().iter().find(|(name, _, _)| *name == key)).map(|(_, p, _)| p.as_str())
 }
 
-/// The phonemes of each name from `crates/g2p-en/data/names.json` that `text` writes as a word of its
-/// own, in any case and with or without its accents, which the port reads in their own language
-/// (`docs/divergences.md`, "misaki English: names").
-pub fn names_read(text: &str) -> Vec<&'static str> {
-    let text = fold_name(text);
-    let alnum = |c: Option<char>| c.is_some_and(char::is_alphanumeric);
-    names()
-        .iter()
-        .filter(|(name, _)| {
-            text.match_indices(name.as_str())
-                .any(|(i, _)| !alnum(text[..i].chars().next_back()) && !alnum(text[i + name.len()..].chars().next()))
-        })
-        .map(|(_, phonemes)| phonemes.as_str())
-        .collect()
+/// Whether two phoneme strings, in `config.json` symbols ([`crate::canonical`], [`crate::ours`]),
+/// differ only in words that are the phonemes of `names` (with any ending: "Sauron's" is sˈauronz),
+/// and in the stress of a word beside one. `names` are the ones the G2P links in the text
+/// (`G2p::names_in`), so a spelling names.json lists as not a name ("Bus" beside "Bús") isn't one.
+pub fn differs_only_in_names(names: &[String], reference: &str, ours: &str) -> bool {
+    differs_in_names(names, reference, ours, false)
 }
 
-/// Whether two phoneme strings for `text`, in `config.json` symbols ([`crate::canonical`],
-/// [`crate::ours`]), differ only in words that are the phonemes of a name `text` has (with any
-/// ending: "Sauron's" is sˈauronz).
-pub fn differs_only_in_names(text: &str, reference: &str, ours: &str) -> bool {
-    let names: Vec<String> = names_read(text).iter().map(|p| crate::ours(p)).collect();
+/// [`differs_only_in_names`], where a word beside a name may differ too: outside English, espeak reads the text
+/// before a link out of its context, as a word of its own (issue #79: Portuguese "e" as the letter ɛ).
+pub fn differs_only_around_names(names: &[String], reference: &str, ours: &str) -> bool {
+    differs_in_names(names, reference, ours, true)
+}
+
+fn differs_in_names(names: &[String], reference: &str, ours: &str, neighbours: bool) -> bool {
+    let names: Vec<String> = names.iter().map(|p| crate::ours(p)).collect();
     let names: Vec<&str> = names.iter().flat_map(|p| p.split(' ')).collect();
-    let (a, b): (Vec<&str>, Vec<&str>) = (reference.split(' ').collect(), ours.split(' ').collect());
+    // Punctuation is a word of its own, so a name's phonemes against a bracket ("fʁɑ̃swˈa(") line up.
+    let apart = |s: &str| {
+        s.chars().fold(String::new(), |mut out, c| {
+            if "()[]{}\"“”«»,;:!?".contains(c) {
+                out.extend([' ', c, ' ']);
+            } else {
+                out.push(c);
+            }
+            out
+        })
+    };
+    let (reference, ours) = (apart(reference), apart(ours));
+    let (a, b): (Vec<&str>, Vec<&str>) = (reference.split_whitespace().collect(), ours.split_whitespace().collect());
     let is_name = |w: &str| {
-        let w = w.trim_matches(|c: char| !c.is_alphabetic() && !"ˈˌː".contains(c));
+        let kept =
+            |c: char| c.is_alphabetic() || "ˈˌː".contains(c) || unicode_normalization::char::is_combining_mark(c);
+        let w = w.trim_matches(|c: char| !kept(c));
         names.iter().any(|n| w.starts_with(n) && w.len() - n.len() <= "ᵻz".len())
     };
-    a.len() == b.len() && a.iter().zip(&b).any(|(x, y)| x != y) && a.iter().zip(&b).all(|(x, y)| x == y || is_name(y))
+    // misaki stresses a word by its neighbours, so one beside a name may differ in its stress alone ("by").
+    let unstressed = |w: &str| w.replace(['ˈ', 'ˌ'], "");
+    let beside_name = |k: usize| (k > 0 && is_name(b[k - 1])) || b.get(k + 1).is_some_and(|w| is_name(w));
+    a.len() == b.len()
+        && a.iter().zip(&b).any(|(x, y)| x != y)
+        && a.iter().zip(&b).enumerate().all(|(k, (x, y))| {
+            // Outside English, a short word beside a name may be read as a word of its own (issue #79).
+            let short = |w: &str| unstressed(w).chars().count() <= 2 && w.chars().all(char::is_alphabetic);
+            x == y
+                || is_name(y)
+                || beside_name(k) && (unstressed(x) == unstressed(y) || neighbours && short(x) && short(y))
+        })
 }
 
 /// Why `ours` differs from the reference's normalized text of `input`: the divergences that
@@ -1219,12 +1242,19 @@ mod tests {
 
     #[test]
     fn only_the_names_words_may_differ() {
-        let gondor = crate::ours(names_read("Gondor")[0]);
-        assert!(differs_only_in_names("Gondor cat", "ɡˈɑndɔɹ kˈæt", &format!("{gondor} kˈæt")));
-        assert!(differs_only_in_names("Gondor's cat", "ɡˈɑndɔɹz kˈæt", &format!("{gondor}z kˈæt")));
-        assert!(!differs_only_in_names("Gondor cat", "ɡˈɑndɔɹ kˈæt", &format!("{gondor} dˈɔɡ")));
-        assert!(!differs_only_in_names("Gondor cat", &format!("{gondor} kˈæt"), &format!("{gondor} kˈæt")));
-        assert!(!differs_only_in_names("the cat", "ðə kˈæt", "ðə dˈɔɡ"));
+        let gondor = crate::ours(name("Gondor").unwrap());
+        let names = [name("Gondor").unwrap().to_string()];
+        assert!(differs_only_in_names(&names, "ɡˈɑndɔɹ kˈæt", &format!("{gondor} kˈæt")));
+        assert!(differs_only_in_names(&names, "ɡˈɑndɔɹz kˈæt", &format!("{gondor}z kˈæt")));
+        assert!(!differs_only_in_names(&names, "ɡˈɑndɔɹ kˈæt", &format!("{gondor} dˈɔɡ")));
+        assert!(!differs_only_in_names(&names, &format!("{gondor} kˈæt"), &format!("{gondor} kˈæt")));
+        assert!(!differs_only_in_names(&[], "ðə kˈæt", "ðə dˈɔɡ"));
+        // A word beside a name may differ in its stress, and outside English, if short, in more (issue #79).
+        assert!(differs_only_in_names(&names, "bˈI ɡˈɑndɔɹ", &format!("bI {gondor}")));
+        assert!(!differs_only_in_names(&names, "ˈi ɡˈɑndɔɹ", &format!("ˈɛ {gondor}")));
+        assert!(differs_only_around_names(&names, "ˈi ɡˈɑndɔɹ", &format!("ˈɛ {gondor}")));
+        assert!(!differs_only_around_names(&names, "kˈæt ɡˈɑndɔɹ", &format!("dˈɔɡ {gondor}")));
+        assert!(!differs_only_around_names(&names, "ɡˈɑndɔɹ , olˈa", &format!("{gondor} ! olˈa")));
     }
 
     #[test]

@@ -65,6 +65,25 @@ The infrastructure is in `tools/names/`; it reads no real names yet, because `re
   - Misread as names: the Bulgarian "Gorna" and the Nepali film title "Woda". Iraq's Rawa and Kufa are read in Polish and Finnish but sound nearly the same.
 - **Coverage gap:** many famous people's surnames aren't linked to a Wikidata family-name item. Kieślowski has 1 bearer and Kvitová has no item, so they're missing. A next step could take surnames from people's own native-name labels (P1559), with their citizenship.
 
+## Phase 2 results: people's own names; Spanish, Italian, French and Hungarian (2026-11-24)
+
+- **New source of spellings.** Each person's name as their country writes it replaces Wikidata's name items: the label in the language of a single-language country, otherwise the label for every language (mul) or in English. Each word of the name counts as a bearer.
+  - This finds names no name item links. Kieślowski and Błaszczykowski were missing before.
+  - A spelling with a letter only one language uses (ś, ł, ř, ů, ő, ű, ğ, ı, þ, ð) settles on a single bearer.
+  - The fetch is 9 batches of countries (QLever times out streaming all 6.5M people at once), plus one query per language.
+- **Canada** is listed with English and French. Before, French Canadians counted as English speakers, which dropped Thibault and Geneviève. The English-speaking share now counts only English-only countries.
+- **Spanish voice:** es-419 unless 75% of a name's Spanish-speaking bearers are Spaniards. Martínez and González read with s; Iñaki and Zapatero keep θ.
+- **Hungarian:** old spellings are modernized before espeak reads them (thy$→ti, th→t, final ch→cs, final gh→g, cz→c, aa→á, eö→ö). Batthyány, Horthy, Kovách and Horváth match Wiktionary, and Hungarian goes from 87% to 90%.
+- **Spelled-out readings:** espeak spells some words letter by letter (Spanish "Jhon"). A one-word reading with more than one main stress is left out.
+- **Pipelines:** a pipeline reads its own language's names itself. Spanish names in Spanish text aren't links, so they keep that pipeline's accent ("Rodríguez").
+- **names.rs:** a name after an elision isn't a word of its own ("d'Espagne"). Its link made misaki read the word twice.
+- **Size and cost:** names.json has 78,665 names (2.5 MB). Startup is 0.22 s and memory 112 MB, from 0.10 s and 75 MB before any real names.
+- **Flag pass:** 74,623 more spellings checked; 2,362 flagged in all.
+- **English Wikipedia** (the same 3,926 paragraphs): 293 change, in 328 distinct words, almost all of them correct (Martínez, Jean-Luc Godard, Miklós Rózsa, Giuseppe). Places that are also surnames are read natively too (Cádiz, Troyes).
+- **Filed:** issue #79. In the espeak pipelines, the word before a name's link is read out of context ("e" in Portuguese as the letter ɛ).
+
+- **Brendan's decision (2026-11-24):** names that pass the cutoff but that English text usually uses for English speakers or brands (Giuliani, Rubio, Pujols, Sotomayor, Peugeot, Pirelli) keep their native readings. He found them "about as good or better than the default". The listening page has them.
+
 ## Open questions (Claude's proposals)
 
 - **Thresholds.** What share of a spelling's bearers must come from its language's countries, and the minimum number of bearers to trust that share.

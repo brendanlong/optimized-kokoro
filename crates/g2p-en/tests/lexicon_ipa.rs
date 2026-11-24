@@ -26,15 +26,19 @@ fn entries(json: &str) -> Vec<(String, String)> {
 #[test]
 fn every_pronunciation_is_ipa_the_vocabulary_reads() {
     let files = [
-        include_str!("../data/us_gold.json"),
-        include_str!("../data/us_silver.json"),
-        include_str!("../data/gb_gold.json"),
-        include_str!("../data/gb_silver.json"),
-        include_str!("../data/names.json"),
+        (include_str!("../data/us_gold.json"), false),
+        (include_str!("../data/us_silver.json"), false),
+        (include_str!("../data/gb_gold.json"), false),
+        (include_str!("../data/gb_silver.json"), false),
+        (include_str!("../data/names.json"), true),
     ];
-    for (word, ps) in files.into_iter().flat_map(entries) {
-        // Kokoro's one-letter stand-ins, and the ɾ and ʔ misaki writes for kokoro to read as the flap and t.
-        assert!(!ps.contains(['A', 'I', 'O', 'Q', 'W', 'Y', 'T', 'ʤ', 'ʧ', 'ɾ', 'ʔ']), "{word}: {ps}");
-        assert_eq!(kokoro_phonemes::tokenize(&ps).dropped, 0, "{word}: {ps}");
+    for (file, names) in files {
+        for (word, ps) in entries(file) {
+            // Kokoro's one-letter stand-ins, and the ɾ and ʔ misaki writes for kokoro to read as the flap and t.
+            // The names are standard IPA, where ɾ is the tap of Spanish "pero".
+            assert!(!ps.contains(['A', 'I', 'O', 'Q', 'W', 'Y', 'T', 'ʤ', 'ʧ', 'ʔ']), "{word}: {ps}");
+            assert!(names || !ps.contains('ɾ'), "{word}: {ps}");
+            assert_eq!(kokoro_phonemes::tokenize(&ps).dropped, 0, "{word}: {ps}");
+        }
     }
 }

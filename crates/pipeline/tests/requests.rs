@@ -127,6 +127,23 @@ fn fuzz(text: &str) -> bool {
     text.chars().any(other_script) && text.chars().any(|c| c.is_numeric() || is_symbol(c))
 }
 
+/// The phonemes of the names the G2P links in `text` of `language` (espeak's code, `en` for English).
+fn names_in(text: &str, language: &str) -> Vec<String> {
+    static G2P: std::sync::LazyLock<kokoro_g2p_en::G2p> = std::sync::LazyLock::new(|| kokoro_g2p_en::G2p::new(false));
+    G2P.names_in(text, language)
+}
+
+/// The language a pipeline reads Latin text in, as `link_names` takes it.
+fn latin(lang: &str) -> &'static str {
+    match lang {
+        "e" => "es",
+        "f" => "fr",
+        "i" => "it",
+        "p" => "pt",
+        _ => "en",
+    }
+}
+
 #[test]
 fn requests_match_the_reference() {
     let pipelines: Vec<Pipeline> = Lang::ALL.into_iter().map(|l| Pipeline::new(l).unwrap()).collect();
@@ -271,7 +288,13 @@ fn requests_match_the_reference() {
                 // vocabulary lacks inside a run (a tab) is now a space between its words.
                 // A name from names.json, read in its own language (docs/divergences.md, "misaki
                 // English: names"): its phonemes, and so the ids and word spans after it, differ.
-                if text == t && kokoro_reference::divergence::differs_only_in_names(text, phonemes, p) {
+                if text == t
+                    && kokoro_reference::divergence::differs_only_in_names(
+                        &names_in(text, latin(&case.lang)),
+                        phonemes,
+                        p,
+                    )
+                {
                     named.set(true);
                     return true;
                 }

@@ -1,6 +1,6 @@
 # Countries (Wikidata citizenship, P27) and the languages their people's names are in, as language/espeak voice.
 # Claude's picks, for Brendan to review. A country of one language is evidence that its people's names are in it,
-# and one dominated by one language is listed with that one (Finland, Canada). One listed with several (Belgium,
+# and one dominated by one language is listed with that one (Finland). One listed with several (Belgium, Canada,
 # Switzerland, the Austro-Hungarian and Russian empires) is no evidence either way: its citizenship can't tell a
 # Flemish name from a Walloon one. A citizenship with no languages here (scripts other than Latin, countries too
 # small to list) is evidence against every language. English-speaking countries are en: a name their people
@@ -14,7 +14,7 @@ Q145	United Kingdom	en/en-gb
 Q15180	Soviet Union	ru/ru,uk/uk,lt/lt,lv/lv,et/et
 Q29	Spain	es/es
 Q38	Italy	it/it
-Q16	Canada	en/en-us
+Q16	Canada	en/en-us,fr/fr-fr
 Q20	Norway	nb/nb
 Q36	Poland	pl/pl
 Q9903	Ming dynasty	
