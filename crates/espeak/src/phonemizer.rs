@@ -2,7 +2,11 @@
 //! `with_stress=True`, `tie='^'`, the default separator (words end in a space) and `strip=False`.
 
 use kokoro_espeak_ng::{Error, Espeak, EspeakData, Result};
+use std::borrow::Cow;
+use std::collections::HashMap;
 use std::sync::Arc;
+use unicode_normalization::UnicodeNormalization;
+use unicode_normalization::char::is_combining_mark;
 
 /// `phonemizer.punctuation._DEFAULT_MARKS`.
 const MARKS: &str = ";:,.!?¡¿—…\"«»“”(){}[]";
@@ -10,6 +14,8 @@ const ESPEAK_TIE: char = '\u{361}';
 
 pub struct Backend {
     espeak: Espeak,
+    /// [`Espeak::names_letter`] for the accented letters met so far.
+    names: HashMap<char, bool>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,15 +41,94 @@ impl Backend {
             .find(|v| v.languages.first().is_some_and(|l| l.1 == language))
             .map(|v| v.identifier.clone())
             .ok_or_else(|| Error::VoiceNotFound(language.to_string()))?;
-        Ok(Self { espeak: Espeak::new(data, &identifier)? })
+        Ok(Self { espeak: Espeak::new(data, &identifier)?, names: HashMap::new() })
     }
 
     /// `EspeakWrapper.text_to_phonemes`: the non-empty clauses espeak reads in `text`, joined by
     /// spaces.
     pub fn espeak(&mut self, text: &str) -> String {
-        let clauses = self.espeak.text_to_phonemes(text);
+        let text = self.letters_espeak_names(text);
+        let clauses = self.espeak.text_to_phonemes(&text);
         clauses.into_iter().filter(|c| !c.is_empty()).collect::<Vec<_>>().join(" ")
     }
+
+    /// Whether espeak reads `text` as written, without composing its marks or taking accents off
+    /// letters it has no name for.
+    pub fn reads_as_written(&mut self, text: &str) -> bool {
+        matches!(self.letters_espeak_names(text), Cow::Borrowed(_))
+    }
+
+    /// [`Espeak::names_letter`], remembered.
+    fn names_letter(&mut self, c: char) -> bool {
+        *self.names.entry(c).or_insert_with(|| self.espeak.names_letter(c))
+    }
+
+    /// `text` with letters and their combining marks composed ([`compose_marks`]), and each
+    /// accented letter the voice has no name for written without its accents. espeak spells out a
+    /// word with a letter it has no name for, that letter as its code point ("Nguyễn" as "N G U Y
+    /// letter 1EC5 N"), so "ễ" and "ạ" are read as "e" and "a", and "ѝ" in Russian as "и".
+    fn letters_espeak_names<'t>(&mut self, text: &'t str) -> Cow<'t, str> {
+        let text = compose_marks(text);
+        if text.is_ascii() {
+            return text;
+        }
+        let mut changed = false;
+        let out: String = text
+            .chars()
+            .map(|c| match accented_letter_base(c) {
+                Some(base) if !self.names_letter(c) => {
+                    changed = true;
+                    base
+                }
+                _ => c,
+            })
+            .collect();
+        if changed { out.into() } else { text }
+    }
+}
+
+/// `text` with each letter and the combining marks after it written as the fewest characters
+/// they compose to (NFC), in every script: "e" + U+0302 + U+0303 is "ễ", "И" + U+0306 is "Й".
+/// Characters are only ever joined, never split: NFC would write U+0958 "क़" (a composition
+/// exclusion) as "क" + U+093C. Symbols keep their marks ("=" + U+0338 isn't "≠").
+pub fn compose_marks(text: &str) -> Cow<'_, str> {
+    if !text.chars().any(is_combining_mark) {
+        return text.into();
+    }
+    let mut chars = text.char_indices().peekable();
+    let mut out = String::new();
+    let mut copied = 0;
+    while let Some((start, c)) = chars.next() {
+        let mut end = start + c.len_utf8();
+        while let Some(&(i, m)) = chars.peek().filter(|&&(_, m)| is_combining_mark(m)) {
+            end = i + m.len_utf8();
+            chars.next();
+        }
+        let cluster = &text[start..end];
+        if c.is_alphabetic() && cluster.nfc().count() < cluster.chars().count() {
+            out.push_str(&text[copied..start]);
+            out.extend(cluster.nfc());
+            copied = end;
+        }
+    }
+    if copied == 0 {
+        return text.into();
+    }
+    out.push_str(&text[copied..]);
+    out.into()
+}
+
+/// The letter `c` is written with accents on, if it is one: its canonical decomposition is a
+/// letter and combining marks ("ễ" is "e", "क़" is "क"; "한", whose decomposition is jamo, is
+/// none).
+fn accented_letter_base(c: char) -> Option<char> {
+    if c.is_ascii() || !c.is_alphabetic() {
+        return None;
+    }
+    let mut d = std::iter::once(c).nfd();
+    let base = d.next()?;
+    let mut marks = d.peekable();
+    (marks.peek().is_some() && marks.all(is_combining_mark)).then_some(base)
 }
 
 /// `EspeakBackend.phonemize([text])`, as one string, with `espeak` reading each chunk (normally
@@ -247,6 +332,46 @@ fn restore(mut text: Vec<String>, marks: &[Mark]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn letters_are_composed_with_their_marks() {
+        assert_eq!(
+            compose_marks("Nguye\u{302}\u{303}n cafe\u{301} \u{418}\u{306}\u{43e}\u{440}\u{43a} \u{3b1}\u{301}."),
+            "Nguyễn café Йорк ά."
+        );
+        for other in [
+            "Nguyễn",
+            "\u{915}\u{93c}",
+            "\u{958}",
+            "\u{958}\u{94d}",
+            "\u{212a}",
+            "\u{5d1}\u{5bc}",
+            "\u{301}a",
+            "=\u{338}",
+        ] {
+            assert_eq!(compose_marks(other), other);
+        }
+    }
+
+    #[test]
+    fn accented_letters_espeak_has_no_name_for_lose_their_accents() {
+        let data = crate::default_data().unwrap();
+        let mut english = Backend::new("en-us", data.clone()).unwrap();
+        assert_eq!(english.letters_espeak_names("Nguyễn Thị Phạm Đồng"), "Nguyen Thi Pham Đong");
+        assert_eq!(english.letters_espeak_names("cafe\u{301} ṣe\u{323}"), "café se");
+        for other in ["café Dvořák", "Привет", "한국어", "a\u{2003}b", "∉ ≮ \u{385}", "=\u{338}"] {
+            assert_eq!(english.letters_espeak_names(other), other);
+        }
+        let mut russian = Backend::new("ru", data.clone()).unwrap();
+        assert_eq!(russian.letters_espeak_names("\u{438}\u{300} \u{45d} Йорк"), "и и Йорк");
+        assert_eq!(russian.letters_espeak_names("ư Ư"), "u U");
+        let mut hebrew = Backend::new("he", data.clone()).unwrap();
+        assert_eq!(hebrew.letters_espeak_names("\u{fb31}\u{5d9}\u{5ea}"), "\u{5d1}\u{5d9}\u{5ea}");
+        let mut hindi = Backend::new("hi", data).unwrap();
+        for other in ["क़िला", "\u{915}\u{93c}िला"] {
+            assert_eq!(hindi.letters_espeak_names(other), other);
+        }
+    }
 
     #[test]
     fn preserve_splits_at_marks() {

@@ -204,7 +204,7 @@ fn invisible_characters_neither_split_nor_fuse_placeholders() {
         ("兙\u{200b}兙", "ʧˌInˈiz tˈɛkst"),
         ("東京\u{200d}へ", "dˈʊŋʨˈiŋ ʤˌæpənˈiz tˈɛkst"),
         ("Привет\u{200b}สวัสดี", "prʲivʲˈet tˈI tˈɛkst"),
-        ("a\u{301}สวัสดี", "ˈæ tˈI tˈɛkst"),
+        ("a\u{301}สวัสดี", "ˌAəkjˈut tˈI tˈɛkst"),
         ("สวัสดี\u{200b}hello", "tˈI tˈɛkst həlˈO"),
         ("hello\u{2060}สวัสดี", "həlˈO tˈI tˈɛkst"),
         ("(สวัสดี) x", "(tˈI tˈɛkst) ˈɛks"),
@@ -506,6 +506,32 @@ fn a_name_starting_with_a_vowel_takes_an_and_thee() {
 #[test]
 fn names_match_with_accents_as_combining_marks() {
     assert_eq!(phonemize("Ea\u{308}rendil"), name("Eärendil"));
+}
+
+#[test]
+fn a_word_reads_the_same_with_accents_as_combining_marks() {
+    for lang in [Lang::AmericanEnglish, Lang::Hindi, Lang::French] {
+        let pipeline = Pipeline::new(lang).unwrap();
+        for (composed, decomposed) in [
+            ("Nguyễn", "Nguye\u{302}\u{303}n"),
+            ("Nguyễn.", "Nguye\u{302}\u{303}n."),
+            ("Йорк", "\u{418}\u{306}\u{43e}\u{440}\u{43a}"),
+            ("άλφα.", "\u{3b1}\u{301}\u{3bb}\u{3c6}\u{3b1}."),
+        ] {
+            assert_eq!(
+                pipeline.phonemize(decomposed).unwrap().0,
+                pipeline.phonemize(composed).unwrap().0,
+                "{lang:?} {decomposed:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_links_phonemes_keep_their_combining_marks() {
+    let chunk = pipeline().chunks("[word](/a\u{303}/)").next().unwrap().unwrap();
+    assert_eq!(chunk.phonemes, "a\u{303}");
+    assert_eq!(chunk.ids.len(), 2);
 }
 
 #[test]

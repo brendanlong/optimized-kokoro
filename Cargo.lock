@@ -227,6 +227,7 @@ dependencies = [
  "kokoro-reference",
  "serde",
  "serde_json",
+ "unicode-normalization",
 ]
 
 [[package]]

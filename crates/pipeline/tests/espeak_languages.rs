@@ -22,6 +22,8 @@
 //! `PARITY_SHOW=n` prints up to n mismatches (default 20), and `SHOW_SKIPPED=1` the records not
 //! compared that differ.
 
+mod common;
+
 use kokoro_pipeline::foreign::{Script, in_foreign_py, script};
 use kokoro_pipeline::{Lang, Pipeline};
 use kokoro_reference::Record;
@@ -91,6 +93,7 @@ fn espeak_reference_records() {
     let mut counts: BTreeMap<&str, Count> = BTreeMap::new();
     let mut mismatches = Vec::new();
     let start = Instant::now();
+    let mut voices = common::Voices::default();
     for record in &records {
         let pipeline = pipelines.iter().find(|p| p.lang().code() == record.lang).unwrap();
         let count = counts.entry(pipeline.lang().code()).or_default();
@@ -115,6 +118,8 @@ fn espeak_reference_records() {
             Some("espeak language flags")
         } else if kokoro_reference::divergence::has_link_read_as_text(&record.lang, &record.text) {
             Some("links, which the reference read as text")
+        } else if voices.change_letters(pipeline.lang(), &record.text) {
+            Some("letters espeak lacks or marks it composes")
         } else if reads_divergent_espeak(record, &divergent) {
             Some("espeak reads uninitialised memory")
         } else if uses_japanese(record) && !japanese {
