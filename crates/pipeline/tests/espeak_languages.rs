@@ -80,19 +80,25 @@ struct Count {
     skipped: BTreeMap<&'static str, Vec<String>>,
 }
 
-/// Whether the record's chunks, taken together, differ only in names and the words beside them (issue #79), after
-/// the port's spacing where runs join.
-fn names_only(expected: &[(String, String)], actual: &[(String, String)]) -> bool {
-    let join = |chunks: &[(String, String)], f: fn(&(String, String)) -> &str| {
-        chunks.iter().map(f).collect::<Vec<_>>().join(" ")
-    };
-    let (text, theirs, ours) = (join(expected, |c| &c.0), join(expected, |c| &c.1), join(actual, |c| &c.1));
-    text == join(actual, |c| &c.0)
-        && kokoro_reference::divergence::differs_only_around_names(
-            &text,
-            &kokoro_reference::divergence::respaced(&theirs, &ours),
-            &ours,
-        )
+/// Whether each chunk differs only in names, and in short words beside them (issue #79), after the port's
+/// spacing where runs join.
+fn names_only(expected: &[(String, String)], actual: &[(String, String)], language: &str) -> bool {
+    expected.len() == actual.len()
+        && expected.iter().zip(actual).all(|(e, a)| {
+            e == a
+                || e.0 == a.0
+                    && kokoro_reference::divergence::differs_only_around_names(
+                        &names_in(&e.0, language),
+                        &kokoro_reference::divergence::respaced(&e.1, &a.1),
+                        &a.1,
+                    )
+        })
+}
+
+/// The phonemes of the names the G2P links in `text` of `language` (espeak's code, `en` for English).
+fn names_in(text: &str, language: &str) -> Vec<String> {
+    static G2P: std::sync::LazyLock<kokoro_g2p_en::G2p> = std::sync::LazyLock::new(|| kokoro_g2p_en::G2p::new(false));
+    G2P.names_in(text, language)
 }
 
 #[test]
@@ -149,7 +155,11 @@ fn espeak_reference_records() {
         count.compared += 1;
         if actual == expected {
             count.matched += 1;
-        } else if names_only(&expected, &actual) {
+        } else if names_only(
+            &expected,
+            &actual,
+            pipeline.lang().espeak_voice().and_then(|v| v.get(..2)).unwrap_or("en"),
+        ) {
             // A name from names.json, read in its own language (docs/divergences.md, "misaki English: names"),
             // which may move where a long sentence is cut and how the runs beside it are spaced.
             count.matched += 1;

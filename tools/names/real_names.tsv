@@ -351,7 +351,6 @@ Abbaszadə	az	az	8	0.75
 Abbatecola	it	it	4	1.00
 Abbattista	it	it	6	1.00
 Abbatucci	fr	fr-fr	9	1.00
-Abbe			59	0.56
 Abbekerk	nl	nl	3	1.00
 Abbenes	nl	nl	4	1.00
 Abbenhuis	nl	nl	9	1.00
@@ -365,7 +364,6 @@ Abbring	nl	nl	4	1.00
 Abbruciati	it	it	4	1.00
 Abbà	it	it	10	0.90
 Abbâ			1	1.00
-Abbé	fr	fr-fr	49	0.82
 Abczyński	pl	pl	1	1.00
 Abdala			48	0.62
 Abdalá	es	es-419	12	0.75
@@ -8993,7 +8991,6 @@ BAPTISTE			1	0.00
 BAQUEDANO			1	1.00
 BARAJA			1	0.00
 BARBARA			1	1.00
-BARON			1	1.00
 BARONA			1	1.00
 BARZ			1	0.00
 BAUDOUIN			1	0.00
@@ -11009,7 +11006,6 @@ Baroin	fr	fr-fr	8	1.00
 Barois	fr	fr-fr	6	1.00
 Baroja	es	es-419	14	0.93
 Barokah	id	id	3	1.00
-Baron	en	en-gb	5246	0.90
 Barona	es	es-419	11	0.91
 Baronchelli	it	it	14	0.86
 Baroncini	it	it	20	0.95
@@ -11404,7 +11400,6 @@ Barêa			1	1.00
 Barðdal	is	is	1	1.00
 Barði	is	is	2	1.00
 Baró	es	es	73	0.96
-Barón	es	es-419	62	0.97
 Baróti	hu	hu	13	0.77
 Barúa	es	es-419	4	1.00
 Barącz	pl	pl	9	1.00
@@ -14859,7 +14854,7 @@ Beşter			1	1.00
 Beşışık	tr	tr	1	1.00
 Bešir			1	1.00
 Bešlagić	bs	bs	5	0.80
-Bešlagič			3	0.67
+Bešlagič			3	0.33
 Bešlic			1	1.00
 Bešlić			8	0.62
 Bešter	sl	sl	16	1.00
@@ -22679,7 +22674,6 @@ Bárányi			1	1.00
 Bárányos	hu	hu	3	1.00
 Bárðarson	is	is	1	1.00
 Bárður	da	da	15	0.80
-Báró			1	1.00
 Báscones			1	1.00
 Básta			1	1.00
 Básthy	hu	hu	3	1.00
@@ -24949,7 +24943,7 @@ Candeğer	tr	tr	3	1.00
 Candia			56	0.68
 Candian	it	it	6	1.00
 Candiard	fr	fr-fr	3	1.00
-Candid			8	0.12
+Candid			8	0.50
 Candida			53	0.30
 Candido			106	0.42
 Candil	es	es	4	0.75
@@ -25252,7 +25246,6 @@ Capistran			3	0.67
 Capistrano	pt	pt-br	21	0.76
 Capistrán	es	es-419	4	1.00
 Capitaine	fr	fr-fr	18	0.78
-Capitan			5	0.40
 Capitani	it	it	37	0.81
 Capitanio	it	it	25	0.84
 Capitant	fr	fr-fr	3	1.00
@@ -25261,7 +25254,6 @@ Capitelli	it	it	4	0.75
 Capitini	it	it	4	1.00
 Capitolo	it	it	3	1.00
 Capitta	it	it	4	1.00
-Capitán	es	es-419	13	1.00
 Capitão	pt	pt-br	20	0.95
 Capixaba	pt	pt-br	5	1.00
 Capizzano	it	it	5	0.80
@@ -30853,7 +30845,6 @@ Colomé	es	es-419	36	0.94
 Colomés			1	1.00
 Colonge	fr	fr-fr	3	1.00
 Colonieu	fr	fr-fr	3	1.00
-Colonnello	it	it	10	0.90
 Colonnese	it	it	5	1.00
 Colonnetti	it	it	3	1.00
 Colorado	es	es-419	26	0.88
@@ -30995,8 +30986,6 @@ Compta	es	es	9	1.00
 Compán			2	1.00
 Compère	fr	fr-fr	13	0.92
 Compére			1	0.00
-Comte	fr	fr-fr	132	0.89
-Comtesse	fr	fr-fr	25	0.92
 Comtet	fr	fr-fr	7	1.00
 Comunale	it	it	3	1.00
 Comunardo	it	it	4	1.00
@@ -31041,7 +31030,6 @@ Condemi	it	it	4	0.75
 Condeminas	es	es	4	1.00
 Condemine	fr	fr-fr	5	1.00
 Condes			3	0.00
-Condesa	es	es	3	1.00
 Condessa	pt	pt	12	0.75
 Condesso	pt	pt	3	1.00
 Condette	fr	fr-fr	5	1.00
@@ -33899,7 +33887,6 @@ DOS			1	1.00
 DS			13	0.38
 DT			1	1.00
 DU			4	0.00
-DUC			1	0.00
 DUCCI			1	0.00
 DUNG			3	0.00
 DW			3	0.67
@@ -38835,7 +38822,6 @@ Dotor	es	es	3	1.00
 Dotras	es	es	6	1.00
 Dotrel			1	1.00
 Dotres	es	es	3	1.00
-Dottore	it	it	4	0.75
 Dotzauer	de	de	13	0.77
 Dotřel	cs	cs	3	1.00
 Dotřelová	cs	cs	4	1.00
@@ -39713,7 +39699,6 @@ Dubée	fr	fr-fr	4	1.00
 Dubó	es	es-419	3	1.00
 Dubón			11	0.45
 Dubœuf	fr	fr-fr	3	1.00
-Duc			95	0.69
 Ducamin	fr	fr-fr	4	1.00
 Ducamp	fr	fr-fr	12	0.92
 Ducange	fr	fr-fr	4	0.75
@@ -40278,7 +40263,6 @@ Duquaire	fr	fr-fr	4	1.00
 Duque-Estrada	pt	pt-br	3	1.00
 Duquenne	fr	fr-fr	16	1.00
 Duquenoy	fr	fr-fr	9	1.00
-Duquesa	pt	pt	12	1.00
 Duquesne	fr	fr-fr	45	0.87
 Duquesnel	fr	fr-fr	3	1.00
 Duquesnoy	fr	fr-fr	25	0.84
@@ -49353,7 +49337,6 @@ Fraszko	pl	pl	3	1.00
 Fraszyńska	pl	pl	1	1.00
 Fratacci	fr	fr-fr	6	0.83
 Fratadocchi	it	it	9	1.00
-Frate	it	it	20	0.80
 Frateili	it	it	4	1.00
 Frater	en	en-gb	23	0.87
 Fraternali	it	it	7	0.86
@@ -49470,7 +49453,6 @@ Freidhof	de	de	3	1.00
 Freienstein	de	de	6	0.83
 Freifrau	de	de	22	0.95
 Freigang	de	de	9	0.89
-Freiherr	de	de	399	0.84
 Freihow	nb	nb	4	1.00
 Freiin	de	de	36	0.81
 Freijeiro	es	es	4	1.00
@@ -49536,7 +49518,6 @@ Frenzel	de	de	83	0.88
 Freo	it	it	3	1.00
 Frequin	nl	nl	3	1.00
 Frera	it	it	6	0.83
-Frere			43	0.65
 Frerejean	fr	fr-fr	5	1.00
 Freret			5	0.60
 Frerich	de	de	4	1.00
@@ -50007,7 +49988,6 @@ Fråne			1	1.00
 Frås			1	1.00
 Frèche	fr	fr-fr	4	1.00
 Frèches	fr	fr-fr	3	1.00
-Frère	fr	fr-fr	69	0.88
 Frèrejean			2	1.00
 Fré	nl	nl	15	0.87
 Frébault	fr	fr-fr	6	1.00
@@ -50050,7 +50030,6 @@ Frémont	fr	fr-fr	30	0.90
 Frémy	fr	fr-fr	20	1.00
 Fréni			1	1.00
 Fréon	fr	fr-fr	3	1.00
-Frére			2	0.50
 Fréret	fr	fr-fr	7	1.00
 Frérot	fr	fr-fr	5	1.00
 Frétel			1	1.00
@@ -56375,7 +56354,6 @@ Graen	de	de	3	1.00
 Graeser	de	de	15	0.80
 Graeve			31	0.16
 Graewert	de	de	3	1.00
-Graf	de	de	1051	0.84
 Grafe			19	0.79
 Grafenauer	sl	sl	24	0.88
 Grafeneder	de	de	4	1.00
@@ -57240,7 +57218,6 @@ Groenman	nl	nl	5	1.00
 Groenou	nl	nl	4	1.00
 Groenteman	nl	nl	4	1.00
 Groes	da	da	7	0.86
-Grof			10	0.20
 Grofelnik	sl	sl	3	1.00
 Groffe	fr	fr-fr	3	1.00
 Groger			2	0.50
@@ -57709,7 +57686,6 @@ Gräf	de	de	25	0.92
 Gräfe	de	de	27	0.85
 Gräfenstein	de	de	3	1.00
 Gräff	de	de	12	0.92
-Gräfin	de	de	185	0.82
 Gräfl			2	0.50
 Grähs	sv	sv	3	1.00
 Gräll			1	1.00
@@ -57786,7 +57762,6 @@ Grímur	is	is	10	0.80
 Gró			1	1.00
 Gróa	is	is	6	1.00
 Gródek			1	1.00
-Gróf	hu	hu	14	0.86
 Gróh	hu	hu	5	1.00
 Grósz	hu	hu	15	0.93
 Grózer	hu	hu	3	1.00
@@ -72226,7 +72201,7 @@ Jelinek			90	0.41
 Jelinkova			2	0.50
 Jelinski			5	0.80
 Jelinčić	hr	hr	4	1.00
-Jelinčič			20	0.25
+Jelinčič			20	0.60
 Jelis	nl	nl	4	1.00
 Jelita	id	id	9	0.78
 Jelińska	pl	pl	2	1.00
@@ -75815,10 +75790,8 @@ Kapias	pl	pl	5	0.80
 Kapica	pl	pl	9	1.00
 Kapisa	id	id	4	0.75
 Kapiszewski	pl	pl	3	1.00
-Kapitany			1	1.00
 Kapitańczyk	pl	pl	1	1.00
 Kapitza	de	de	6	0.83
-Kapitány	hu	hu	8	1.00
 Kapińska-Mrowiecka	pl	pl	1	1.00
 Kapiński	pl	pl	1	1.00
 Kapkı	tr	tr	3	1.00
@@ -77891,7 +77864,7 @@ Keşişoğlu	tr	tr	1	1.00
 Keşkek	tr	tr	4	1.00
 Keşmir	tr	tr	5	1.00
 Keşoğlu	tr	tr	1	1.00
-Keš			3	0.33
+Keš			3	0.67
 Kežmah	sl	sl	3	1.00
 Keșerü			1	1.00
 Kfouri	pt	pt-br	6	1.00
@@ -78402,7 +78375,6 @@ Kiptum	sw	sw	10	1.00
 Kipyego	sw	sw	10	0.90
 Kiracı	tr	tr	1	1.00
 Kiragu	sw	sw	3	1.00
-Kiraly			10	0.30
 Kirana	id	id	33	0.91
 Kiraz	tr	tr	21	0.86
 Kirazaldı	tr	tr	1	1.00
@@ -78494,7 +78466,6 @@ Kirvesniemi	fi	fi	5	1.00
 Kirwa	sw	sw	20	0.85
 Kiryk	pl	pl	4	1.00
 Kiryluk	pl	pl	3	1.00
-Király	hu	hu	148	0.78
 Királyi	hu	hu	3	1.00
 Kis	hu	hu	91	0.77
 Kisand	et	et	5	1.00
@@ -97225,7 +97196,7 @@ Mariluce	pt	pt-br	3	1.00
 Mariluz	es	es-419	13	1.00
 Marilyne	fr	fr-fr	21	0.95
 Marilyse	fr	fr-fr	5	1.00
-Marilène			8	0.12
+Marilène			8	0.62
 Mariléia	pt	pt-br	3	1.00
 Mariló	es	es	6	1.00
 Marilù	it	it	12	1.00
@@ -97623,7 +97594,6 @@ Marquiset	fr	fr-fr	6	1.00
 Marquié	fr	fr-fr	3	1.00
 Marquès	es	es	62	0.81
 Marqué	fr	fr-fr	5	1.00
-Marqués	es	es	94	0.91
 Marquéz			2	1.00
 Marquês	pt	pt	14	1.00
 Marquínez	es	es-419	12	0.92
@@ -106228,7 +106198,6 @@ Mæsel	nb	nb	3	1.00
 Mège	fr	fr-fr	24	1.00
 Mèlich	es	es	7	1.00
 Mèner			1	1.00
-Mère	fr	fr-fr	13	0.85
 Mèrida			1	1.00
 Méaudre			1	1.00
 Méaulle	fr	fr-fr	4	1.00
@@ -113997,7 +113966,6 @@ PAKUBUWANA			1	1.00
 PALU			1	0.00
 PAN			8	0.12
 PAOLO			1	1.00
-PAPA			3	0.33
 PARRENIN			1	1.00
 PASCAL			2	0.50
 PASQUIER			1	1.00
@@ -115106,7 +115074,6 @@ Paolucci	it	it	54	0.78
 Paoluzzi	it	it	3	1.00
 Paomets	et	et	3	1.00
 Paon	fr	fr-fr	6	1.00
-Papa			279	0.24
 Papacostea	ro	ro	4	0.75
 Papadia	it	it	4	1.00
 Papadima	ro	ro	4	0.75
@@ -118444,7 +118411,7 @@ Picka	cs	cs	10	0.90
 Pickardt	de	de	4	0.75
 Pickenhain	de	de	3	1.00
 Pickl	de	de	6	1.00
-Picman			3	0.33
+Picman			3	0.67
 Pico			96	0.45
 Picoche	fr	fr-fr	4	1.00
 Picolato	it	it	3	1.00
@@ -123714,7 +123681,6 @@ Pèir	fr	fr-fr	4	1.00
 Pèire	fr	fr-fr	5	1.00
 Pèlach	es	es	5	1.00
 Pèpe	fr	fr-fr	3	1.00
-Père	fr	fr-fr	28	0.86
 Pèrez			1	1.00
 Pètre			1	0.00
 Pètrus			1	1.00
@@ -124816,7 +124782,6 @@ RAN			3	0.33
 RANCÉ			1	1.00
 RATNANINGSIH			1	1.00
 RAUL			1	1.00
-RE			2	0.50
 RECEP			1	1.00
 REGI			1	1.00
 REMI			1	0.00
@@ -124834,7 +124799,6 @@ ROA			1	0.00
 ROCK			1	1.00
 RODRIGUES			1	0.00
 ROGER			2	0.00
-ROI			1	1.00
 ROLDAN			1	1.00
 ROMERO			1	1.00
 ROSA			1	1.00
@@ -126444,7 +126408,6 @@ Raḥel			4	0.00
 Raḥmah			1	0.00
 Rdułtowski	pl	pl	6	1.00
 Rdzanek	pl	pl	3	1.00
-Re	it	it	123	0.85
 ReVay			1	1.00
 ReaL			1	0.00
 Real			236	0.52
@@ -126718,7 +126681,6 @@ Regidor	es	es	17	0.88
 Regil	es	es-419	4	1.00
 Regillio	nl	nl	5	0.80
 Regimantas	lt	lt	12	0.92
-Regina			1385	0.25
 Reginald	en	en-gb	1231	0.89
 Regine			208	0.74
 Regini	it	it	5	0.80
@@ -126918,7 +126880,7 @@ Reinaldy	id	id	4	1.00
 Reinan	nb	nb	4	0.75
 Reinares	es	es	10	0.90
 Reinartz	de	de	14	0.93
-Reinas			3	0.33
+Reinas			3	0.67
 Reinau	da	da	4	0.75
 Reinaud	fr	fr-fr	15	1.00
 Reinaudo	fr	fr-fr	3	1.00
@@ -127736,7 +127698,7 @@ Rezler	pl	pl	9	0.78
 Rezman	sl	sl	4	1.00
 Rezner	pl	pl	3	1.00
 Reznicek			14	0.64
-Reznik			57	0.05
+Reznik			57	0.09
 Rezniček			1	0.00
 Rezny			2	1.00
 Rezník			1	0.00
@@ -129329,7 +129291,6 @@ Rohumaa	et	et	3	1.00
 Rohusaar	et	et	3	1.00
 Rohwedder	de	de	14	0.79
 Roháček	cs	cs	5	1.00
-Roi			124	0.13
 Roibu	ro	ro	3	1.00
 Roick	de	de	7	0.86
 Roider	de	de	6	1.00
@@ -131679,7 +131640,6 @@ Rzęsikowska	pl	pl	1	1.00
 Rzętała	pl	pl	1	1.00
 Rzętkowska	pl	pl	1	1.00
 Rzętkowski	pl	pl	1	1.00
-RÈ			1	0.00
 RÍO			1	1.00
 Ràfols	es	es	19	1.00
 Ráb			4	1.00
@@ -131795,10 +131755,8 @@ Rånes	nb	nb	6	1.00
 Råstad	nb	nb	4	1.00
 Råstam	sv	sv	3	1.00
 Ræstad	nb	nb	7	1.00
-Rè			1	1.00
 Rème			1	1.00
 Rèpaci	it	it	4	1.00
-Ré			27	0.37
 Réal	fr	fr-fr	106	1.00
 Réalier-Dumas	fr	fr-fr	3	1.00
 Réals	fr	fr-fr	4	1.00
@@ -132525,9 +132483,7 @@ SAGAT			1	0.00
 SAGAZ			1	1.00
 SAIM			2	0.00
 SAMUEL			2	0.00
-SAN			2	0.00
 SANA			2	0.00
-SAO			1	0.00
 SAR			1	1.00
 SARA			1	0.00
 SARI			1	0.00
@@ -132552,7 +132508,6 @@ SIlva			2	0.50
 SIlvestro			1	0.00
 SImon			1	1.00
 SIp			1	1.00
-SIr			1	1.00
 SKAAR			1	1.00
 SLOTH			1	0.00
 SM			34	0.06
@@ -132564,7 +132519,6 @@ SON			1	1.00
 SONA			2	0.00
 SORA			1	0.00
 SOS			1	1.00
-ST	id	id	5	0.80
 STARE			1	0.00
 STEPHANIE			1	0.00
 SU			6	0.00
@@ -133289,7 +133243,6 @@ Saint-Vincent	fr	fr-fr	9	1.00
 Saint-Yon	fr	fr-fr	4	1.00
 Saint-Yves	fr	fr-fr	19	0.95
 Saint-Étienne	fr	fr-fr	6	1.00
-Sainte	fr	fr-fr	33	0.79
 Sainte-Aldegonde	fr	fr-fr	5	1.00
 Sainte-Beuve	fr	fr-fr	7	1.00
 Sainte-Claire	fr	fr-fr	7	0.86
@@ -133310,7 +133263,6 @@ Saintier	fr	fr-fr	3	1.00
 Saintin	fr	fr-fr	6	1.00
 Saintout	fr	fr-fr	6	0.83
 Saintoyant	fr	fr-fr	3	1.00
-Sainté			1	1.00
 Sainvil	ht	ht	3	1.00
 Sainz	es	es	141	0.96
 Saioa	es	es	26	1.00
@@ -133950,7 +133902,6 @@ Samójłowicz-Salamonowicz	pl	pl	1	1.00
 Samúel	is	is	3	1.00
 Samúelsdóttir	is	is	3	1.00
 Samúelsson			2	1.00
-San			1269	0.56
 Sana			212	0.06
 Sanabra	es	es	8	0.88
 Sanabria	es	es-419	101	0.88
@@ -134394,7 +134345,6 @@ Sançar			2	1.00
 Sané			31	0.19
 Sanıoğlu	tr	tr	1	1.00
 Sanıvar	tr	tr	2	1.00
-Sao			41	0.07
 Saout	fr	fr-fr	6	1.00
 Sapada	id	id	4	1.00
 Sapag	es	es-419	14	1.00
@@ -135394,7 +135344,6 @@ Sańchez			1	1.00
 Sańko-Sawczenko	pl	pl	1	1.00
 Saňa			1	1.00
 Saňák			1	1.00
-Saō			2	0.00
 Saşmaz			2	1.00
 Sašek			1	1.00
 Saška			15	0.67
@@ -139723,7 +139672,6 @@ Siqueiros	es	es-419	5	1.00
 Siquier	es	es	9	0.78
 Siqués	es	es	6	1.00
 Siqveland	nb	nb	3	1.00
-Sir	en	en-gb	4046	0.95
 Sirac			6	0.67
 Siradj	id	id	6	1.00
 Siradjuddin	id	id	5	1.00
@@ -142868,7 +142816,7 @@ Squizzato	it	it	6	1.00
 Sraffa	it	it	3	1.00
 Sraka	sl	sl	9	1.00
 Srakar	sl	sl	3	1.00
-Sramek			5	0.60
+Sramek			5	0.20
 Sramêk			1	1.00
 Srebotnjak	sl	sl	7	0.86
 Srebrnič	sl	sl	20	0.80
@@ -142913,7 +142861,6 @@ Srámková			1	0.00
 Sréter	hu	hu	6	1.00
 Sršen			9	0.67
 Sršeň	cs	cs	7	1.00
-St	en	en-gb	432	0.86
 Staack	de	de	13	0.77
 Staaf	sv	sv	16	0.88
 Staaff	sv	sv	15	1.00
@@ -144384,7 +144331,7 @@ Stramm	de	de	4	0.75
 Stramondo	it	it	3	1.00
 Strampelli	it	it	4	1.00
 Strampfer	de	de	4	0.75
-Strancar			3	0.33
+Strancar			3	0.67
 Strandbakke	nb	nb	3	1.00
 Strandbakken	nb	nb	3	1.00
 Strandby	da	da	3	1.00
@@ -147514,7 +147461,6 @@ Szendy	hu	hu	7	0.86
 Szenkar			4	0.25
 Szenkár	hu	hu	4	0.75
 Szennai	hu	hu	3	1.00
-Szent	hu	hu	8	1.00
 Szent-Ivanyi			1	1.00
 Szent-Ivány	hu	hu	3	1.00
 Szent-Iványi	hu	hu	12	0.83
@@ -148114,7 +148060,6 @@ Sàbat	es	es	8	1.00
 Sàez	es	es	4	1.00
 Sàmper			1	1.00
 Sànchez	es	es	35	1.00
-Sào			1	1.00
 Sàrka			1	1.00
 Sá	pt	pt-br	429	0.94
 Sáa			1	1.00
@@ -148196,7 +148141,6 @@ Sâmiye			2	1.00
 Sâra			1	1.00
 Sârbu	ro	ro	35	0.91
 Sârca			1	1.00
-São	pt	pt-br	70	0.96
 Säby	sv	sv	3	1.00
 Sädek			1	1.00
 Säfsten	sv	sv	4	1.00
@@ -149043,7 +148987,6 @@ Sŏn			2	0.00
 Sőregi	hu	hu	3	1.00
 Sőrés	hu	hu	2	1.00
 Sőtér	hu	hu	4	1.00
-Sœur	fr	fr-fr	24	0.96
 Sū			1	0.00
 Sūna			1	1.00
 Sūtō			1	0.00
@@ -162122,7 +162065,7 @@ Volm	de	de	3	1.00
 Volmajer	sl	sl	4	1.00
 Volmari	fi	fi	6	1.00
 Volnei	pt	pt-br	7	1.00
-Volny			9	0.22
+Volny			9	0.11
 Volný	cs	cs	22	0.95
 Volontè	it	it	6	1.00
 Volonté			15	0.73
@@ -166009,7 +165952,7 @@ Wojtkun	pl	pl	3	1.00
 Wojtkuńska	pl	pl	1	1.00
 Wojton			1	1.00
 Wojtowicz			25	0.72
-Wojtowski			3	0.67
+Wojtowski			3	0.33
 Wojtoń	pl	pl	3	1.00
 Wojtulanis-Karpińska	pl	pl	1	1.00
 Wojtunik	pl	pl	5	1.00
@@ -175622,7 +175565,7 @@ Zərifə	az	az	4	1.00
 Šipović			1	1.00
 Šipová			1	0.00
 Šipoš			1	1.00
-Širc			7	0.71
+Širc			7	0.29
 Širca	sl	sl	30	0.93
 Šircelj	sl	sl	8	1.00
 Širok	sl	sl	15	0.80

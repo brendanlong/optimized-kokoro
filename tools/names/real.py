@@ -80,10 +80,17 @@ LETTERS = {"fi": set("adeghijklmnoprstuvyäö-"), "pl": set("aąbcćdeęfghijkl�
            "cs": set("aábcčdďeéěfghiíjklmnňoóprřsštťuúůvyýzž-"), "es": set("aábcdeéfghiíjlmnñoópqrstuúüvxyz-"),
            "it": set("aàbcdeèéfghiìíjlmnoòópqrstuùúvz-"), "fr": set("aàâæbcçdeéèêëfghiîïjklmnoôœpqrstuùûüvwxyÿz-"),
            "hu": set("aábcdeéfghiíjklmnoóöőpqrstuúüűvwxyz-")}
-# Spellings rewritten before espeak reads them: Hungarian's old ones, which noble families keep and espeak misreads
-# (Batthyány, Horthy, Kovách, Horváth, Balogh): a final thy is ti, and only a final ch is cs (not Richárd's).
-SPELLINGS = {"hu": [(re.compile(r"thy$"), "ti"), (re.compile(r"th"), "t"), (re.compile(r"ch$"), "cs"), (re.compile(r"gh$"), "g"), (re.compile(r"cz"), "c"),
-                    (re.compile(r"aa"), "á"), (re.compile(r"eö"), "ö")]}
+# Spellings rewritten before espeak reads them. Hungarian's old ones, which noble families keep and espeak
+# misreads: th is t (Batthyány, Horváth) and a final thy ti (Horthy); a final y after a consonant not of gy, ly, ny or
+# ty is i (Esterházy, Pálffy); a final ch is cs, but not German sch (Kovách, not Bogsch); gh is g (Balogh,
+# Alszeghy); cz is c; aá and aa are á (Gaál); eö is ö; and a doubled ss or ff before i is one (Andrássy, Pálffy).
+# French ones espeak drops a vowel of: ouë (Halgouët), a final ouil (Fenouil), Gwen- (Gwenaël).
+SPELLINGS = {"hu": [(re.compile(r"thy$"), "ti"), (re.compile(r"th"), "t"), (re.compile(r"(?<=[^aeiouáéíóöőúüűglnt])y$"), "i"),
+                    (re.compile(r"(?<!s)ch$"), "cs"), (re.compile(r"gh"), "g"), (re.compile(r"cz"), "c"),
+                    (re.compile(r"aá|aa"), "á"), (re.compile(r"eö"), "ö"), (re.compile(r"(ss|ff)(?=i$)"), lambda m: m[1][0])],
+             "fr": [(re.compile(r"ouë"), "ouè"), (re.compile(r"ouil$"), "ouille"), (re.compile(r"^gwen"), "gwén")]}
+# French readings where espeak still lost a vowel after w (Gouyon as ɡwjɔ̃, Desnoues as denw) are left out.
+BROKEN = {"fr": re.compile(r"w(?![aeiouyɑɛɔøœəɐ])")}
 VOWEL_LETTERS = set("aeiouyáéíóúýàèìòùâêîôûäëïöüÿąęåæøœőűěůãõ")
 
 
@@ -161,14 +168,22 @@ def readings(languages):
             spelled = not VOWEL_LETTERS & set(s.lower()) and "\u0329" not in raw
             # espeak spells out a word it can't read ("Jhon" as J-h-o-n), each letter stressed.
             spelled = spelled or "-" not in s and raw.count("ˈ") > 1
+            broken = names[s][0] in BROKEN and BROKEN[names[s][0]].search(sounds.kokoro(raw).replace("ˈ", "").replace("ˌ", ""))
+            if broken:
+                continue
+            # A word needs a main stress: Hungarian espeak gives some only a secondary one (Nagy as nˌɑɟ).
+            if "ˈ" not in raw and "ˌ" in raw:
+                raw = raw.replace("ˌ", "ˈ", 1)
             if not switched and not spelled and sounds.has_vowel(sounds.kokoro(raw)):
                 out[s] = (names[s][0], voice, raw)
     return out
 
 
 def names(cache: Path, english):
-    """{spelling: (phonemes, countable)}; no name takes a plural."""
-    out = {s: (sounds.kokoro(raw), False) for s, (_, _, raw) in readings(LANGUAGES).items()}
+    """{spelling: (phonemes, countable)}; no name takes a plural. A name that is an English word with its g dropped
+    ("Cuttin", "Castin": cuttin', castin') is left out."""
+    dropped_g = lambda s: s.lower().endswith("in") and s.lower() + "g" in english
+    out = {s: (sounds.kokoro(raw), False) for s, (_, _, raw) in readings(LANGUAGES).items() if not dropped_g(s)}
     kept = {fold(s) for s in out}
     out.update({s: (None, False) for s in attributed() if s not in out and fold(s) in kept})
     return out

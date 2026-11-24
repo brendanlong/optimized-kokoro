@@ -577,6 +577,21 @@ impl G2p {
         })
     }
 
+    /// The phonemes of the names [`link_names`](Self::link_names) finds in `text`: for tests that
+    /// allow a record to differ in its names.
+    pub fn names_in(&self, text: &str, language: &str) -> Vec<String> {
+        let ours = |t: &str| -> Vec<String> {
+            link_regex().captures_iter(t).filter_map(|m| link_phonemes(&m[2])).collect::<Vec<_>>()
+        };
+        let mut found = ours(&self.link_names(text, language));
+        for given in ours(text) {
+            if let Some(k) = found.iter().position(|f| *f == given) {
+                found.remove(k);
+            }
+        }
+        found
+    }
+
     /// `fold_left`: each non-head token is merged into the token before it. Merging one pair at a time
     /// re-copies the growing prefix, so this extends it in place with the same result as
     /// `merge_tokens([prev, tk], unk='')`.

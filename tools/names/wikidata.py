@@ -98,11 +98,24 @@ def latin(spelling):
     return all(unicodedata.name(c, "").startswith("LATIN") or c in " -'’" for c in spelling)
 
 
+# Words of titles, not names, that people's labels carry ("Gróf Batthyány Lajos", "Condesa de...").
+TITLES = {"saint", "sainte", "san", "santa", "santo", "são", "szent", "sankt", "st", "gróf", "graf", "gräfin", "conde",
+          "condesa", "comte", "comtesse", "conte", "contessa", "marqués", "marquesa", "marquis", "marquise", "marchese",
+          "barón", "baron", "baronne", "barone", "baronessa", "freiherr", "duque", "duquesa", "duc", "duchesse", "duca",
+          "duchessa", "herzog", "prince", "princesse", "príncipe", "principe", "princesa", "principessa", "infante",
+          "infanta", "re", "rey", "roi", "reine", "reina", "regina", "papa", "pope", "fra", "frate", "padre", "don",
+          "doña", "dom", "dona", "donna", "sir", "lord", "lady", "dame", "dottore", "dott", "colonnello", "generale",
+          "général", "capitán", "kapitány", "báró", "herceg", "király", "királyné", "őrgróf", "beato", "beata", "sœur",
+          "frère", "père", "mère", "abbé", "monseigneur", "mgr", "cardinal", "cardinale", "fürst", "ritter", "edler"}
+
+
 def words(name):
-    """The words of a person's name that could be names: Latin, capitalized, without digits or initials' dots."""
+    """The words of a person's name that could be names: Latin, capitalized, without digits or initials' dots, and
+    not words of titles."""
     for w in name.split():
         w = w.strip(",;:()[]\"“”«»")
-        if len(w) > 1 and w[0].isupper() and latin(w) and not any(c.isdigit() or c == "." for c in w):
+        if len(w) > 1 and w[0].isupper() and latin(w) and not any(c.isdigit() or c == "." for c in w) \
+                and w.lower() not in TITLES:
             yield unicodedata.normalize("NFC", w)
 
 
