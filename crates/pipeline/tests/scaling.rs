@@ -19,14 +19,9 @@ fn chinese() -> &'static Pipeline {
 }
 
 fn time(pipeline: &Pipeline, text: &str) -> Duration {
-    (0..3)
-        .map(|_| {
-            let start = Instant::now();
-            pipeline.chunks(text).for_each(drop);
-            start.elapsed()
-        })
-        .min()
-        .unwrap()
+    let start = Instant::now();
+    pipeline.chunks(text).for_each(drop);
+    start.elapsed()
 }
 
 /// Times `make(n)` and `make(4n)`, growing `n` until the small input takes long enough to measure
@@ -34,14 +29,19 @@ fn time(pipeline: &Pipeline, text: &str) -> Duration {
 /// time to cut it at clauses.
 fn check(pipeline: &Pipeline, name: &str, make: impl Fn(usize) -> String) -> Option<String> {
     let mut n = 16;
-    let mut small = time(pipeline, &make(n));
-    while (small < Duration::from_millis(3) || make(n).len() < 1500) && n < 1 << 16 {
+    while (time(pipeline, &make(n)) < Duration::from_millis(3) || make(n).len() < 1500) && n < 1 << 16 {
         n *= 2;
-        small = time(pipeline, &make(n));
     }
-    let big = time(pipeline, &make(4 * n));
+    // The fastest of several runs of each, taken in turn, so a slow spell on a shared machine slows
+    // both sizes, not only the one it falls on.
+    let (small_text, big_text) = (make(n), make(4 * n));
+    let (mut small, mut big) = (Duration::MAX, Duration::MAX);
+    for _ in 0..5 {
+        small = small.min(time(pipeline, &small_text));
+        big = big.min(time(pipeline, &big_text));
+    }
     let ratio = big.as_secs_f64() / small.as_secs_f64();
-    let bytes = make(n).len();
+    let bytes = small_text.len();
     println!("{name:34} {bytes:>7} bytes {small:>9.2?}  ×4 {big:>9.2?}  ratio {ratio:.1}");
     (ratio > 8.0).then(|| format!("{name}: {small:?} for {bytes} bytes but {big:?} for 4× that"))
 }
@@ -116,7 +116,8 @@ fn accented_letters_take_time_like_prose() {
         (Lang::AmericanEnglish, prose.clone()),
         (Lang::Spanish, prose),
     ] {
-        let took = time(&Pipeline::new(lang).unwrap(), &text);
+        let pipeline = Pipeline::new(lang).unwrap();
+        let took = (0..3).map(|_| time(&pipeline, &text)).min().unwrap();
         let per_kb = took.as_secs_f64() * 1e3 / (text.len() as f64 / 1024.0);
         let start: String = text.chars().take(4).collect();
         assert!(per_kb < 60.0, "{} {start:?}…: {per_kb:.1} ms per KB", lang.code());
