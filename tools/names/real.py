@@ -14,6 +14,7 @@ import re
 import json
 import os
 import subprocess
+import unicodedata
 from pathlib import Path
 
 import sounds
@@ -59,15 +60,16 @@ WORDFREQ = "wordfreq==3.1.1"
 # (wordfreq's zipf: 2 is once per hundred million words) for a name spelled like it to be read as the word.
 PIPELINES = ["es", "fr", "it", "pt"]
 SKIP_ZIPF = 2.0
-# Where espeak's rules miss a rule of the language: Czech devoices a final v (Jaroslav is -slaf), as espeak
-# already does for its other consonants.
-FIXES = {"cs": [(re.compile(r"v(?=$| )"), "f")]}
+# Where espeak's rules miss a rule of the language: Czech devoices a final v and ř (Jaroslav is -slaf, Kovář
+# -aːr̝̊), as espeak already does for its other consonants.
+FIXES = {"cs": [(re.compile(r"v(?=$| )"), "f"), (re.compile("r\u031d(?=$| )"), "r\u031d\u030a")]}
 # Each language's letters, where its names are read only if they use no others, and spellings its own words
 # don't have: a name with them is a loan its rules misread (Swedish Bergholm, Snellman and Ahlroth among Finns,
 # German Neuvirth and Fischerová among Czechs).
-FOREIGN = {"fi": re.compile(r"^[^aeiouyäö]{2}|th|ph|ck|dt|hj|hl|hr|hn|ld$|lm$|rn|ee|ae|oe"),
-           "pl": re.compile(r"sch|th|ph|ck|ei|eu|ä|oo|ee|ae|tz|ff"),
-           "cs": re.compile(r"sch|th|ph|ck|ei|eu|ee|oo|ae|tz|ff")}
+FOREIGN = {"fi": re.compile(r"th|ph|dt|ae|ehr|^sj|^sv|ström|stedt|roos$|roth$|holm$|hjelm|sköld|skog|lund|strand|vall$|man$"
+                            r"|ld$|lm$"),
+           "pl": re.compile(r"sch|th|ph|ei|ä|oo|ee|ae|tz|ff"),
+           "cs": re.compile(r"sch|th|ph|ei|ee|oo|ae|tz|ff")}
 LETTERS = {"fi": set("adeghijklmnoprstuvyäö-"), "pl": set("aąbcćdeęfghijklłmnńoóprsśtuwyzźż-"),
            "cs": set("aábcčdďeéěfghiíjklmnňoóprřsštťuúůvyýzž-")}
 VOWEL_LETTERS = set("aeiouyáéíóúýàèìòùâêîôûäëïöüÿąęåæøœőűěůãõ")
@@ -150,14 +152,25 @@ def names(cache: Path, english):
     return out
 
 
+def zipfs(words):
+    """{(word, language): wordfreq's zipf frequency} for each (word, language) in `words`."""
+    script = ("import json, sys\nfrom wordfreq import zipf_frequency\n"
+              "print(json.dumps([zipf_frequency(w, lang) for w, lang in json.load(sys.stdin)]))")
+    return dict(zip(words, wordfreq(script, json.dumps(list(words)))))
+
+
 def common_words(languages, zipf):
     """{language: words used at least `zipf` often in it}, from wordfreq."""
     script = ("import json, sys\nfrom wordfreq import iter_wordlist, zipf_frequency\nout = {}\n"
               "for lang in sys.argv[2:]:\n    out[lang] = []\n    for w in iter_wordlist(lang):\n"
               "        if zipf_frequency(w, lang) < float(sys.argv[1]):\n            break\n        out[lang].append(w)\n"
               "print(json.dumps(out))")
-    res = subprocess.run(["uv", "run", "-q", "--no-project", "--with", WORDFREQ, "python", "-I", "-c", script, str(zipf),
-                          *languages], capture_output=True, text=True, cwd="/")
+    return wordfreq(script, "", str(zipf), *languages)
+
+
+def wordfreq(script, stdin, *args):
+    res = subprocess.run(["uv", "run", "-q", "--no-project", "--with", WORDFREQ, "python", "-I", "-c", script, *args],
+                         input=stdin, capture_output=True, text=True, cwd="/")
     if res.returncode:
         raise SystemExit(f"wordfreq: {res.stderr}")
     return json.loads(res.stdout)
@@ -165,13 +178,24 @@ def common_words(languages, zipf):
 
 def skip(kept):
     """{pipeline language: words there the G2P would read as one of the names `kept`}, for names_skip.json:
-    common words of the language the pipeline reads as words ("las" in Spanish isn't a Polish Las)."""
+    words of the language the pipeline reads as words ("las" in Spanish isn't a Polish Las). A spelling counts as
+    one where it's used SKIP_ZIPF often there, and ten times as often as in English (with or without its accents):
+    a name famous enough to be common in French ("Wojciech", "Räikkönen") is about as common in English, where a
+    Spanish word ("jalo") isn't."""
     by_fold = collections.defaultdict(list)
     for name in kept:
         by_fold[fold(name)].append(name)
-    out = {}
+    found = []
     for language, words in common_words(PIPELINES, SKIP_ZIPF).items():
-        found = {w for w in words if any(accents_within(w, n) for n in by_fold.get(fold(w), ()))}
-        if found:
-            out[language] = found
-    return out
+        for w in words:
+            for n in by_fold.get(fold(w), ()):
+                if accents_within(w, n) and attributed().get(n, ("", ""))[0] in LANGUAGES:
+                    found.append((w, language))
+    plain = {w: unicodedata.normalize("NFC", "".join(c for c in unicodedata.normalize("NFD", w)
+                                                       if not unicodedata.combining(c))) for w, _ in found}
+    freq = zipfs(set(found) | {(w, "en") for w, _ in found} | {(p, "en") for p in plain.values()})
+    out = collections.defaultdict(set)
+    for w, language in found:
+        if freq[w, language] > max(freq[w, "en"], freq[plain[w], "en"]) + 1:
+            out[language].add(w)
+    return dict(out)
