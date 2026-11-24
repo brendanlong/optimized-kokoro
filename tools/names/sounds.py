@@ -12,7 +12,9 @@ import unicodedata
 TIED = {"tʃ", "ts", "dʒ", "dz", "tɕ", "dʑ", "ʈʂ", "aɪ", "aʊ", "eɪ", "oʊ", "əʊ", "ɔɪ", "ss"}
 TIE = "\u0361"
 NEAREST = {"r\u031d\u030a": "rʃ", "r\u031d": "rʒ", "s^x": "ʃ", "ʐ": "ʒ", "ʑ": "ʒ", "ʉ": "y", "ʏ": "y", "ɵ": "ø",
-           "ɫ": "l", "ɭ": "l", "ɗ": "d", "ε": "ɛ", "ɬ": "l", "ɱ": "m"}
+           "ɫ": "l", "ɭ": "l", "ɗ": "d", "ε": "ɛ", "ɬ": "l", "ɱ": "m",
+           # Romanian's rising diphthongs (Gheorghe, Oana, Badea).
+           "e^a": "ja", "o^a": "wa", "ɔ^a": "wa", "e^o": "jo"}
 DROPPED = {"\u0329", "\u032f", "\u032a", "#", "-", "ʔ", "?", *"0123456789"}
 
 
@@ -47,7 +49,7 @@ def kokoro(raw):
     keep = []
     for k, u in enumerate(us):
         after = next((v for v in us[k + 1:] if v not in "ˈˌ"), "")
-        if u == "ʲ" and (keep and unicodedata.normalize("NFC", keep[-1])[-1] in "ɲɕʑʎjç" or after[:1] in ("i", "j")):
+        if u == "ʲ" and (keep and unicodedata.normalize("NFC", keep[-1])[-1] in "ɲɕʑʎjçʲ" or after[:1] in ("i", "j")):
             continue
         keep.append(u)
     out = []
