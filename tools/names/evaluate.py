@@ -26,11 +26,13 @@ KAIKKI = {"nb": "Norwegian Bokmål", "sl": "Slovene", "hr": "Serbo-Croatian", "b
 VOWELS = set("aeiouyɑɐɒæɛɜəɘɪɨʉʊʌɔøœɤɯɵʏ")
 COARSE = {"ʂ": "ʃ", "ʐ": "ʒ", "ʑ": "ʒ", "ɫ": "l", "ɭ": "l", "g": "ɡ", "ɾ": "r", "ʁ": "r", "ɹ": "r", "ʋ": "v",
           "ɦ": "h", "ɘ": "ɨ", "ʲ": "j", "ʏ": "y", "ʉ": "y", "ɵ": "ø",
+          # Vietnamese implosives and Hanoi's ï, which Kokoro has only as b, d and i.
+          "ɓ": "b", "ɗ": "d", "ï": "i",
           # Vowel qualities dictionaries write differently for one sound (Czech e as ɛ, Hungarian a as ɒ).
           "ɛ": "e", "ε": "e", "ɪ": "i", "ɔ": "o", "ɒ": "a", "ɑ": "a", "ɐ": "a", "ʊ": "u"}
 # Nasal vowels are compared without their nasality (Wiktionary writes Polish ę as ɛw̃, espeak as ɛ̃).
 NASAL = ("w\u0303", "j\u0303")
-IGNORED = set("ː.ˌ‿ ˥˦˧˨˩ˀ")
+IGNORED = set("ː.ˌ‿ ˥˦˧˨˩ˀʔ")
 
 
 def kaikki(cache, language):

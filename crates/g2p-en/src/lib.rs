@@ -231,12 +231,25 @@ enum Word {
     Many(Vec<MToken>),
 }
 
-fn token_context(ctx: &TokenContext, ps: Option<&str>, token: &MToken) -> TokenContext {
+/// Whether a link's IPA starts a word with a vowel or a consonant misaki's sets don't have: a name's
+/// (names.json: Japanese ɯ, Mandarin ɕ and ɻ), so "the" before it is ðə or ði by its own sound. misaki's
+/// own phonemes keep its sets, which leave these out.
+fn link_vowel(c: char) -> bool {
+    is_vowel(c) || "ɯɨɤøœɐɵɘ".contains(c)
+}
+
+fn link_consonant(c: char) -> bool {
+    is_consonant(c) || "ɕʑɻɸɲʂʐʎʁχɟcʈɖɳβʋɰɥqɴ".contains(c)
+}
+
+fn token_context(ctx: &TokenContext, ps: Option<&str>, token: &MToken, link: bool) -> TokenContext {
     let mut future_vowel = ctx.future_vowel;
+    type Is = fn(char) -> bool;
+    let (vowel, consonant): (Is, Is) = if link { (link_vowel, link_consonant) } else { (is_vowel, is_consonant) };
     if let Some(ps) = ps.filter(|p| !p.is_empty())
-        && let Some(c) = ps.chars().find(|&c| is_vowel(c) || is_consonant(c) || is_non_quote_punct(c))
+        && let Some(c) = ps.chars().find(|&c| vowel(c) || consonant(c) || is_non_quote_punct(c))
     {
-        future_vowel = if is_non_quote_punct(c) { None } else { Some(is_vowel(c)) };
+        future_vowel = if is_non_quote_punct(c) { None } else { Some(vowel(c)) };
     }
     let t = token.text.as_str();
     let future_to = t == "to" || t == "To" || (t == "TO" && (token.tag == "TO" || token.tag == "IN"));
@@ -439,7 +452,8 @@ impl G2p {
         for word in words.iter_mut().rev() {
             match word {
                 Word::One(w) => {
-                    if w.phonemes.is_none() {
+                    let link = w.phonemes.is_some();
+                    if !link {
                         w.phonemes = self.lexicon.get(&w.lex(), &ctx);
                     }
                     if w.phonemes.is_none()
@@ -447,7 +461,7 @@ impl G2p {
                     {
                         w.phonemes = fb.phonemize(&w.text);
                     }
-                    ctx = token_context(&ctx, w.phonemes.as_deref(), w);
+                    ctx = token_context(&ctx, w.phonemes.as_deref(), w, link);
                 }
                 Word::Many(w) => self.resolve_group(w, &mut ctx, fallback.as_deref_mut())?,
             }
@@ -487,7 +501,7 @@ impl G2p {
                 self.lexicon.get(&tk.lex(), ctx).map(|ps| (ps, tk))
             };
             if let Some((ps, tk)) = found {
-                *ctx = token_context(ctx, Some(&ps), &tk);
+                *ctx = token_context(ctx, Some(&ps), &tk, false);
                 w[left].phonemes = Some(ps);
                 for x in &mut w[left + 1..right] {
                     x.phonemes = Some(String::new());

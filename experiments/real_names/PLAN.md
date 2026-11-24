@@ -95,6 +95,22 @@ The infrastructure is in `tools/names/`; it reads no real names yet, because `re
 - **English Wikipedia check** (the same 3,926 paragraphs): 37 more paragraphs change, almost all correctly (Barış Alper Yılmaz, Mihkel, Bambang Yudhoyono, Çankırı). The Kurdish "Gormez" is read as Turkish Görmez.
 - **Issue #79 is fixed in #82.** The text around a link is read whole with a stand-in name.
 
+## Phase 4 results: Chinese, Japanese and Vietnamese (2026-11-24)
+
+These are Brendan's request: the three are "pronounced really badly by default".
+- **Rules of their own, not espeak:**
+  - `pinyin.py`: a word is read only if it is wholly pinyin syllables, and only the first syllable may start with a, o or e, so Wade-Giles "Chiang" isn't read.
+  - `hepburn.py`: Japanese morae with every spelling of long vowels (ō, ou, oo, oh), and no stress.
+  - `vietnamese.py`: Hanoi's sounds.
+  - Tones are left out of Chinese and Vietnamese.
+- **Where the names come from:** Chinese and Japanese bearers are counted from their English or multilingual labels, which are romanized; their own labels are in Han and kana. Mainland China and the dynasties count as pinyin. Taiwan and the Republic of China don't, because their names are mostly in Wade-Giles. Japan, the Empire of Japan and the Tokugawa shogunate count as Hepburn.
+- **Counts:** 13,106 Chinese, 13,939 Japanese and 403 Vietnamese names. names.json has 132,564 names with readings.
+- **Vietnamese accuracy:** 91% of names match Wiktionary exactly, against espeak's 35%. Chinese and Japanese can't be compared this way, because Wiktionary's entries for them are in Han and kana.
+- **misaki's guesses:** some of its pinyin entries are overridden (Xi, which misaki reads as the Greek letter za͡ɪ, Xu, Qin, Qing, Xiang, Xian, Yue, Luo, Gui, Jiao, Miao). Its readings of the surnames that are English words (Sun, He, Fan) and of Japanese names it knows (Suzuki, Akira) stay.
+- **Kept despite a flag:** Xi and Xian, in `keep.tsv`.
+- **Left to English:** "Kokoro", this model's name.
+- **English Wikipedia** (the same 3,926 paragraphs): 81 more change, almost all correctly: Junko Utada, Kadokawa, Zhongli, Zhu Xu, Hoàn Kiếm. Misread: "Thi" in the Iraqi place Thi-Qar, and an Austrian nickname, "Wudi".
+
 ## Open questions (Claude's proposals)
 
 - **Thresholds.** What share of a spelling's bearers must come from its language's countries, and the minimum number of bearers to trust that share.

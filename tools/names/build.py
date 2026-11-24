@@ -47,11 +47,12 @@ def strip_accents(s):
     return unicodedata.normalize("NFC", "".join(c for c in unicodedata.normalize("NFD", s) if not unicodedata.combining(c)))
 
 
-def english_words():
+def english_words(as_written=False):
+    """misaki's dictionaries' words, as written and lowercase, or only as written."""
     words = set()
     for f in ("us_gold.json", "us_silver.json", "gb_gold.json", "gb_silver.json"):
         words.update(json.load(open(ROOT / "crates/g2p-en/data" / f)))
-    return words | {w.lower() for w in words}
+    return words if as_written else words | {w.lower() for w in words}
 
 
 def listed(file):
@@ -118,8 +119,9 @@ def main():
     names, unreviewed, skips = {}, [], []
     for source, module in SOURCES.items():
         seen = reviewed(source)
-        # A source may leave out every spelling flag.py flags, rather than the ones exclude.tsv picks by hand.
-        flagged = flags(source) if getattr(module, "EXCLUDE_FLAGGED", False) else set()
+        # A source may leave out every spelling flag.py flags, rather than the ones exclude.tsv picks by hand, but
+        # for the ones keep.tsv keeps on review.
+        flagged = flags(source) - set(listed("keep.tsv")) if getattr(module, "EXCLUDE_FLAGGED", False) else set()
 
         def keep(spelling, phonemes):
             if phonemes is None:
@@ -167,6 +169,12 @@ def main():
                              f"run flag.py {source}, then review its flags into exclude.tsv")
         if hasattr(module, "skip"):
             skips.append(module.skip({s for s in kept if " " not in s}))
+    # An override's spelling in lowercase that misaki's dictionaries have as written stays the word: "Xi" is the
+    # name, "xi" the Greek letter (and "XI", whose spellings then read differently, is left alone).
+    as_written = english_words(as_written=True)
+    for spelling in override:
+        if spelling in names and spelling.lower() != spelling and spelling.lower() in as_written:
+            names.setdefault(spelling.lower(), None)
     OUT.write_text(json.dumps(dict(sorted(names.items())), ensure_ascii=False, indent=0) + "\n", encoding="utf-8")
     skip = {}
     for language, spellings in sorted(excluded_by_language().items()):

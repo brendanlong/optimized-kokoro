@@ -502,11 +502,12 @@ fn the_words_around_a_link_are_read_in_their_sentence() {
     let french = Pipeline::new(Lang::French).unwrap();
     let ps = read(&french.phonemize("Les [Hélène](/elˈɛn/) et les [Yoda](/jˈoda/).").unwrap().0);
     assert!(ps.starts_with("lez elˈɛn e le jˈoda"), "{ps}");
-    // The text's own "Kokoro" keeps its reading, and the link its phonemes.
+    // The text's own "Okoro", the stand-in for a link starting with a vowel, keeps its reading, and the link its
+    // phonemes.
     let spanish = Pipeline::new(Lang::Spanish).unwrap();
-    let ps = read(&spanish.phonemize("Kokoro-[Gandalf](/ɡˈændɑlf/) y Kokoro.").unwrap().0);
-    assert_eq!(ps.matches("ɡˈændɑlf").count(), 1, "{ps}");
-    assert_eq!(ps.matches("kokˈoɾo").count(), 2, "{ps}");
+    let ps = read(&spanish.phonemize("Okoro-[Aaltonen](/ˈaːltonen/) y Okoro.").unwrap().0);
+    assert_eq!(ps.matches("ˈaːltonen").count(), 1, "{ps}");
+    assert_eq!(ps.matches("okˈoɾo").count(), 2, "{ps}");
     // Words keep their own timestamps where another word reads as several ("125").
     let chunk = spanish.chunks("Vi 125 casas con [Gandalf](/ɡˈændɑlf/) ayer.").next().unwrap().unwrap();
     let words: Vec<String> = chunk.words().into_iter().map(|w| w.text).collect();

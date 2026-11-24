@@ -45,6 +45,9 @@ PEOPLE = ("SELECT ?p ?c ?l WHERE {{ VALUES ?c {{ {countries} }} ?p wdt:P27 ?c ; 
 BATCH = 800_000
 CITIZENS = ("SELECT ?p ?c ?l WHERE {{ VALUES ?c {{ {countries} }} ?p wdt:P27 ?c ; wdt:P31 wd:Q5 ; rdfs:label ?l . "
             "FILTER(LANG(?l) = \"{language}\") }}")
+# Languages whose names English text writes romanized, as their people's English or multilingual labels do, not
+# as their own labels (Han, kana).
+ROMANIZED = {"zh", "ja"}
 SHARE = 0.75
 BEARERS = 3
 # A name with more of its bearers than this in English-speaking countries is often an English speaker's, said
@@ -141,7 +144,7 @@ def bearers(cache, refetch, where):
             citizenships[q].add(country)
     by_language = collections.defaultdict(list)
     for qid, spoken in where.items():
-        if len(spoken) == 1 and spoken[0][0] != "en":
+        if len(spoken) == 1 and spoken[0][0] not in ("en", *ROMANIZED):
             by_language[spoken[0][0]].append(qid)
     for language, qids in sorted(by_language.items()):
         query = CITIZENS.format(countries=" ".join(f"wd:{q}" for q in qids), language=language)
@@ -152,7 +155,7 @@ def bearers(cache, refetch, where):
     for q, countries in citizenships.items():
         for country in countries:
             spoken = where.get(country, [])
-            own = spoken[0][0] if len(spoken) == 1 else None
+            own = spoken[0][0] if len(spoken) == 1 and spoken[0][0] not in ROMANIZED else None
             label = labels[q].get(own) or labels[q].get("mul") or labels[q].get("en")
             for w in set(words(label or "")):
                 out[w][country] += 1
