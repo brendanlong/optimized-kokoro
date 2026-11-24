@@ -244,8 +244,8 @@ fn link_consonant(c: char) -> bool {
 
 fn token_context(ctx: &TokenContext, ps: Option<&str>, token: &MToken, link: bool) -> TokenContext {
     let mut future_vowel = ctx.future_vowel;
-    let (vowel, consonant): (fn(char) -> bool, fn(char) -> bool) =
-        if link { (link_vowel, link_consonant) } else { (is_vowel, is_consonant) };
+    type Is = fn(char) -> bool;
+    let (vowel, consonant): (Is, Is) = if link { (link_vowel, link_consonant) } else { (is_vowel, is_consonant) };
     if let Some(ps) = ps.filter(|p| !p.is_empty())
         && let Some(c) = ps.chars().find(|&c| vowel(c) || consonant(c) || is_non_quote_punct(c))
     {
