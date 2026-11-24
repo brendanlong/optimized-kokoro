@@ -1,0 +1,4 @@
+# Spellings flag.py flags that a source leaving out every flagged spelling (real.py) keeps, on review: the name is
+# what English text means by them. spelling<TAB>reason. Claude's picks, for Brendan to review.
+Xi	real: in English text almost always Xi Jinping (the Greek letter is written ξ); misaki read it za͡ɪ
+Xian	real: the city Xi'an written without its apostrophe reads about the same

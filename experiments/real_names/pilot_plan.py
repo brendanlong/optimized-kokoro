@@ -22,7 +22,9 @@ PICKS = ["Wojciech", "Grzegorz", "Przemysław", "Małgorzata", "Szczepański", "
          "Xóchitl", "Pierluigi", "Mastroianni", "Gianluigi", "Thibault", "Geneviève", "Jean-Baptiste", "Lefebvre",
          "Erzsébet", "Szőke", "Batthyány", "Gyöngyi", "Kovács", "Horváth", "Ionuț", "Constanța", "Ștefănescu",
          "Štefánik", "Ľubomír", "Janez", "Kranjec", "Jüri", "Õunapuu", "Barış", "Yılmaz", "Çakmak", "Erdoğan",
-         "Soekarno", "Tjahjono", "Bambang"]
+         "Soekarno", "Tjahjono", "Bambang", "Xi", "Jinping", "Xiaoping", "Xu", "Qin", "Keqiang", "Jiabao", "Zemin",
+         "Hiroshi", "Ohtani", "Shohei", "Ryūnosuke", "Akutagawa", "Haruki", "Hayao", "Miyazaki", "Shinzō", "Kishida",
+         "Nguyễn", "Trần", "Phạm", "Hương", "Thị", "Đặng"]
 SAMPLE = 4
 
 

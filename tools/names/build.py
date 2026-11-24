@@ -118,8 +118,9 @@ def main():
     names, unreviewed, skips = {}, [], []
     for source, module in SOURCES.items():
         seen = reviewed(source)
-        # A source may leave out every spelling flag.py flags, rather than the ones exclude.tsv picks by hand.
-        flagged = flags(source) if getattr(module, "EXCLUDE_FLAGGED", False) else set()
+        # A source may leave out every spelling flag.py flags, rather than the ones exclude.tsv picks by hand, but
+        # for the ones keep.tsv keeps on review.
+        flagged = flags(source) - set(listed("keep.tsv")) if getattr(module, "EXCLUDE_FLAGGED", False) else set()
 
         def keep(spelling, phonemes):
             if phonemes is None:

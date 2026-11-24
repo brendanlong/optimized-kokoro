@@ -18,7 +18,10 @@ import tempfile
 import unicodedata
 from pathlib import Path
 
+import hepburn
+import pinyin
 import sounds
+import vietnamese
 from spelling import accents_within, fold
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -29,9 +32,9 @@ LANGUAGE_NAMES = {"pl": "Polish", "hu": "Hungarian", "cs": "Czech", "sk": "Slova
                   "lt": "Lithuanian", "sl": "Slovenian", "hr": "Croatian", "ro": "Romanian", "is": "Icelandic",
                   "id": "Indonesian", "ms": "Malay", "sw": "Swahili", "vi": "Vietnamese", "sq": "Albanian",
                   "az": "Azerbaijani", "mt": "Maltese", "mi": "Māori", "ga": "Irish", "bs": "Bosnian",
-                  "ht": "Haitian Creole"}
+                  "ht": "Haitian Creole", "zh": "Chinese (pinyin)", "ja": "Japanese (romanized)"}
 # The languages whose names are read so far.
-LANGUAGES = {"pl", "fi", "cs", "es", "it", "fr", "hu", "ro", "sk", "sl", "et", "tr", "id"}
+LANGUAGES = {"pl", "fi", "cs", "es", "it", "fr", "hu", "ro", "sk", "sl", "et", "tr", "id", "zh", "ja", "vi"}
 WORLD = "real people's family and given names"
 # A spelling an earlier source reads differently is left to it (Tolkien's Martan, Cobas).
 YIELDS = True
@@ -108,7 +111,9 @@ VOICE_SOUNDS = {"tr": str.maketrans({"ø": "y", "œ": "ø", "æ": "e"}), "de": s
 # French readings where espeak still lost a vowel after w (Gouyon as ɡwjɔ̃, Desnoues as denw) are left out.
 # Estonian ones where espeak put an i before a palatal consonant (Päll as pæiʎʎ, Otsing as oit͡siŋɡ).
 BROKEN = {"fr": re.compile(r"w(?![aeiouyɑɛɔøœəɐ])"), "et": re.compile(r"(?<=[aeouæøy])i(?=ʎ|t͡s|s͡s|sː)")}
-VOWEL_LETTERS = set("aeiouyáéíóúýàèìòùâêîôûäëïöüÿąęåæøœőűěůãõ")
+def vowel_letter(c):
+    """Whether a letter is a vowel, with whatever marks: "ầ", "ư", "ő" are."""
+    return unicodedata.normalize("NFD", c)[0] in "aeiouy" or c in "æøœ"
 
 
 @functools.cache
@@ -144,8 +149,16 @@ def espeak_data():
                           capture_output=True, text=True, check=True, cwd="/").stdout.strip()
 
 
+# Languages read by rules of their own, not espeak: pinyin and Hepburn romanizations, and Vietnamese, which espeak
+# reads poorly. Each gives None for a word it can't read.
+READERS = {"pinyin": pinyin.read, "hepburn": hepburn.read, "vi": vietnamese.read}
+
+
 def read(voice, words, data):
-    """(espeak's phonemes, whether it read some of the word in another language) for each word."""
+    """(espeak's phonemes, whether it read some of the word in another language) for each word; for a voice of
+    READERS, its phonemes ("" for a word it can't read)."""
+    if voice in READERS:
+        return [(READERS[voice](w) or "", False) for w in words]
     subprocess.run(["cargo", "build", "-q", "--release", "-p", "kokoro-espeak", "--example", "read_words"],
                    cwd=ROOT, check=True)
     res = subprocess.run([str(ROOT / "target/release/examples/read_words"), voice], input="\n".join(words) + "\n",
@@ -201,14 +214,14 @@ def readings(languages):
         if language in languages and own and not foreign:
             by_voice[voice].append(spelling)
     catalan(by_voice)
-    out, data = {}, espeak_data() if by_voice else None
+    out, data = {}, espeak_data() if set(by_voice) - set(READERS) else None
     for voice, spellings in sorted(by_voice.items()):
         modern = [respell(s, names[s][0]) for s in spellings]
         for s, (raw, switched) in zip(spellings, read(voice, modern, data)):
             raw = raw.translate(VOICE_SOUNDS.get(names[s][0], {}))
             for pattern, sound in FIXES.get(names[s][0], []):
                 raw = pattern.sub(sound, raw)
-            spelled = not VOWEL_LETTERS & set(s.lower()) and "\u0329" not in raw
+            spelled = not any(vowel_letter(c) for c in s.lower()) and "\u0329" not in raw
             # espeak spells out a word it can't read ("Jhon" as J-h-o-n), each letter stressed.
             spelled = spelled or "-" not in s and raw.count("ˈ") > 1
             broken = names[s][0] in BROKEN and BROKEN[names[s][0]].search(sounds.kokoro(raw).replace("ˈ", "").replace("ˌ", ""))
@@ -226,7 +239,9 @@ def names(cache: Path, english):
     """{spelling: (phonemes, countable)}; no name takes a plural. A name that is an English word with its g dropped
     ("Cuttin", "Castin": cuttin', castin') is left out."""
     dropped_g = lambda s: s.lower().endswith("in") and s.lower() + "g" in english
-    out = {s: (sounds.kokoro(raw), False) for s, (_, _, raw) in readings(LANGUAGES).items() if not dropped_g(s)}
+    # The rule readers' phonemes are Kokoro's already; espeak's are mapped to them.
+    kokoro = lambda voice, raw: raw if voice in READERS else sounds.kokoro(raw)
+    out = {s: (kokoro(voice, raw), False) for s, (_, voice, raw) in readings(LANGUAGES).items() if not dropped_g(s)}
     kept = {fold(s) for s in out}
     out.update({s: (None, False) for s in attributed() if s not in out and fold(s) in kept})
     return out

@@ -4,12 +4,14 @@
 # Switzerland, the Austro-Hungarian and Russian empires) is no evidence either way: its citizenship can't tell a
 # Flemish name from a Walloon one. A citizenship with no languages here (scripts other than Latin, countries too
 # small to list) is evidence against every language. English-speaking countries are en: a name their people
-# mostly bear is read as English reads it.
+# mostly bear is read as English reads it. Chinese and Japanese names are their people's romanized labels, read by
+# rules of their own (pinyin.py, hepburn.py): mainland China's and the dynasties' in pinyin, not Taiwan's or the
+# Republic of China's, mostly in Wade-Giles.
 # qid	country	languages
 Q30	United States	en/en-us
 Q142	France	fr/fr-fr
 Q183	Germany	de/de
-Q17	Japan	
+Q17	Japan	ja/hepburn
 Q145	United Kingdom	en/en-gb
 Q15180	Soviet Union	ru/ru,uk/uk,lt/lt,lv/lv,et/et
 Q29	Spain	es/es
@@ -17,7 +19,7 @@ Q38	Italy	it/it
 Q16	Canada	en/en-us,fr/fr-fr
 Q20	Norway	nb/nb
 Q36	Poland	pl/pl
-Q9903	Ming dynasty	
+Q9903	Ming dynasty	zh/pinyin
 Q34	Sweden	sv/sv
 Q252	Indonesia	id/id
 Q29999	Kingdom of the Netherlands	nl/nl
@@ -28,7 +30,7 @@ Q43	Turkey	tr/tr
 Q174193	United Kingdom of Great Britain and Ireland	en/en-gb
 Q33	Finland	fi/fi
 Q39	Switzerland	de/de,fr/fr-ch,it/it
-Q148	People's Republic of China	
+Q148	People's Republic of China	zh/pinyin
 Q28	Hungary	hu/hu
 Q31	Belgium	nl/nl,fr/fr-be
 Q34266	Russian Empire	ru/ru,pl/pl,fi/fi,lt/lt,lv/lv,et/et
@@ -36,21 +38,21 @@ Q408	Australia	en/en-gb
 Q40	Austria	de/de
 Q172579	Kingdom of Italy	it/it
 Q756617	Kingdom of Denmark	da/da
-Q8733	Qing dynasty	
+Q8733	Qing dynasty	zh/pinyin
 Q884	South Korea	
 Q212	Ukraine	
 Q33946	Czechoslovakia	cs/cs,sk/sk
 Q414	Argentina	es/es-419
 Q215	Slovenia	sl/sl
 Q801	Israel	
-Q7462	Song dynasty	
+Q7462	Song dynasty	zh/pinyin
 Q191	Estonia	et/et
 Q218	Romania	ro/ro
-Q9683	Tang dynasty	
+Q9683	Tang dynasty	zh/pinyin
 Q96	Mexico	es/es-419
 Q664	New Zealand	en/en-gb
 Q213	Czech Republic	cs/cs
-Q188712	Empire of Japan	
+Q188712	Empire of Japan	ja/hepburn
 Q41	Greece	
 Q865	Taiwan	
 Q45	Portugal	pt/pt
@@ -59,7 +61,7 @@ Q1033	Nigeria
 Q794	Iran	
 Q258	South Africa	
 Q16957	East Germany	de/de
-Q7313	Yuan dynasty	
+Q7313	Yuan dynasty	zh/pinyin
 Q27	Ireland	en/en-gb
 Q219	Bulgaria	
 Q77	Uruguay	es/es-419
@@ -113,7 +115,7 @@ Q222	Albania	sq/sq
 Q796	Iraq	
 Q851	Saudi Arabia	
 Q736	Ecuador	es/es-419
-Q205662	Tokugawa shogunate	
+Q205662	Tokugawa shogunate	ja/hepburn
 Q45670	Kingdom of Portugal	pt/pt
 Q207272	Second Polish Republic	pl/pl
 Q822	Lebanon	
