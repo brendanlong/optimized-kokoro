@@ -56,16 +56,20 @@ Spellings:
 ESPEAK_LOADER = "espeakng-loader==0.2.4"
 WORDFREQ = "wordfreq==3.1.1"
 # The languages whose pipelines read Latin text as their own (names_skip.json), and how common a word there must be
-# (wordfreq's zipf: 3 is once per million words) for a name spelled like it to be read as the word.
+# (wordfreq's zipf: 2 is once per hundred million words) for a name spelled like it to be read as the word.
 PIPELINES = ["es", "fr", "it", "pt"]
-SKIP_ZIPF = 3.0
+SKIP_ZIPF = 2.0
 # Where espeak's rules miss a rule of the language: Czech devoices a final v (Jaroslav is -slaf), as espeak
 # already does for its other consonants.
 FIXES = {"cs": [(re.compile(r"v(?=$| )"), "f")]}
-# Each language's letters, where its names are read only if they use no others: a name with other letters is a
-# loan its rules misread (Swedish Bergholm and Björkenheim among Finns, German Wurm among Czechs).
-LETTERS = {"fi": set("adeghijklmnoprstuvyäö -"), "pl": set("aąbcćdeęfghijklłmnńoóprsśtuwyzźż -"),
-           "cs": set("aábcčdďeéěfghiíjklmnňoóprřsštťuúůvyýzž -")}
+# Each language's letters, where its names are read only if they use no others, and spellings its own words
+# don't have: a name with them is a loan its rules misread (Swedish Bergholm, Snellman and Ahlroth among Finns,
+# German Neuvirth and Fischerová among Czechs).
+FOREIGN = {"fi": re.compile(r"^[^aeiouyäö]{2}|th|ph|ck|dt|hj|hl|hr|hn|ld$|lm$|rn|ee|ae|oe"),
+           "pl": re.compile(r"sch|th|ph|ck|ei|eu|ä|oo|ee|ae|tz|ff"),
+           "cs": re.compile(r"sch|th|ph|ck|ei|eu|ee|oo|ae|tz|ff")}
+LETTERS = {"fi": set("adeghijklmnoprstuvyäö-"), "pl": set("aąbcćdeęfghijklłmnńoóprsśtuwyzźż-"),
+           "cs": set("aábcčdďeéěfghiíjklmnňoóprřsštťuúůvyýzž-")}
 VOWEL_LETTERS = set("aeiouyáéíóúýàèìòùâêîôûäëïöüÿąęåæøœőűěůãõ")
 
 
@@ -114,15 +118,18 @@ def read(voice, words, data):
 
 
 def readings(languages):
-    """{spelling: (language, voice, espeak's phonemes)} for the names of `languages`. Left out: a name with
-    letters its language doesn't use (LETTERS), a name espeak
+    """{spelling: (language, voice, espeak's phonemes)} for the names of `languages`, one word each (Wikidata's
+    names of several words are rare and unreviewed: "von Kraemer", "Matuszewski Ryszard"). Left out: a name with
+    letters or spellings its language doesn't use (LETTERS, FOREIGN), a name espeak
     reads partly in another language (Vietnamese espeak reads "Baotixita" as English), one it reads with no
     vowel (French "Gees" as ʒ), and one with no vowel letter that espeak doesn't read with a syllabic consonant,
     which it spells ("Vlk" as V-L-K)."""
     names = attributed()
     by_voice = collections.defaultdict(list)
     for spelling, (language, voice) in names.items():
-        if language in languages and (language not in LETTERS or set(spelling.lower()) <= LETTERS[language]):
+        own = set(spelling.lower()) <= LETTERS[language] if language in LETTERS else " " not in spelling
+        foreign = language in FOREIGN and FOREIGN[language].search(spelling.lower())
+        if language in languages and own and not foreign:
             by_voice[voice].append(spelling)
     out, data = {}, espeak_data() if by_voice else None
     for voice, spellings in sorted(by_voice.items()):

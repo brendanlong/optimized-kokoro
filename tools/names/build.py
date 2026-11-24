@@ -157,7 +157,8 @@ def main():
                 # A spelling the G2P finds through another ("Earendil" through "Eärendil") isn't needed.
                 covered = lambda s: any(t != s and marks(t) > marks(s) and accents_within(s, t) for t in spellings)
                 spellings = {s: p for s, p in spellings.items() if not covered(s)}
-            names.update(spellings)
+            # A spelling a later source has with no phonemes doesn't hide an earlier source's name ("Vana").
+            names.update({s: p for s, p in spellings.items() if p is not None or names.get(s) is None})
         if unreviewed:
             json.dump(sorted(unreviewed), open(HERE / "review" / f"{source}.todo.json", "w"), ensure_ascii=False, indent=0)
             raise SystemExit(f"{len(unreviewed)} {source} words haven't been checked for other meanings: "
