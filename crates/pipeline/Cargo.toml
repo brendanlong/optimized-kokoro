@@ -9,6 +9,7 @@ license = "GPL-3.0-or-later"
 publish = false
 
 [dependencies]
+unicode-normalization = "0.1"
 kokoro-espeak = { path = "../espeak" }
 kokoro-g2p-en = { path = "../g2p-en" }
 kokoro-g2p-zh = { path = "../g2p-zh" }
