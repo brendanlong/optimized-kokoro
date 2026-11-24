@@ -33,11 +33,11 @@ Spellings:
 """
 
 
-def ask(world, words):
+def ask(prompt, words):
     with tempfile.TemporaryDirectory() as cwd:
         res = subprocess.run([os.environ.get("CLAUDE_BIN", "claude"), "-p", "--model", MODEL, "--tools", "",
                               "--system-prompt", "You are a careful lexicographer. Answer with JSON only."],
-                             input=PROMPT.format(world=world) + "\n".join(words), capture_output=True, text=True,
+                             input=prompt + "\n".join(words), capture_output=True, text=True,
                              cwd=cwd, timeout=900, check=True)
     t = res.stdout
     return json.loads(t[t.index("{"):t.rindex("}") + 1])
@@ -48,10 +48,12 @@ def main(source):
     review_path = build.HERE / "review" / f"{source}.json"
     words = json.load(open(todo_path))
     review = json.load(open(review_path)) if review_path.exists() else {"reviewed": [], "flagged": {}}
-    world = build.SOURCES[source].WORLD
+    module = build.SOURCES[source]
+    prompt = getattr(module, "PROMPT", None) or PROMPT.format(world=module.WORLD)
+    label = getattr(module, "label", lambda w: w)
     batches = [words[i:i + 100] for i in range(0, len(words), 100)]
-    with ThreadPoolExecutor(len(batches)) as pool:
-        for flags in pool.map(lambda b: ask(world, b), batches):
+    with ThreadPoolExecutor(min(len(batches), 16)) as pool:
+        for flags in pool.map(lambda b: ask(prompt, [label(w) for w in b]), batches):
             review["flagged"].update({k: v for k, v in flags.items() if k in words})
     review["reviewed"] = sorted(set(review["reviewed"]) | set(words))
     review["flagged"] = dict(sorted(review["flagged"].items()))

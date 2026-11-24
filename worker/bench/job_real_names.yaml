@@ -1,0 +1,13 @@
+# gpuc submit bench/job_real_names.yaml --host local   (from worker/); see job_name_listen.sh for its inputs.
+name: kokoro-real-names-listen
+setup: uv sync --frozen
+command: PLAN=bench/real_names/plan.json OUT=results/real_names bash bench/job_name_listen.sh
+python: .venv/bin/python
+gpus: 1
+env:
+  REQUIRE_CUDA: "1"
+outputs:
+  - path: results
+priority: 40
+estimated_runtime_min: 5
+max_runtime_min: 30
