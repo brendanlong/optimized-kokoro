@@ -22,6 +22,8 @@
 //! the port doesn't let happen (docs/divergences.md, "espeak-ng: state between calls"). They are
 //! counted apart, and must still be chunked the same, with as many words in each chunk.
 
+mod common;
+
 use kokoro_pipeline::foreign::{in_foreign_py, script};
 use kokoro_pipeline::{Lang, Pipeline};
 use kokoro_reference::divergence::is_symbol;
@@ -152,6 +154,8 @@ fn requests_match_the_reference() {
     let mut regrouped = 0;
     let mut links = 0;
     let mut names = 0;
+    let mut changed_letters = 0;
+    let mut voices = common::Voices::default();
     let mut runs_joined = 0;
     let mut cased = 0;
     let (us, gb) = (kokoro_g2p_en::G2p::new(false), kokoro_g2p_en::G2p::new(true));
@@ -164,6 +168,11 @@ fn requests_match_the_reference() {
             || kokoro_reference::divergence::has_link_read_as_text(&case.lang, &case.text)
         {
             links += 1;
+            continue;
+        }
+        let lang = Lang::from_code(&case.lang).expect("a pipeline language");
+        if voices.change_letters(lang, &case.text) {
+            changed_letters += 1;
             continue;
         }
         let pipeline = pipelines.iter().find(|p| p.lang().code() == case.lang).expect("a pipeline language");
@@ -388,15 +397,25 @@ fn requests_match_the_reference() {
             ));
         }
     }
-    let compared =
-        cases.len() - new_script - rechunked - stateful - numbers - fuzzed - regrouped - links - runs_joined - cased;
+    let compared = cases.len()
+        - new_script
+        - rechunked
+        - stateful
+        - numbers
+        - fuzzed
+        - regrouped
+        - links
+        - changed_letters
+        - runs_joined
+        - cased;
     println!(
         "{} of {compared} requests match ({flagged} of them once espeak's language-switch flags are dropped from the reference's); \
          not compared: {rechunked} chunked differently without the flags, {new_script} with other scripts, \
          {stateful} where the reference's espeak read a word by an earlier call's state, \
          {numbers} with numbers or symbols read differently ({roman} with Roman numerals), {fuzzed} more fuzzed ones with digits or symbols, \
          {regrouped} with short clauses regrouped, {links} with a link the reference read otherwise (as text, or ɾ and ʔ as the English flap and t), {runs_joined} with runs joined by the port's rule, \
-         {cased} with case read differently, {names} with a name read in its own language",
+         {cased} with case read differently, {changed_letters} with letters espeak lacks or marks it composes, \
+         {names} with a name read in its own language",
         compared - failures.len(),
     );
     for f in failures.iter().take(10) {
