@@ -7,7 +7,8 @@ aren't pinyin don't. Tones aren't written in English text and Kokoro's English v
 The sounds are Mandarin's, written as an English voice says them best: b, d, g voiced as English hears them
 and p, t, k, which English aspirates already, for their aspirated pairs; zh, ch, sh as English j, ch, sh; j, q,
 x as the alveolo-palatal d͡ʑ, t͡ɕ, ɕ; r as ɻ; the i after z, c, s, zh, ch, sh, r as ɨ. A word of several
-syllables is stressed on the last, which Mandarin's full tones make the most prominent.
+syllables is stressed on the last, which Mandarin's full tones make the most prominent. y and w keep a glide
+(Ying is jiŋ, not English "ing"; Boyu is bo-ɥy, not "boy").
 """
 
 INITIALS = {"zh": "d͡ʒ", "ch": "t͡ʃ", "sh": "ʃ", "b": "b", "p": "p", "m": "m", "f": "f", "d": "d", "t": "t",
@@ -20,9 +21,9 @@ FINALS = {"a": "a", "o": "o", "e": "ɤ", "ai": "a͡ɪ", "ei": "e͡ɪ", "ao": "a�
 # With j, q, x (and y), u is ü.
 FRONTED = {"u": "y", "ue": "ɥe", "uan": "ɥɛn", "un": "yn"}
 ZERO = {"a": "a", "o": "o", "e": "ɤ", "ai": "a͡ɪ", "ei": "e͡ɪ", "ao": "a͡ʊ", "ou": "o͡ʊ", "an": "an", "en": "ən",
-        "ang": "aŋ", "eng": "əŋ", "er": "aɚ", "yi": "i", "ya": "ja", "ye": "je", "yao": "ja͡ʊ", "you": "jo͡ʊ",
-        "yan": "jɛn", "yin": "in", "yang": "jaŋ", "ying": "iŋ", "yong": "jʊŋ", "yu": "y", "yue": "ɥe",
-        "yuan": "ɥɛn", "yun": "yn", "wu": "u", "wa": "wa", "wo": "wo", "wai": "wa͡ɪ", "wei": "we͡ɪ", "wan": "wan",
+        "ang": "aŋ", "eng": "əŋ", "er": "aɚ", "yi": "ji", "ya": "ja", "ye": "je", "yao": "ja͡ʊ", "you": "jo͡ʊ",
+        "yan": "jɛn", "yin": "jin", "yang": "jaŋ", "ying": "jiŋ", "yong": "jʊŋ", "yu": "ɥy", "yue": "ɥe",
+        "yuan": "ɥɛn", "yun": "ɥyn", "wu": "wu", "wa": "wa", "wo": "wo", "wai": "wa͡ɪ", "wei": "we͡ɪ", "wan": "wan",
         "wen": "wən", "wang": "waŋ", "weng": "wəŋ"}
 # The finals each initial takes (a little more than Mandarin has is harmless: names are real syllables).
 LABIAL = "a o ai ei ao an en ang eng i ie iao ian in ing u ou iu"

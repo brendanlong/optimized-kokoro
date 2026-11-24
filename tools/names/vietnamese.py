@@ -29,7 +29,8 @@ def untoned(word):
 
 def read(spelling):
     """The name's phonemes, or None if it isn't a Vietnamese syllable."""
-    word = untoned(spelling.lower())
+    # Ð (U+00D0, Icelandic's eth) is often typed for Đ.
+    word = untoned(spelling.lower().replace("ð", "đ"))
     onset = next(((o, s) for o, s in ONSETS if word.startswith(o)), ("", ""))
     rest = word[len(onset[0]):]
     if onset[0] == "gi" and (not rest or rest[0] not in "aăâeêoôơuưy"):

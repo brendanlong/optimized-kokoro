@@ -82,20 +82,23 @@ struct Count {
     skipped: BTreeMap<&'static str, Vec<String>>,
 }
 
-/// Whether each chunk differs only in names, or not at all, after the port's spacing where runs join.
+/// Whether the chunks differ only in names, at least one of them, after the port's spacing where runs join.
 fn names_only(expected: &[(String, String)], actual: &[(String, String)], language: &str) -> bool {
-    expected.len() == actual.len()
+    let mut named = false;
+    let alike = expected.len() == actual.len()
         && expected.iter().zip(actual).all(|(e, a)| {
             let respaced = kokoro_reference::divergence::respaced(&e.1, &a.1);
+            let name =
+                || kokoro_reference::divergence::differs_only_in_names(&names_in(&e.0, language), &respaced, &a.1);
             e == a
                 || e.0 == a.0
                     && (respaced == a.1
-                        || kokoro_reference::divergence::differs_only_in_names(
-                            &names_in(&e.0, language),
-                            &respaced,
-                            &a.1,
-                        ))
-        })
+                        || name() && {
+                            named = true;
+                            true
+                        })
+        });
+    alike && named
 }
 
 /// The phonemes of the names the G2P links in `text` of `language` (espeak's code, `en` for English).

@@ -1,13 +1,15 @@
 """Japanese names in Hepburn romanization ("Kurosawa", "Ryūnosuke", "Ohtani"), in Kokoro's sounds.
 
 A word is read only if it is wholly Japanese morae: a consonant (or none) and a vowel, a doubled consonant before
-one, or n. Long vowels are written several ways, all read long: ō, ô, oo, ou (not before a vowel: Inoue is
-i-no-u-e), oh before a consonant or at the end (Ohtani, Saitoh); ū, uu; ā, aa; ē, ee; ī, ii; ei is eː. Japanese
+one, or n, which an apostrophe may end (Ken'ichi). Long vowels are written several ways, all read long: ō, ô, oo,
+ou (not before e: Inoue is i-no-u-e), oh before a consonant or at the end (Ohtani, Saitoh); ū, uu; ā, aa; ē, ee;
+ī, ii; ei is eː. Japanese
 has a pitch accent, not stress, which names don't show in writing, so the readings have no stress marks, as
 misaki's Japanese G2P writes none.
 
 The sounds: u is ɯ, r the tap ɾ, f ɸ, shi ɕi, chi t͡ɕi, ji d͡ʑi, tsu t͡sɯ, hi çi, and ky, ny, ry and the rest
-palatalized; n before a vowel or y is n, and otherwise ends its mora (ŋ before k and g, m before b, p and m).
+palatalized; n before a vowel or y is n, and otherwise ends its mora: ŋ before k and g, m before b, p and m, n
+before other consonants, and the uvular ɴ before a vowel or y and at the end (Ken'ichi keɴit͡ɕi, Shinya ɕiɴja).
 """
 
 import re
@@ -25,18 +27,23 @@ SPECIAL = {"shi": "ɕi", "chi": "t͡ɕi", "ji": "d͡ʑi", "tsu": "t͡sɯ", "fu":
 
 
 def normalize(word):
-    word = unicodedata.normalize("NFC", word.lower())
+    word = unicodedata.normalize("NFC", word.lower()).replace("’", "'")
+    # ou is long but before e (Inoue is i-no-u-e); oh before a consonant or at the end is long (Ohtani, Saitoh).
+    word = re.sub(r"ou(?!e)", "oo", word)
     for long, short in LONG.items():
         word = word.replace(long, short * 2)
     word = re.sub(r"oh(?=[^aeiouy]|$)", "oo", word)
-    word = re.sub(r"ou(?![aeiou])", "oo", word)
+    # n written m before b, p and m (Shimbashi, Sampei); n before i of ichi and before y ends its mora where written
+    # without the apostrophe (Kenichi is Ken'ichi, Shinya Shin'ya).
+    word = re.sub(r"(?<=[aeiou])m(?=[bp])", "n'", word)
+    word = re.sub(r"(?<=[aeiou])n(?=ichi|y)", "n'", word)
     return word
 
 
 def read(spelling):
     """The name's phonemes, or None if it isn't Hepburn Japanese."""
     word = normalize(spelling)
-    if not word.isascii() or not word.isalpha():
+    if not word.isascii() or not word.replace("'", "").isalpha() or word.startswith("'"):
         return None
     out, i = [], 0
     while i < len(word):
@@ -51,8 +58,10 @@ def read(spelling):
             continue
         if c == "n" and (i + 1 == len(word) or word[i + 1] not in "aeiouy"):
             out.append("N")
-            i += 1
+            i += 2 if word[i + 1:i + 2] == "'" else 1
             continue
+        if c == "'":
+            return None
         if i + 1 < len(word) and word[i + 1] == c and c not in "n" or word.startswith("tch", i):
             out.append("Q")
             i += 1
@@ -76,6 +85,8 @@ def sound(morae, k):
         return VOWELS[body[0]] + ("ː" if long else "")
     if kind == "N":
         after = morae[k + 1][1:] if k + 1 < len(morae) else ""
+        if not after or morae[k + 1][0] == "V" or after[:1] == "y":
+            return "ɴ"
         return "ŋ" if after[:1] in ("k", "g") else "m" if after[:1] in ("b", "p", "m") else "n"
     if kind == "Q":
         return ""
