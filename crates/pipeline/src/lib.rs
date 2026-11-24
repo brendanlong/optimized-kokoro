@@ -481,6 +481,20 @@ fn part_runs(tokens: &mut [Token], start: usize) {
     }
 }
 
+/// The name the pipeline's own G2P reads where a link is ([`Request::native_around_links`]), and one
+/// starting with a vowel.
+const STAND_IN: &str = "Kokoro";
+const STAND_IN_VOWEL: &str = "Okoro";
+
+fn base_letter(c: char) -> char {
+    use unicode_normalization::UnicodeNormalization;
+    std::iter::once(c).nfd().next().unwrap_or(c)
+}
+
+fn is_combining(c: char) -> bool {
+    unicode_normalization::char::is_combining_mark(c)
+}
+
 /// A piece of a run outside English: text for the run's G2P, or a `[text](/phonemes/)` link's.
 enum Piece {
     Text(String),
@@ -717,8 +731,16 @@ impl<'p> Request<'p> {
                     continue;
                 }
                 None => {
-                    // misaki reads links in English; elsewhere a link is a run of its own.
-                    for piece in link_pieces(segment) {
+                    // misaki reads links in English; elsewhere the text around links is read with a
+                    // stand-in for each, so its words keep their context, where that can be done.
+                    let pieces = link_pieces(segment);
+                    if let Some((text, ps)) = self.native_around_links(&pieces)? {
+                        append_run(&mut tokens, &text, &ps);
+                        part_runs(&mut tokens, start);
+                        continue;
+                    }
+                    // Otherwise a link is a run of its own.
+                    for piece in pieces {
                         let (text, ps) = match piece {
                             Piece::Text(text) => {
                                 let ps = self.native(&text)?;
@@ -786,6 +808,55 @@ impl<'p> Request<'p> {
             }
         };
         Ok(kokoro_text::py::strip(&raw).to_owned())
+    }
+
+    /// A segment with links, read whole by the pipeline's own G2P with a stand-in name where each
+    /// link is, whose phonemes are then the link's: so the words around a link are read in their
+    /// sentence, not as words of their own (Portuguese "e" before a name is "i", not the letter ɛ).
+    /// The stand-in starts with a vowel where the link's text does, for liaison. `None` where the
+    /// segment has no link, or the stand-ins can't all be found in what the G2P read, once each.
+    fn native_around_links(&mut self, pieces: &[Piece]) -> Result<Option<(String, String)>, Error> {
+        if !pieces.iter().any(|p| matches!(p, Piece::Phonemes { .. })) {
+            return Ok(None);
+        }
+        let (mut read, mut text, mut links) = (String::new(), String::new(), Vec::new());
+        for piece in pieces {
+            match piece {
+                Piece::Text(t) => {
+                    read.push_str(t);
+                    text.push_str(t);
+                }
+                Piece::Phonemes { text: t, ipa } => {
+                    let vowel = t.chars().next().is_some_and(|c| "aeiouyAEIOUY".contains(base_letter(c)));
+                    read.push_str(if vowel { STAND_IN_VOWEL } else { STAND_IN });
+                    text.push_str(t);
+                    links.push((vowel, ipa));
+                }
+            }
+        }
+        let unstressed = |w: &str| w.chars().filter(|&c| c != 'ˈ' && c != 'ˌ').collect::<String>();
+        let stand_in = [unstressed(&self.native(STAND_IN)?), unstressed(&self.native(STAND_IN_VOWEL)?)];
+        let mut words: Vec<String> = self.native(&read)?.split(' ').map(str::to_owned).collect();
+        // The words that are a stand-in, but for punctuation around them: one per link, in order.
+        let core =
+            |w: &str| w.trim_matches(|c: char| !c.is_alphabetic() && !"ˈˌː".contains(c) && !is_combining(c)).to_owned();
+        // Its last sound may change with the next word's (Portuguese kokˈɔɾʊ, kokˈɔɾw before "e").
+        let is = |w: &str, s: &str| {
+            let (w, s): (Vec<char>, Vec<char>) = (unstressed(w).chars().collect(), s.chars().collect());
+            w.len() == s.len() && w[..w.len().saturating_sub(1)] == s[..s.len().saturating_sub(1)]
+        };
+        let found: Vec<usize> =
+            (0..words.len()).filter(|&i| stand_in.iter().any(|s| is(&core(&words[i]), s))).collect();
+        let matches = found.len() == links.len()
+            && found.iter().zip(&links).all(|(&i, (vowel, _))| is(&core(&words[i]), &stand_in[usize::from(*vowel)]));
+        if !matches {
+            return Ok(None);
+        }
+        for (&i, (_, ipa)) in found.iter().zip(&links) {
+            let c = core(&words[i]);
+            words[i] = words[i].replacen(&c, ipa, 1);
+        }
+        Ok(Some((text, words.join(" "))))
     }
 
     /// "<name> text" for an unread run, as English words that make one token group like a foreign

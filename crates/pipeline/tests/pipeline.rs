@@ -480,6 +480,27 @@ fn real_names_are_read_in_their_own_language_where_their_bearers_are() {
 }
 
 #[test]
+fn the_words_around_a_link_are_read_in_their_sentence() {
+    // Outside English, the text around a link is read whole, with a stand-in for the link (issue #79):
+    // Portuguese and Spanish "e" and "y" are "i", not letter names, and French keeps its liaison.
+    for (lang, with_name, with_word) in [
+        (Lang::BrazilianPortuguese, "Smolyar e Grégoire chegou.", "Smolyar e Pedro chegou."),
+        (Lang::Spanish, "lo vio y Wojciech llegó.", "lo vio y Pedro llegó."),
+        (Lang::French, "Les Aaltonen sont là.", "Les amis sont là."),
+        (Lang::Italian, "Il Wojciech è qui.", "Il Pietro è qui."),
+    ] {
+        let pipeline = Pipeline::new(lang).unwrap();
+        let read = |t: &str| read(&pipeline.phonemize(t).unwrap().0);
+        let (named, plain) = (read(with_name), read(with_word));
+        let before = |ps: &str| ps.split(' ').take(with_name.split(' ').count() - 3).collect::<Vec<_>>().join(" ");
+        assert_eq!(before(&named), before(&plain), "{lang:?}: {named} / {plain}");
+    }
+    let portuguese = Pipeline::new(Lang::BrazilianPortuguese).unwrap();
+    let ps = read(&portuguese.phonemize("e [Kokoro](/kokˈɔɾu/) e [Galadriel](/ɡaˈladriel/).").unwrap().0);
+    assert!(ps.starts_with("i kokˈɔɾu i "), "{ps}");
+}
+
+#[test]
 fn a_name_takes_possessive_and_plural_endings() {
     assert_eq!(phonemize("Sauron's"), format!("{}z", name("Sauron")));
     assert_eq!(phonemize("Minas Tirith's"), format!("{}s", name("Minas Tirith")));

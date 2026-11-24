@@ -82,14 +82,13 @@ struct Count {
     skipped: BTreeMap<&'static str, Vec<String>>,
 }
 
-/// Whether each chunk differs only in names, and in short words beside them (issue #79), after the port's
-/// spacing where runs join.
+/// Whether each chunk differs only in names, after the port's spacing where runs join.
 fn names_only(expected: &[(String, String)], actual: &[(String, String)], language: &str) -> bool {
     expected.len() == actual.len()
         && expected.iter().zip(actual).all(|(e, a)| {
             e == a
                 || e.0 == a.0
-                    && kokoro_reference::divergence::differs_only_around_names(
+                    && kokoro_reference::divergence::differs_only_in_names(
                         &names_in(&e.0, language),
                         &kokoro_reference::divergence::respaced(&e.1, &a.1),
                         &a.1,
