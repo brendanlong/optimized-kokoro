@@ -82,6 +82,8 @@ The infrastructure is in `tools/names/`; it reads no real names yet, because `re
 - **English Wikipedia** (the same 3,926 paragraphs): 293 change, in 328 distinct words, almost all of them correct (Martínez, Jean-Luc Godard, Miklós Rózsa, Giuseppe). Places that are also surnames are read natively too (Cádiz, Troyes).
 - **Filed:** issue #79. In the espeak pipelines, the word before a name's link is read out of context ("e" in Portuguese as the letter ɛ).
 
+- **Brendan's decision (2026-11-24):** names that pass the cutoff but that English text usually uses for English speakers or brands (Giuliani, Rubio, Pujols, Sotomayor, Peugeot, Pirelli) keep their native readings. He found them "about as good or better than the default". The listening page has them.
+
 ## Open questions (Claude's proposals)
 
 - **Thresholds.** What share of a spelling's bearers must come from its language's countries, and the minimum number of bearers to trust that share.
