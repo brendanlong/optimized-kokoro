@@ -487,11 +487,31 @@ enum Piece {
     Phonemes { text: String, ipa: String },
 }
 
+static LINK: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| regex::Regex::new(r"\[([^\]]+)\]\(([^\)]*)\)").expect("valid regex"));
+
+/// `text` with its letters composed with their combining marks ([`kokoro_espeak::compose_marks`]),
+/// but for its links' phonemes. spaCy tags a word written with combining marks as a quote when it
+/// stands alone, and misaki reads its pieces as quotes; a link's phonemes are read as written.
+fn compose_marks_outside_links(text: &str) -> std::borrow::Cow<'_, str> {
+    let mut out = String::new();
+    let mut last = 0;
+    for m in LINK.captures_iter(text) {
+        let phonemes = m.get(2).expect("a link's phonemes");
+        out.push_str(&kokoro_espeak::compose_marks(&text[last..phonemes.start()]));
+        out.push_str(phonemes.as_str());
+        last = phonemes.end();
+    }
+    if last == 0 {
+        return kokoro_espeak::compose_marks(text);
+    }
+    out.push_str(&kokoro_espeak::compose_marks(&text[last..]));
+    out.into()
+}
+
 /// `segment` cut at its links, each read as its phonemes (misaki's `/phonemes/`, IPA's syllable
 /// breaks left out). Every other link is plain text already ([`G2p::plain_links`]).
 fn link_pieces(segment: &str) -> Vec<Piece> {
-    static LINK: std::sync::LazyLock<regex::Regex> =
-        std::sync::LazyLock::new(|| regex::Regex::new(r"\[([^\]]+)\]\(([^\)]*)\)").expect("valid regex"));
     let mut pieces = Vec::new();
     let mut text = String::new();
     let mut last = 0;
@@ -674,6 +694,7 @@ impl<'p> Request<'p> {
             _ => "en",
         };
         let graphemes = G2p::plain_links(&graphemes);
+        let graphemes = compose_marks_outside_links(&graphemes);
         let graphemes = self.pipeline.g2p.link_names(&graphemes, latin);
         let mut tokens: Vec<Token> = Vec::new();
         let mut placeholders = Vec::new();

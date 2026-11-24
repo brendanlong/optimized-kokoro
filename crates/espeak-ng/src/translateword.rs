@@ -1017,6 +1017,7 @@ impl Espeak {
                 speak_letter_number = false;
             }
             if speak_letter_number {
+                self.read_code_point = true;
                 let hexbuf: Vec<u8> = if al_offset == 0x2800 {
                     (0..8).filter(|ix| letter & (1 << ix) != 0).map(|ix| b'1' + ix as u8).collect()
                 } else {

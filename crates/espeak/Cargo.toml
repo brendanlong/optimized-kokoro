@@ -10,6 +10,7 @@ publish = false
 
 [dependencies]
 kokoro-espeak-ng = { path = "../espeak-ng" }
+unicode-normalization = "0.1"
 
 [dev-dependencies]
 kokoro-reference = { path = "../reference" }
