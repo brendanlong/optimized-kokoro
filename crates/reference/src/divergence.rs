@@ -1086,7 +1086,7 @@ fn differs_in_names(names: &[String], reference: &str, ours: &str, neighbours: b
         && a.iter().zip(&b).any(|(x, y)| x != y)
         && a.iter().zip(&b).enumerate().all(|(k, (x, y))| {
             // Outside English, a short word beside a name may be read as a word of its own (issue #79).
-            let short = |w: &str| unstressed(w).chars().count() <= 2;
+            let short = |w: &str| unstressed(w).chars().count() <= 2 && w.chars().all(char::is_alphabetic);
             x == y
                 || is_name(y)
                 || beside_name(k) && (unstressed(x) == unstressed(y) || neighbours && short(x) && short(y))
@@ -1254,6 +1254,7 @@ mod tests {
         assert!(!differs_only_in_names(&names, "ˈi ɡˈɑndɔɹ", &format!("ˈɛ {gondor}")));
         assert!(differs_only_around_names(&names, "ˈi ɡˈɑndɔɹ", &format!("ˈɛ {gondor}")));
         assert!(!differs_only_around_names(&names, "kˈæt ɡˈɑndɔɹ", &format!("dˈɔɡ {gondor}")));
+        assert!(!differs_only_around_names(&names, "ɡˈɑndɔɹ , olˈa", &format!("{gondor} ! olˈa")));
     }
 
     #[test]

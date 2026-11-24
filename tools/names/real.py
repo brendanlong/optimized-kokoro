@@ -75,17 +75,18 @@ FOREIGN = {"fi": re.compile(r"th|ph|dt|ae|ehr|^sj|^sv|ström|stedt|roos$|roth$|h
            "pl": re.compile(r"sch|th|ph|ei|ä|oo|ee|ae|tz|ff"),
            "cs": re.compile(r"sch|th|ph|ei|ee|oo|ae|tz|ff"),
            "es": re.compile(r"sch|th|ph|ck|tz|ff|ee|oo"), "it": re.compile(r"th|ph|ck|ee|oo|ae"),
-           "fr": re.compile(r"sch|tz|ck|ee|oo|sh")}
+           "fr": re.compile(r"sch|tz|ck|ee|oo|sh"), "hu": re.compile(r"sch|ck|tz|ß")}
 LETTERS = {"fi": set("adeghijklmnoprstuvyäö-"), "pl": set("aąbcćdeęfghijklłmnńoóprsśtuwyzźż-"),
            "cs": set("aábcčdďeéěfghiíjklmnňoóprřsštťuúůvyýzž-"), "es": set("aábcdeéfghiíjlmnñoópqrstuúüvxyz-"),
            "it": set("aàbcdeèéfghiìíjlmnoòópqrstuùúvz-"), "fr": set("aàâæbcçdeéèêëfghiîïjklmnoôœpqrstuùûüvwxyÿz-"),
            "hu": set("aábcdeéfghiíjklmnoóöőpqrstuúüűvwxyz-")}
 # Spellings rewritten before espeak reads them. Hungarian's old ones, which noble families keep and espeak
-# misreads: th is t (Batthyány, Horváth) and a final thy ti (Horthy); a final y after a consonant not of gy, ly, ny or
+# misreads: th is t at a word's start or end and in tth (Thököly, Horváth, Batthyány), but not between (Keszthely is
+# Keszt-hely), and a final thy ti (Horthy); a final y after a consonant not of gy, ly, ny or
 # ty is i (Esterházy, Pálffy); a final ch is cs, but not German sch (Kovách, not Bogsch); gh is g (Balogh,
 # Alszeghy); cz is c; aá and aa are á (Gaál); eö is ö; and a doubled ss or ff before i is one (Andrássy, Pálffy).
 # French ones espeak drops a vowel of: ouë (Halgouët), a final ouil (Fenouil), Gwen- (Gwenaël).
-SPELLINGS = {"hu": [(re.compile(r"thy$"), "ti"), (re.compile(r"th"), "t"), (re.compile(r"(?<=[^aeiouáéíóöőúüűglnt])y$"), "i"),
+SPELLINGS = {"hu": [(re.compile(r"thy$"), "ti"), (re.compile(r"^th|th$"), "t"), (re.compile(r"tth"), "tt"), (re.compile(r"(?<=[^aeiouáéíóöőúüűglnt])y$"), "i"),
                     (re.compile(r"(?<!s)ch$"), "cs"), (re.compile(r"gh"), "g"), (re.compile(r"cz"), "c"),
                     (re.compile(r"aá|aa"), "á"), (re.compile(r"eö"), "ö"), (re.compile(r"(ss|ff)(?=i$)"), lambda m: m[1][0])],
              "fr": [(re.compile(r"ouë"), "ouè"), (re.compile(r"ouil$"), "ouille"), (re.compile(r"^gwen"), "gwén")]}
@@ -145,6 +146,20 @@ def respell(spelling, language):
     return word if word != spelling.lower() else spelling
 
 
+def catalan(by_voice):
+    """Move Spanish names that are more common in Catalan than in Spanish text to espeak's Catalan voice: Spain's
+    citizenship doesn't tell Catalan names (Jordi, Puig, Josep) from Spanish ones."""
+    spanish = [s for v in ("es", "es-419") for s in by_voice.get(v, [])]
+    if not spanish:
+        return
+    freq = zipfs({(s, lang) for s in spanish for lang in ("ca", "es")})
+    moved = {s for s in spanish if freq[s, "ca"] > freq[s, "es"]}
+    for v in ("es", "es-419"):
+        if v in by_voice:
+            by_voice[v] = [s for s in by_voice[v] if s not in moved]
+    by_voice["ca"] = sorted(moved)
+
+
 def readings(languages):
     """{spelling: (language, voice, espeak's phonemes)} for the names of `languages`, one word each (Wikidata's
     names of several words are rare and unreviewed: "von Kraemer", "Matuszewski Ryszard"). Left out: a name with
@@ -159,6 +174,7 @@ def readings(languages):
         foreign = language in FOREIGN and FOREIGN[language].search(spelling.lower())
         if language in languages and own and not foreign:
             by_voice[voice].append(spelling)
+    catalan(by_voice)
     out, data = {}, espeak_data() if by_voice else None
     for voice, spellings in sorted(by_voice.items()):
         modern = [respell(s, names[s][0]) for s in spellings]

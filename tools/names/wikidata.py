@@ -43,7 +43,7 @@ COUNTRIES = "SELECT ?c (COUNT(?p) AS ?n) WHERE { ?p wdt:P27 ?c ; wdt:P31 wd:Q5 }
 PEOPLE = ("SELECT ?p ?c ?l WHERE {{ VALUES ?c {{ {countries} }} ?p wdt:P27 ?c ; wdt:P31 wd:Q5 ; rdfs:label ?l . "
           "FILTER(LANG(?l) IN (\"en\", \"mul\")) }}")
 BATCH = 800_000
-CITIZENS = ("SELECT ?p ?l WHERE {{ VALUES ?c {{ {countries} }} ?p wdt:P27 ?c ; wdt:P31 wd:Q5 ; rdfs:label ?l . "
+CITIZENS = ("SELECT ?p ?c ?l WHERE {{ VALUES ?c {{ {countries} }} ?p wdt:P27 ?c ; wdt:P31 wd:Q5 ; rdfs:label ?l . "
             "FILTER(LANG(?l) = \"{language}\") }}")
 SHARE = 0.75
 BEARERS = 3
@@ -98,7 +98,7 @@ def latin(spelling):
     return all(unicodedata.name(c, "").startswith("LATIN") or c in " -'’" for c in spelling)
 
 
-# Words of titles, not names, that people's labels carry ("Gróf Batthyány Lajos", "Condesa de...").
+# Words of titles, not names, that people's labels may start with ("Gróf Batthyány Lajos", "Condesa de...").
 TITLES = {"saint", "sainte", "san", "santa", "santo", "são", "szent", "sankt", "st", "gróf", "graf", "gräfin", "conde",
           "condesa", "comte", "comtesse", "conte", "contessa", "marqués", "marquesa", "marquis", "marquise", "marchese",
           "barón", "baron", "baronne", "barone", "baronessa", "freiherr", "duque", "duquesa", "duc", "duchesse", "duca",
@@ -110,12 +110,14 @@ TITLES = {"saint", "sainte", "san", "santa", "santo", "são", "szent", "sankt", 
 
 
 def words(name):
-    """The words of a person's name that could be names: Latin, capitalized, without digits or initials' dots, and
-    not words of titles."""
-    for w in name.split():
-        w = w.strip(",;:()[]\"“”«»")
-        if len(w) > 1 and w[0].isupper() and latin(w) and not any(c.isdigit() or c == "." for c in w) \
-                and w.lower() not in TITLES:
+    """The words of a person's name that could be names: Latin, capitalized, without digits or initials' dots. Words
+    of titles before the name are left out ("Gróf Batthyány Lajos") where two words or more follow, as a title is
+    also a surname ("Gábor Király", "Giuseppe Conte")."""
+    ws = [w.strip(",;:()[]\"“”«»") for w in name.split()]
+    while len(ws) > 2 and ws[0].lower().rstrip(".") in TITLES:
+        ws = ws[1:]
+    for w in ws:
+        if len(w) > 1 and w[0].isupper() and latin(w) and not any(c.isdigit() or c == "." for c in w):
             yield unicodedata.normalize("NFC", w)
 
 
@@ -143,8 +145,9 @@ def bearers(cache, refetch, where):
             by_language[spoken[0][0]].append(qid)
     for language, qids in sorted(by_language.items()):
         query = CITIZENS.format(countries=" ".join(f"wd:{q}" for q in qids), language=language)
-        for q, label in rows(cache, f"citizens-{language}", query, refetch):
+        for q, country, label in rows(cache, f"citizens-{language}", query, refetch):
             labels[q][language] = label
+            citizenships[q].add(country)
     out = collections.defaultdict(collections.Counter)
     for q, countries in citizenships.items():
         for country in countries:

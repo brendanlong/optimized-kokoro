@@ -52,22 +52,19 @@ fn accents_within(written: &str, name: &str) -> bool {
 
 /// Words a language's text reads as words, not as the names they spell.
 struct Skip {
-    /// Lowercase, as written.
-    written: FxHashSet<Box<str>>,
-    /// [`folded`].
-    letters: FxHashSet<Box<str>>,
+    /// Each word, lowercase as written, by its [`folded`] letters.
+    words: FxHashMap<Box<str>, Vec<Box<str>>>,
 }
 
 impl Skip {
-    /// Whether `written` is one of the words: as written if it has accents, so "Estë" is the name
-    /// where "este" is a word, and else by its letters, so "sur" is the French word whatever "Sûr" is.
+    /// Whether `written` is one of the words: with accents, where it is one with some of the word's
+    /// accents left out and none added, so "Estë" is the name where "este" is a word, but French
+    /// "Alheritière" is the word "alhéritière"; without, by its letters, so "sur" is the French word
+    /// whatever "Sûr" is.
     fn holds(&self, written: &str) -> bool {
         let written: String = written.split_whitespace().collect::<Vec<_>>().join(" ").nfc().collect();
-        if written.nfd().any(is_combining_mark) {
-            self.written.contains(written.to_lowercase().as_str())
-        } else {
-            self.letters.contains(folded(&written).as_str())
-        }
+        let Some(words) = self.words.get(folded(&written).as_str()) else { return false };
+        !written.nfd().any(is_combining_mark) || words.iter().any(|w| accents_within(&written, w))
     }
 }
 
@@ -129,8 +126,11 @@ impl Names {
         let skip = skip
             .into_iter()
             .map(|(l, names)| {
-                let written = names.iter().map(|n| n.to_lowercase().into()).collect();
-                (l, Skip { letters: names.iter().map(|n| folded(n).into()).collect(), written })
+                let mut words: FxHashMap<Box<str>, Vec<Box<str>>> = FxHashMap::default();
+                for n in names {
+                    words.entry(folded(n).into()).or_default().push(n.to_lowercase().into());
+                }
+                (l, Skip { words })
             })
             .collect();
         let names = names.into_iter().map(|(k, v)| (k, v.into_boxed_slice())).collect();
