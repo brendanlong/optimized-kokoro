@@ -50,6 +50,21 @@ The infrastructure is in `tools/names/`; it reads no real names yet, because `re
   - espeak sometimes switches to English partway through a word: 1,221 French names and Vietnamese "Baotixita". Those names are left out.
   - French espeak reads some names with no vowel at all (Gees as ʒ, Bres as bʁ). Those are left out too.
 
+## Phase 1 results: pilot of Polish, Finnish and Czech (2026-11-24)
+
+- **names.json:** 20,605 entries, from 5,405. That's 7,881 Polish, 3,777 Finnish and 1,621 Czech readings, before the flags and English words are taken out.
+- **Flag pass:** Opus checked 15,869 spellings with `flag.py real`. Every flagged spelling is left out, without review.
+  - The first prompt flagged famous people whose names English anglicizes: Räikkönen, Dvořák, Brzeziński, Häkkinen.
+  - Leaving a name out makes it worse, not better. espeak's English rules then guess (Räikkönen as ɹˈɛɪkˌɜɹnən), and misaki's dictionaries already hold the anglicizations English really uses.
+  - So the prompt now says not to flag famous bearers. Rechecking the 551 flags left 225.
+- **Loans:** a name spelled with letters its language doesn't use is left out (`real.LETTERS`). Finland counts as Finnish, so this keeps Swedish names in Finland (Bergholm, Björkenheim) from being read by Finnish rules.
+- **Common words:** for Spanish, French, Italian and Portuguese, a name that is a common word in that language (wordfreq zipf 3 or more) is read as the word there.
+- **Bug found and fixed:** the names lookup in `names.rs` didn't count IPA letters as letters, so "kluk" inside "[klukɔˈvʲit͡ʂɛ]" was taken for a name. Its link broke the brackets.
+- **English Wikipedia check:** in 3,926 paragraphs of 1,899 random English Wikipedia articles, 47 paragraphs change, in 64 words.
+  - Almost all of them are Polish, Finnish and Czech people and places.
+  - Misread as names: the Bulgarian "Gorna" and the Nepali film title "Woda". Iraq's Rawa and Kufa are read in Polish and Finnish but sound nearly the same.
+- **Coverage gap:** many famous people's surnames aren't linked to a Wikidata family-name item. Kieślowski has 1 bearer and Kvitová has no item, so they're missing. A next step could take surnames from people's own native-name labels (P1559), with their citizenship.
+
 ## Open questions (Claude's proposals)
 
 - **Thresholds.** What share of a spelling's bearers must come from its language's countries, and the minimum number of bearers to trust that share.

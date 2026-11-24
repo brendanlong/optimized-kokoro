@@ -77,11 +77,13 @@ fn folded(s: &str) -> String {
     out
 }
 
-/// A Latin letter: other scripts end a name's word, as Japanese and Chinese write a Latin word
-/// without spaces around it ("私はGaladrielです").
+/// A Latin letter, IPA's included: other scripts end a name's word, as Japanese and Chinese write a
+/// Latin word without spaces around it ("私はGaladrielです"), but IPA doesn't ("kluk" isn't a word
+/// of "[klukɔˈvʲit͡ʂɛ]").
 fn is_latin(c: char) -> bool {
     c.is_alphabetic()
-        && matches!(c as u32, 0..=0x24f | 0x1e00..=0x1eff | 0x2c60..=0x2c7f | 0xa720..=0xa7ff | 0xab30..=0xab6f | 0xff21..=0xff5a)
+        && matches!(c as u32, 0..=0x2ff | 0x1d00..=0x1dbf | 0x1e00..=0x1eff | 0x2c60..=0x2c7f | 0xa720..=0xa7ff
+            | 0xab30..=0xab6f | 0xff21..=0xff5a)
 }
 
 fn is_word_char(c: char) -> bool {
