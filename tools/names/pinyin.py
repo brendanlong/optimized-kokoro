@@ -26,9 +26,9 @@ ZERO = {"a": "a", "o": "o", "e": "ɤ", "ai": "a͡ɪ", "ei": "e͡ɪ", "ao": "a͡�
         "yuan": "ɥɛn", "yun": "ɥyn", "wu": "wu", "wa": "wa", "wo": "wo", "wai": "wa͡ɪ", "wei": "we͡ɪ", "wan": "wan",
         "wen": "wən", "wang": "waŋ", "weng": "wəŋ"}
 # The finals each initial takes (a little more than Mandarin has is harmless: names are real syllables).
-LABIAL = "a o ai ei ao an en ang eng i ie iao ian in ing u ou iu"
+LABIAL = "a o ai ei ao an en ang eng i ie iao ian in ing u"
 TAKES = {
-    "b": LABIAL, "p": LABIAL, "m": LABIAL + " e", "f": "a o ei ou an en ang eng u",
+    "b": LABIAL, "p": LABIAL + " ou", "m": LABIAL + " e ou iu", "f": "a o ei ou an en ang eng u",
     "d": "a e ai ei ao ou an en ang eng i ie iao iu ian ing u uo ui uan un ong",
     "t": "a e ai ao ou an ang eng i ie iao ian ing u uo ui uan un ong",
     "n": "a e ai ei ao ou an en ang eng i ie iao iu ian in iang ing u uo uan ong v ve",
@@ -87,7 +87,7 @@ def read(spelling):
     parts = [s for piece in spelling.lower().replace("ü", "v").replace("’", "'").split("'")
              for s in (split(piece) or [None])]
     parts = None if None in parts else parts
-    if not parts or not spelling.isascii() and "ü" not in spelling.lower():
+    if not parts or not spelling.replace("’", "'").isascii() and "ü" not in spelling.lower():
         return None
     sounds = [SYLLABLES[p] for p in parts]
     sounds[-1] = "ˈ" + sounds[-1]

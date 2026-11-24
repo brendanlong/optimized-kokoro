@@ -22,7 +22,10 @@ ONSETS = {"ky": "kʲ", "gy": "ɡʲ", "sh": "ɕ", "ch": "t͡ɕ", "j": "d͡ʑ", "t
           "py": "pʲ", "my": "mʲ", "ry": "ɾʲ", "k": "k", "g": "ɡ", "s": "s", "z": "z", "t": "t", "d": "d", "n": "n",
           "h": "h", "f": "ɸ", "b": "b", "p": "p", "m": "m", "y": "j", "r": "ɾ", "w": "w"}
 # Morae Japanese hasn't, which make a word not Japanese ("ti", "wu", "ye").
-NOT_JAPANESE = {"ti", "di", "tu", "du", "si", "zi", "hu", "wu", "wi", "we", "yi", "ye", "ci", "ce"}
+NOT_JAPANESE = {"ti", "di", "tu", "du", "si", "zi", "hu", "wu", "wi", "we", "yi", "ye", "ci", "ce",
+                *(c + "y" + v for c in "kgnhbpmr" for v in "ie")}
+# The consonants Japanese doubles (kk, ss, tt, pp, and tch, written with t).
+GEMINATE = set("kstpc")
 SPECIAL = {"shi": "ɕi", "chi": "t͡ɕi", "ji": "d͡ʑi", "tsu": "t͡sɯ", "fu": "ɸɯ", "hi": "çi", "wo": "o"}
 
 
@@ -63,6 +66,8 @@ def read(spelling):
         if c == "'":
             return None
         if i + 1 < len(word) and word[i + 1] == c and c not in "n" or word.startswith("tch", i):
+            if c not in GEMINATE and not word.startswith("tch", i) or out and out[-1] == "Q":
+                return None
             out.append("Q")
             i += 1
             continue
