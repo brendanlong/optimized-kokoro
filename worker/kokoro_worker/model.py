@@ -12,7 +12,8 @@ that a batch can hold sentences of different lengths:
 - Frame side (F0/N predictor and decoder): the shared ConvSeq runs on the padded batch, then the
   batch's sentences go end to end in one row with a gap of zeros between them (masked.py), so the
   convolutions run once over the row whatever the lengths, and each sentence's audio is what it
-  would be alone. `max_batch=1` in the server turns batching off.
+  would be alone. `max_batch=1` in the server turns batching off. Every batch, one request
+  included, runs through the same compiled graphs (run and _decode).
 - Convolutions and the STFT run through kernels.py (a Triton conv1d, matmul transposed convs and
   STFT) instead of cuDNN and cuFFT, which build a plan per shape: any length, first time or not,
   costs the same.
@@ -173,26 +174,16 @@ class Synth:
             raise ValueError(f"bad voice packs: {tuple(packs.shape)}")
         self.voices = packs.to(self.device)  # [n_voices, 510, 256] fp32
 
-        eager = {
+        self._fn = {
             "bert": model.bert,
             "text_encoder": self._text_encoder_eager,
             "duration": self._duration_eager,
             "shared": model.predictor.shared,
-            "f0n": self._f0n_blocks_eager,
-            "decoder": model.decoder,
-            "f0n_packed": lambda x, s, pk: masked.f0n_blocks(model.predictor, x, s, pk),
-            "decoder_packed": lambda asr, f0, n, s, pk: masked.decoder(model.decoder, asr, f0, n, s, pk),
+            "f0n": lambda x, s, pk: masked.f0n_blocks(model.predictor, x, s, pk),
+            "decoder": lambda asr, f0, n, s, pk: masked.decoder(model.decoder, asr, f0, n, s, pk),
         }
-        single = ("bert", "text_encoder", "duration", "shared", "f0n", "decoder")
-        batched = ("bert", "text_encoder", "duration", "shared", "f0n_packed", "decoder_packed")
-        self._single = {k: eager[k] for k in single}
-        self._batched = {k: eager[k] for k in batched}
         if compile:
-            # Separate graphs for batch 1 and batches > 1: within one torch.compile'd function, the
-            # dynamic-batch graph's guards also accept batch 1, so batches of one could run on it
-            # instead of on the graph specialized for them.
-            self._single = {k: torch.compile(_fresh(eager[k], "single"), dynamic=True) for k in single}
-            self._batched = {k: torch.compile(_fresh(eager[k], "batched"), dynamic=True) for k in batched}
+            self._fn = {k: torch.compile(_fresh(f, k), dynamic=True) for k, f in self._fn.items()}
 
     def style(self, voice: int, style_len: int) -> torch.Tensor:
         """Voice pack `voice` at row style_len - 1 (KPipeline's pack[len(ps) - 1])."""
@@ -218,21 +209,11 @@ class Synth:
         x = self.model.predictor.lstm(d, keep)
         return d, torch.sigmoid(self.model.predictor.duration_proj(x)).sum(-1)
 
-    def _f0n_blocks_eager(self, x: torch.Tensor, s: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        p = self.model.predictor
-        f0 = x
-        for block in p.F0:
-            f0 = block(f0, s)
-        n = x
-        for block in p.N:
-            n = block(n, s)
-        return p.F0_proj(f0).squeeze(1), p.N_proj(n).squeeze(1)
-
     def _durations(self, ids, mask, s, speed, max_dur):
         """Text side for the whole batch: (pred_dur [B, T] with 0 at padding, d [B, T, 640], t_en [B, 512, T])."""
         m = self.model
         keep = (~mask)[..., None]
-        fn = self._single if ids.shape[0] == 1 else self._batched
+        fn = self._fn
         bert = fn["bert"](ids, attention_mask=keep[..., 0].long())
         d_en = m.bert_encoder(bert)  # [B, T, 512]
         t_en = fn["text_encoder"](ids, keep.to(d_en.dtype))
@@ -268,23 +249,27 @@ class Synth:
         them: priority, then waiting before prefetch, then arrival)."""
         dev = self.device
         n = len(requests)
-        lengths = torch.tensor([len(r.ids) + 2 for r in requests])
+        # torch.compile(dynamic=True) compiles size 1 apart from larger sizes, so a lone request
+        # runs as two copies of itself (the text side costs milliseconds) and one set of graphs
+        # serves every batch. _decode does the same for a lone sentence.
+        batch = requests * 2 if n == 1 else requests
+        lengths = torch.tensor([len(r.ids) + 2 for r in batch])
         width = int(lengths.max())
-        ids = torch.zeros(n, width, dtype=torch.long)
-        for i, r in enumerate(requests):
+        ids = torch.zeros(len(batch), width, dtype=torch.long)
+        for i, r in enumerate(batch):
             ids[i, 1 : len(r.ids) + 1] = torch.tensor(r.ids)
         ids = ids.to(dev, non_blocking=True)
         mask = torch.arange(width, device=dev)[None, :] >= lengths.to(dev)[:, None]
-        ref = torch.stack([r.ref_s for r in requests])
+        ref = torch.stack([r.ref_s for r in batch])
         s = ref[:, 128:]
-        speed = torch.tensor([r.speed / 100 for r in requests], device=dev)
-        max_dur = torch.tensor([[max_duration(r.speed)] for r in requests], device=dev)
+        speed = torch.tensor([r.speed / 100 for r in batch], device=dev)
+        max_dur = torch.tensor([[max_duration(r.speed)] for r in batch], device=dev)
 
         with torch.autocast(dev.type, dtype=torch.float16, enabled=self.half):
             pred_dur, d, t_en = self._durations(ids, mask, s, speed, max_dur)
 
         pred_cpu = pred_dur.cpu()
-        frames = pred_cpu.sum(1).tolist()
+        frames = pred_cpu.sum(1).tolist()[:n]
         durations = [pred_cpu[i, : lengths[i]].tolist() for i in range(n)]
 
         # The cap is checked before the decoder runs, so an over-long request costs only its text side.
@@ -329,27 +314,25 @@ class Synth:
 
     def _decode(self, idx, frames, durations, cum, d_t, t_en, ref) -> list[Result]:
         dev = self.device
-        sel = torch.tensor(idx, device=dev)
-        width = max(frames)
-        positions = torch.arange(width, device=dev).expand(len(idx), -1).contiguous()
+        n = len(idx)
+        # A lone sentence gets a one-frame segment beside it (see run): packed segments don't
+        # affect each other, and it adds GAP + 1 frames, not a second sentence's work.
+        seg_idx, seg_frames = (idx * 2, frames + [1]) if n == 1 else (idx, frames)
+        sel = torch.tensor(seg_idx, device=dev)
+        width = max(seg_frames)
+        positions = torch.arange(width, device=dev).expand(len(seg_idx), -1).contiguous()
         # token spoken at each frame; T (the zero column) past an item's end
         token = torch.searchsorted(cum[sel], positions, right=True)
         en = torch.gather(d_t[sel], 2, token[:, None, :].expand(-1, d_t.shape[1], -1))
         asr = torch.gather(t_en[sel], 2, token[:, None, :].expand(-1, t_en.shape[1], -1))
         s = ref[sel]
-        n = len(idx)
-        keep = (positions < torch.tensor(frames, device=dev)[:, None])[..., None]
+        keep = (positions < torch.tensor(seg_frames, device=dev)[:, None])[..., None]
         with torch.autocast(dev.type, dtype=torch.float16, enabled=self.half):
-            fn = self._single if n == 1 else self._batched
+            fn = self._fn
             x = fn["shared"](en.transpose(1, 2), keep.to(en.dtype)) * keep
-            if n == 1:
-                f0, nn = fn["f0n"](x.transpose(1, 2), s[:, 128:])
-                rows = [fn["decoder"](asr, f0, nn, s[:, :128]).reshape(-1)]
-            else:
-                pk = masked.Packing(frames, dev, torch.float16 if self.half else torch.float32)
-                f0, nn = fn["f0n_packed"](pk.pack(x.transpose(1, 2), width), s[:, 128:], pk.tensors)
-                audio = fn["decoder_packed"](pk.pack(asr, width), f0, nn, s[:, :128], pk.tensors)
-                rows = pk.unpack_audio(audio)
+            pk = masked.Packing(seg_frames, dev, torch.float16 if self.half else torch.float32)
+            f0, nn = fn["f0n"](pk.pack(x.transpose(1, 2), width), s[:, 128:], pk.tensors)
+            rows = pk.unpack_audio(fn["decoder"](pk.pack(asr, width), f0, nn, s[:, :128], pk.tensors))[:n]
         audio = torch.cat(rows).float()
         bounds = [0]
         for f in frames:

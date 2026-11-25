@@ -1,0 +1,14 @@
+# gpuc submit bench/job_compile_profile.yaml --host local   (from worker/). Untracked inputs it expects:
+# bench/bin/prev/worker (git archive REV worker, unpacked in bench/bin/prev) and bench/bin/students.pt.
+name: kokoro-compile-profile
+setup: uv sync --frozen
+command: bash bench/job_compile_profile.sh
+python: .venv/bin/python
+gpus: 1
+env:
+  REQUIRE_CUDA: "1"
+outputs:
+  - path: results
+priority: 40
+estimated_runtime_min: 100
+max_runtime_min: 240
