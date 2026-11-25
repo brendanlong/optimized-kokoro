@@ -111,6 +111,23 @@ These are Brendan's request: the three are "pronounced really badly by default".
 - **Left to English:** "Kokoro", this model's name.
 - **English Wikipedia** (the same 3,926 paragraphs): 81 more change, almost all correctly: Junko Utada, Kadokawa, Zhongli, Zhu Xu, Hoàn Kiếm. Misread: "Thi" in the Iraqi place Thi-Qar, and an Austrian nickname, "Wudi".
 
+## Phase 5 results: the remaining languages' people's names (2026-11-25)
+
+Brendan's request: "the remaining normal names but not worry about place names for now".
+- **Added:** German (16,673 names), Norwegian (6,876), Dutch (6,418), Swedish (4,040), Portuguese (2,733), Latvian (841), Azerbaijani (587), Swahili (514), Albanian (419), Croatian (335), Malay (182, read by espeak's Indonesian voice) and Bosnian (109). names.json has 172,396 names with readings. Portuguese has few because most Portuguese names are Spanish too, and the bearer rule wants 75% of bearers in one language's countries.
+- **Fixes to espeak, each checked against Wiktionary** (coarse exact match):
+  - German 63% → 64% (stress right in 89%): Latin c before a front vowel is z, a final chs is ks (Fuchs) but a patronymic's çs (Friedrichs), oe is ö, a final Slavic ow is o, and a compound's second part starting with st or sp (Stein, Stadt, Spiel...) is read as a word of its own, so Schweinsteiger has its ʃt and Pechstein its ç.
+  - Portuguese 36% → 70% (stress 97%): espeak's æ is ɐ, a final y is i, r after a consonant ɾ, lj ʎ where the spelling has lh (not Júlio), and its e and o + ŋ before a consonant are ẽ and õ (other nasal vowels before a consonant still have ŋ).
+  - Dutch 52%: espeak's stress on the long vowel of a final -eren, -elen, -enen moves to the first syllable, and the vowel is ə (Genderen), but not where nothing comes before or it's after ver-.
+  - Swedish 21% and Norwegian 31% → 44%: low, but spot checks sound right; most misses are Wiktionary writing tone, retroflexes and vowel quality finer than Kokoro can say. th is t but where it joins a compound (Westholm), h is silent but before a vowel (Dahl, Söderbergh, Rydh), a Norwegian final e is ə and kj ç, and -ström and -sköld names are stressed on the first part (Lindström).
+  - Malay: its own old spellings (ch, sh, dh, th; Cheah, Shahril).
+  - Azerbaijani 81%, Albanian 68%; Latvian, Swahili and Croatian spot-checked.
+- **Skipped**, as espeak reads them too badly to ship: Danish (21%), Lithuanian (stress right in 54%), Icelandic (an epenthetic schwa; 21%), Haitian Creole and Maltese (garbled).
+- **Matching:** a word all in lowercase isn't a capitalized name (the Latin "Ammodytes marinus" was read as the Dutch Marinus), so text all in lowercase no longer reads names. Whether the text had capitals would have depended on how the pipeline splits long sentences. A sound espeak gives three times is two (Sandnes as sɑnnəs).
+- **Flagged and dropped:** Bjørn, as Danish too; Gentian, an English word.
+- **Left for later** (from Opus's review): Norwegian Be- names that espeak reads as the prefix (Bekken as bəkːˈeːn) and German ge- names (Gesa), Matthäus read as if äu, Cämmerer and Cerstin with z; from Sol's: a Norwegian final e inside a hyphenated name is still a (Anne-Grete).
+- **English Wikipedia** (the same 3,926 paragraphs): 180 more change, almost all correctly: Aigner, Heinrich Müller, van Gogh (ɣɔx, the Dutch), Jonkman, Larsson, Bolsonaro, João, Krišjānis. Questionable: a few stresses (Bertil, Korbinian) and Mathäus read as if äu.
+
 ## Open questions (Claude's proposals)
 
 - **Thresholds.** What share of a spelling's bearers must come from its language's countries, and the minimum number of bearers to trust that share.

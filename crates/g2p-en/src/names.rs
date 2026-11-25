@@ -1,6 +1,7 @@
 //! Names read in their own language (`data/names.json`, built by `tools/names/build.py`), in text of
-//! any language: each name standing as a word of its own, in any case and with or without its
-//! accents, becomes a `[Minas Tirith](/ˈminas ˈtiriθ/)` link, so every G2P reads it as the link says.
+//! any language: each name standing as a word of its own, in any case but lowercase (unless the
+//! name is), with or without its accents, becomes a `[Minas Tirith](/ˈminas ˈtiriθ/)` link, so
+//! every G2P reads it as the link says.
 
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::borrow::Cow;
@@ -146,9 +147,15 @@ impl Names {
     /// The phonemes of the name `written` spells: the one spelled so, else the reading the names
     /// spelled so in another case share, else the one every name whose accents `written` leaves
     /// out, or keeps, shares. An accent the name doesn't have makes another word: Spanish "moría"
-    /// isn't Moria, nor Portuguese "âmbar" Ambar.
+    /// isn't Moria, nor Portuguese "âmbar" Ambar. A word in lowercase isn't a name written with
+    /// capitals: the Latin "Ammodytes marinus" isn't Marinus.
     fn resolve(names: &[Name], written: &str) -> Option<&'static str> {
         let written: String = written.split_whitespace().collect::<Vec<_>>().join(" ").nfc().collect();
+        let names: Vec<_> = if written.chars().all(|c| !c.is_alphabetic() || c.is_lowercase()) {
+            names.iter().filter(|n| n.spelling.chars().all(|c| !c.is_alphabetic() || c.is_lowercase())).collect()
+        } else {
+            names.iter().collect()
+        };
         if let Some(name) = names.iter().find(|n| n.spelling == written) {
             return name.phonemes;
         }
@@ -157,11 +164,11 @@ impl Names {
             names.iter().all(|n| n.phonemes == first.phonemes).then_some(first.phonemes)?
         };
         let lower = written.to_lowercase();
-        let same_case: Vec<_> = names.iter().filter(|n| n.spelling.to_lowercase() == lower).collect();
+        let same_case: Vec<_> = names.iter().copied().filter(|n| n.spelling.to_lowercase() == lower).collect();
         if !same_case.is_empty() {
             return one(same_case);
         }
-        one(names.iter().filter(|n| accents_within(&written, n.spelling)).collect())
+        one(names.iter().copied().filter(|n| accents_within(&written, n.spelling)).collect())
     }
 
     /// The longest name at the start of `text` that `skip` doesn't hold, as `(bytes of text,
@@ -282,12 +289,12 @@ mod tests {
     use super::Names;
 
     #[test]
-    fn names_are_found_in_any_case_and_without_their_accents() {
+    fn names_are_found_capitalized_in_any_case_and_without_their_accents() {
         let names = Names::new();
         let link = |t: &str| names.link(t, "en", &[], |p| format!("{p}z")).into_owned();
         let galadriel = link("Galadriel");
         assert!(galadriel.starts_with("[Galadriel](/"));
-        for t in ["GALADRIEL", "galadriel"] {
+        for t in ["GALADRIEL", "GaLaDrIeL"] {
             assert_eq!(link(t), galadriel.replace("Galadriel]", &format!("{t}]")));
         }
         assert_eq!(link("Eärendil"), link("Earendil").replace("Earendil]", "Eärendil]"));
@@ -313,6 +320,9 @@ mod tests {
         // A short word in capitals is an acronym in text with lowercase letters, and a name in text without.
         assert_eq!(link("the ARDA and Arda"), format!("the ARDA and {}", link("Arda")));
         assert!(link("ARDA").starts_with("[ARDA](/"));
+        // A word in lowercase isn't a name written with capitals; a name written in lowercase is.
+        assert_eq!(link("galadriel"), "galadriel");
+        assert!(link("ash nazg").starts_with("[ash nazg](/"));
         // Nor is a name a common word of the text's language, in any case.
         let spanish = |t: &str| names.link(t, "es", &[], |p| format!("{p}z")).into_owned();
         assert_eq!(spanish("fui y ESTE"), "fui y ESTE");

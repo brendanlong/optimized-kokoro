@@ -524,9 +524,9 @@ fn a_name_takes_possessive_and_plural_endings() {
 }
 
 #[test]
-fn names_are_found_in_any_case_but_lose_to_overrides() {
+fn names_are_found_in_any_case_but_lowercase_and_lose_to_overrides() {
     let gondor = name("Gondor");
-    for text in ["gondor", "GONDOR", "OF GONDOR AND ROHAN"] {
+    for text in ["GONDOR", "OF GONDOR AND ROHAN", "GoNdOr"] {
         assert!(phonemize(text).contains(&gondor), "{text}: {}", phonemize(text));
     }
     // Text in capitals keeps its text even where a token leaves a character out ("X'1").
@@ -534,7 +534,7 @@ fn names_are_found_in_any_case_but_lose_to_overrides() {
     {
         assert!(Pipeline::new(Lang::AmericanEnglish).unwrap().phonemize(text).is_ok(), "{text}");
     }
-    for text in ["Gondorian", "[Gondor](/ɡˈɑndɔɹ/)"] {
+    for text in ["Gondorian", "[Gondor](/ɡˈɑndɔɹ/)", "gondor"] {
         assert!(!phonemize(text).contains(&gondor), "{text}: {}", phonemize(text));
     }
     // "Minas" alone is left out as ambiguous (Minas Gerais); "Minas Tirith" is a name.
