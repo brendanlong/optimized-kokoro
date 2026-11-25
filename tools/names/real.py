@@ -116,8 +116,8 @@ SPELLINGS = {"hu": [(re.compile(r"thy$"), "ti"), (re.compile(r"^th|th$"), "t"), 
              # Swedish and Norwegian th is t (Thunberg, Thorbjørn).
              # Scandinavian h is silent but before a vowel (Dahl, Åsbahr) and after a final g or d (Söderbergh, Rydh).
              # But not where th joins a compound's parts (Westholm, Austheim).
-             "sv": [(TH := re.compile(r"th(?!olm|eim|amm|ag|us)"), "t"),
-                    (SILENT_H := re.compile(r"(?<=[aeiouyåäöø])h(?![aeiouyåäöø])|(?<=[gd])h$"), "")],
+             "sv": [(TH := re.compile(r"^th|th(?!olm|eim|amm|ag|us)"), "t"),
+                    (SILENT_H := re.compile(r"(?<=[aeiouyåäöøæ])h(?![aeiouyåäöøæ])|(?<=[gd])h$"), "")],
              "nb": [(TH, "t"), (SILENT_H, "")],
              # German: Latin c before a front vowel is z (Cäcilia, Cäsar), a Slavic final ow o (Pankow), oe ö (Roesler;
              # not Joel, Noemi, Zoe), oethe öhte (Goethe), and a final chs ks, written kss so the vowel stays short
@@ -127,15 +127,15 @@ SPELLINGS = {"hu": [(re.compile(r"thy$"), "ti"), (re.compile(r"^th|th$"), "t"), 
              # ʃp only at a word's start (Schweinsteiger, Einstein, Birkenstock, Husstedt; Pechstein keeps its ç).
              "de": [(re.compile(r"c(?=[eiäy])"), "z"), (re.compile(r"(?<=[rln]i)chs(?=$|en$)"), "chß"),
                     (re.compile(r"chs$"), "kss"),
-                    (re.compile(r"(?<=[aeiou])w$"), ""), (re.compile(r"oethe"), "öhte"),
+                    (re.compile(r"(?<=o)w$"), ""), (re.compile(r"oethe"), "öhte"),
                     (re.compile(r"(?<![jnz])oe(?![aeiou])"), "ö"),
                     (re.compile(r"(?<=[^\W\d_])(?<!chri)(?=s(t(ein|adt|ätt|att|eig|ock|ern$|rom|raß|rass|edt|ieg|ab|uhl|ück)"
                                 r"|p(iel|ieß|ring|rung|ach)))"), "-")],
              "id": [(re.compile(r".*(oe|dj|tj|sj|(?<!^)ch).*"), lambda m: old_indonesian(m[0])), (re.compile(r"dh"), "d"),
                     (re.compile(r"sh"), "sy"), (re.compile(r"th"), "t"), (re.compile(r"(?<=[^aeiouy])y(?![aeiou])"), "i")],
-             # Malay's: ch is c (Cheah), dh d, sh sy, th t, and y after a consonant, not before a vowel, i.
+             # Malay's: ch is c (Cheah), dh d, sh sy, th t, and y after a consonant but s, not before a vowel, i (Asyraf keeps its sy).
              "ms": [(re.compile(r"ch"), "c"), (re.compile(r"dh"), "d"), (re.compile(r"sh"), "sy"), (re.compile(r"th"), "t"),
-                    (re.compile(r"(?<=[^aeiouy])y(?![aeiou])"), "i")],
+                    (re.compile(r"(?<=[^aeiouys])y(?![aeiou])"), "i")],
              "fr": [(re.compile(r"ouë"), "ouè"), (re.compile(r"ouil$"), "ouille"), (re.compile(r"^gwen"), "gwén")]}
 # Sounds a voice of espeak writes as another: Turkish ü as ø, ö as œ and e as æ (Kültür as køltør); German
 # -er as ɜ, English's r-colored vowel, for ɐ; Indonesian (and Malay) sy as ç for ʃ; Croatian and Bosnian a as æ;

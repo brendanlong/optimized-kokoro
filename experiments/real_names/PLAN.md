@@ -123,9 +123,9 @@ Brendan's request: "the remaining normal names but not worry about place names f
   - Malay: its own old spellings (ch, sh, dh, th; Cheah, Shahril).
   - Azerbaijani 81%, Albanian 68%; Latvian, Swahili and Croatian spot-checked.
 - **Skipped**, as espeak reads them too badly to ship: Danish (21%), Lithuanian (stress right in 54%), Icelandic (an epenthetic schwa; 21%), Haitian Creole and Maltese (garbled).
-- **Matching:** in text with capitals, a lowercase word isn't a capitalized name (the Latin "Ammodytes marinus" was read as the Dutch Marinus). A sound espeak gives three times is two (Sandnes as sɑnnəs).
+- **Matching:** a word all in lowercase isn't a capitalized name (the Latin "Ammodytes marinus" was read as the Dutch Marinus), so text all in lowercase no longer reads names. Whether the text had capitals would have depended on how the pipeline splits long sentences. A sound espeak gives three times is two (Sandnes as sɑnnəs).
 - **Flagged and dropped:** Bjørn, as Danish too; Gentian, an English word.
-- **Left for later** (from Opus's review): Norwegian Be- names that espeak reads as the prefix (Bekken as bəkːˈeːn) and German ge- names (Gesa), Matthäus read as if äu, Cämmerer and Cerstin with z.
+- **Left for later** (from Opus's review): Norwegian Be- names that espeak reads as the prefix (Bekken as bəkːˈeːn) and German ge- names (Gesa), Matthäus read as if äu, Cämmerer and Cerstin with z; from Sol's: a Norwegian final e inside a hyphenated name is still a (Anne-Grete).
 - **English Wikipedia** (the same 3,926 paragraphs): 180 more change, almost all correctly: Aigner, Heinrich Müller, van Gogh (ɣɔx, the Dutch), Jonkman, Larsson, Bolsonaro, João, Krišjānis. Questionable: a few stresses (Bertil, Korbinian) and Mathäus read as if äu.
 
 ## Open questions (Claude's proposals)
