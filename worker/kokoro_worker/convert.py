@@ -1,12 +1,15 @@
 """One-time conversion of hexgrad/Kokoro-82M's pickled weights to safetensors.
 
 The worker never unpickles anything: this runs once, outside the sandbox, and writes
-    model.safetensors   the KModel state dict with weight norm already folded
+    model.safetensors   the KModel state dict with weight norm already folded, and the LSTMs'
+                        weights replaced by the distilled ConvSeqs' (convseq.py) from --students
     voices.safetensors  one [510, 256] fp32 tensor per voice
     config.json         copied unchanged
 into the output directory, which the worker then mounts read-only.
 
-    uv run python -m kokoro_worker.convert OUT_DIR [--source DIR]
+    uv run python -m kokoro_worker.convert OUT_DIR --students STUDENTS_PT [--source DIR]
+
+STUDENTS_PT is a checkpoint from brendanlong/kokoro#3's experiments/lstm_swap (train_te.py's).
 
 With no --source, the files come from the Hugging Face hub at a pinned revision.
 """
@@ -35,7 +38,25 @@ def fetch(source: str | None) -> str:
     )
 
 
-def convert(source: str, out: str) -> None:
+def student_state(path: str) -> dict:
+    """The ConvSeqs' weights from an lstm_swap checkpoint, keyed as in the worker's KModel."""
+    from kokoro_worker import convseq
+
+    ckpt = torch.load(path, map_location="cpu", weights_only=True)
+    default = {"n_blocks": convseq.BLOCKS, "kernel": convseq.KERNEL, "mult": convseq.MULT}
+    for p in convseq.PATHS:
+        arch = {**default, **ckpt["arch"].get(p, {})}
+        if arch != default:
+            raise SystemExit(f"{path}: {p} has arch {arch}; convseq.py builds {default}")
+    state = ckpt["state"]
+    missing = [p for p in convseq.PATHS if not any(k.startswith(p + ".") for k in state)]
+    if missing:
+        raise SystemExit(f"{path}: no weights for {missing}")
+    return {k: v.float().contiguous() for k, v in state.items()}
+
+
+def convert(source: str, out: str, students: str) -> None:
+    from kokoro_worker import convseq
     from kokoro_worker.model import _import_kokoro, build_kmodel
 
     os.makedirs(out, exist_ok=True)
@@ -47,7 +68,9 @@ def convert(source: str, out: str) -> None:
     # folds weight norm; we save the result, so the worker loads it with no folding step either.
     KModel = _import_kokoro().KModel  # kokoro's model code without its G2P
     model = KModel(repo_id=REPO_ID, config=config, model=os.path.join(source, "kokoro-v1_0.pth")).eval()
-    state = {k: v.detach().contiguous().clone() for k, v in model.state_dict().items()}
+    state = {k: v.detach().contiguous().clone() for k, v in model.state_dict().items()
+             if not k.startswith(tuple(p + "." for p in convseq.PATHS))}
+    state.update(student_state(students))
     build_kmodel(config).load_state_dict(state, strict=True)  # the worker's loader must accept it
     save_file(state, os.path.join(out, "model.safetensors"))
 
@@ -74,8 +97,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("out")
     parser.add_argument("--source", help="directory with config.json, kokoro-v1_0.pth and voices/*.pt")
+    parser.add_argument("--students", required=True, help="the distilled ConvSeqs (see above)")
     args = parser.parse_args()
-    convert(fetch(args.source), args.out)
+    convert(fetch(args.source), args.out, args.students)
 
 
 if __name__ == "__main__":

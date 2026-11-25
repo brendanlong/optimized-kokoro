@@ -3,12 +3,14 @@
 The modules are the kokoro fork's (pinned in pyproject.toml); only the forward pass is ours, so
 that a batch can hold sentences of different lengths:
 
+- The six LSTMs are replaced by distilled convolution blocks (convseq.py), which convert.py
+  installs.
 - Text side (ALBERT, text encoder, duration predictor) is exact under padding: ALBERT gets an
-  attention mask, padded positions are zeroed before every convolution (as the convolution's own
-  zero padding would be), and the LSTMs run on packed sequences. Durations therefore match batch 1
-  (exactly in fp32; fp16 numerics depend a little on batch size).
-- Frame side (F0/N predictor and decoder): the shared LSTM runs packed, then the batch's
-  sentences go end to end in one row with a gap of zeros between them (masked.py), so the
+  attention mask, and padded positions are zeroed before every convolution (as the convolution's
+  own zero padding would be). Durations therefore match batch 1 (exactly in fp32; fp16 numerics
+  depend a little on batch size).
+- Frame side (F0/N predictor and decoder): the shared ConvSeq runs on the padded batch, then the
+  batch's sentences go end to end in one row with a gap of zeros between them (masked.py), so the
   convolutions run once over the row whatever the lengths, and each sentence's audio is what it
   would be alone. `max_batch=1` in the server turns batching off.
 - Convolutions and the STFT run through kernels.py (a Triton conv1d, matmul transposed convs and
@@ -30,7 +32,7 @@ import torch
 import torch.nn.functional as F
 from safetensors.torch import load_file
 
-from . import kernels, masked
+from . import convseq, kernels, masked
 from .protocol import SAMPLES_PER_FRAME, max_duration
 
 log = logging.getLogger(__name__)
@@ -56,7 +58,8 @@ def _import_kokoro():
 
 
 def build_kmodel(config: dict) -> torch.nn.Module:
-    """An untrained KModel with weight norm already folded, ready for a converted state dict."""
+    """An untrained KModel with weight norm already folded and ConvSeqs in place of its LSTMs,
+    ready for a converted state dict."""
     kmodel = _import_kokoro()
     from transformers import AlbertConfig
 
@@ -94,6 +97,7 @@ def build_kmodel(config: dict) -> torch.nn.Module:
         **config["istftnet"],
     )
     m._fold_weight_norm()
+    convseq.install(m)
     return m
 
 
@@ -107,15 +111,6 @@ def _fresh(fn, tag: str):
     name = getattr(fn, "__name__", type(fn).__name__)
     call.__code__ = call.__code__.replace(co_name=f"{tag}_{name}")
     return call
-
-
-def _packed_lstm(lstm: torch.nn.LSTM, x: torch.Tensor, lengths: torch.Tensor) -> torch.Tensor:
-    """Run a batch_first LSTM as if each row were alone; padded outputs are zero."""
-    if bool((lengths == x.shape[1]).all()):
-        return lstm(x)[0]
-    packed = torch.nn.utils.rnn.pack_padded_sequence(x, lengths, batch_first=True, enforce_sorted=False)
-    out, _ = lstm(packed)
-    return torch.nn.utils.rnn.pad_packed_sequence(out, batch_first=True, total_length=x.shape[1])[0]
 
 
 @dataclass
@@ -180,14 +175,16 @@ class Synth:
 
         eager = {
             "bert": model.bert,
-            "text_cnn": self._text_cnn_eager,
+            "text_encoder": self._text_encoder_eager,
+            "duration": self._duration_eager,
+            "shared": model.predictor.shared,
             "f0n": self._f0n_blocks_eager,
             "decoder": model.decoder,
             "f0n_packed": lambda x, s, pk: masked.f0n_blocks(model.predictor, x, s, pk),
             "decoder_packed": lambda asr, f0, n, s, pk: masked.decoder(model.decoder, asr, f0, n, s, pk),
         }
-        single = ("bert", "text_cnn", "f0n", "decoder")
-        batched = ("bert", "text_cnn", "f0n_packed", "decoder_packed")
+        single = ("bert", "text_encoder", "duration", "shared", "f0n", "decoder")
+        batched = ("bert", "text_encoder", "duration", "shared", "f0n_packed", "decoder_packed")
         self._single = {k: eager[k] for k in single}
         self._batched = {k: eager[k] for k in batched}
         if compile:
@@ -201,13 +198,25 @@ class Synth:
         """Voice pack `voice` at row style_len - 1 (KPipeline's pack[len(ps) - 1])."""
         return self.voices[voice, style_len - 1]
 
-    def _text_cnn_eager(self, ids: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    def _text_encoder_eager(self, ids: torch.Tensor, keep: torch.Tensor) -> torch.Tensor:
+        """keep [B, T, 1] -> t_en [B, 512, T], zero at padding."""
         te = self.model.text_encoder
-        keep = ~mask[:, None, :]
-        x = te.embedding(ids).transpose(1, 2) * keep
+        keep_c = keep.transpose(1, 2)
+        x = te.embedding(ids).transpose(1, 2) * keep_c
         for block in te.cnn:
-            x = block(x) * keep
-        return x.transpose(1, 2)  # [B, T, C]
+            x = block(x) * keep_c
+        return (te.lstm(x.transpose(1, 2), keep) * keep).transpose(1, 2)
+
+    def _duration_eager(self, d_en: torch.Tensor, s: torch.Tensor, keep: torch.Tensor):
+        """The duration predictor: d [B, T, 640] (zero at padding) and the summed duration logits [B, T]."""
+        enc = self.model.predictor.text_encoder
+        s_t = s[:, None, :].expand(-1, d_en.shape[1], -1)
+        x = torch.cat([d_en, s_t], dim=-1) * keep
+        for i, block in enumerate(enc.lstms):
+            x = block(x, keep) if i % 2 == 0 else torch.cat([block(x, s), s_t], dim=-1) * keep
+        d = x
+        x = self.model.predictor.lstm(d, keep)
+        return d, torch.sigmoid(self.model.predictor.duration_proj(x)).sum(-1)
 
     def _f0n_blocks_eager(self, x: torch.Tensor, s: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         p = self.model.predictor
@@ -219,26 +228,16 @@ class Synth:
             n = block(n, s)
         return p.F0_proj(f0).squeeze(1), p.N_proj(n).squeeze(1)
 
-    def _durations(self, ids, mask, lengths, s, speed, max_dur):
+    def _durations(self, ids, mask, s, speed, max_dur):
         """Text side for the whole batch: (pred_dur [B, T] with 0 at padding, d [B, T, 640], t_en [B, 512, T])."""
         m = self.model
         keep = (~mask)[..., None]
         fn = self._single if ids.shape[0] == 1 else self._batched
         bert = fn["bert"](ids, attention_mask=keep[..., 0].long())
         d_en = m.bert_encoder(bert)  # [B, T, 512]
-        t_en = _packed_lstm(m.text_encoder.lstm, fn["text_cnn"](ids, mask), lengths).transpose(1, 2)
-
-        enc = m.predictor.text_encoder
-        s_t = s[:, None, :].expand(-1, ids.shape[1], -1)
-        x = torch.cat([d_en, s_t], dim=-1) * keep
-        for block in enc.lstms:
-            if isinstance(block, torch.nn.LSTM):
-                x = _packed_lstm(block, x, lengths)
-            else:
-                x = torch.cat([block(x, s), s_t], dim=-1) * keep
-        d = x  # [B, T, 640]
-        x = _packed_lstm(m.predictor.lstm, d, lengths)
-        duration = torch.sigmoid(m.predictor.duration_proj(x)).sum(-1) / speed[:, None]
+        t_en = fn["text_encoder"](ids, keep.to(d_en.dtype))
+        d, duration = fn["duration"](d_en, s, keep.to(d_en.dtype))
+        duration = duration / speed[:, None]
         # The clamp to ceil(50 / speed) never binds (the sum is at most 50); it makes the bound the
         # front checks hold whatever the float rounding.
         pred_dur = torch.round(duration).long().clamp(min=1).minimum(max_dur).masked_fill(mask, 0)
@@ -282,7 +281,7 @@ class Synth:
         max_dur = torch.tensor([[max_duration(r.speed)] for r in requests], device=dev)
 
         with torch.autocast(dev.type, dtype=torch.float16, enabled=self.half):
-            pred_dur, d, t_en = self._durations(ids, mask, lengths, s, speed, max_dur)
+            pred_dur, d, t_en = self._durations(ids, mask, s, speed, max_dur)
 
         pred_cpu = pred_dur.cpu()
         frames = pred_cpu.sum(1).tolist()
@@ -339,14 +338,14 @@ class Synth:
         asr = torch.gather(t_en[sel], 2, token[:, None, :].expand(-1, t_en.shape[1], -1))
         s = ref[sel]
         n = len(idx)
+        keep = (positions < torch.tensor(frames, device=dev)[:, None])[..., None]
         with torch.autocast(dev.type, dtype=torch.float16, enabled=self.half):
-            x = _packed_lstm(self.model.predictor.shared, en.transpose(1, 2), torch.tensor(frames))
+            fn = self._single if n == 1 else self._batched
+            x = fn["shared"](en.transpose(1, 2), keep.to(en.dtype)) * keep
             if n == 1:
-                fn = self._single
                 f0, nn = fn["f0n"](x.transpose(1, 2), s[:, 128:])
                 rows = [fn["decoder"](asr, f0, nn, s[:, :128]).reshape(-1)]
             else:
-                fn = self._batched
                 pk = masked.Packing(frames, dev, torch.float16 if self.half else torch.float32)
                 f0, nn = fn["f0n_packed"](pk.pack(x.transpose(1, 2), width), s[:, 128:], pk.tensors)
                 audio = fn["decoder_packed"](pk.pack(asr, width), f0, nn, s[:, :128], pk.tensors)
