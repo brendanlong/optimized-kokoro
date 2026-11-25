@@ -9,11 +9,11 @@ importers:
   .:
     dependencies:
       '@mediabunny/aac-encoder':
-        specifier: ^1.65.2
-        version: 1.65.2(mediabunny@1.65.2)
+        specifier: ^1.66.1
+        version: 1.66.1(mediabunny@1.66.1)
       mediabunny:
-        specifier: ^1.65.2
-        version: 1.65.2
+        specifier: ^1.66.1
+        version: 1.66.1
     devDependencies:
       esbuild:
         specifier: ^0.28.2
@@ -180,8 +180,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@mediabunny/aac-encoder@1.65.2':
-    resolution: {integrity: sha512-HsDmtqRf26PwSDl1IYCPz5hHtj3js5u6O1VGdOIPKrln5E0slaPyGue84CWpbbeJ54wrLDJdd/esp17Ot+xh3A==}
+  '@mediabunny/aac-encoder@1.66.1':
+    resolution: {integrity: sha512-1xY8kL2YOHyjQpw/CzWtkHjCTPnMPFYGtOOnUZZbHm1buc+4YOBO3SEz1TTCWcY6SLKosufHUkWb1c0JBcN0qA==}
     peerDependencies:
       mediabunny: ^1.0.0
 
@@ -316,8 +316,8 @@ packages:
     engines: {node: '>=18'}
     hasBin: true
 
-  mediabunny@1.65.2:
-    resolution: {integrity: sha512-goZpibvo/5hkc/56WVNm93Ini+o7K4y8aXA20c/BN1B+m3L5aHQa8MTvO+S1APg/YI8kMILtrX6QCqUtxLW7bA==}
+  mediabunny@1.66.1:
+    resolution: {integrity: sha512-Jl+EfJbUASHtWVtOAGX8AK5WyNNG1RNJGjccAXcI2R6wQmIkdAzpyVgyCxvc5DXGSSRAuhGIevCPs43mXDq2ug==}
 
   typescript@7.0.2:
     resolution: {integrity: sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA==}
@@ -404,9 +404,9 @@ snapshots:
   '@esbuild/win32-x64@0.28.2':
     optional: true
 
-  '@mediabunny/aac-encoder@1.65.2(mediabunny@1.65.2)':
+  '@mediabunny/aac-encoder@1.66.1(mediabunny@1.66.1)':
     dependencies:
-      mediabunny: 1.65.2
+      mediabunny: 1.66.1
 
   '@types/dom-mediacapture-transform@0.1.12':
     dependencies:
@@ -503,7 +503,7 @@ snapshots:
       '@esbuild/win32-ia32': 0.28.2
       '@esbuild/win32-x64': 0.28.2
 
-  mediabunny@1.65.2:
+  mediabunny@1.66.1:
     dependencies:
       '@types/dom-mediacapture-transform': 0.1.12
       '@types/dom-webcodecs': 0.1.13
