@@ -1255,7 +1255,7 @@ Afeltra	it	it	4	1.00
 Affandi	id	id	46	0.85
 Affandy	id	id	9	1.00
 Affanni	it	it	5	0.80
-Affendi	ms	ms	5	0.80
+Affendi	ms	id	5	0.80
 Affenzeller	de	de	5	1.00
 Affini	pt	pt-br	4	0.75
 Afflatet	fr	fr-fr	3	1.00
@@ -1919,7 +1919,7 @@ Aistleitner	de	de	6	0.83
 Aisté			1	1.00
 Aistė	lt	lt	11	1.00
 Aisuke	ja	hepburn	6	1.00
-Aisya	ms	ms	4	0.75
+Aisya	ms	id	4	0.75
 Aisyah	id	id	91	0.89
 Aisyiah	id	id	3	1.00
 Aita			49	0.31
@@ -1959,7 +1959,7 @@ Aiyoshi	ja	hepburn	3	1.00
 Aizaki	ja	hepburn	5	1.00
 Aizan	ja	hepburn	3	1.00
 Aizarna	es	es	6	1.00
-Aizat	ms	ms	7	0.86
+Aizat	ms	id	7	0.86
 Aizawa	ja	hepburn	179	1.00
 Aizcorbe	es	es-419	10	0.90
 Aizemberg	es	es-419	3	1.00
@@ -2454,7 +2454,7 @@ Akşit-Bıçak	tr	tr	1	1.00
 Al-Banjari	id	id	4	1.00
 Al-George	ro	ro	4	0.75
 Al-Habsyi	id	id	3	1.00
-Al-Idrus	ms	ms	4	0.75
+Al-Idrus	ms	id	4	0.75
 Al-banjari			1	1.00
 Al-idrus			1	0.00
 AlFarizi			1	1.00
@@ -3485,7 +3485,7 @@ Almantas	lt	lt	10	1.00
 Almanza	es	es-419	37	0.84
 Almaraz	es	es-419	14	0.86
 Almarcha	es	es	7	1.00
-Almarhum	ms	ms	7	1.00
+Almarhum	ms	id	7	1.00
 Almarza	es	es-419	20	1.00
 Almas			69	0.04
 Almasi			9	0.11
@@ -4454,7 +4454,7 @@ Ampler	de	de	5	1.00
 Ampollini	it	it	4	0.75
 Amprimo	es	es-419	4	0.75
 Amprino	it	it	3	1.00
-Ampuan	ms	ms	3	1.00
+Ampuan	ms	id	3	1.00
 Ampudia	es	es-419	17	0.82
 Ampuero	es	es-419	35	0.97
 Ampuja	fi	fi	4	1.00
@@ -4504,7 +4504,7 @@ Amutio	es	es	3	1.00
 Amyach	es	es	3	1.00
 Amyot	fr	fr-fr	29	0.97
 Amyu	ja	hepburn	3	1.00
-Amzah	ms	ms	5	0.80
+Amzah	ms	id	5	0.80
 Amzallag	fr	fr-fr	4	1.00
 Amzi-Erdoğdular	tr	tr	1	1.00
 Amàlia	es	es	6	1.00
@@ -5212,7 +5212,7 @@ Anioła	pl	pl	4	0.75
 Aniołkiewicz	pl	pl	1	1.00
 Aniołkowski	pl	pl	1	1.00
 Aniołowska	pl	pl	1	1.00
-Aniq	ms	ms	6	0.83
+Aniq	ms	id	6	0.83
 Anisah	id	id	19	0.89
 Anisdahl	nb	nb	3	1.00
 Anisio	pt	pt-br	4	1.00
@@ -5449,7 +5449,7 @@ Annoscia	it	it	3	1.00
 Annouck	fr	fr-fr	5	1.00
 Annovazzi	it	it	4	1.00
 Annovi	it	it	5	1.00
-Annuar	ms	ms	12	0.92
+Annuar	ms	id	12	0.92
 Annuk	et	et	14	1.00
 Annukka	fi	fi	25	0.96
 Annunen	fi	fi	4	1.00
@@ -7558,7 +7558,7 @@ Arzaluz	es	es-419	3	1.00
 Arzamendi	es	es	8	1.00
 Arzamendia	es	es-419	4	1.00
 Arze	es	es-419	18	0.83
-Arzehar	ms	ms	3	1.00
+Arzehar	ms	id	3	1.00
 Arzelus	es	es	3	1.00
 Arzen			1	1.00
 Arzeni	it	it	4	1.00
@@ -7832,7 +7832,7 @@ Asgeirsdottir	is	is	3	1.00
 Asgeirsson			3	0.67
 Asger	da	da	72	0.97
 Asgjerd	nb	nb	3	1.00
-Ashaari	ms	ms	4	1.00
+Ashaari	ms	id	4	1.00
 Ashaboğlu	tr	tr	2	1.00
 Ashabul	id	id	3	1.00
 Ashadi	id	id	6	1.00
@@ -8165,7 +8165,7 @@ Asyari	id	id	13	1.00
 Asyhari	id	id	7	1.00
 Asyiah	id	id	4	1.00
 Asyik	id	id	4	1.00
-Asyraf	ms	ms	17	0.94
+Asyraf	ms	id	17	0.94
 Aszalay	hu	hu	4	0.75
 Aszalos			1	1.00
 Aszalós	hu	hu	4	0.75
@@ -9376,7 +9376,7 @@ Azabache	es	es-419	8	1.00
 Azadə	az	az	4	1.00
 Azagami	ja	hepburn	3	1.00
 Azagra	es	es	24	0.83
-Azahar	ms	ms	8	0.88
+Azahar	ms	id	8	0.88
 Azahara	es	es	10	1.00
 Azais	fr	fr-fr	4	1.00
 Azak	tr	tr	15	1.00
@@ -9386,7 +9386,7 @@ Azalbert	fr	fr-fr	3	1.00
 Azambre	fr	fr-fr	3	1.00
 Azambuja	pt	pt-br	36	0.86
 Azambuya	es	es-419	3	1.00
-Azamudden	ms	ms	3	1.00
+Azamudden	ms	id	3	1.00
 Azana			2	0.50
 Azanza	es	es	13	1.00
 Azaola	es	es	11	0.91
@@ -9436,11 +9436,11 @@ Azevedo	pt	pt-br	683	0.92
 Azevêdo	pt	pt-br	5	1.00
 Azgar			4	0.00
 Azgın	tr	tr	2	1.00
-Azhan	ms	ms	5	0.80
+Azhan	ms	id	5	0.80
 Azhara	id	id	4	0.75
 Azhari	id	id	90	0.77
 Azhary	id	id	8	0.88
-Azian	ms	ms	3	1.00
+Azian	ms	id	3	1.00
 Azibert	fr	fr-fr	3	1.00
 Azibèrt			1	1.00
 Azikin	id	id	4	1.00
@@ -9449,7 +9449,7 @@ Azimonti	it	it	11	1.00
 Azio	it	it	4	1.00
 Azis	id	id	131	0.89
 Azizah	id	id	70	0.81
-Azizan	ms	ms	19	0.89
+Azizan	ms	id	19	0.89
 Azizağaoğlu	tr	tr	1	1.00
 Azizmahmutoğulları	tr	tr	1	1.00
 Azizoğlu	tr	tr	14	1.00
@@ -9463,11 +9463,11 @@ Azkueta	es	es	4	1.00
 Azkuna	es	es	3	1.00
 Azkune	es	es	7	1.00
 Azlag			1	1.00
-Azlan	ms	ms	37	0.81
+Azlan	ms	id	37	0.81
 Azlağ	tr	tr	2	1.00
-Azlee	ms	ms	3	1.00
-Azlin	ms	ms	4	0.75
-Azman	ms	ms	66	0.79
+Azlee	ms	id	3	1.00
+Azlin	ms	id	4	0.75
+Azman	ms	id	66	0.79
 Azmioğlu	tr	tr	1	1.00
 Azn	nl	nl	4	1.00
 Aznar	es	es	150	0.87
@@ -9497,14 +9497,14 @@ Azpurua			1	1.00
 Azpíroz	es	es-419	3	1.00
 Azpúrua	es	es-419	4	1.00
 Azqueta	es	es	7	1.00
-Azreen	ms	ms	3	1.00
+Azreen	ms	id	3	1.00
 Aztağaç	tr	tr	1	1.00
 Azteca	es	es-419	9	0.78
 Aztekin	tr	tr	3	1.00
 Azua	es	es	3	1.00
 Azuaga	es	es-419	9	1.00
 Azuaje	es	es-419	12	1.00
-Azuan	ms	ms	4	1.00
+Azuan	ms	id	4	1.00
 Azuara	es	es-419	17	1.00
 Azucena	es	es-419	48	0.90
 Azuchi	ja	hepburn	6	1.00
@@ -10026,7 +10026,7 @@ Bachmiński	pl	pl	1	1.00
 Bacho			6	0.17
 Bachofen	de	de	18	0.89
 Bachofner	de	de	13	0.77
-Bachok	ms	ms	3	1.00
+Bachok	ms	id	3	1.00
 Bachor			9	0.44
 Bachri	id	id	26	1.00
 Bachrudin	id	id	4	1.00
@@ -10170,7 +10170,7 @@ Badoń-Lehr	pl	pl	1	1.00
 Badre			9	0.11
 Badriah	id	id	6	0.83
 Badriyah	id	id	7	1.00
-Badron	ms	ms	3	1.00
+Badron	ms	id	3	1.00
 Badrun	id	id	14	0.93
 Badruttamam	id	id	4	1.00
 Badré	fr	fr-fr	11	1.00
@@ -10317,10 +10317,10 @@ Bahamonde	es	es-419	49	0.98
 Bahamondes	es	es-419	10	0.90
 Bahamón	es	es-419	6	1.00
 Baharoglu			1	1.00
-Baharom	ms	ms	10	1.00
+Baharom	ms	id	10	1.00
 Baharoğlu	tr	tr	1	1.00
 Baharuddin	id	id	66	0.83
-Baharum	ms	ms	7	0.86
+Baharum	ms	id	7	0.86
 Bahasoan	id	id	3	1.00
 Bahasyim	id	id	11	1.00
 Bahattin	tr	tr	62	0.97
@@ -10496,7 +10496,7 @@ Baizan			1	1.00
 Baizhi	zh	pinyin	10	1.00
 Baizhou	zh	pinyin	3	1.00
 Baizhu	zh	pinyin	14	1.00
-Baizura	ms	ms	3	1.00
+Baizura	ms	id	3	1.00
 Baizán	es	es	6	1.00
 Baiá			1	1.00
 Baião	pt	pt-br	27	0.96
@@ -21314,7 +21314,7 @@ Brazda			12	0.42
 Brazeiro	es	es-419	4	0.75
 Brazenas			1	1.00
 Brazidec	fr	fr-fr	3	1.00
-Brazinskas			3	0.33
+Brazinskas			3	0.67
 Brazionis	es	es-419	3	1.00
 Brazo	es	es-419	9	0.78
 Brazys	lt	lt	5	1.00
@@ -26716,7 +26716,7 @@ Candeğer	tr	tr	3	1.00
 Candia			58	0.69
 Candian	it	it	6	1.00
 Candiard	fr	fr-fr	3	1.00
-Candid			8	0.50
+Candid			8	0.12
 Candida			53	0.30
 Candido			106	0.42
 Candil	es	es	4	0.75
@@ -30326,7 +30326,7 @@ Chałupnik	pl	pl	5	1.00
 Chańko	pl	pl	1	1.00
 Chciałowski	pl	pl	1	1.00
 Chciuk	pl	pl	4	1.00
-Cheah	ms	ms	37	0.78
+Cheah	ms	id	37	0.78
 Chebac	ro	ro	4	1.00
 Chebassier	fr	fr-fr	3	1.00
 Chebet	sw	sw	29	0.76
@@ -40037,7 +40037,7 @@ Derache	fr	fr-fr	7	0.86
 Derain	fr	fr-fr	8	0.88
 Deraldo	pt	pt-br	4	1.00
 Deram	fr	fr-fr	4	0.75
-Deraman	ms	ms	6	1.00
+Deraman	ms	id	6	1.00
 Deramecourt	fr	fr-fr	4	1.00
 Derang	zh	pinyin	6	0.83
 Deransart	fr	fr-fr	5	1.00
@@ -44467,7 +44467,7 @@ Dussoubs	fr	fr-fr	5	1.00
 Dussourd	fr	fr-fr	4	1.00
 Dussán	es	es-419	5	1.00
 Dusséaux	fr	fr-fr	3	1.00
-Dusuki	ms	ms	3	1.00
+Dusuki	ms	id	3	1.00
 Dusza	pl	pl	12	0.75
 Duszczyńska	pl	pl	1	1.00
 Duszeńko	pl	pl	3	1.00
@@ -44971,7 +44971,7 @@ Dziękiewicz	pl	pl	1	1.00
 Dzon			2	0.00
 Dzubas	de	de	3	1.00
 Dzulfikar	id	id	3	1.00
-Dzulkifli	ms	ms	3	1.00
+Dzulkifli	ms	id	3	1.00
 Dzwonek	pl	pl	4	1.00
 Dzwonkowski	pl	pl	11	0.91
 Dài			1	0.00
@@ -46750,7 +46750,7 @@ Eizaguirre	es	es	22	1.00
 Eizan	ja	hepburn	6	0.83
 Eizenija			1	1.00
 Eizi	ja	hepburn	4	0.75
-Eizlan	ms	ms	3	1.00
+Eizlan	ms	id	3	1.00
 Eizmendi	es	es	18	1.00
 Eizo	ja	hepburn	22	1.00
 Eizō	ja	hepburn	94	1.00
@@ -47451,7 +47451,7 @@ Emberland	nb	nb	6	1.00
 Embid	es	es	9	1.00
 Embil	es	es-419	3	1.00
 Embiya	tr	tr	3	1.00
-Embong	ms	ms	5	0.80
+Embong	ms	id	5	0.80
 Emborg	da	da	11	0.91
 Embret	nb	nb	4	1.00
 Embretsen	nb	nb	6	1.00
@@ -47788,7 +47788,7 @@ Engizek	tr	tr	4	0.75
 Engjell			2	0.00
 Engjom	nb	nb	4	1.00
 Engjëll	sq	sq	9	0.78
-Engku	ms	ms	4	1.00
+Engku	ms	id	4	1.00
 Engkus	id	id	7	1.00
 Engkvist	sv	sv	8	1.00
 Engl	de	de	27	0.93
@@ -49642,7 +49642,7 @@ Exequiel	es	es-419	32	0.97
 Exertier	fr	fr-fr	3	1.00
 Eximeno	es	es	3	1.00
 Exinger	de	de	3	1.00
-Exists	ms	ms	4	1.00
+Exists	ms	id	4	1.00
 Exnar	cs	cs	6	0.83
 Exner-Ewarten	de	de	3	1.00
 Exnerová	cs	cs	4	1.00
@@ -50014,9 +50014,9 @@ Fadnes	nb	nb	6	1.00
 Fadoli	id	id	3	1.00
 Fadrique	es	es	26	0.77
 Fadum	nb	nb	5	1.00
-Fadzil	ms	ms	20	0.90
-Fadzir	ms	ms	3	1.00
-Fadzli	ms	ms	13	0.85
+Fadzil	ms	id	20	0.90
+Fadzir	ms	id	3	1.00
+Fadzli	ms	id	13	0.85
 Fadıl	tr	tr	11	1.00
 Fadıllıoğlu	tr	tr	2	1.00
 Fadıloğlu	tr	tr	3	1.00
@@ -50149,7 +50149,7 @@ Faine			1	1.00
 Fainé	es	es	10	1.00
 Faiqoh	id	id	3	1.00
 Faiqotul	id	id	3	1.00
-Fairul	ms	ms	3	1.00
+Fairul	ms	id	3	1.00
 Fairus	id	id	8	0.88
 Fairén	es	es	6	1.00
 Faisandier	fr	fr-fr	7	1.00
@@ -50166,7 +50166,7 @@ Faivre-Pierret	fr	fr-fr	3	1.00
 Faizah	id	id	22	0.77
 Faize	tr	tr	4	1.00
 Faizin	id	id	9	1.00
-Faizol	ms	ms	3	1.00
+Faizol	ms	id	3	1.00
 Faißt	de	de	8	1.00
 Fajar	id	id	151	0.99
 Fajardo	es	es-419	210	0.79
@@ -50537,7 +50537,7 @@ Fardhan	id	id	3	1.00
 Fardiana	id	id	3	1.00
 Fardiansyah	id	id	3	1.00
 Fardoulis	fr	fr-fr	3	1.00
-Fareez	ms	ms	6	0.83
+Fareez	ms	id	6	0.83
 Farelle	fr	fr-fr	4	1.00
 Farelo	es	es	9	1.00
 Faremo	nb	nb	4	1.00
@@ -50919,7 +50919,7 @@ Fazlagic			1	1.00
 Fazlagić	bs	bs	8	0.75
 Fazlic			2	1.00
 Fazlić	bs	bs	8	0.88
-Fazly	ms	ms	4	0.75
+Fazly	ms	id	4	0.75
 Fazlı	tr	tr	22	0.95
 Fazlıoğlu	tr	tr	7	1.00
 Fazong	zh	pinyin	3	1.00
@@ -53204,7 +53204,7 @@ Fonvielle	fr	fr-fr	3	1.00
 Fonyo			1	0.00
 Fonyó	hu	hu	8	1.00
 Fonzo	it	it	11	0.82
-Fook	ms	ms	21	0.76
+Fook	ms	id	21	0.76
 Fooken	de	de	4	1.00
 Foosnæs	nb	nb	5	1.00
 Fop	nl	nl	4	1.00
@@ -55609,7 +55609,7 @@ Fuzhong	zh	pinyin	16	1.00
 Fuzhou	zh	pinyin	5	1.00
 Fuzhu	zh	pinyin	4	0.75
 Fuzhulonga	zh	pinyin	3	1.00
-Fuzi	ms	ms	5	0.80
+Fuzi	ms	id	5	0.80
 Fuzier	fr	fr-fr	6	1.00
 Fuzu	zh	pinyin	16	1.00
 Fuzuki	ja	hepburn	9	1.00
@@ -58319,7 +58319,7 @@ Generalić	hr	hr	3	1.00
 Genermont			1	1.00
 Genersich	hu	hu	4	1.00
 Genes	es	es-419	5	0.80
-Genesan	ms	ms	3	1.00
+Genesan	ms	id	3	1.00
 Genesca			1	1.00
 Genescà	es	es	5	1.00
 Genesio	it	it	12	0.83
@@ -61215,7 +61215,7 @@ Gonçalvez			3	0.67
 Gonín			1	1.00
 Gonón			1	1.00
 Gonța	ro	ro	6	1.00
-Gooi	ms	ms	7	1.00
+Gooi	ms	id	7	1.00
 Gooijer	nl	nl	4	1.00
 Gooitzen	nl	nl	3	1.00
 Gool	nl	nl	34	0.82
@@ -64855,7 +64855,7 @@ Gunnþór	is	is	1	1.00
 Gunnþóra	is	is	2	1.00
 Gunnþórunn	is	is	1	1.00
 Gunpei	ja	hepburn	7	1.00
-Gunsanad	ms	ms	3	1.00
+Gunsanad	ms	id	3	1.00
 Gunsel			1	1.00
 Gunstein	nb	nb	14	1.00
 Gunstensen	nb	nb	3	1.00
@@ -67547,7 +67547,7 @@ Hainzl	de	de	6	1.00
 Haipeng	zh	pinyin	13	0.85
 Haiping	zh	pinyin	5	1.00
 Haipu	zh	pinyin	5	1.00
-Haiqal	ms	ms	9	0.89
+Haiqal	ms	id	9	0.89
 Haiqiang	zh	pinyin	3	1.00
 Haiqing	zh	pinyin	11	1.00
 Haiquan	zh	pinyin	5	1.00
@@ -69247,7 +69247,7 @@ Hasibe	tr	tr	4	1.00
 Hasibuan	id	id	99	1.00
 Hasic			2	1.00
 Hasier	es	es	4	1.00
-Hasif	ms	ms	3	1.00
+Hasif	ms	id	3	1.00
 Hasiholan	id	id	19	1.00
 Hasim			21	0.52
 Hasip	tr	tr	14	0.79
@@ -69280,7 +69280,7 @@ Hasnah	id	id	16	0.75
 Hasnawati	id	id	13	1.00
 Hasnidar	id	id	3	1.00
 Hasnil	id	id	4	1.00
-Hasnul	ms	ms	5	0.80
+Hasnul	ms	id	5	0.80
 Hasobe	ja	hepburn	3	1.00
 Hasoloan	id	id	4	1.00
 Hasoğlu	tr	tr	3	1.00
@@ -69803,7 +69803,7 @@ Hazes	nl	nl	5	1.00
 Hazeu	nl	nl	6	1.00
 Hazeyama	ja	hepburn	3	1.00
 Hazhi	zh	pinyin	4	1.00
-Haziq	ms	ms	23	0.83
+Haziq	ms	id	23	0.83
 Hazizah	id	id	4	0.75
 Hazmi	id	id	8	0.75
 Haznedar	tr	tr	6	1.00
@@ -69812,7 +69812,7 @@ Haznedaroğlu	tr	tr	5	1.00
 Hazslinszky	hu	hu	3	1.00
 Hazuki	ja	hepburn	121	1.00
 Hazumi	ja	hepburn	8	1.00
-Hazwan	ms	ms	7	0.86
+Hazwan	ms	id	7	0.86
 Hazım	tr	tr	20	1.00
 Hazır	tr	tr	6	1.00
 Hazırbaş	tr	tr	1	1.00
@@ -70956,7 +70956,7 @@ Henß	de	de	4	1.00
 Henão			1	1.00
 Henón			1	1.00
 Henția	ro	ro	3	1.00
-Heong	ms	ms	4	1.00
+Heong	ms	id	4	1.00
 Heparı	tr	tr	1	1.00
 Heper	tr	tr	11	0.91
 Heping	zh	pinyin	24	0.88
@@ -71703,7 +71703,7 @@ Heřt	cs	cs	2	1.00
 Heříková	cs	cs	1	1.00
 Hia	id	id	12	0.75
 Hiadlovský	sk	sk	4	1.00
-Hiang	ms	ms	5	0.80
+Hiang	ms	id	5	0.80
 Hibai	es	es	4	1.00
 Hibari	ja	hepburn	4	1.00
 Hibi	ja	hepburn	33	0.82
@@ -71887,7 +71887,7 @@ Hietaranta	fi	fi	4	1.00
 Hietarinta	fi	fi	3	1.00
 Hietikko	fi	fi	6	1.00
 Hieu			14	0.50
-Hiew	ms	ms	6	1.00
+Hiew	ms	id	6	1.00
 Hiełda	pl	pl	1	1.00
 Hifni	id	id	8	0.75
 Hifumi	ja	hepburn	28	0.96
@@ -72585,7 +72585,7 @@ Hisazumi	ja	hepburn	3	1.00
 Hisbullah	id	id	5	1.00
 Hischer	de	de	5	1.00
 Hisdal	nb	nb	4	1.00
-Hishamuddin	ms	ms	3	1.00
+Hishamuddin	ms	id	3	1.00
 Hishida	ja	hepburn	21	1.00
 Hishikari	ja	hepburn	6	1.00
 Hishikawa	ja	hepburn	35	1.00
@@ -72609,7 +72609,7 @@ Hiszpańska-Neumann	pl	pl	1	1.00
 Hiszpański	pl	pl	3	1.00
 Hita	es	es	31	0.77
 Hitaka	ja	hepburn	3	1.00
-Hitam	ms	ms	4	0.75
+Hitam	ms	id	4	0.75
 Hiti	sl	sl	17	0.82
 Hitier	fr	fr-fr	5	1.00
 Hitipeuw	id	id	3	1.00
@@ -75459,7 +75459,7 @@ Huzarski	pl	pl	5	1.00
 Huzella	hu	hu	7	0.86
 Huzeyfe	tr	tr	3	1.00
 Huzhen	zh	pinyin	3	1.00
-Huzir	ms	ms	3	1.00
+Huzir	ms	id	3	1.00
 Huzjan	sl	sl	7	1.00
 Huß	de	de	8	1.00
 Hußmann	de	de	3	1.00
@@ -78298,7 +78298,7 @@ Ipuche	es	es-419	5	1.00
 Ipung	id	id	3	1.00
 Iqbal			534	0.18
 Iqbāl			5	0.00
-Iqmal	ms	ms	4	1.00
+Iqmal	ms	id	4	1.00
 Iquioussen	fr	fr-fr	4	0.75
 Ir	id	id	13	0.85
 Irabien	es	es	5	0.80
@@ -79321,7 +79321,7 @@ Izeta	es	es	6	1.00
 Izetbegović	bs	bs	4	1.00
 Izgi			2	0.50
 Izgış	tr	tr	1	1.00
-Izham	ms	ms	4	1.00
+Izham	ms	id	4	1.00
 Izidorius	lt	lt	4	1.00
 Izidoro	pt	pt-br	10	0.80
 Izidors	lv	lv	6	1.00
@@ -79337,7 +79337,7 @@ Izquierdo	es	es-419	317	0.94
 Izsó	hu	hu	19	0.84
 Iztok	sl	sl	195	0.98
 Iztueta	es	es	7	1.00
-Izuan	ms	ms	7	1.00
+Izuan	ms	id	7	1.00
 Izubuchi	ja	hepburn	5	1.00
 Izuchi	ja	hepburn	4	0.75
 Izuel	es	es	3	1.00
@@ -79366,7 +79366,7 @@ Izuru	ja	hepburn	28	1.00
 Izuta	ja	hepburn	5	1.00
 Izutani	ja	hepburn	3	1.00
 Izutsu	ja	hepburn	23	1.00
-Izwandy	ms	ms	4	1.00
+Izwandy	ms	id	4	1.00
 Izydor	pl	pl	53	0.89
 Izydorczyk	pl	pl	6	1.00
 Izydorek	pl	pl	3	1.00
@@ -79818,7 +79818,7 @@ Jagusiak	pl	pl	4	1.00
 Jaguś	pl	pl	4	1.00
 Jagła	pl	pl	6	1.00
 Jagło	pl	pl	1	1.00
-Jahaya	ms	ms	3	1.00
+Jahaya	ms	id	3	1.00
 Jahidin	id	id	4	1.00
 Jahilo	et	et	8	0.88
 Jahn			308	0.70
@@ -79998,7 +79998,7 @@ Jalə	az	az	5	1.00
 Jamain	fr	fr-fr	13	0.85
 Jamalainen	fi	fi	4	1.00
 Jamaludin	id	id	32	0.78
-Jamalullail	ms	ms	6	0.83
+Jamalullail	ms	id	6	0.83
 Jamani	id	id	4	0.75
 Jamard	fr	fr-fr	3	1.00
 Jamardo	es	es	7	0.86
@@ -80854,7 +80854,7 @@ Jazeps			1	1.00
 Jazet	fr	fr-fr	5	0.80
 Jazid	id	id	3	1.00
 Jazinto	es	es	3	1.00
-Jazlan	ms	ms	3	1.00
+Jazlan	ms	id	3	1.00
 Jazmin			40	0.45
 Jazmín	es	es-419	33	0.94
 Jazuli	id	id	10	0.90
@@ -80925,7 +80925,7 @@ Jażdżewska	pl	pl	2	1.00
 Jażdżewski	pl	pl	7	1.00
 Jażdżyk	pl	pl	1	1.00
 Jażdżyński	pl	pl	1	1.00
-Ja’afar	ms	ms	4	0.75
+Ja’afar	ms	id	4	0.75
 JeF			1	1.00
 Jean	fr	fr-fr	21543	0.81
 Jean-Achille	fr	fr-fr	4	1.00
@@ -81958,7 +81958,7 @@ Jicong	zh	pinyin	4	1.00
 Jidao	zh	pinyin	11	0.91
 Jideng	zh	pinyin	12	1.00
 Jidi	zh	pinyin	6	1.00
-Jidin	ms	ms	3	1.00
+Jidin	ms	id	3	1.00
 Jiding	zh	pinyin	7	1.00
 Jidong	zh	pinyin	7	0.86
 Jidou	zh	pinyin	4	0.75
@@ -82952,7 +82952,7 @@ Joncoux	fr	fr-fr	3	1.00
 Jonczy			1	1.00
 Jonczyk	pl	pl	3	1.00
 Jondot	fr	fr-fr	4	1.00
-Joned	ms	ms	3	1.00
+Joned	ms	id	3	1.00
 Joner	nb	nb	10	0.80
 Jonethe	nb	nb	3	1.00
 Jonetta	nb	nb	3	1.00
@@ -83560,7 +83560,7 @@ Jufrizal	id	id	3	1.00
 Jufré	es	es	5	1.00
 Jufu	zh	pinyin	5	1.00
 Jug	sl	sl	78	0.76
-Jugah	ms	ms	4	1.00
+Jugah	ms	id	4	1.00
 Jugaku	ja	hepburn	8	1.00
 Juge	fr	fr-fr	23	0.83
 Jugel	de	de	5	1.00
@@ -83746,7 +83746,7 @@ Julve	es	es	19	0.95
 Julén	sv	sv	6	1.00
 Julía			1	1.00
 Julían			1	1.00
-Jumaat	ms	ms	3	1.00
+Jumaat	ms	id	3	1.00
 Jumadi	id	id	18	1.00
 Jumadil	id	id	3	1.00
 Jumaiyah	id	id	3	1.00
@@ -83771,7 +83771,7 @@ Jun-ichi	ja	hepburn	6	1.00
 Junaedi	id	id	51	1.00
 Junaedy	id	id	3	1.00
 Junaida	id	id	3	1.00
-Junaidah	ms	ms	3	1.00
+Junaidah	ms	id	3	1.00
 Junaidi	id	id	96	0.91
 Junan	zh	pinyin	4	0.75
 Junang	zh	pinyin	3	1.00
@@ -84229,7 +84229,7 @@ Juskowiak	pl	pl	8	0.75
 Juslin	fi	fi	7	0.86
 Juslén	fi	fi	4	0.75
 Jusman	id	id	7	1.00
-Jusoh	ms	ms	21	1.00
+Jusoh	ms	id	21	1.00
 Jussara	pt	pt-br	23	0.96
 Jussel	de	de	4	1.00
 Jussi	fi	fi	576	0.98
@@ -86117,10 +86117,10 @@ Kamaratih	id	id	3	1.00
 Kamardi	id	id	4	1.00
 Kamari			15	0.67
 Kamarlı	tr	tr	1	1.00
-Kamarul	ms	ms	9	0.78
+Kamarul	ms	id	9	0.78
 Kamarullah	id	id	6	1.00
-Kamarulzaman	ms	ms	5	1.00
-Kamaruzaman	ms	ms	12	0.83
+Kamarulzaman	ms	id	5	1.00
+Kamaruzaman	ms	id	12	0.83
 Kamarás	hu	hu	15	0.93
 Kamase	ja	hepburn	4	0.75
 Kamata	ja	hepburn	128	0.94
@@ -87524,7 +87524,7 @@ Kartolo	id	id	3	1.00
 Kartono	id	id	17	1.00
 Kartoğlu	tr	tr	3	1.00
 Karttunen	fi	fi	56	0.91
-Kartunis	ms	ms	4	1.00
+Kartunis	ms	id	4	1.00
 Kartvedt			1	1.00
 Kartçı	tr	tr	2	1.00
 Kartın	tr	tr	2	1.00
@@ -87537,7 +87537,7 @@ Karul	tr	tr	3	1.00
 Karumo	fi	fi	3	1.00
 Karundeng	id	id	8	1.00
 Karunia	id	id	3	1.00
-Karupathevan	ms	ms	5	1.00
+Karupathevan	ms	id	5	1.00
 Karus	et	et	12	0.75
 Karusoo	et	et	3	1.00
 Karutz	de	de	3	1.00
@@ -88696,7 +88696,7 @@ Kecelj	sl	sl	3	1.00
 Kechang	zh	pinyin	30	1.00
 Kechen	zh	pinyin	10	1.00
 Kecheng	zh	pinyin	37	0.92
-Kechik	ms	ms	4	1.00
+Kechik	ms	id	4	1.00
 Kechong	zh	pinyin	3	1.00
 Kechuan	zh	pinyin	4	1.00
 Kechun	zh	pinyin	4	1.00
@@ -89572,7 +89572,7 @@ Khanh			35	0.71
 Kharie	id	id	4	1.00
 Kharisma	id	id	19	0.95
 Khasanah	id	id	14	1.00
-Khatijah	ms	ms	4	1.00
+Khatijah	ms	id	4	1.00
 Khatimah	id	id	3	1.00
 Khaulah	id	id	4	1.00
 Khe			3	0.33
@@ -89583,7 +89583,7 @@ Kherzane	fr	fr-fr	3	1.00
 Khevenhüller	sv	sv	4	0.75
 Khevenhüller-Metsch	de	de	13	0.92
 Khiem			4	0.25
-Khir	ms	ms	8	0.88
+Khir	ms	id	8	0.88
 Khiêm	vi	vi	10	0.90
 Khoa	vi	vi	40	0.75
 Khoan	vi	vi	4	0.75
@@ -90605,7 +90605,7 @@ Kitaō			2	1.00
 Kitaōji	ja	hepburn	5	1.00
 Kitek	sl	sl	4	1.00
 Kitija	lv	lv	8	1.00
-Kitingan	ms	ms	3	1.00
+Kitingan	ms	id	3	1.00
 Kitiş	tr	tr	3	1.00
 Kitka-Sokołowski	pl	pl	1	1.00
 Kitlinski			1	1.00
@@ -91591,7 +91591,7 @@ Kmeť	sk	sk	10	0.80
 Kmeťová	sk	sk	4	1.00
 Kmicińska	pl	pl	1	1.00
 Kmiciński	pl	pl	1	1.00
-Kmiec			6	0.50
+Kmiec			6	0.33
 Kmieciak	pl	pl	6	1.00
 Kmieciak-Kołada	pl	pl	1	1.00
 Kmiecik	pl	pl	19	0.89
@@ -101569,7 +101569,7 @@ Lathuillière	fr	fr-fr	4	1.00
 Latief	id	id	55	0.96
 Latierro	es	es	3	1.00
 Latife	tr	tr	11	0.91
-Latiff	ms	ms	24	0.75
+Latiff	ms	id	24	0.75
 Latifoğlu	tr	tr	2	1.00
 Latikka	fi	fi	3	1.00
 Latil	fr	fr-fr	19	0.89
@@ -102002,7 +102002,7 @@ Lavín	es	es-419	40	1.00
 Lavínia	pt	pt-br	5	1.00
 Lawaczeck	de	de	5	0.80
 Lawaetz	da	da	10	0.80
-Lawak	ms	ms	3	1.00
+Lawak	ms	id	3	1.00
 Lawalata	id	id	5	1.00
 Lawick	nl	nl	9	1.00
 Lawina-Świętochowski	pl	pl	1	1.00
@@ -106703,7 +106703,7 @@ Luanpo	zh	pinyin	4	0.75
 Luanxiang	zh	pinyin	3	1.00
 Luanyang	zh	pinyin	3	1.00
 Luanyi	zh	pinyin	3	1.00
-Luaran	ms	ms	4	1.00
+Luaran	ms	id	4	1.00
 Luarasi	sq	sq	10	1.00
 Luarca	es	es-419	7	1.00
 Luart	fr	fr-fr	5	1.00
@@ -108638,7 +108638,7 @@ Maario	et	et	3	1.00
 Maaris	et	et	3	1.00
 Maarit	fi	fi	97	0.95
 Maarja	et	et	58	0.98
-Maarof	ms	ms	6	0.83
+Maarof	ms	id	6	0.83
 Maaroos	et	et	5	1.00
 Maarschalkerweerd	nl	nl	4	1.00
 Maarse	nl	nl	7	1.00
@@ -109429,7 +109429,7 @@ Mahesa	id	id	12	1.00
 Maheu	fr	fr-fr	20	0.85
 Maheut	fr	fr-fr	6	1.00
 Mahfi	tr	tr	8	0.88
-Mahfodz	ms	ms	3	1.00
+Mahfodz	ms	id	3	1.00
 Mahfud	id	id	23	1.00
 Mahfudin	id	id	4	1.00
 Mahfudz	id	id	20	1.00
@@ -109523,7 +109523,7 @@ Maidana	es	es-419	35	0.97
 Maider	es	es	54	0.94
 Maideu	es	es	4	1.00
 Maidhof	de	de	3	1.00
-Maidin	ms	ms	6	0.83
+Maidin	ms	id	6	0.83
 Maidla	et	et	7	1.00
 Maido	et	et	25	0.92
 Maidu	et	et	3	1.00
@@ -110593,7 +110593,7 @@ Manhès	fr	fr-fr	6	1.00
 Mani			291	0.05
 Maniaco			2	0.50
 Maniagasi	id	id	8	1.00
-Maniam	ms	ms	4	1.00
+Maniam	ms	id	4	1.00
 Maniani	id	id	5	1.00
 Manibui	id	id	3	1.00
 Manibuy	id	id	8	1.00
@@ -110609,7 +110609,7 @@ Manigk	de	de	6	1.00
 Maniglier	fr	fr-fr	3	1.00
 Maniglio	it	it	4	1.00
 Manihuruk	id	id	6	1.00
-Manikavasagam	ms	ms	3	1.00
+Manikavasagam	ms	id	3	1.00
 Manikowska	pl	pl	4	1.00
 Manikowska-Lesińska	pl	pl	1	1.00
 Manikowska-Ślepowrońska	pl	pl	1	1.00
@@ -110693,7 +110693,7 @@ Mannucci	it	it	36	0.83
 Mano			137	0.50
 Manoel	pt	pt-br	439	0.97
 Manoela	pt	pt-br	12	0.92
-Manogaran	ms	ms	4	1.00
+Manogaran	ms	id	4	1.00
 Manoilă	ro	ro	3	1.00
 Manoir	fr	fr-fr	10	0.90
 Manolache	ro	ro	20	1.00
@@ -114137,7 +114137,7 @@ Maziyah	id	id	4	0.75
 Mazière	fr	fr-fr	12	1.00
 Mazières	fr	fr-fr	17	1.00
 Mazkiaran	es	es	4	1.00
-Mazlan	ms	ms	18	0.94
+Mazlan	ms	id	18	0.94
 Mazlum	tr	tr	32	0.88
 Mazmancı	tr	tr	2	1.00
 Maznicki			1	1.00
@@ -114655,7 +114655,7 @@ Megananda	id	id	3	1.00
 Megane			13	0.46
 Megard			2	0.50
 Megasari	id	id	5	1.00
-Megat	ms	ms	15	0.93
+Megat	ms	id	15	0.93
 Megata	ja	hepburn	9	1.00
 Megawati	id	id	42	1.00
 Megawaty	id	id	4	1.00
@@ -115591,7 +115591,7 @@ Meo			78	0.71
 Meocci	it	it	4	1.00
 Meomartini	it	it	10	1.00
 Meoni	it	it	13	0.92
-Meor	ms	ms	3	1.00
+Meor	ms	id	3	1.00
 Meos	et	et	12	0.92
 Meozzi	it	it	4	1.00
 Meppelink	nl	nl	6	1.00
@@ -115700,7 +115700,7 @@ Merian			41	0.78
 Meriano	it	it	5	0.80
 Meriaux	fr	fr-fr	5	1.00
 Meric			8	0.50
-Merican	ms	ms	7	0.86
+Merican	ms	id	7	0.86
 Mericourt			1	0.00
 Merida			11	0.64
 Meriel			18	0.67
@@ -118038,7 +118038,7 @@ Misato	ja	hepburn	127	0.96
 Misawa	ja	hepburn	95	1.00
 Misař			3	0.33
 Misbachul	id	id	3	1.00
-Misbun	ms	ms	5	1.00
+Misbun	ms	id	5	1.00
 Mischek	de	de	3	1.00
 Mischi	it	it	5	0.80
 Mischiati	it	it	3	1.00
@@ -118889,7 +118889,7 @@ Moga			47	0.47
 Mogaka	sw	sw	4	1.00
 Mogaki	ja	hepburn	3	1.00
 Mogami	ja	hepburn	33	0.88
-Mogan	ms	ms	4	0.75
+Mogan	ms	id	4	0.75
 Mogas	es	es	4	1.00
 Mogel			5	0.40
 Mogens	da	da	299	0.91
@@ -118925,7 +118925,7 @@ Mogäs			1	0.00
 Mohachi	ja	hepburn	3	1.00
 Mohai	hu	hu	8	1.00
 Mohay	hu	hu	6	0.83
-Mohd	ms	ms	893	0.88
+Mohd	ms	id	893	0.88
 Mohedano	es	es	16	1.00
 Mohede	id	id	4	0.75
 Mohee	ja	hepburn	3	1.00
@@ -119023,7 +119023,7 @@ Mojoli	it	it	3	1.00
 Mojon			2	0.00
 Mojsiewicz-Pieńkowska	pl	pl	1	1.00
 Mojsisovics	de	de	10	0.90
-Mojuntin	ms	ms	3	1.00
+Mojuntin	ms	id	3	1.00
 Mojzes	hu	hu	3	1.00
 Mojzesz			2	0.50
 Mojzeš			1	1.00
@@ -119039,7 +119039,7 @@ Mojžíš	cs	cs	10	1.00
 Mokcsay	hu	hu	3	1.00
 Mokhamad	id	id	14	1.00
 Mokhammad	id	id	4	0.75
-Mokhzani	ms	ms	3	1.00
+Mokhzani	ms	id	3	1.00
 Mokichi	ja	hepburn	11	1.00
 Mokkelbost	nb	nb	3	1.00
 Mokoagow	id	id	6	1.00
@@ -121218,7 +121218,7 @@ Muhdi	id	id	8	0.88
 Muhe			2	0.50
 Muhelin	zh	pinyin	4	1.00
 Muhhina	et	et	3	1.00
-Muhibbuddin	ms	ms	4	1.00
+Muhibbuddin	ms	id	4	1.00
 Muhibbüddin			1	0.00
 Muhibuddin	id	id	4	1.00
 Muhit	tr	tr	5	0.80
@@ -121317,7 +121317,7 @@ Mukhlas	id	id	3	1.00
 Mukhlis	id	id	42	0.88
 Mukhlisin	id	id	3	1.00
 Mukhliṣ			3	0.00
-Mukhriz	ms	ms	5	1.00
+Mukhriz	ms	id	5	1.00
 Mukhwana	sw	sw	5	0.80
 Muklis	id	id	5	1.00
 Mukmin	id	id	15	1.00
@@ -121527,7 +121527,7 @@ Munhoz	pt	pt-br	36	0.97
 Munhóz			1	1.00
 Muniagurria	es	es-419	4	1.00
 Muniain	es	es	4	1.00
-Muniandy	ms	ms	6	1.00
+Muniandy	ms	id	6	1.00
 Muniategi	es	es	4	1.00
 Muniategui	es	es-419	3	1.00
 Munibe	es	es	3	1.00
@@ -121988,7 +121988,7 @@ Mustadjab	id	id	3	1.00
 Mustafaj	sq	sq	4	1.00
 Mustafaoğlu	tr	tr	6	1.00
 Mustafazadə	az	az	13	0.85
-Mustaffa	ms	ms	10	0.90
+Mustaffa	ms	id	10	0.90
 Mustajoki	fi	fi	5	1.00
 Mustajärvi	fi	fi	7	1.00
 Mustakallio	fi	fi	22	1.00
@@ -123760,7 +123760,7 @@ Nadežda			71	0.48
 Nadhif	id	id	6	0.83
 Nadhila	id	id	3	1.00
 Nadhilah	id	id	3	1.00
-Nadhirah	ms	ms	5	0.80
+Nadhirah	ms	id	5	0.80
 Nadia			1150	0.22
 Nadiani	it	it	3	1.00
 Nadide	tr	tr	7	1.00
@@ -123781,7 +123781,7 @@ Nadoyama	ja	hepburn	3	1.00
 Nadrah	sl	sl	13	0.92
 Nadskakuła-Kaczmarczyk	pl	pl	1	1.00
 Nadson			10	0.40
-Nadzri	ms	ms	3	1.00
+Nadzri	ms	id	3	1.00
 Nadá			2	0.00
 Nadège	fr	fr-fr	121	0.83
 Nadā			2	0.00
@@ -125762,7 +125762,7 @@ Ngaiza	sw	sw	3	1.00
 Ngakan	id	id	7	1.00
 Ngan			42	0.38
 Ngaruiya	sw	sw	5	1.00
-Ngasri	ms	ms	3	1.00
+Ngasri	ms	id	3	1.00
 Ngeno	sw	sw	6	0.83
 Ngeny	sw	sw	4	1.00
 Ngesti	id	id	4	1.00
@@ -126099,7 +126099,7 @@ Niedzielski	pl	pl	37	0.84
 Niedziółka	pl	pl	9	1.00
 Niedziółka-Jönsson	pl	pl	1	1.00
 Niedziński	pl	pl	1	1.00
-Niedzwiecki			5	0.40
+Niedzwiecki			5	0.60
 Niedzwiedz			1	1.00
 Niedźwiadek	pl	pl	1	1.00
 Niedźwiecka	pl	pl	4	1.00
@@ -127213,7 +127213,7 @@ Noordermeer	nl	nl	3	1.00
 Noordewier	nl	nl	5	1.00
 Noordhof	nl	nl	3	1.00
 Noordijk	nl	nl	3	1.00
-Noordin	ms	ms	15	0.87
+Noordin	ms	id	15	0.87
 Noordt	nl	nl	6	0.83
 Noorduijn	nl	nl	3	1.00
 Noorduyn	nl	nl	4	0.75
@@ -127246,13 +127246,13 @@ NorA			1	1.00
 Nora			1120	0.22
 Norabuena	es	es-419	6	1.00
 Norac	hr	hr	4	0.75
-Noraini	ms	ms	6	1.00
+Noraini	ms	id	6	1.00
 Noralf	nb	nb	4	1.00
 Noralv	nb	nb	5	1.00
 Norambuena	es	es-419	13	1.00
 Noras			4	0.25
 Noray	fr	fr-fr	7	0.86
-Norazli	ms	ms	3	1.00
+Norazli	ms	id	3	1.00
 Norback			1	1.00
 Norbakken	nb	nb	4	1.00
 Norbelie	sv	sv	3	1.00
@@ -127438,7 +127438,7 @@ Noriyasu	ja	hepburn	22	1.00
 Noriyo	ja	hepburn	3	1.00
 Noriyoshi	ja	hepburn	64	1.00
 Noriyuki	ja	hepburn	171	1.00
-Norizan	ms	ms	3	1.00
+Norizan	ms	id	3	1.00
 Norizane	ja	hepburn	4	1.00
 Norizuki	ja	hepburn	6	1.00
 Norizō	ja	hepburn	4	1.00
@@ -127452,7 +127452,7 @@ Norlyk	da	da	4	1.00
 Norlén	sv	sv	14	1.00
 Norløff	nb	nb	3	1.00
 Normak	et	et	10	0.90
-Normala	ms	ms	4	1.00
+Normala	ms	id	4	1.00
 Normand	fr	fr-fr	299	0.88
 Normandin	fr	fr-fr	13	0.92
 Normandon	fr	fr-fr	3	1.00
@@ -127534,7 +127534,7 @@ Noshiro	ja	hepburn	5	1.00
 Nosho			1	1.00
 Nosi	sq	sq	6	1.00
 Nosiglia	es	es-419	5	0.80
-Nosius	ms	ms	3	1.00
+Nosius	ms	id	3	1.00
 Noskiewicz-Gałązka	pl	pl	1	1.00
 Noskova			7	0.00
 Nosková	cs	cs	12	0.83
@@ -130417,7 +130417,7 @@ Onge	en	en-us	10	1.00
 Ongen			3	0.67
 Ongering	nl	nl	3	1.00
 Onggo	id	id	3	1.00
-Ongkili	ms	ms	3	1.00
+Ongkili	ms	id	3	1.00
 Ongoro	sw	sw	4	1.00
 Ongun	tr	tr	17	1.00
 Onhon			1	1.00
@@ -130517,7 +130517,7 @@ Ooe	ja	hepburn	4	1.00
 Oogi	ja	hepburn	3	1.00
 Oogimachi	ja	hepburn	3	1.00
 Oohashi	ja	hepburn	3	1.00
-Ooi	ms	ms	46	0.87
+Ooi	ms	id	46	0.87
 Ooijen	nl	nl	8	1.00
 Ooishi	ja	hepburn	6	1.00
 Ooka			2	1.00
@@ -130921,7 +130921,7 @@ Orlewicz	pl	pl	6	0.83
 Orley			11	0.36
 Orleães	pt	pt-br	3	1.00
 Orliac	fr	fr-fr	10	1.00
-Orlic			5	0.20
+Orlic			5	0.40
 Orlicz	pl	pl	7	1.00
 Orlicz-Szczęsna	pl	pl	1	1.00
 Orlik-Kożdoń	pl	pl	1	1.00
@@ -134986,7 +134986,7 @@ Peixoto	pt	pt-br	204	0.97
 Peixu	zh	pinyin	3	1.00
 Peixuan	zh	pinyin	5	1.00
 Peixun	zh	pinyin	10	0.90
-Peiy	ms	ms	3	1.00
+Peiy	ms	id	3	1.00
 Peiyao	zh	pinyin	4	1.00
 Peiyi	zh	pinyin	7	1.00
 Peiyin	zh	pinyin	4	1.00
@@ -136580,7 +136580,7 @@ Pfüller	de	de	8	0.88
 Pfündel	de	de	4	1.00
 Pfütze	de	de	4	1.00
 Ph	id	id	3	1.00
-Phaik	ms	ms	4	0.75
+Phaik	ms	id	4	0.75
 Phalempin	fr	fr-fr	3	1.00
 Phalippou	fr	fr-fr	3	1.00
 Pham			116	0.37
@@ -136639,7 +136639,7 @@ Pho			14	0.21
 Phragmén	sv	sv	4	1.00
 Phu			17	0.18
 Phuc			11	0.55
-Phui	ms	ms	3	1.00
+Phui	ms	id	3	1.00
 Phung			17	0.24
 Phuoc			5	0.60
 Phuong			25	0.56
@@ -136714,7 +136714,7 @@ Piatek			6	0.33
 Piatier	fr	fr-fr	3	1.00
 Piatkiewicz			1	1.00
 Piatkowska			3	0.67
-Piatkowski			9	0.33
+Piatkowski			9	0.22
 Piaton	fr	fr-fr	3	1.00
 Piattelli	it	it	6	1.00
 Piatti	it	it	39	0.79
@@ -141318,7 +141318,7 @@ Ptáčková	cs	cs	13	1.00
 Ptáčník	cs	cs	7	1.00
 Pu	zh	pinyin	1071	0.92
 Pua			28	0.32
-Puad	ms	ms	5	0.80
+Puad	ms	id	5	0.80
 Puado	es	es	3	1.00
 Pualillin	id	id	3	1.00
 Puang	id	id	3	1.00
@@ -141879,7 +141879,7 @@ Puzhao	zh	pinyin	3	1.00
 Puzhen	zh	pinyin	3	1.00
 Puzhi	zh	pinyin	3	1.00
 Puzhong	zh	pinyin	4	1.00
-Puzi	ms	ms	5	0.80
+Puzi	ms	id	5	0.80
 Puzianowska-Kuźnicka	pl	pl	1	1.00
 Puzio	pl	pl	8	0.88
 Puzio-Idźkowska	pl	pl	1	1.00
@@ -142896,7 +142896,7 @@ Qafzezi	sq	sq	3	1.00
 Qalib	az	az	11	0.82
 Qamil	sq	sq	9	1.00
 Qanita	id	id	4	0.75
-Qar	ms	ms	3	1.00
+Qar	ms	id	3	1.00
 Qarayeva	az	az	4	0.75
 Qasımlı	az	az	13	0.92
 Qasımov	az	az	116	0.75
@@ -144244,7 +144244,7 @@ Radwiłowicz	pl	pl	1	1.00
 Radzevicius			1	1.00
 Radzevičius	lt	lt	9	1.00
 Radzewicz	pl	pl	3	1.00
-Radzi	ms	ms	19	0.89
+Radzi	ms	id	19	0.89
 Radziejowska	pl	pl	4	1.00
 Radziewicz	pl	pl	4	1.00
 Radzieńciak	pl	pl	1	1.00
@@ -144303,7 +144303,7 @@ Rafaj	cs	cs	13	0.85
 Rafajłowicz	pl	pl	2	1.00
 Rafales	es	es	3	1.00
 Rafalska	pl	pl	4	1.00
-Rafar	ms	ms	3	1.00
+Rafar	ms	id	3	1.00
 Rafart	es	es	10	1.00
 Rafaél			2	1.00
 Rafaël	fr	fr-fr	29	0.76
@@ -145110,7 +145110,7 @@ Rascle	fr	fr-fr	4	1.00
 Rascol	fr	fr-fr	3	1.00
 Rasenberg	nl	nl	5	1.00
 Rasenberger	de	de	3	1.00
-Rasiah	ms	ms	4	0.75
+Rasiah	ms	id	4	0.75
 Rasida	id	id	3	1.00
 Rasidin	id	id	7	1.00
 Rasih	tr	tr	16	0.94
@@ -145508,13 +145508,13 @@ Razeau	fr	fr-fr	3	1.00
 Razeto	it	it	4	0.75
 Razetti	es	es-419	3	1.00
 Razgatlıoğlu	tr	tr	1	1.00
-Razif	ms	ms	9	0.78
+Razif	ms	id	9	0.78
 Razimbaud	fr	fr-fr	3	1.00
 Razinger	sl	sl	16	0.94
 Raziye	tr	tr	13	0.92
 Raziyyə	az	az	4	0.75
-Razlan	ms	ms	5	1.00
-Razman	ms	ms	5	0.80
+Razlan	ms	id	5	1.00
+Razman	ms	id	5	0.80
 Razpet	sl	sl	12	0.83
 Razpotnik	sl	sl	10	1.00
 Raztresen	sl	sl	10	1.00
@@ -145745,10 +145745,10 @@ Reduzzi	it	it	3	1.00
 Redvald	nb	nb	5	1.00
 Redwitz	de	de	12	0.83
 Redy	id	id	13	0.85
-Redza	ms	ms	5	1.00
+Redza	ms	id	5	1.00
 Redzic			3	0.33
 Redzić			1	1.00
-Redzuan	ms	ms	12	0.92
+Redzuan	ms	id	12	0.92
 Redín	es	es	8	1.00
 Redó	es	es	4	1.00
 Redón	es	es	8	1.00
@@ -146451,7 +146451,7 @@ Renfu	zh	pinyin	23	0.96
 Renfurm	nl	nl	5	0.80
 Reng	zh	pinyin	15	0.80
 Rengang	zh	pinyin	4	1.00
-Rengasamy	ms	ms	3	1.00
+Rengasamy	ms	id	3	1.00
 Rengers	nl	nl	22	0.91
 Rengga	id	id	8	0.88
 Rengifo	es	es-419	65	0.98
@@ -147309,8 +147309,8 @@ Ridruejo	es	es	13	1.00
 Riduansyah	id	id	4	1.00
 Ridwan	id	id	247	0.87
 Ridwansyah	id	id	5	1.00
-Ridzuan	ms	ms	17	0.94
-Ridzwan	ms	ms	8	0.75
+Ridzuan	ms	id	17	0.94
+Ridzwan	ms	id	8	0.75
 Rie	ja	hepburn	375	0.82
 Riebeck	de	de	3	1.00
 Riebeeck	nl	nl	3	1.00
@@ -148827,7 +148827,7 @@ Rokha	es	es-419	4	1.00
 Rokhani	id	id	3	1.00
 Rokhim	id	id	5	1.00
 Rokhmat	id	id	3	1.00
-Rokiah	ms	ms	3	1.00
+Rokiah	ms	id	3	1.00
 Rokib	id	id	4	1.00
 Rokicińska	pl	pl	1	1.00
 Rokicka	pl	pl	6	1.00
@@ -149430,7 +149430,7 @@ Roscioni	it	it	3	1.00
 Rosciszewski			2	0.00
 Roscoat			1	1.00
 Roscoät	fr	fr-fr	3	1.00
-Rosdi	ms	ms	7	1.00
+Rosdi	ms	id	7	1.00
 Rosdiana	id	id	34	1.00
 Rose			2901	0.66
 Roseane	pt	pt-br	8	0.88
@@ -149547,11 +149547,11 @@ Roske			2	0.50
 Roskosz	pl	pl	3	1.00
 Roskowiński	pl	pl	1	1.00
 Rosl	de	de	14	0.93
-Roslan	ms	ms	43	0.81
+Roslan	ms	id	43	0.81
 Rosland	nb	nb	10	1.00
-Roslee	ms	ms	3	1.00
+Roslee	ms	id	3	1.00
 Rosler			2	0.50
-Rosli	ms	ms	37	0.86
+Rosli	ms	id	37	0.86
 Rosliana	id	id	4	1.00
 Roslina	id	id	6	0.83
 Roslyng	da	da	3	1.00
@@ -149566,7 +149566,7 @@ Rosmel	es	es-419	3	1.00
 Rosmery	es	es-419	9	1.00
 Rosmiati	id	id	11	1.00
 Rosmunda	it	it	3	1.00
-Rosnah	ms	ms	6	0.83
+Rosnah	ms	id	6	0.83
 Rosnawati	id	id	3	1.00
 Rosnay	fr	fr-fr	13	0.92
 Rosner			87	0.36
@@ -150108,7 +150108,7 @@ Rozes			2	0.50
 Rozet	fr	fr-fr	19	0.89
 Rozga			1	1.00
 Rozgonyi	hu	hu	28	0.89
-Roziah	ms	ms	3	1.00
+Roziah	ms	id	3	1.00
 Rozic			4	0.25
 Rozieres			1	1.00
 Roziers	fr	fr-fr	14	1.00
@@ -152918,7 +152918,7 @@ Sabroe	da	da	13	1.00
 Sabrosa	pt	pt-br	3	1.00
 Sabroso	es	es	6	0.83
 Sabroux	fr	fr-fr	3	1.00
-Sabtu	ms	ms	3	1.00
+Sabtu	ms	id	3	1.00
 Sabucedo	es	es	4	1.00
 Sabuncu	tr	tr	21	0.95
 Sabuncuoğlu	tr	tr	9	1.00
@@ -153416,7 +153416,7 @@ Saichiro	ja	hepburn	5	1.00
 Saichirō	ja	hepburn	21	1.00
 Saichonga	zh	pinyin	3	1.00
 Saidal	id	id	3	1.00
-Saidin	ms	ms	15	0.87
+Saidin	ms	id	15	0.87
 Saidl	cs	cs	4	1.00
 Saidla	et	et	3	1.00
 Saifei	zh	pinyin	3	1.00
@@ -154018,7 +154018,7 @@ Sallarés	es	es	4	1.00
 Salle			88	0.74
 Sallebert	fr	fr-fr	4	1.00
 Sallee	en	en-us	11	0.91
-Salleh	ms	ms	102	0.82
+Salleh	ms	id	102	0.82
 Sallenave	fr	fr-fr	7	1.00
 Sallent	es	es	17	1.00
 Salleras	es	es-419	3	1.00
@@ -155014,7 +155014,7 @@ Sapač	sl	sl	6	1.00
 Sapegno	it	it	3	1.00
 Sapena	es	es	4	1.00
 Saperas	es	es	6	1.00
-Saperi	ms	ms	3	1.00
+Saperi	ms	id	3	1.00
 Sapey	fr	fr-fr	7	0.86
 Sapieha	pl	pl	199	0.89
 Sapieha-Kodeńska	pl	pl	1	1.00
@@ -155183,7 +155183,7 @@ Sarifah	id	id	11	1.00
 Sarifuddin	id	id	4	0.75
 Sarifudin	id	id	6	1.00
 Sarille	es	es	4	1.00
-Sarimah	ms	ms	4	1.00
+Sarimah	ms	id	4	1.00
 Sariman	id	id	5	0.80
 Sarimin	id	id	3	1.00
 Sarin			31	0.19
@@ -157948,7 +157948,7 @@ Se			69	0.25
 SeBa			1	0.00
 Seabra	pt	pt-br	69	0.90
 Seade	es	es-419	3	1.00
-Seang	ms	ms	4	0.75
+Seang	ms	id	4	0.75
 Seba			23	0.26
 Sebahat	tr	tr	16	1.00
 Sebahattin	tr	tr	20	1.00
@@ -158735,7 +158735,7 @@ Senaldi	it	it	5	0.80
 Senante	es	es	3	1.00
 Senarclens-Grancy	de	de	5	1.00
 Senard	fr	fr-fr	9	1.00
-Senario	ms	ms	4	1.00
+Senario	ms	id	4	1.00
 Senault	fr	fr-fr	6	1.00
 Senaux	fr	fr-fr	4	1.00
 Senay			15	0.33
@@ -159643,28 +159643,28 @@ Sguanci	it	it	3	1.00
 Sgura	it	it	3	1.00
 Sgură			1	1.00
 Sh	id	id	33	0.79
-Shaari	ms	ms	14	0.93
+Shaari	ms	id	14	0.93
 Shabrina	id	id	8	1.00
 Shabuding	zh	pinyin	7	1.00
 Shachihoko	ja	hepburn	3	1.00
 Shafa	id	id	7	0.86
 Shafira	id	id	10	1.00
-Shaharuddin	ms	ms	9	1.00
-Shaharudin	ms	ms	4	0.75
+Shaharuddin	ms	id	9	1.00
+Shaharudin	ms	id	4	0.75
 Shahini	sq	sq	3	1.00
-Shahirah	ms	ms	4	1.00
-Shahril	ms	ms	15	0.80
-Shahriman	ms	ms	4	1.00
-Shahrizan	ms	ms	3	1.00
-Shahrol	ms	ms	3	1.00
-Shahrom	ms	ms	4	0.75
-Shahruddin	ms	ms	4	0.75
-Shahrul	ms	ms	13	0.92
+Shahirah	ms	id	4	1.00
+Shahril	ms	id	15	0.80
+Shahriman	ms	id	4	1.00
+Shahrizan	ms	id	3	1.00
+Shahrol	ms	id	3	1.00
+Shahrom	ms	id	4	0.75
+Shahruddin	ms	id	4	0.75
+Shahrul	ms	id	13	0.92
 Shakagatake	ja	hepburn	4	1.00
 Shaku	ja	hepburn	13	0.77
 Shalahuddin	id	id	8	1.00
 Shaleh	id	id	18	1.00
-Shamsudin	ms	ms	10	0.80
+Shamsudin	ms	id	10	0.80
 Shamte	sw	sw	3	1.00
 Shan	zh	pinyin	826	0.81
 ShanQuan			1	1.00
@@ -159933,11 +159933,11 @@ Shaozhou	zh	pinyin	8	0.88
 Shaozhu	zh	pinyin	4	0.75
 Shaozong	zh	pinyin	45	0.93
 Shaozu	zh	pinyin	45	1.00
-Sharil	ms	ms	3	1.00
+Sharil	ms	id	3	1.00
 Sharra	sq	sq	4	0.75
-Sharul	ms	ms	3	1.00
+Sharul	ms	id	3	1.00
 Shayo	sw	sw	5	1.00
-Shazwan	ms	ms	3	1.00
+Shazwan	ms	id	3	1.00
 She	zh	pinyin	188	0.85
 Shedou	zh	pinyin	7	1.00
 Shehaj	sq	sq	5	1.00
@@ -161191,7 +161191,7 @@ Shugui	zh	pinyin	7	0.86
 Shuguo	zh	pinyin	7	1.00
 Shugyo			1	1.00
 Shugyō	ja	hepburn	3	1.00
-Shuhaimi	ms	ms	5	1.00
+Shuhaimi	ms	id	5	1.00
 Shuhan	zh	pinyin	8	0.75
 Shuhao	zh	pinyin	4	1.00
 Shuhe	zh	pinyin	9	0.89
@@ -161207,7 +161207,7 @@ Shuhuang	zh	pinyin	3	1.00
 Shuhui	zh	pinyin	20	0.80
 Shuhō			1	1.00
 Shui	zh	pinyin	83	0.82
-Shuib	ms	ms	5	1.00
+Shuib	ms	id	5	1.00
 Shuichi	ja	hepburn	74	0.99
 Shuichiro	ja	hepburn	27	1.00
 Shuichirō	ja	hepburn	5	1.00
@@ -161231,7 +161231,7 @@ Shukei	ja	hepburn	5	1.00
 Shuki			27	0.19
 Shukichi	ja	hepburn	4	1.00
 Shuko			11	0.73
-Shukor	ms	ms	12	0.92
+Shukor	ms	id	12	0.92
 Shuku	ja	hepburn	9	0.78
 Shukuan	zh	pinyin	3	1.00
 Shukui	zh	pinyin	10	0.90
@@ -161761,7 +161761,7 @@ Sidao	zh	pinyin	25	0.92
 Sidarta	id	id	4	0.75
 Sidauruk	id	id	4	1.00
 Siddy	de	de	6	0.83
-Sidek	ms	ms	18	1.00
+Sidek	ms	id	18	1.00
 Siden			2	0.50
 Sidenbladh	sv	sv	5	1.00
 Sidenius	da	da	9	0.78
@@ -163170,7 +163170,7 @@ Sjeng	nl	nl	10	1.00
 Sjerp	nl	nl	3	1.00
 Sjerps	nl	nl	3	1.00
 Sjirk	nl	nl	4	1.00
-Sjoberg			12	0.42
+Sjoberg			12	0.50
 Sjodin			1	0.00
 Sjoekoer	id	id	3	1.00
 Sjoera	nl	nl	3	1.00
@@ -166246,7 +166246,7 @@ Squizzato	it	it	6	1.00
 Sraffa	it	it	3	1.00
 Sraka	sl	sl	9	1.00
 Srakar	sl	sl	3	1.00
-Sramek			5	0.20
+Sramek			5	0.60
 Sramêk			1	1.00
 Srebotnjak	sl	sl	7	0.86
 Srebrnič	sl	sl	20	0.80
@@ -169014,7 +169014,7 @@ Sueño			1	1.00
 Sufang	zh	pinyin	3	1.00
 Sufen	zh	pinyin	5	0.80
 Suffczyńska	pl	pl	2	1.00
-Suffian	ms	ms	6	1.00
+Suffian	ms	id	6	1.00
 Suffridus	nl	nl	4	1.00
 Sufryd	de	de	3	1.00
 Suga	ja	hepburn	134	0.96
@@ -169451,10 +169451,10 @@ Sulmona	it	it	4	1.00
 Sulmont	fr	fr-fr	4	0.75
 Sulo	fi	fi	99	0.91
 Sulonen	fi	fi	9	1.00
-Sulong	ms	ms	10	0.90
+Sulong	ms	id	10	0.90
 Sulowski	pl	pl	3	1.00
 Sulpice	fr	fr-fr	29	0.97
-Sultanah	ms	ms	5	0.80
+Sultanah	ms	id	5	0.80
 Sultanoğlu	tr	tr	3	1.00
 Sulthan	id	id	5	0.80
 Sulthon	id	id	3	1.00
@@ -170643,7 +170643,7 @@ Syafi'i	id	id	21	1.00
 Syafi'ie	id	id	4	1.00
 Syafii	id	id	20	1.00
 Syafik	id	id	4	0.75
-Syafiqah	ms	ms	3	1.00
+Syafiqah	ms	id	3	1.00
 Syafira	id	id	8	1.00
 Syafitri	id	id	14	1.00
 Syafiuddin	id	id	11	0.91
@@ -170697,7 +170697,7 @@ Syakur	id	id	7	1.00
 Syam	id	id	72	0.83
 Syamaun	id	id	5	1.00
 Syambas	id	id	3	1.00
-Syamim	ms	ms	3	1.00
+Syamim	ms	id	3	1.00
 Syamsari	id	id	3	1.00
 Syamsi	id	id	11	1.00
 Syamsiah	id	id	12	1.00
@@ -170737,7 +170737,7 @@ Syauqie	id	id	3	1.00
 Syauta	id	id	3	1.00
 Syawal	id	id	13	0.85
 Syawaluddin	id	id	4	1.00
-Syazwan	ms	ms	12	0.92
+Syazwan	ms	id	12	0.92
 Syb	nl	nl	3	1.00
 Sybe	nl	nl	7	0.86
 Sybel	de	de	7	0.86
@@ -174093,7 +174093,7 @@ Tamariz	es	es-419	23	0.96
 Tamaro	it	it	7	1.00
 Tamaru	ja	hepburn	30	0.97
 Tamas			31	0.42
-Tamasauskas			4	0.50
+Tamasauskas			4	0.25
 Tamaschke	de	de	3	1.00
 Tamassy			1	1.00
 Tamasu	ja	hepburn	3	1.00
@@ -175468,7 +175468,7 @@ Tegstedt	sv	sv	3	1.00
 Tegström	sv	sv	5	1.00
 Tegtmeier	de	de	11	0.91
 Teguh	id	id	165	1.00
-Teh	ms	ms	49	0.84
+Teh	ms	id	49	0.84
 Tehan	en	en-gb	4	1.00
 Tehau	fr	fr-fr	6	1.00
 Teheran			1	1.00
@@ -175497,7 +175497,7 @@ Teijiro	ja	hepburn	9	1.00
 Teijirō	ja	hepburn	45	1.00
 Teijn	nl	nl	4	1.00
 Teijssen	nl	nl	3	1.00
-Teik	ms	ms	20	0.75
+Teik	ms	id	20	0.75
 Teika	ja	hepburn	5	0.80
 Teikan	ja	hepburn	4	1.00
 Teikari	fi	fi	7	1.00
@@ -175889,7 +175889,7 @@ Teofilia	pl	pl	5	1.00
 Teofilis	lt	lt	6	1.00
 Teolindo	es	es	4	1.00
 Teoman	tr	tr	62	0.92
-Teong	ms	ms	8	1.00
+Teong	ms	id	8	1.00
 Teorell	sv	sv	3	1.00
 Teotonio			3	0.67
 Teotónio	pt	pt	24	1.00
@@ -176481,7 +176481,7 @@ Thalén	sv	sv	6	1.00
 Thalìa			1	1.00
 Thalía	es	es-419	13	0.85
 Tham			63	0.62
-Thamby	ms	ms	3	1.00
+Thamby	ms	id	3	1.00
 Thamdrup	da	da	4	1.00
 Thamin	fr	fr-fr	4	0.75
 Thamm	de	de	28	0.86
@@ -177100,7 +177100,7 @@ Thybaud	fr	fr-fr	3	1.00
 Thyberg	sv	sv	8	0.75
 Thybo	da	da	6	1.00
 Thychosen	da	da	7	1.00
-Thye	ms	ms	12	0.75
+Thye	ms	id	12	0.75
 Thyen	de	de	3	1.00
 Thyge	da	da	20	0.90
 Thylander	sv	sv	4	0.75
@@ -177494,7 +177494,7 @@ Tietmeyer	de	de	4	1.00
 Tietz	de	de	71	0.83
 Tietze	de	de	44	0.80
 Tieu			5	0.60
-Tiew	ms	ms	4	0.75
+Tiew	ms	id	4	0.75
 Tieying	zh	pinyin	3	1.00
 Tiezhu	zh	pinyin	4	1.00
 Tiezzi	it	it	10	0.80
@@ -179365,7 +179365,7 @@ Tore			679	0.71
 Torell	sv	sv	21	0.86
 Torello			23	0.48
 Torelló	es	es	14	0.86
-Toren			18	0.17
+Toren			18	0.06
 Torensma	nl	nl	3	1.00
 Torent	es	es	5	0.80
 Torero	es	es-419	7	0.86
@@ -181723,7 +181723,7 @@ Tunico	pt	pt-br	3	1.00
 Tunjung	id	id	4	1.00
 Tunkelo	fi	fi	4	1.00
 Tunkkari	fi	fi	5	0.80
-Tunku	ms	ms	49	0.94
+Tunku	ms	id	49	0.94
 Tunold	nb	nb	6	1.00
 Tunon			1	1.00
 Tunoğlu	tr	tr	2	1.00
@@ -185932,7 +185932,7 @@ Vasenius	fi	fi	3	1.00
 Vaser	it	it	4	1.00
 Vasfi	tr	tr	36	0.97
 Vasicek			8	0.38
-Vasigaran	ms	ms	4	0.75
+Vasigaran	ms	id	4	0.75
 Vasil			522	0.08
 Vasilache	ro	ro	18	0.78
 Vasile	ro	ro	961	0.91
@@ -189084,7 +189084,7 @@ Vool	et	et	8	0.88
 Voolaid	et	et	11	1.00
 Voolpriit	et	et	3	1.00
 Voolstra	nl	nl	3	1.00
-Voon	ms	ms	4	1.00
+Voon	ms	id	4	1.00
 Voorberg	nl	nl	4	1.00
 Voorda	nl	nl	3	1.00
 Voorde	nl	nl	26	1.00
@@ -196076,10 +196076,10 @@ Ya'nan	zh	pinyin	7	1.00
 Ya-Jun	zh	pinyin	4	1.00
 Ya-Nan	zh	pinyin	4	1.00
 YaTa			1	1.00
-Yaacob	ms	ms	17	0.76
-Yaakob	ms	ms	18	1.00
-Yaakop	ms	ms	3	1.00
-Yaakub	ms	ms	9	0.89
+Yaacob	ms	id	17	0.76
+Yaakob	ms	id	18	1.00
+Yaakop	ms	id	3	1.00
+Yaakub	ms	id	9	0.89
 Yabacı	tr	tr	1	1.00
 Yabancı	tr	tr	1	1.00
 Yabanoğlu	tr	tr	1	1.00
@@ -197135,8 +197135,8 @@ Yckenberg	sv	sv	3	1.00
 Ydema	nl	nl	5	0.80
 Ydstebø	nb	nb	5	1.00
 Ye	zh	pinyin	2737	0.91
-Yean	ms	ms	5	0.80
-Yeap	ms	ms	13	0.77
+Yean	ms	id	5	0.80
+Yeap	ms	id	13	0.77
 Yebra	es	es	30	1.00
 Yebra-Pimentel	es	es	5	1.00
 Yebugan	zh	pinyin	5	1.00
@@ -197216,7 +197216,7 @@ Yenni	id	id	25	0.88
 Yenti	id	id	7	1.00
 Yentl	nl	nl	13	0.92
 Yentür	tr	tr	4	1.00
-Yeoh	ms	ms	34	0.76
+Yeoh	ms	id	34	0.76
 Yepes	es	es-419	68	0.97
 Yepez	es	es-419	9	1.00
 Yeqian	zh	pinyin	3	1.00
@@ -197402,7 +197402,7 @@ Yihuan	zh	pinyin	6	0.83
 Yihuang	zh	pinyin	10	0.90
 Yihui	zh	pinyin	20	0.80
 Yihuo	zh	pinyin	3	1.00
-Yii	ms	ms	7	1.00
+Yii	ms	id	7	1.00
 Yiji	zh	pinyin	35	0.89
 Yijia	zh	pinyin	17	1.00
 Yijian	zh	pinyin	59	0.98
@@ -197755,7 +197755,7 @@ Yisong	zh	pinyin	18	1.00
 Yisu	zh	pinyin	8	1.00
 Yisui	zh	pinyin	3	1.00
 Yisun	zh	pinyin	44	0.93
-Yit	ms	ms	6	0.83
+Yit	ms	id	6	0.83
 Yitai	zh	pinyin	15	1.00
 Yitan	zh	pinyin	4	1.00
 Yitang	zh	pinyin	10	0.80
@@ -199503,10 +199503,10 @@ Yusnani	id	id	4	1.00
 Yusni	id	id	11	0.82
 Yusniar	id	id	5	1.00
 Yusnita	id	id	16	1.00
-Yusof	ms	ms	96	0.89
-Yusoff	ms	ms	44	0.93
+Yusof	ms	id	96	0.89
+Yusoff	ms	id	44	0.93
 Yusong	zh	pinyin	12	0.92
-Yusop	ms	ms	11	0.82
+Yusop	ms	id	11	0.82
 Yusran	id	id	37	0.97
 Yusril	id	id	9	1.00
 Yusrizal	id	id	18	0.89
@@ -200065,7 +200065,7 @@ Zabou	fr	fr-fr	4	0.75
 Zabołotny	pl	pl	1	1.00
 Zabransky			2	0.50
 Zabret	sl	sl	11	1.00
-Zabri	ms	ms	4	0.75
+Zabri	ms	id	4	0.75
 Zabric	sl	sl	3	1.00
 Zabrodsky			3	0.00
 Zabron			1	1.00
@@ -200228,11 +200228,11 @@ Zahalka			6	0.33
 Zaharescu	ro	ro	3	1.00
 Zaharia	ro	ro	80	0.76
 Zaharie	ro	ro	12	0.92
-Zaharudin	ms	ms	5	1.00
+Zaharudin	ms	id	5	1.00
 Zahharov	et	et	6	0.83
 Zahide	tr	tr	12	1.00
 Zahidé			2	1.00
-Zahirah	ms	ms	3	1.00
+Zahirah	ms	id	3	1.00
 Zahit	tr	tr	17	0.76
 Zahlbruckner	de	de	4	1.00
 Zahle	da	da	17	1.00
@@ -200282,8 +200282,8 @@ Zaimoglu			1	1.00
 Zaimou	zh	pinyin	3	1.00
 Zaimoğlu	tr	tr	10	0.90
 Zainabu	sw	sw	9	0.89
-Zainol	ms	ms	10	0.80
-Zainon	ms	ms	6	1.00
+Zainol	ms	id	10	0.80
+Zainon	ms	id	6	1.00
 Zainuddin	id	id	108	0.81
 Zainullah	id	id	3	1.00
 Zainur	id	id	5	1.00
@@ -200297,7 +200297,7 @@ Zaire			17	0.71
 Zairin	id	id	3	1.00
 Zairina	id	id	3	1.00
 Zairong	zh	pinyin	15	1.00
-Zairul	ms	ms	3	1.00
+Zairul	ms	id	3	1.00
 Zaisheng	zh	pinyin	10	1.00
 Zaishi	zh	pinyin	5	1.00
 Zaisi	zh	pinyin	9	1.00
@@ -200305,7 +200305,7 @@ Zaisu	zh	pinyin	3	1.00
 Zaisun	zh	pinyin	3	1.00
 Zaitian	zh	pinyin	10	0.90
 Zaiting	zh	pinyin	11	1.00
-Zaiton	ms	ms	5	0.80
+Zaiton	ms	id	5	0.80
 Zaitsu	ja	hepburn	11	1.00
 Zaituni	sw	sw	4	0.75
 Zaitûnî			2	0.50
@@ -200484,7 +200484,7 @@ Zambo			12	0.08
 Zambotti	it	it	5	0.80
 Zambotto	it	it	4	1.00
 Zambrano	es	es-419	203	0.94
-Zambri	ms	ms	4	1.00
+Zambri	ms	id	4	1.00
 Zambrini	it	it	9	0.89
 Zambruno	it	it	4	0.75
 Zambrzycka	pl	pl	3	1.00
@@ -200516,7 +200516,7 @@ Zamperla	it	it	5	1.00
 Zampetti	it	it	14	1.00
 Zampieri	it	it	32	0.78
 Zampogna	it	it	3	1.00
-Zamri	ms	ms	22	0.86
+Zamri	ms	id	22	0.86
 Zamroni	id	id	12	1.00
 Zamudio	es	es-419	63	0.87
 Zamzami	id	id	17	0.94
@@ -200722,7 +200722,7 @@ Zarifoğlu	tr	tr	1	1.00
 Zarina			63	0.10
 Zarins			1	1.00
 Zariquiey	es	es-419	3	1.00
-Zarith	ms	ms	4	1.00
+Zarith	ms	id	4	1.00
 Zariņa	lv	lv	10	0.90
 Zariņš	lv	lv	43	0.95
 Zarja	sl	sl	5	1.00
@@ -200742,7 +200742,7 @@ Zarska			1	0.00
 Zartl	de	de	7	1.00
 Zartmann	de	de	5	1.00
 Zaruba			10	0.20
-Zarul	ms	ms	3	1.00
+Zarul	ms	id	3	1.00
 Zarur	es	es-419	4	0.75
 Zarvos	pt	pt-br	5	1.00
 Zarychta-Wiśniewska	pl	pl	1	1.00
@@ -202636,7 +202636,7 @@ Zihu	zh	pinyin	3	1.00
 Zihua	zh	pinyin	37	0.97
 Zihuan	zh	pinyin	11	0.91
 Zihui	zh	pinyin	25	0.96
-Zii	ms	ms	3	1.00
+Zii	ms	id	3	1.00
 Ziino	it	it	10	0.90
 Zijden	nl	nl	4	1.00
 Zijderveld	nl	nl	6	1.00
@@ -203606,13 +203606,13 @@ Zuling	zh	pinyin	3	1.00
 Zulié			1	1.00
 Zuljan	sl	sl	9	0.78
 Zulkadiroğlu	tr	tr	1	1.00
-Zulkafli	ms	ms	3	1.00
+Zulkafli	ms	id	3	1.00
 Zulkarnaen	id	id	36	0.97
 Zulkarnain	id	id	92	0.89
 Zulkarnaini	id	id	8	1.00
-Zulkefli	ms	ms	4	1.00
-Zulkiffli	ms	ms	4	0.75
-Zulkiflee	ms	ms	4	1.00
+Zulkefli	ms	id	4	1.00
+Zulkiffli	ms	id	4	0.75
+Zulkiflee	ms	id	4	1.00
 Zulkipli	id	id	6	0.83
 Zullino	it	it	3	1.00
 Zully	es	es-419	14	0.86
@@ -209133,7 +209133,7 @@ Zərifə	az	az	5	1.00
 Šipová			1	0.00
 Šipoš			1	1.00
 Širac			1	1.00
-Širc			7	0.29
+Širc			7	0.71
 Širca	sl	sl	30	0.93
 Šircelj	sl	sl	8	1.00
 Širok	sl	sl	15	0.80

@@ -4,7 +4,8 @@
 # Switzerland, the Austro-Hungarian and Russian empires) is no evidence either way: its citizenship can't tell a
 # Flemish name from a Walloon one. A citizenship with no languages here (scripts other than Latin, countries too
 # small to list) is evidence against every language. English-speaking countries are en: a name their people
-# mostly bear is read as English reads it. Chinese and Japanese names are their people's romanized labels, read by
+# mostly bear is read as English reads it. Malay names are read with espeak's Indonesian voice: Malay spells as
+# Indonesian does, and espeak's Malay reads it worse. Chinese and Japanese names are their people's romanized labels, read by
 # rules of their own (pinyin.py, hepburn.py): mainland China's and the dynasties' in pinyin, not Taiwan's or the
 # Republic of China's, mostly in Wade-Giles.
 # qid	country	languages
@@ -79,7 +80,7 @@ Q79	Egypt
 Q37	Lithuania	lt/lt
 Q403	Serbia	
 Q28513	Austria–Hungary	de/de,hu/hu,cs/cs,pl/pl,sk/sk,sl/sl,hr/hr,ro/ro
-Q833	Malaysia	ms/ms
+Q833	Malaysia	ms/id
 Q1775277	Dominion of India	
 Q179876	Kingdom of England	en/en-gb
 Q533534	Cisleithania	de/de,cs/cs,pl/pl,sl/sl

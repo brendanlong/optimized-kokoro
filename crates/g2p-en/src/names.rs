@@ -146,9 +146,15 @@ impl Names {
     /// The phonemes of the name `written` spells: the one spelled so, else the reading the names
     /// spelled so in another case share, else the one every name whose accents `written` leaves
     /// out, or keeps, shares. An accent the name doesn't have makes another word: Spanish "moría"
-    /// isn't Moria, nor Portuguese "âmbar" Ambar.
-    fn resolve(names: &[Name], written: &str) -> Option<&'static str> {
+    /// isn't Moria, nor Portuguese "âmbar" Ambar. In text with capitals, a word in lowercase isn't a
+    /// name written with them (the Latin "Ammodytes marinus" isn't Marinus).
+    fn resolve(names: &[Name], written: &str, capitals: bool) -> Option<&'static str> {
         let written: String = written.split_whitespace().collect::<Vec<_>>().join(" ").nfc().collect();
+        let names: Vec<_> = if capitals && !written.chars().any(char::is_uppercase) {
+            names.iter().filter(|n| !n.spelling.chars().any(char::is_uppercase)).collect()
+        } else {
+            names.iter().collect()
+        };
         if let Some(name) = names.iter().find(|n| n.spelling == written) {
             return name.phonemes;
         }
@@ -157,16 +163,16 @@ impl Names {
             names.iter().all(|n| n.phonemes == first.phonemes).then_some(first.phonemes)?
         };
         let lower = written.to_lowercase();
-        let same_case: Vec<_> = names.iter().filter(|n| n.spelling.to_lowercase() == lower).collect();
+        let same_case: Vec<_> = names.iter().copied().filter(|n| n.spelling.to_lowercase() == lower).collect();
         if !same_case.is_empty() {
             return one(same_case);
         }
-        one(names.iter().filter(|n| accents_within(&written, n.spelling)).collect())
+        one(names.iter().copied().filter(|n| accents_within(&written, n.spelling)).collect())
     }
 
     /// The longest name at the start of `text` that `skip` doesn't hold, as `(bytes of text,
     /// phonemes)`. Whitespace between a name's words may be any run of it but a line break.
-    fn longest(&self, text: &str, skip: Option<&Skip>) -> Option<(usize, &'static str)> {
+    fn longest(&self, text: &str, skip: Option<&Skip>, capitals: bool) -> Option<(usize, &'static str)> {
         let mut key = String::new();
         let mut found = None;
         let mut chars = text.char_indices().peekable();
@@ -187,7 +193,7 @@ impl Names {
             if let Some(names) = self.names.get(key.as_str())
                 && ends_word(&text[end..])
                 && !skip.is_some_and(|s| s.holds(&text[..end]))
-                && let Some(phonemes) = Self::resolve(names, &text[..end])
+                && let Some(phonemes) = Self::resolve(names, &text[..end], capitals)
             {
                 found = Some((end, phonemes));
             }
@@ -210,6 +216,7 @@ impl Names {
         // In text with lowercase letters, a short word in capitals is an acronym ("ARRA", "TYC"), not
         // a name: misaki spells it out.
         let acronyms = text.chars().any(char::is_lowercase);
+        let capitals = text.chars().any(char::is_uppercase);
         let acronym = |w: &str| {
             acronyms
                 && w.chars().filter(|c| c.is_alphabetic()).count() <= MAX_ACRONYM
@@ -240,7 +247,7 @@ impl Names {
                 Some('\'' | '’' | 'ʼ') => !before.next().is_some_and(is_word_char),
                 c => !c.is_some_and(is_word_char),
             };
-            let found = if starts_word && is_latin(c) { self.longest(&text[i..], skip) } else { None };
+            let found = if starts_word && is_latin(c) { self.longest(&text[i..], skip, capitals) } else { None };
             let found = found.filter(|&(n, _)| !acronym(&text[i..i + n]));
             let Some((n, phonemes)) = found.filter(|&(n, _)| link.peek().is_none_or(|&&(start, _)| i + n <= start))
             else {
@@ -313,6 +320,8 @@ mod tests {
         // A short word in capitals is an acronym in text with lowercase letters, and a name in text without.
         assert_eq!(link("the ARDA and Arda"), format!("the ARDA and {}", link("Arda")));
         assert!(link("ARDA").starts_with("[ARDA](/"));
+        // So a word in lowercase is a name only in text without capitals.
+        assert_eq!(link("Of galadriel"), "Of galadriel");
         // Nor is a name a common word of the text's language, in any case.
         let spanish = |t: &str| names.link(t, "es", &[], |p| format!("{p}z")).into_owned();
         assert_eq!(spanish("fui y ESTE"), "fui y ESTE");

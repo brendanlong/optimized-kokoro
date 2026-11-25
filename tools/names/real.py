@@ -34,7 +34,8 @@ LANGUAGE_NAMES = {"pl": "Polish", "hu": "Hungarian", "cs": "Czech", "sk": "Slova
                   "az": "Azerbaijani", "mt": "Maltese", "mi": "Māori", "ga": "Irish", "bs": "Bosnian",
                   "ht": "Haitian Creole", "zh": "Chinese (pinyin)", "ja": "Japanese (romanized)"}
 # The languages whose names are read so far.
-LANGUAGES = {"pl", "fi", "cs", "es", "it", "fr", "hu", "ro", "sk", "sl", "et", "tr", "id", "zh", "ja", "vi"}
+LANGUAGES = {"pl", "fi", "cs", "es", "it", "fr", "hu", "ro", "sk", "sl", "et", "tr", "id", "zh", "ja", "vi", "de", "nl",
+             "pt", "sv", "nb", "lv", "sq", "az", "sw", "hr", "bs", "ms"}
 WORLD = "real people's family and given names"
 # A spelling an earlier source reads differently is left to it (Tolkien's Martan, Cobas).
 YIELDS = True
@@ -72,6 +73,16 @@ SKIP_ZIPF = 2.0
 FIXES = {"cs": [(re.compile(r"v(?=$| )"), "f"), (re.compile("r\u031d(?=$| )"), "r\u031d\u030a")],
          # Estonian espeak doubles an overlong vowel (Siim as siiːm), m before b (Lembit as lemmbit), writes a long s as
          # s^s and n before t as ɲ.
+         # Portuguese espeak writes in Kokoro's Portuguese voice's symbols what an English voice says otherwise: æ for
+         # a final a (ɐ), y for a final e (i), ə after an r before a consonant (none: Carvalho isn't ka-ra-valho),
+         # lj for lh (ʎ), and e^ɪŋ, o^ŋ for nasal vowels before a consonant (ẽ, õ).
+         "pt": [(re.compile(r"æ"), "ɐ"), (re.compile(r"y(?=s?$| )"), "i"), (re.compile(r"ɾə(?=[^aeiouɐɛɔəæyɪʊˈˌ̃])"), "ɾ"),
+                (re.compile(r"lj"), "ʎ"), (re.compile(r"e\^ɪŋ(?=[^aeiouɐɛɔ])"), "ẽ"), (re.compile(r"oŋ(?=[sdtkɡ])"), "õ")],
+         # Dutch espeak stresses the -eren, -elen and -enen of names, which Dutch leaves unstressed (Genderen is
+         # GEN-de-ren): the stress goes to the first syllable and the vowel is ə.
+         "nl": [(re.compile(r"^(.*)ˈ(ɪː|eː)(?=[rln]ən$)"), lambda m: "ˈ" + m[1].replace("ˈ", "").replace("ˌ", "") + "ə")],
+         # Icelandic espeak doubles an r as ɾr.
+         "is": [(re.compile(r"ɾr"), "r")],
          "et": [(re.compile(r"([aeiouæøyɤ])\1ː"), r"\1ː"), (re.compile(r"mmb"), "mb"), (re.compile(r"s\^s"), "sː"),
                 (re.compile(r"ɲ(?=t)"), "n")]}
 # Each language's letters, where its names are read only if they use no others, and spellings its own words
@@ -101,12 +112,24 @@ SPELLINGS = {"hu": [(re.compile(r"thy$"), "ti"), (re.compile(r"^th|th$"), "t"), 
                     (re.compile(r"(?<!s)ch$"), "cs"), (re.compile(r"gh"), "g"), (re.compile(r"cz"), "c"),
                     (re.compile(r"aá|aa"), "á"), (re.compile(r"eö"), "ö"), (re.compile(r"(ss|ff)(?=i$)"), lambda m: m[1][0])],
              "ro": [(re.compile("ș"), "ş"), (re.compile("ț"), "ţ")],
+             "nl": [(re.compile(r"ph"), "f")],
+             # Swedish and Norwegian th is t (Thunberg, Thorbjørn).
+             # Scandinavian h is silent but before a vowel (Dahl, Åsbahr) and after a final g or d (Söderbergh, Rydh).
+             "sv": [(re.compile(r"th"), "t"), (SILENT_H := re.compile(r"(?<=[aeiouyåäöø])h(?![aeiouyåäöø])|(?<=[gd])h$"), "")],
+             "nb": [(re.compile(r"th"), "t"), (SILENT_H, "")],
+             # German: Latin c before a front vowel is z (Cäcilia, Cäsar), chs is ks (Ochs), a Slavic final ow o (Pankow).
+             # and st and sp starting a compound's second part are ʃt and ʃp, as at a word's start (Schweinsteiger,
+             # Einstein, Birkenstock), which espeak reads only there.
+             "de": [(re.compile(r"c(?=[eiäy])"), "z"), (re.compile(r"chs"), "ks"), (re.compile(r"(?<=[aeiou])w$"), ""),
+                    (re.compile(r"(?<=.)s(?=t(ein|adt|ätt|att|eig|ock|ern|rom|raß|rass|edt|ieg|ab|uhl|ück))"), "sch"),
+                    (re.compile(r"(?<=.)s(?=p(iel|ring|rung|ach))"), "sch")],
              "id": [(re.compile(r".*(oe|dj|tj|sj|(?<!^)ch).*"), lambda m: old_indonesian(m[0])), (re.compile(r"dh"), "d"),
                     (re.compile(r"sh"), "sy"), (re.compile(r"th"), "t"), (re.compile(r"(?<=[^aeiouy])y(?![aeiou])"), "i")],
              "fr": [(re.compile(r"ouë"), "ouè"), (re.compile(r"ouil$"), "ouille"), (re.compile(r"^gwen"), "gwén")]}
 # Sounds a voice of espeak writes as another: Turkish ü as ø, ö as œ and e as æ (Kültür as køltør); German
-# -er as ɜ, English's r-colored vowel, for ɐ; Indonesian sy as ç for ʃ.
+# -er as ɜ, English's r-colored vowel, for ɐ; Indonesian sy as ç for ʃ; Croatian and Bosnian a as æ.
 VOICE_SOUNDS = {"tr": str.maketrans({"ø": "y", "œ": "ø", "æ": "e"}), "de": str.maketrans({"ɜ": "ɐ"}),
+                "hr": str.maketrans({"æ": "a"}), "bs": str.maketrans({"æ": "a"}),
                 "id": str.maketrans({"ç": "ʃ"})}
 # French readings where espeak still lost a vowel after w (Gouyon as ɡwjɔ̃, Desnoues as denw) are left out.
 # Estonian ones where espeak put an i before a palatal consonant (Päll as pæiʎʎ, Otsing as oit͡siŋɡ).
@@ -219,8 +242,13 @@ def readings(languages):
         modern = [respell(s, names[s][0]) for s in spellings]
         for s, (raw, switched) in zip(spellings, read(voice, modern, data)):
             raw = raw.translate(VOICE_SOUNDS.get(names[s][0], {}))
+            # Norwegian espeak reads a final e as a (Sverre as svarra): it's ə.
+            if names[s][0] == "nb" and s.lower().endswith("e") and raw.endswith("a"):
+                raw = raw[:-1] + "ə"
             for pattern, sound in FIXES.get(names[s][0], []):
                 raw = pattern.sub(sound, raw)
+            # Letters that assimilate can leave a sound three times (Norwegian Sandnes as sɑnnnəs): it's long.
+            raw = re.sub(r"([^\W\d_])\1\1+", r"\1\1", raw)
             spelled = not any(vowel_letter(c) for c in s.lower()) and "\u0329" not in raw
             # espeak spells out a word it can't read ("Jhon" as J-h-o-n), each letter stressed.
             spelled = spelled or "-" not in s and raw.count("ˈ") > 1
