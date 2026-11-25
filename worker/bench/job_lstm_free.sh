@@ -42,7 +42,8 @@ start_worker() { # label log -> WORKER_PID, START_S (seconds to listening)
             return 1
         }
     done
-    START_S=$(echo "$EPOCHREALTIME - $t0" | bc)
+    local us=$((${EPOCHREALTIME/./} - ${t0/./}))
+    START_S=$((us / 1000000)).$(((us / 100000) % 10))
 }
 
 if [[ " $STEPS " == *" startup "* ]]; then
