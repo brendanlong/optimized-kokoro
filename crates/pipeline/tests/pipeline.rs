@@ -533,11 +533,18 @@ fn a_possessive_apostrophe_after_a_silent_s_is_said_as_its_s() {
     for text in ["James’ hat", "Jesus' name", "the dogs' bowls"] {
         assert_eq!(phonemize(text), phonemize(&text.replace(['\'', '’'], "")), "{text}");
     }
-    // A name's own phonemes take the ending too.
+    // A name's or link's phonemes take the ending too, and "Jean-Louis" read as one word does; a
+    // link with the apostrophe inside it is read as written.
     assert_eq!(phonemize("Alès' house"), format!("{}z hˈWs", name("Alès")));
+    assert_eq!(phonemize("[Louis](/ˈlui/)' book"), phonemize("Louis's book"));
+    assert_eq!(phonemize("[Louis'](/ˈlui/) book"), phonemize("[Louis](/ˈlui/) book"));
+    assert!(phonemize("Jean-Louis' son").contains("wˈiz "), "{}", phonemize("Jean-Louis' son"));
     // A quote it closes stays a quote.
     let quoted = phonemize("He said 'ask Louis' and left.");
     assert!(quoted.contains("lˈui” "), "{quoted}");
+    // A possessive spaCy tags as one may close the quote.
+    let closed = phonemize("He said 'ask James' and Louis' son left.");
+    assert!(closed.contains("lˈuiz "), "{closed}");
 }
 
 #[test]
