@@ -446,7 +446,7 @@ impl G2p {
         tagged: Vec<TaggedToken>,
         mut fallback: Option<&mut dyn Fallback>,
     ) -> Result<(String, Vec<Token>), Error> {
-        let tokens = Self::fold_left(self.tokenize(pre, tagged)?);
+        let tokens = possessive_apostrophes(Self::fold_left(self.tokenize(pre, tagged)?));
         let mut words = retokenize(tokens)?;
         let mut ctx = TokenContext::default();
         for word in words.iter_mut().rev() {
@@ -466,14 +466,35 @@ impl G2p {
                 Word::Many(w) => self.resolve_group(w, &mut ctx, fallback.as_deref_mut())?,
             }
         }
-        let mut out = String::new();
-        let tokens: Vec<Token> = words
+        let mut tokens: Vec<MToken> = words
             .into_iter()
-            .map(|w| {
-                let tk = match w {
-                    Word::One(tk) => tk,
-                    Word::Many(tks) => merge_tokens(&tks, true),
-                };
+            .map(|w| match w {
+                Word::One(tk) => tk,
+                Word::Many(tks) => merge_tokens(&tks, true),
+            })
+            .collect();
+        // A possessive apostrophe adds the sound "'s" would where the word's "s" is silent: "Louis'"
+        // is "Louis's". After a link, the apostrophe is a token of its own.
+        for i in 0..tokens.len() {
+            let owner = if ends_in_s_apostrophe(&tokens[i].text) {
+                i
+            } else if i > 0
+                && tokens[i].tag == "POS"
+                && tokens[i].text.chars().all(is_apostrophe)
+                && possessive_s(&tokens[i - 1])
+            {
+                i - 1
+            } else {
+                continue;
+            };
+            if let Some(ps) = tokens[owner].phonemes.as_mut().filter(|p| !p.is_empty() && !ends_in_hiss(p)) {
+                *ps = self.lexicon.s(Some(std::mem::take(ps))).expect("not empty");
+            }
+        }
+        let mut out = String::new();
+        let tokens = tokens
+            .into_iter()
+            .map(|tk| {
                 out.push_str(tk.phonemes.as_deref().unwrap_or_default());
                 out.push_str(&tk.whitespace);
                 tk.into_token()
@@ -631,6 +652,50 @@ impl G2p {
         }
         result
     }
+}
+
+fn is_apostrophe(c: char) -> bool {
+    matches!(c, '\'' | '‘' | '’')
+}
+
+/// Whether `text` ends in "s" and an apostrophe, which `possessive_apostrophes` leaves only on a
+/// possessive ("Louis'", "dogs'").
+fn ends_in_s_apostrophe(text: &str) -> bool {
+    let mut cs = text.chars().rev();
+    cs.next().is_some_and(is_apostrophe) && matches!(cs.next(), Some('s' | 'S'))
+}
+
+/// Whether `ps` ends in an s-like sound, which a possessive apostrophe adds nothing to ("James'").
+fn ends_in_hiss(ps: &str) -> bool {
+    ps.trim_end_matches('ː').chars().next_back().is_some_and(|c| "szʃʒʂʐɕʑ".contains(c))
+}
+
+/// Whether an apostrophe right after `before` may be its possessive: it's a word of more than one
+/// letter ending in "s" ("Louis", not "s").
+fn possessive_s(before: &MToken) -> bool {
+    before.whitespace.is_empty() && before.text.chars().count() > 1 && before.text.ends_with(['s', 'S'])
+}
+
+/// Each apostrophe right after a word ending in "s" that spaCy tags a closing quote with no single
+/// quote open before it ("Louis' patricide"), retagged a possessive, as spaCy tags it after most such
+/// words ("James' book").
+fn possessive_apostrophes(mut tokens: Vec<MToken>) -> Vec<MToken> {
+    let mut open = 0usize;
+    for i in 0..tokens.len() {
+        let mut cs = tokens[i].text.chars();
+        if tokens[i].phonemes.is_some() || !cs.next().is_some_and(is_apostrophe) || cs.next().is_some() {
+            continue;
+        }
+        match tokens[i].tag.as_str() {
+            "``" => open += 1,
+            "''" if open > 0 => open -= 1,
+            "''" if i > 0 && possessive_s(&tokens[i - 1]) => {
+                tokens[i].tag = "POS".into();
+            }
+            _ => {}
+        }
+    }
+    tokens
 }
 
 fn retokenize(tokens: Vec<MToken>) -> Result<Vec<Word>, Error> {

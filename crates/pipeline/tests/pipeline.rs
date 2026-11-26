@@ -524,6 +524,23 @@ fn a_name_takes_possessive_and_plural_endings() {
 }
 
 #[test]
+fn a_possessive_apostrophe_after_a_silent_s_is_said_as_its_s() {
+    for (bare, full) in [("Louis’ patricide", "Louis's patricide"), ("Descartes' ideas", "Descartes's ideas")] {
+        assert_eq!(phonemize(bare), phonemize(full), "{bare}");
+    }
+    assert_eq!(phonemize("Dumas’ novels"), phonemize("Dumas novels").replacen(' ', "z ", 1));
+    // A spoken s takes nothing.
+    for text in ["James’ hat", "Jesus' name", "the dogs' bowls"] {
+        assert_eq!(phonemize(text), phonemize(&text.replace(['\'', '’'], "")), "{text}");
+    }
+    // A name's own phonemes take the ending too.
+    assert_eq!(phonemize("Alès' house"), format!("{}z hˈWs", name("Alès")));
+    // A quote it closes stays a quote.
+    let quoted = phonemize("He said 'ask Louis' and left.");
+    assert!(quoted.contains("lˈui” "), "{quoted}");
+}
+
+#[test]
 fn names_are_found_in_any_case_but_lowercase_and_lose_to_overrides() {
     let gondor = name("Gondor");
     for text in ["GONDOR", "OF GONDOR AND ROHAN", "GoNdOr"] {
