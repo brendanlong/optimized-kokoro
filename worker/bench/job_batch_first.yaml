@@ -1,0 +1,14 @@
+# gpuc submit bench/job_batch_first.yaml --host local   (from worker/). Untracked inputs it expects:
+# bench/bin/students.pt.
+name: kokoro-batch-first
+setup: uv sync --frozen
+command: bash bench/job_batch_first.sh
+python: .venv/bin/python
+gpus: 1
+env:
+  REQUIRE_CUDA: "1"
+outputs:
+  - path: results
+priority: 40
+estimated_runtime_min: 60
+max_runtime_min: 240
