@@ -129,6 +129,8 @@ struct MToken {
     phonemes: Option<String>,
     is_head: bool,
     prespace: bool,
+    /// Followed by a possessive apostrophe of its own, after its "s" ([`possessive_apostrophes`]).
+    possessive: bool,
 }
 
 impl MToken {
@@ -189,6 +191,7 @@ fn merge_tokens(tokens: &[MToken], join_phonemes: bool) -> MToken {
         phonemes,
         is_head: first.is_head,
         prespace: first.prespace,
+        possessive: false,
     }
 }
 
@@ -446,7 +449,7 @@ impl G2p {
         tagged: Vec<TaggedToken>,
         mut fallback: Option<&mut dyn Fallback>,
     ) -> Result<(String, Vec<Token>), Error> {
-        let tokens = Self::fold_left(self.tokenize(pre, tagged)?);
+        let tokens = possessive_apostrophes(Self::fold_left(self.tokenize(pre, tagged)?));
         let mut words = retokenize(tokens)?;
         let mut ctx = TokenContext::default();
         for word in words.iter_mut().rev() {
@@ -466,20 +469,44 @@ impl G2p {
                 Word::Many(w) => self.resolve_group(w, &mut ctx, fallback.as_deref_mut())?,
             }
         }
-        let mut out = String::new();
-        let tokens: Vec<Token> = words
+        for word in &mut words {
+            match word {
+                Word::One(tk) => self.say_possessives(std::slice::from_mut(tk)),
+                Word::Many(tks) => self.say_possessives(tks),
+            }
+        }
+        let tokens: Vec<MToken> = words
             .into_iter()
-            .map(|w| {
-                let tk = match w {
-                    Word::One(tk) => tk,
-                    Word::Many(tks) => merge_tokens(&tks, true),
-                };
+            .map(|w| match w {
+                Word::One(tk) => tk,
+                Word::Many(tks) => merge_tokens(&tks, true),
+            })
+            .collect();
+        let mut out = String::new();
+        let tokens = tokens
+            .into_iter()
+            .map(|tk| {
                 out.push_str(tk.phonemes.as_deref().unwrap_or_default());
                 out.push_str(&tk.whitespace);
                 tk.into_token()
             })
             .collect();
         Ok((out, tokens))
+    }
+
+    /// A possessive apostrophe adds the sound "'s" would where the word's "s" is silent: "Louis'"
+    /// is "Louis's". A span read as one word holds its phonemes in its first token ("Jean-Louis'").
+    fn say_possessives(&self, word: &mut [MToken]) {
+        for i in 0..word.len() {
+            if !word[i].possessive {
+                continue;
+            }
+            if let Some(ps) = word[..=i].iter_mut().rev().find_map(|t| t.phonemes.as_mut().filter(|p| !p.is_empty()))
+                && !ends_in_hiss(ps)
+            {
+                *ps = self.lexicon.s(Some(std::mem::take(ps))).expect("not empty");
+            }
+        }
     }
 
     fn resolve_group<'f>(
@@ -547,6 +574,7 @@ impl G2p {
                 phonemes: None,
                 is_head: true,
                 prespace: false,
+                possessive: false,
             })
             .collect();
         if pre.features.is_empty() {
@@ -633,6 +661,46 @@ impl G2p {
     }
 }
 
+fn is_apostrophe(c: char) -> bool {
+    matches!(c, '\'' | '‘' | '’')
+}
+
+/// Whether `ps` ends in an s-like sound, which a possessive apostrophe adds nothing to ("James'").
+fn ends_in_hiss(ps: &str) -> bool {
+    ps.trim_end_matches('ː').chars().next_back().is_some_and(|c| "szʃʒʂʐɕʑ".contains(c))
+}
+
+/// Whether an apostrophe right after `before` may be its possessive: it's a word of more than one
+/// letter ending in "s" ("Louis", not "s").
+fn possessive_s(before: &MToken) -> bool {
+    before.whitespace.is_empty() && before.text.chars().count() > 1 && before.text.ends_with(['s', 'S'])
+}
+
+/// Marks each word ending in "s" that an apostrophe after it makes a possessive: one spaCy tags so
+/// ("James' book"), or a closing quote with no single quote open before it ("Louis' patricide"),
+/// which is retagged a possessive. A possessive may close a quote ("'ask James' and Louis' son").
+fn possessive_apostrophes(mut tokens: Vec<MToken>) -> Vec<MToken> {
+    let mut open = 0usize;
+    for i in 0..tokens.len() {
+        let mut cs = tokens[i].text.chars();
+        if tokens[i].phonemes.is_some() || !cs.next().is_some_and(is_apostrophe) || cs.next().is_some() {
+            continue;
+        }
+        let after_s = i > 0 && possessive_s(&tokens[i - 1]);
+        match tokens[i].tag.as_str() {
+            "``" => open += 1,
+            "''" if open > 0 => open -= 1,
+            "''" | "POS" if after_s => {
+                open = open.saturating_sub(1);
+                tokens[i].tag = "POS".into();
+                tokens[i - 1].possessive = true;
+            }
+            _ => {}
+        }
+    }
+    tokens
+}
+
 fn retokenize(tokens: Vec<MToken>) -> Result<Vec<Word>, Error> {
     let mut words: Vec<Word> = Vec::with_capacity(tokens.len());
     for token in tokens {
@@ -646,12 +714,15 @@ fn retokenize(tokens: Vec<MToken>) -> Result<Vec<Word>, Error> {
                     phonemes: None,
                     is_head: true,
                     prespace: false,
+                    possessive: false,
                 })
                 .collect()
         } else {
             vec![token.clone()]
         };
-        tks.last_mut().ok_or(Error::EmptyToken)?.whitespace = token.whitespace;
+        let last = tks.last_mut().ok_or(Error::EmptyToken)?;
+        last.whitespace = token.whitespace;
+        last.possessive = token.possessive;
         for tk in &mut tks {
             if tk.phonemes.is_some() {
             } else if tk.tag == ":" && (tk.text == "-" || tk.text == "–") {
