@@ -1,15 +1,20 @@
 """One-time conversion of hexgrad/Kokoro-82M's pickled weights to safetensors.
 
 The worker never unpickles anything: this runs once, outside the sandbox, and writes
-    model.safetensors   the KModel state dict with weight norm already folded, and the LSTMs'
-                        weights replaced by the distilled ConvSeqs' (convseq.py) from --students
+    model.safetensors   the KModel state dict with weight norm already folded; the LSTMs'
+                        weights replaced by the distilled ConvSeqs' (convseq.py) from --students,
+                        the F0/N predictor's by the batch-first ones from --frame-side, and the
+                        decoder's by the Vocos-style decoder's (frame.Decoder) from --decoder
     voices.safetensors  one [510, 256] fp32 tensor per voice
     config.json         copied unchanged
 into the output directory, which the worker then mounts read-only.
 
-    uv run python -m kokoro_worker.convert OUT_DIR --students STUDENTS_PT [--source DIR]
+    uv run python -m kokoro_worker.convert OUT_DIR --students STUDENTS_PT --frame-side FRAME_SIDE_PT \
+        --decoder DECODER_PT [--source DIR]
 
-STUDENTS_PT is a checkpoint from brendanlong/kokoro#3's experiments/lstm_swap (train_te.py's).
+The checkpoints come from brendanlong/kokoro's experiments (branch brendanlong/batch-first-decoder):
+STUDENTS_PT from lstm_swap/train_te.py, FRAME_SIDE_PT from batch_first/train.py (only its F0/N
+predictor is used) and DECODER_PT from vocos/train_adv.py.
 
 With no --source, the files come from the Hugging Face hub at a pinned revision.
 """
@@ -55,7 +60,34 @@ def student_state(path: str) -> dict:
     return {k: v.float().contiguous() for k, v in state.items()}
 
 
-def convert(source: str, out: str, students: str) -> None:
+F0N = ("predictor.F0.", "predictor.N.", "predictor.F0_proj.", "predictor.N_proj.")
+
+
+def _fold_weight_norm(state: dict) -> dict:
+    """torch's weight_norm parametrization (dim 0) folded into plain weights, as KModel does."""
+    out = {}
+    for k, v in state.items():
+        if k.endswith(".parametrizations.weight.original0"):
+            base = k[: -len(".parametrizations.weight.original0")]
+            g, w = v, state[base + ".parametrizations.weight.original1"]
+            out[base + ".weight"] = g * w / w.norm(dim=tuple(range(1, w.dim())), keepdim=True)
+        elif not k.endswith(".parametrizations.weight.original1"):
+            out[k] = v
+    return out
+
+
+def frame_side_state(path: str) -> dict:
+    """The batch-first F0/N predictor's weights, keyed as in the worker's KModel."""
+    state = _fold_weight_norm(torch.load(path, map_location="cpu", weights_only=True)["state"])
+    return {k: v.float().contiguous() for k, v in state.items() if k.startswith(F0N)}
+
+
+def decoder_state(path: str) -> dict:
+    state = torch.load(path, map_location="cpu", weights_only=True)["state"]
+    return {"decoder." + k: v.float().contiguous() for k, v in state.items()}
+
+
+def convert(source: str, out: str, students: str, frame_side: str, decoder: str) -> None:
     from kokoro_worker import convseq
     from kokoro_worker.model import _import_kokoro, build_kmodel
 
@@ -68,9 +100,11 @@ def convert(source: str, out: str, students: str) -> None:
     # folds weight norm; we save the result, so the worker loads it with no folding step either.
     KModel = _import_kokoro().KModel  # kokoro's model code without its G2P
     model = KModel(repo_id=REPO_ID, config=config, model=os.path.join(source, "kokoro-v1_0.pth")).eval()
-    state = {k: v.detach().contiguous().clone() for k, v in model.state_dict().items()
-             if not k.startswith(tuple(p + "." for p in convseq.PATHS))}
+    replaced = (*(p + "." for p in convseq.PATHS), *F0N, "decoder.")
+    state = {k: v.detach().contiguous().clone() for k, v in model.state_dict().items() if not k.startswith(replaced)}
     state.update(student_state(students))
+    state.update(frame_side_state(frame_side))
+    state.update(decoder_state(decoder))
     build_kmodel(config).load_state_dict(state, strict=True)  # the worker's loader must accept it
     save_file(state, os.path.join(out, "model.safetensors"))
 
@@ -98,8 +132,10 @@ def main() -> None:
     parser.add_argument("out")
     parser.add_argument("--source", help="directory with config.json, kokoro-v1_0.pth and voices/*.pt")
     parser.add_argument("--students", required=True, help="the distilled ConvSeqs (see above)")
+    parser.add_argument("--frame-side", required=True, help="the batch-first F0/N predictor (see above)")
+    parser.add_argument("--decoder", required=True, help="the Vocos-style decoder (see above)")
     args = parser.parse_args()
-    convert(fetch(args.source), args.out, args.students)
+    convert(fetch(args.source), args.out, args.students, args.frame_side, args.decoder)
 
 
 if __name__ == "__main__":
