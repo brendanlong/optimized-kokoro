@@ -131,5 +131,5 @@ Measured in gVisor (`bench/job_kernels.sh`), against main's worker in the same j
 - Memory: GPU reserved 590-594 MiB at batch 1 (cuDNN 468-552), about 765 MiB on the card with the CUDA context; RSS 6.2 GB (6.5-6.8 GB). Warmup peak is the same as steady state.
 - Startup: compiling and autotuning the Triton kernels adds to warmup. Cold, at batch 1, it takes 4-6 minutes against 3; at batch 8, 10 against 7. From a seeded cache it takes 63 s against 51 s, with the seed at 154 MB against 57 MB. The autotune timings are cached in the seed too.
 
-`bench/reference.py` swaps cuDNN and cuFFT back in, for comparisons only. `bench/kernels_correct.py` checks the conv1d against `F.conv1d` for every layer and tile configuration at edge lengths, with guard bands; `tests/test_kernels.py` checks the transposed convolution and STFT on CPU.
+`bench/kernels_correct.py` checks the conv1d against `F.conv1d` for every layer and tile configuration at edge lengths, with guard bands; `tests/test_kernels.py` checks the transposed convolution and STFT on CPU.
 

@@ -152,9 +152,10 @@ class Synth:
         model = model.eval().requires_grad_(False).to(self.device)
         if self.half:
             model = model.half()
-            # The harmonic source's phase sum and the STFT matrices need fp32.
+            # The harmonic source's phase sum needs fp32, and so do the STFT matrices: rebuilt, since
+            # half() has already rounded them.
             model.decoder.source.float()
-            model.decoder.stft.float()
+            model.decoder.stft = kernels.MatmulSTFT(frame.N_FFT, frame.HOP).to(self.device)
         kernels.apply(model)
         self.model = model
 

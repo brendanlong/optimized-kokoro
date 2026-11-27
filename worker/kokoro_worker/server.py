@@ -208,7 +208,8 @@ def accept_loop(listener: socket.socket, synth, max_batch: int, frame_timeout: f
 
 
 def warmup(synth, max_batch: int) -> None:
-    """Compile before accepting connections: batch 1 and packed rows have graphs of their own."""
+    """Warm up before accepting connections: compile (unless --no-compile), and tune the Triton
+    conv1d's tiles, for batch 1 and for batches."""
     from .model import Request
 
     ids = sorted(synth.vocab_ids)
@@ -260,8 +261,8 @@ def main() -> None:
     # 1 by default. On the 3060 Ti, batching 8 gives more throughput under load (about 210x against
     # 153x at 16 streams) but longer waits for first audio; see README.md.
     parser.add_argument("--max-batch", type=int, default=1)
-    # 60 s (2,400 frames) at any speed, and a packed decoder row is held to the same frame count:
-    # about 1.4 GB of GPU memory reserved at most. Real 510-phoneme chunks reach about 44 s at
+    # 60 s (2,400 frames) at any speed, and a padded frame-side batch is held to the same frame count.
+    # (Its GPU memory hasn't been remeasured since the Vocos-style decoder replaced Kokoro's.) Real 510-phoneme chunks reach about 44 s at
     # speed 1; the front splits chunks that would exceed the cap (README.md).
     parser.add_argument("--max-chunk-seconds", type=float, default=60.0,
                         help="longest audio one request may produce, at any speed; sets the worker's "

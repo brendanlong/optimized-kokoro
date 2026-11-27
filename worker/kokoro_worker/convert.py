@@ -83,7 +83,15 @@ def frame_side_state(path: str) -> dict:
 
 
 def decoder_state(path: str) -> dict:
-    state = torch.load(path, map_location="cpu", weights_only=True)["state"]
+    from kokoro_worker import frame
+
+    ckpt = torch.load(path, map_location="cpu", weights_only=True)
+    # Other heads can have the same parameter shapes, so a strict load wouldn't catch them.
+    want = {"dim": frame.DIM, "layers": frame.LAYERS, "mult": frame.MULT, "head": "spec", "full_band": False}
+    config = {**want, **ckpt.get("config", {})}
+    if config != want:
+        raise SystemExit(f"{path}: decoder config {config}; frame.Decoder is {want}")
+    state = ckpt["state"]
     return {"decoder." + k: v.float().contiguous() for k, v in state.items()}
 
 
