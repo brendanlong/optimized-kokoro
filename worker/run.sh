@@ -90,7 +90,7 @@ fi
 # legacy nvidia-container-cli hook (and fail rootless); the device comes from CDI instead.
 # --userns=keep-id --user UID:GID: the process runs as the calling user's uid, whatever it is (not
 # the image's 1001), so the socket it creates belongs to that user on the host.
-# --tmpfs /tmp: Triton and Inductor write their caches and compile their launcher there (exec needed).
+# --tmpfs /tmp: Triton writes its cache and compiles its launcher there (exec needed).
 exec "${limits[@]}" podman run --rm --name "$name" \
     --runtime /usr/bin/runsc \
     --runtime-flag ignore-cgroups \

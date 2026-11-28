@@ -208,8 +208,8 @@ def accept_loop(listener: socket.socket, synth, max_batch: int, frame_timeout: f
 
 
 def warmup(synth, max_batch: int) -> None:
-    """Warm up before accepting connections: compile (unless --no-compile), and tune the Triton
-    conv1d's tiles, for batch 1 and for batches."""
+    """Warm up before accepting connections: compile the Triton conv1d's variants and tune its tiles,
+    for batch 1 and for batches."""
     from .model import Request
 
     ids = sorted(synth.vocab_ids)
@@ -232,7 +232,7 @@ def warmup(synth, max_batch: int) -> None:
         synth.max_chunk_samples = cap
 
 
-CACHE_DIRS = ("TORCHINDUCTOR_CACHE_DIR", "TRITON_CACHE_DIR")
+CACHE_DIRS = ("TRITON_CACHE_DIR",)
 
 
 def copy_caches(src_root: str | None, dst_root: str | None) -> None:
@@ -269,7 +269,6 @@ def main() -> None:
                              "peak GPU memory (README.md)")
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--fp32", action="store_true")
-    parser.add_argument("--no-compile", action="store_true")
     args = parser.parse_args()
     if not args.socket and not args.export_cache:
         parser.error("--socket is required (or --export-cache)")
@@ -291,7 +290,7 @@ def main() -> None:
     from .model import Synth
 
     t = time.monotonic()
-    synth = Synth(args.models, device=args.device, half=not args.fp32, compile=not args.no_compile,
+    synth = Synth(args.models, device=args.device, half=not args.fp32,
                   max_chunk_samples=max_chunk_samples)
     log.info("loaded in %.1f s: %d voices", time.monotonic() - t, len(synth.voice_names))
     warmup(synth, args.max_batch)

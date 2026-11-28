@@ -1,9 +1,8 @@
 #!/bin/bash
 # gpuc job: this checkout's worker (distilled, batch-first: ConvSeqs for the LSTMs, per-frame F0/N
-# predictor, Vocos-style decoder) uncompiled ("eager", --no-compile) and compiled ("compiled"), against
-# MAIN's (compiled), at --max-batch 8:
+# predictor, Vocos-style decoder; nothing compiled) against MAIN's (compiled), at --max-batch 8:
 #   startup  cold (empty compile caches) and warm (the caches the cold start wrote), each worker in turn
-#   ab       throughput: all three up at once, lookahead-shaped load at 1, 16 and 64 streams alternating
+#   ab       throughput: both up at once, lookahead-shaped load at 1, 16 and 64 streams alternating
 #            between them, ROUNDS rounds (bench/job_ab.sh's method)
 # Untracked inputs: bench/bin/main/worker (git archive origin/main worker, unpacked there) and the
 # distilled checkpoints bench/bin/{students,frame_side,decoder}.pt (kokoro_worker.convert's --students,
@@ -18,10 +17,9 @@ PY=$PWD/.venv/bin/python
 MAIN=$PWD/bench/bin/main/worker
 DATA=${GPUC_DATA_DIR:-$HOME/.cache}
 NEW_MODELS=$RUN/models
-declare -A MODELS=([main]=$DATA/kokoro-worker-models [eager]=$NEW_MODELS [compiled]=$NEW_MODELS)
-declare -A DIR=([main]=$MAIN [eager]=$PWD [compiled]=$PWD)
-declare -A FLAGS=([main]="" [eager]="--no-compile" [compiled]="")
-LABELS=(main eager compiled)
+declare -A MODELS=([main]=$DATA/kokoro-worker-models [new]=$NEW_MODELS)
+declare -A DIR=([main]=$MAIN [new]=$PWD)
+LABELS=(main new)
 STEPS=${STEPS:-startup ab}
 nvidia-smi --query-gpu=name,driver_version,memory.used --format=csv | tee results/gpu.txt
 
@@ -36,7 +34,7 @@ start_worker() { # label log -> WORKER_PID, START_S (seconds to listening)
     mkdir -p "$RUN/$label"
     export TRITON_CACHE_DIR=$RUN/$label/triton TORCHINDUCTOR_CACHE_DIR=$RUN/$label/inductor
     (cd "${DIR[$label]}" && exec "$PY" -m kokoro_worker.server --socket "$RUN/$label/worker.sock" \
-        --models "${MODELS[$label]}" --max-batch 8 ${FLAGS[$label]}) > "$log" 2>&1 &
+        --models "${MODELS[$label]}" --max-batch 8) > "$log" 2>&1 &
     WORKER_PID=$!
     until grep -q "listening on" "$log"; do
         sleep 0.5

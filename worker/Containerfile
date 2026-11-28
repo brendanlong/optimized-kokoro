@@ -28,7 +28,7 @@ COPY pyproject.toml uv.lock .python-version ./
 RUN uv sync --frozen --no-dev --managed-python
 
 FROM base
-# Triton (torch.compile) builds a small launcher with the system C compiler at first use.
+# Triton (the conv1d kernel in kernels.py) builds a small launcher with the system C compiler at first use.
 RUN apt-get update -y && \
     apt-get install -y --no-install-recommends gcc=4:13.2.0-7ubuntu1 libc6-dev=2.39-0ubuntu8.9 && \
     rm -rf /var/lib/apt/lists/* && \
@@ -40,13 +40,12 @@ WORKDIR /app
 # run.sh overrides this with the calling user's uid and deploy/compose.yaml with 65534 (nobody), so
 # nothing may depend on it.
 USER worker
-# The root filesystem is read-only at run time; compile caches go to a tmpfs at /tmp.
+# The root filesystem is read-only at run time; Triton's cache goes to a tmpfs at /tmp.
 ENV PATH=/app/.venv/bin:$PATH \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     HOME=/tmp \
     TRITON_CACHE_DIR=/tmp/triton \
-    TORCHINDUCTOR_CACHE_DIR=/tmp/inductor \
     PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
     CUDA_MODULE_LOADING=LAZY
 ENTRYPOINT ["python", "-m", "kokoro_worker.server", "--socket", "/run/kokoro/worker.sock", "--models", "/models"]

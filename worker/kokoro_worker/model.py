@@ -15,6 +15,8 @@ Vocos-style decoder in place of Kokoro's. convert.py installs the distilled weig
 - Convolutions and the STFT run through kernels.py (a Triton conv1d, matmul transposed convs and
   STFT) instead of cuDNN and cuFFT, which build a plan per shape: any length, first time or not,
   costs the same.
+- Nothing is compiled with torch.compile (Brendan's decision, 2026-11-28): it gave about 1.8x the
+  throughput but cost minutes of startup, and eager is already ~2.6x the old compiled worker.
 """
 
 import importlib.util
@@ -97,18 +99,6 @@ def build_kmodel(config: dict) -> torch.nn.Module:
     return m
 
 
-def _fresh(fn, tag: str):
-    """A wrapper around fn with its own code object. torch.compile keeps its graphs per code object,
-    so wrappers made here get separate caches."""
-
-    def call(*args, **kwargs):
-        return fn(*args, **kwargs)
-
-    name = getattr(fn, "__name__", type(fn).__name__)
-    call.__code__ = call.__code__.replace(co_name=f"{tag}_{name}")
-    return call
-
-
 @dataclass
 class Request:
     ids: list[int]  # phoneme ids, without the boundary 0s
@@ -131,7 +121,6 @@ class Synth:
         model_dir: str,
         device: str = "cuda",
         half: bool = True,
-        compile: bool = True,
         max_chunk_samples: int = 1_440_000,
         frame_budget: int | None = None,
     ):
@@ -169,22 +158,12 @@ class Synth:
             raise ValueError(f"bad voice packs: {tuple(packs.shape)}")
         self.voices = packs.to(self.device)  # [n_voices, 510, 256] fp32
 
-        self._fn = {
-            "bert": model.bert,
-            "text_encoder": self._text_encoder_eager,
-            "duration": self._duration_eager,
-            "shared": model.predictor.shared,
-            "f0n": lambda x, s, m_f, m_2f: frame.f0n(model.predictor, x, s, m_f, m_2f),
-            "decoder": model.decoder,
-        }
-        if compile:
-            self._fn = {k: torch.compile(_fresh(f, k), dynamic=True) for k, f in self._fn.items()}
 
     def style(self, voice: int, style_len: int) -> torch.Tensor:
         """Voice pack `voice` at row style_len - 1 (KPipeline's pack[len(ps) - 1])."""
         return self.voices[voice, style_len - 1]
 
-    def _text_encoder_eager(self, ids: torch.Tensor, keep: torch.Tensor) -> torch.Tensor:
+    def _text_encoder(self, ids: torch.Tensor, keep: torch.Tensor) -> torch.Tensor:
         """keep [B, T, 1] -> t_en [B, 512, T], zero at padding."""
         te = self.model.text_encoder
         keep_c = keep.transpose(1, 2)
@@ -193,7 +172,7 @@ class Synth:
             x = block(x) * keep_c
         return (te.lstm(x.transpose(1, 2), keep) * keep).transpose(1, 2)
 
-    def _duration_eager(self, d_en: torch.Tensor, s: torch.Tensor, keep: torch.Tensor):
+    def _duration(self, d_en: torch.Tensor, s: torch.Tensor, keep: torch.Tensor):
         """The duration predictor: d [B, T, 640] (zero at padding) and the summed duration logits [B, T]."""
         enc = self.model.predictor.text_encoder
         s_t = s[:, None, :].expand(-1, d_en.shape[1], -1)
@@ -208,11 +187,10 @@ class Synth:
         """Text side for the whole batch: (pred_dur [B, T] with 0 at padding, d [B, T, 640], t_en [B, 512, T])."""
         m = self.model
         keep = (~mask)[..., None]
-        fn = self._fn
-        bert = fn["bert"](ids, attention_mask=keep[..., 0].long())
+        bert = m.bert(ids, attention_mask=keep[..., 0].long())
         d_en = m.bert_encoder(bert)  # [B, T, 512]
-        t_en = fn["text_encoder"](ids, keep.to(d_en.dtype))
-        d, duration = fn["duration"](d_en, s, keep.to(d_en.dtype))
+        t_en = self._text_encoder(ids, keep.to(d_en.dtype))
+        d, duration = self._duration(d_en, s, keep.to(d_en.dtype))
         duration = duration / speed[:, None]
         # The clamp to ceil(50 / speed) never binds (the sum is at most 50); it makes the bound the
         # front checks hold whatever the float rounding.
@@ -317,12 +295,11 @@ class Synth:
         lengths = torch.tensor(frames, device=dev)
         m_f = (positions < lengths[:, None])[:, None, :]  # [n, 1, width]
         with torch.autocast(dev.type, dtype=torch.float16, enabled=self.half):
-            fn = self._fn
             keep = m_f.transpose(1, 2).to(en.dtype)
-            x = fn["shared"](en.transpose(1, 2), keep) * keep  # [n, width, 512]
+            x = self.model.predictor.shared(en.transpose(1, 2), keep) * keep  # [n, width, 512]
             m_f = m_f.to(x.dtype)
-            f0, nn = fn["f0n"](x.transpose(1, 2), s[:, 128:], m_f, m_f.repeat_interleave(2, dim=2))
-            audio = fn["decoder"](asr, f0, nn, s[:, :128], lengths)  # [n, 1, SAMPLES_PER_FRAME * width]
+            f0, nn = frame.f0n(self.model.predictor, x.transpose(1, 2), s[:, 128:], m_f, m_f.repeat_interleave(2, dim=2))
+            audio = self.model.decoder(asr, f0, nn, s[:, :128], lengths)  # [n, 1, SAMPLES_PER_FRAME * width]
         rows = [audio[i, 0, : f * SAMPLES_PER_FRAME] for i, f in enumerate(frames)]
         audio = torch.cat(rows).float()
         bounds = [0]
