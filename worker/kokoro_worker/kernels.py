@@ -203,22 +203,32 @@ class MatmulSTFT(torch.nn.Module):
         self.register_buffer("window_sq", (window**2).float(), persistent=False)
 
     @torch.autocast("cuda", enabled=False)
-    def transform(self, x):
-        """x [B, L] -> magnitude, phase [B, bins, frames]."""
+    def spectrum(self, x):
+        """x [B, L] -> real, imaginary [B, bins, frames]."""
         pad = self.n_fft // 2
         x = F.pad(x[:, None, :].float(), (pad, pad), mode="reflect")[:, 0]
         frames = x.unfold(-1, self.n_fft, self.hop)  # [B, frames, n_fft]
         spec = torch.matmul(frames, self.fwd).transpose(1, 2)  # [B, 2 * bins, frames]
-        real, imag = spec.chunk(2, dim=1)
+        return spec.chunk(2, dim=1)
+
+    @torch.autocast("cuda", enabled=False)
+    def transform(self, x):
+        """x [B, L] -> magnitude, phase [B, bins, frames]."""
+        real, imag = self.spectrum(x)
         return torch.sqrt(real * real + imag * imag), torch.atan2(imag, real)
 
     @torch.autocast("cuda", enabled=False)
     def inverse(self, magnitude, phase, kept=None):
-        """magnitude, phase [B, bins, frames] -> [B, 1, hop * (frames - 1)]. With kept [B, frames]
+        """magnitude, phase [B, bins, frames] -> [B, 1, hop * (frames - 1)]; see synthesize."""
+        magnitude, phase = magnitude.float(), phase.float()
+        return self.synthesize(magnitude * torch.cos(phase), magnitude * torch.sin(phase), kept)
+
+    @torch.autocast("cuda", enabled=False)
+    def synthesize(self, real, imag, kept=None):
+        """real, imaginary [B, bins, frames] -> [B, 1, hop * (frames - 1)]. With kept [B, frames]
         (1 for a row's frames, 0 past its end), each row's window normalization counts only its own
         frames, as if it had been transformed alone."""
-        magnitude, phase = magnitude.float(), phase.float()
-        spec = torch.cat([magnitude * torch.cos(phase), magnitude * torch.sin(phase)], dim=1)
+        spec = torch.cat([real.float(), imag.float()], dim=1)
         frames = torch.matmul(spec.transpose(1, 2), self.inv)  # [B, T, n_fft]
         bsz, t, _ = frames.shape
         r = self.n_fft // self.hop

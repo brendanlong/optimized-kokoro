@@ -14,7 +14,7 @@ into the output directory, which the worker then mounts read-only.
 
 The checkpoints come from brendanlong/kokoro's experiments (branch brendanlong/batch-first-decoder):
 STUDENTS_PT from lstm_swap/train_te.py, FRAME_SIDE_PT from batch_first/train.py (only its F0/N
-predictor is used) and DECODER_PT from vocos/train_adv.py.
+predictor is used) and DECODER_PT from vocos/train.py or train_adv.py (with frame.CONFIG's configuration).
 
 With no --source, the files come from the Hugging Face hub at a pinned revision.
 """
@@ -87,7 +87,7 @@ def decoder_state(path: str) -> dict:
 
     ckpt = torch.load(path, map_location="cpu", weights_only=True)
     # Other heads can have the same parameter shapes, so a strict load wouldn't catch them.
-    want = {"dim": frame.DIM, "layers": frame.LAYERS, "mult": frame.MULT, "head": "spec", "full_band": False}
+    want = frame.CONFIG
     config = {**want, **ckpt.get("config", {})}
     if config != want:
         raise SystemExit(f"{path}: decoder config {config}; frame.Decoder is {want}")

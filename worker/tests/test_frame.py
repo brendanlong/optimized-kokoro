@@ -15,7 +15,15 @@ def kokoro(monkeypatch):
     from kokoro_worker import model
 
     model._import_kokoro()
-    monkeypatch.setattr(torch, "randn_like", torch.zeros_like)  # the harmonic source's noise off
+    # The harmonic source's noise, as a function of sample position only, so a sentence gets the same
+    # noise batched or alone. (Zero noise would leave empty frequency bins, whose phases are rounding
+    # noise that the random gains blow up.)
+    def noise(t, **kwargs):
+        pos = torch.arange(t.shape[1], dtype=torch.float64)[None, :, None]
+        dim = torch.arange(t.shape[2], dtype=torch.float64)[None, None, :]
+        return (torch.frac(torch.sin(pos * 12.9898 + dim * 78.233) * 43758.5453) - 0.5).to(t.dtype).expand_as(t)
+
+    monkeypatch.setattr(torch, "randn_like", noise)
     torch.manual_seed(0)
     import kokoro.istftnet as k
 
@@ -64,7 +72,7 @@ def test_decoder_batch_matches_each_sentence_alone(decoder):
         alone = decoder(asr[i : i + 1, :, :f], f0[i : i + 1, : 2 * f], energy[i : i + 1, : 2 * f], s[i : i + 1],
                         torch.tensor([f]))
         got, want = batch[i, 0, : 600 * f], alone[0, 0]
-        assert float((got - want).abs().max()) < 1e-3 * float(want.abs().max())  # float rounding
+        assert float((got - want).abs().max()) < 1e-4 * float(want.abs().max())  # float rounding
 
 
 @torch.no_grad()
@@ -78,7 +86,7 @@ def test_neighbours_dont_change_a_sentence(decoder):
         a[i], f_[i], e[i], st[i] = asr[i], f0[i], energy[i], s[i]
         after = decoder(a, f_, e, st, torch.tensor(FRAMES))
         b, a = before[i, 0, : 600 * f], after[i, 0, : 600 * f]
-        assert float((b - a).abs().max()) < 1e-3 * float(b.abs().max())
+        assert float((b - a).abs().max()) < 1e-4 * float(b.abs().max())
         j = int(others.nonzero()[0])
         assert not torch.allclose(before[j, 0, : 600 * FRAMES[j]], after[j, 0, : 600 * FRAMES[j]], atol=1e-3)
 
