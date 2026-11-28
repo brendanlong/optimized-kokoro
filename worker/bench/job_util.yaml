@@ -1,0 +1,13 @@
+# gpuc submit bench/job_util.yaml --host local   (from worker/). Needs bench/bin/{students,frame_side,decoder}.pt, untracked.
+name: kokoro-vocos-gpu-util
+setup: uv sync --frozen
+command: bash bench/job_util.sh
+python: .venv/bin/python
+gpus: 1
+env:
+  REQUIRE_CUDA: "1"
+outputs:
+  - path: results
+priority: 30
+estimated_runtime_min: 40
+max_runtime_min: 120
