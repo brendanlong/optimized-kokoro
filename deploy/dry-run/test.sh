@@ -357,6 +357,7 @@ t_update_models_legacy() {
     id=$(models_id)
     cp "$D/models/$id/"* "$D/models/"
     sed -i '/^KOKORO_MODELS_DIR=/d' "$D/releases/$before_cur/.env"
+    # shellcheck disable=SC2016 # the release's compose.yaml from before IDs, ${...} literal
     sed -i 's|/models/${KOKORO_MODELS_DIR:?}"|/models"|' "$D/releases/$before_cur/compose.yaml"
     run update.sh
     expect_rc 0 && check_updated && expect "legacy models kept for $before_cur" [ -f "$D/models/model.safetensors" ] || return 1

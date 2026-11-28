@@ -34,7 +34,7 @@ start_worker() { # label log -> WORKER_PID, START_S (seconds to listening)
     mkdir -p "$RUN/$label"
     export TRITON_CACHE_DIR=$RUN/$label/triton TORCHINDUCTOR_CACHE_DIR=$RUN/$label/inductor
     (cd "${DIR[$label]}" && exec "$PY" -m kokoro_worker.server --socket "$RUN/$label/worker.sock" \
-        --models "${MODELS[$label]}" --max-batch 8 ${FLAGS[$label]}) > "$log" 2>&1 &
+        --models "${MODELS[$label]}" --max-batch 8 ${FLAGS[$label]:+"${FLAGS[$label]}"}) > "$log" 2>&1 &
     WORKER_PID=$!
     until grep -q "listening on" "$log"; do
         sleep 0.5
