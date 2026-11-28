@@ -1,7 +1,7 @@
 # The production deployment on the host's system Docker: the GPU worker, the Rust server and the demo
 # page, each in gVisor as nobody (65534), with no capabilities and a read-only root. deploy/install.sh
 # and deploy/update.sh copy this file to /srv/optimized-kokoro/releases/RELEASE/compose.yaml next to a
-# .env that sets KOKORO_ROOT, KOKORO_RELEASE, KOKORO_UNIDIC_FILE, COMPOSE_PROJECT_NAME and the
+# .env that sets KOKORO_ROOT, KOKORO_RELEASE, KOKORO_UNIDIC_FILE, KOKORO_MODELS_DIR, COMPOSE_PROJECT_NAME and the
 # settings from /srv/optimized-kokoro/settings.env; /srv/optimized-kokoro/current points at the
 # release that runs. See deploy/README.md.
 #
@@ -48,7 +48,7 @@ services:
       - /tmp:rw,exec,nosuid,nodev,size=2g,mode=1777
     volumes:
       - {type: volume, source: sock, target: /run/kokoro, volume: {nocopy: true}}
-      - {type: bind, source: "${KOKORO_ROOT:?}/models", target: /models, read_only: true}
+      - {type: bind, source: "${KOKORO_ROOT:?}/models/${KOKORO_MODELS_DIR:?}", target: /models, read_only: true}
       - {type: bind, source: "${KOKORO_ROOT:?}/releases/${KOKORO_RELEASE:?}/cache-seed", target: /cache-seed, read_only: true}
     # Host RAM, CPU and threads for the sandbox (worker/run.sh's limits). GPU memory isn't covered.
     mem_limit: 12g

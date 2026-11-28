@@ -9,7 +9,9 @@ sandbox, and writes
                         (convseq.py, frame.f0n and frame.Decoder)
     voices.safetensors  one [510, 256] fp32 tensor per voice (Kokoro's)
     config.json         Kokoro's, copied unchanged
-into the output directory, which the worker then mounts read-only.
+into the output directory, which the worker then mounts read-only. deploy/ names a conversion by
+this file's hash (models_id in deploy/lib.sh), so a change to what it writes, or to how the worker
+loads it, must change this file too (a pinned revision, or this note's date: 2026-11-28).
 
     uv run python -m kokoro_worker.convert OUT_DIR [--source DIR] [--ore DIR]
 
@@ -33,7 +35,7 @@ from safetensors.torch import save_file
 REPO_ID = "hexgrad/Kokoro-82M"
 REVISION = "f3ff3571791e39611d31c381e3a41a3af07b4987"
 ORE_REPO_ID = "brendanlong/ore-tts"
-ORE_REVISION = "942b61e65c6ab1e08e3cd4f13c05187f98681f1d"  # tag v0.1
+ORE_REVISION = "bc05253abcc2889fc84bdcdebcb1e644389dcf38"  # the commit tag v0.1 points to
 ORE_FILES = {
     "students": "front/lstm-replacements.pt",
     "frame_side": "front/pitch-energy-predictor.pt",
