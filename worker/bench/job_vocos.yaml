@@ -9,6 +9,6 @@ env:
   REQUIRE_CUDA: "1"
 outputs:
   - path: results
-priority: 40
+priority: 15
 estimated_runtime_min: 90
 max_runtime_min: 240
