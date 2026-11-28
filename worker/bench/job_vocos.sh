@@ -5,9 +5,8 @@
 #   startup  cold (empty compile caches) and warm (the caches the cold start wrote), each worker in turn
 #   ab       throughput: all three up at once, lookahead-shaped load at 1, 16 and 64 streams alternating
 #            between them, ROUNDS rounds (bench/job_ab.sh's method)
-# Untracked inputs: bench/bin/main/worker (git archive origin/main worker, unpacked there) and the
-# distilled checkpoints bench/bin/{students,frame_side,decoder}.pt (kokoro_worker.convert's --students,
-# --frame-side and --decoder).
+# Untracked input: bench/bin/main/worker (git archive origin/main worker, unpacked there). Órë TTS's
+# weights come from the hub at convert.py's pinned revision, or from ORE_DIR (convert.py's --ore).
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit
 RUN=$(mktemp -d "$HOME/.cache/kw-vc-XXXX") # short: socket paths are limited to 108 bytes
@@ -28,8 +27,7 @@ nvidia-smi --query-gpu=name,driver_version,memory.used --format=csv | tee result
 if [ ! -f "${MODELS[main]}/voices.safetensors" ]; then
     (cd "$MAIN" && "$PY" -m kokoro_worker.convert "${MODELS[main]}") || exit 1
 fi
-"$PY" -m kokoro_worker.convert "$NEW_MODELS" --students bench/bin/students.pt \
-    --frame-side bench/bin/frame_side.pt --decoder bench/bin/decoder.pt || exit 1
+"$PY" -m kokoro_worker.convert "$NEW_MODELS" ${ORE_DIR:+--ore "$ORE_DIR"} || exit 1
 
 start_worker() { # label log -> WORKER_PID, START_S (seconds to listening)
     local label=$1 log=$2 t0=$EPOCHREALTIME

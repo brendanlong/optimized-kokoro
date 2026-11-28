@@ -1,5 +1,5 @@
 # gpuc submit bench/job_vocos.yaml --host local   (from worker/). Untracked inputs it expects:
-# bench/bin/main/worker (git archive origin/main worker, unpacked there) and bench/bin/{students,frame_side,decoder}.pt.
+# bench/bin/main/worker (git archive origin/main worker, unpacked there).
 name: kokoro-vocos-worker
 setup: uv sync --frozen
 command: bash bench/job_vocos.sh
