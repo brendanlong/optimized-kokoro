@@ -28,9 +28,10 @@ KOKORO_BUILD_USER=$(id -un)
 D=$FAKE_ROOT
 S=$FAKE_STATE
 co=$W/repo
-mkdir -p "$co/deploy" "$co/crates/g2p-ja/tools" "$W/in/models" "$TMPDIR"
+mkdir -p "$co/deploy" "$co/crates/g2p-ja/tools" "$co/worker/kokoro_worker" "$W/in/models" "$TMPDIR"
 cp -a "$src/deploy/." "$co/deploy/"
 cp -a "$src/crates/g2p-ja/tools/fetch_unidic.sh" "$co/crates/g2p-ja/tools/"
+cp -a "$src/worker/kokoro_worker/convert.py" "$co/worker/kokoro_worker/"
 chmod -R go-w "$co"
 export PATH=$co/deploy/dry-run/bin:$PATH
 echo dry-run-client-key-0123456789 > "$W/in/keys"
@@ -325,6 +326,44 @@ t_update_twice() {
     run update.sh
     expect_rc 0 && check_state && expect "still $before_cur" [ "$(cur)" != "$before_cur" ] && check_order &&
         expect "releases $(releases)" [ "$(wc -w <<< "$(releases)")" = 2 ]
+}
+models_id() { sha256sum "$co/worker/kokoro_worker/convert.py" | cut -c1-16; }
+model_files() { [ -f "$D/models/$1/config.json" ] && [ -f "$D/models/$1/model.safetensors" ] && [ -f "$D/models/$1/voices.safetensors" ]; }
+names_models() { grep -qxF "KOKORO_MODELS_DIR=$2" "$D/releases/$1/.env"; }
+# A new conversion (convert.py changed) goes next to the running release's, which keeps its own
+# until no kept release names it. (The new one is put in place here: the dry run can't convert.)
+t_update_models() {
+    installed || return 1
+    local old new
+    old=$(models_id)
+    expect "installed into models/$old" model_files "$old" && expect "release names $old" names_models "$before_cur" "$old" ||
+        return 1
+    chmod u+w "$co/worker/kokoro_worker/convert.py"
+    echo "# a new pin" >> "$co/worker/kokoro_worker/convert.py"
+    new=$(models_id)
+    mkdir -p "$D/models/$new"
+    cp "$D/models/$old/"* "$D/models/$new/"
+    run update.sh
+    expect_rc 0 && check_updated && expect "new release names $new" names_models "$(cur)" "$new" &&
+        expect "previous release's models kept" model_files "$old" || return 1
+    run update.sh
+    expect_rc 0 && expect "unnamed models pruned" not [ -e "$D/models/$old" ] && expect "kept $new" model_files "$new"
+}
+# Models from before IDs (directly in models/, a release without KOKORO_MODELS_DIR) stay until no
+# kept release lacks it.
+t_update_models_legacy() {
+    installed || return 1
+    local id
+    id=$(models_id)
+    cp "$D/models/$id/"* "$D/models/"
+    sed -i '/^KOKORO_MODELS_DIR=/d' "$D/releases/$before_cur/.env"
+    # shellcheck disable=SC2016 # the release's compose.yaml from before IDs, ${...} literal
+    sed -i 's|/models/${KOKORO_MODELS_DIR:?}"|/models"|' "$D/releases/$before_cur/compose.yaml"
+    run update.sh
+    expect_rc 0 && check_updated && expect "legacy models kept for $before_cur" [ -f "$D/models/model.safetensors" ] || return 1
+    run update.sh
+    expect_rc 0 && expect "legacy models pruned" not [ -e "$D/models/model.safetensors" ] &&
+        expect "kept $id" model_files "$id"
 }
 t_update_tunnel() {
     installed cloudflared || return 1

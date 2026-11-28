@@ -12,7 +12,7 @@ the frame count depends on predicted durations), and more on a busy CPU. The rep
   layer configuration, not per length.
 - ConvTranspose1d: one cuBLAS matmul to [out channels x taps, T], then overlap-add of the taps by
   reshaping (the kernel zero-padded to a multiple of the stride); depthwise ones elementwise.
-- STFT/iSTFT (n_fft 20, hop 5): frames by unfold and a DFT matrix, the inverse by a matrix and the
+- STFT/iSTFT (frame.Decoder: n_fft 1200, hop 300): frames by unfold and a DFT matrix, the inverse by a matrix and the
   same overlap-add, with torch.stft/istft's centering, reflect padding and window normalization.
 
 `apply(model)` swaps these into a loaded model in place. Conv1d falls back to F.conv1d off CUDA
@@ -203,34 +203,50 @@ class MatmulSTFT(torch.nn.Module):
         self.register_buffer("window_sq", (window**2).float(), persistent=False)
 
     @torch.autocast("cuda", enabled=False)
-    def transform(self, x):
-        """x [B, L] -> magnitude, phase [B, bins, frames]."""
+    def spectrum(self, x):
+        """x [B, L] -> real, imaginary [B, bins, frames]."""
         pad = self.n_fft // 2
         x = F.pad(x[:, None, :].float(), (pad, pad), mode="reflect")[:, 0]
         frames = x.unfold(-1, self.n_fft, self.hop)  # [B, frames, n_fft]
         spec = torch.matmul(frames, self.fwd).transpose(1, 2)  # [B, 2 * bins, frames]
-        real, imag = spec.chunk(2, dim=1)
+        return spec.chunk(2, dim=1)
+
+    @torch.autocast("cuda", enabled=False)
+    def transform(self, x):
+        """x [B, L] -> magnitude, phase [B, bins, frames]."""
+        real, imag = self.spectrum(x)
         return torch.sqrt(real * real + imag * imag), torch.atan2(imag, real)
 
     @torch.autocast("cuda", enabled=False)
-    def inverse(self, magnitude, phase):
-        """magnitude, phase [B, bins, frames] -> [B, 1, hop * (frames - 1)]."""
+    def inverse(self, magnitude, phase, kept=None):
+        """magnitude, phase [B, bins, frames] -> [B, 1, hop * (frames - 1)]; see synthesize."""
         magnitude, phase = magnitude.float(), phase.float()
-        spec = torch.cat([magnitude * torch.cos(phase), magnitude * torch.sin(phase)], dim=1)
+        return self.synthesize(magnitude * torch.cos(phase), magnitude * torch.sin(phase), kept)
+
+    @torch.autocast("cuda", enabled=False)
+    def synthesize(self, real, imag, kept=None):
+        """real, imaginary [B, bins, frames] -> [B, 1, hop * (frames - 1)]. With kept [B, frames]
+        (1 for a row's frames, 0 past its end), each row's window normalization counts only its own
+        frames, as if it had been transformed alone."""
+        spec = torch.cat([real.float(), imag.float()], dim=1)
         frames = torch.matmul(spec.transpose(1, 2), self.inv)  # [B, T, n_fft]
         bsz, t, _ = frames.shape
         r = self.n_fft // self.hop
         z = frames.transpose(1, 2).reshape(bsz, 1, r, self.hop, t)
         y = _overlap_add(z, self.hop)  # [B, 1, (t + r - 1) * hop]
-        env = _overlap_add(self.window_sq.reshape(1, 1, r, self.hop, 1).expand(1, 1, r, self.hop, t), self.hop)
+        window_sq = self.window_sq.reshape(1, 1, r, self.hop, 1)
+        if kept is None:
+            env = _overlap_add(window_sq.expand(1, 1, r, self.hop, t), self.hop)
+        else:  # zero past a row's end, where its samples aren't used
+            env = _overlap_add(window_sq * kept.float()[:, None, None, None, :], self.hop).clamp(min=1e-8)
         pad = self.n_fft // 2
         length = self.hop * (t - 1)
         return y[..., pad : pad + length] / env[..., pad : pad + length]
 
 
 def apply(model: torch.nn.Module) -> None:
-    """Swap the kernels above into a loaded KModel, in place: every Conv1d, every ConvTranspose1d,
-    and the generator's STFT. Call once the model is on its device and in its dtype."""
+    """Swap the kernels above into a loaded KModel, in place: every Conv1d and ConvTranspose1d.
+    Call once the model is on its device and in its dtype. (frame.Decoder builds its own MatmulSTFT.)"""
     for m in model.modules():
         if type(m) is torch.nn.Conv1d:
             assert m.groups == 1 and m.padding_mode == "zeros"
@@ -245,5 +261,3 @@ def apply(model: torch.nn.Module) -> None:
             with torch.no_grad():
                 m._wt = transpose_weight(m.weight.detach(), m.stride[0], m.groups)
             m.__class__ = MatmulConvTranspose1d
-    g = model.decoder.generator
-    g.stft = MatmulSTFT(g.post_n_fft, g.stft.hop_length).to(next(model.parameters()).device)

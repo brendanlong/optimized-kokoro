@@ -78,7 +78,7 @@ sudo deploy/install.sh --keys-from FILE --models-from DIR --unidic-from FILE
 ```
 
 - `--keys-from FILE`: a `KOKORO_API_KEYS=a,b` line, or one key per line (with `#` comments).
-- `--models-from DIR`: what `kokoro_worker.convert` wrote.
+- `--models-from DIR`: what this checkout's `kokoro_worker.convert` wrote (installed as `models/ID/`, below).
 - `--unidic-from FILE`: a converted `unidic.dic`, with its license next to it as `FILE.LICENSE` (what `fetch_unidic.sh` writes). It must match the checksum.
 
 Keys are at least 16 characters, from letters, digits and `._~+/=-`. An import is skipped, with a message, when that data is already installed. The clients' keys are then in `/srv/optimized-kokoro/secrets/server.toml` (`sudo cat` it). Clients send one as `Authorization: Bearer KEY`.
@@ -176,10 +176,11 @@ Then, if nothing else uses them, remove `runsc-kokoro-uds-create`, `runsc-kokoro
 
 `/srv/optimized-kokoro`, all root-owned:
 - `settings.env`: the settings above. Any other line, apart from comments, is an error.
-- `models/` and `unidic/SHA256.dic`: world-readable data. The server memory-maps the dictionary, so a new one (a new checksum in `fetch_unidic.sh`) is a new file next to the old one. Each release's `.env` names its own (`KOKORO_UNIDIC_FILE`), so neither the running server nor a rollback sees it change. Dictionaries that no kept release names are deleted.
+- `models/ID/`: the worker's weights (`config.json`, `model.safetensors`, `voices.safetensors`), named by a hash of `worker/kokoro_worker/convert.py`, which pins the revisions it converts. Like UniDic, a new conversion goes next to the old one, each release's `.env` names its own (`KOKORO_MODELS_DIR`), and models no kept release names are deleted. (Models from before IDs, directly in `models/`, are deleted once every kept release names its own.)
+- `unidic/SHA256.dic`: world-readable data. The server memory-maps the dictionary, so a new one (a new checksum in `fetch_unidic.sh`) is a new file next to the old one. Each release's `.env` names its own (`KOKORO_UNIDIC_FILE`), so neither the running server nor a rollback sees it change. Dictionaries that no kept release names are deleted.
 - `secrets/` (0700): `keys` (the named client keys, root-only, see API keys), `server.toml` made from them (listen address, socket path and API keys), `demo.key` and, with the tunnel, `cloudflared.token` (put there by the admin).
 - `resolv.conf`: for cloudflared, written when the tunnel is on.
-- `releases/REL/`: `compose.yaml` (a copy of `deploy/compose.yaml`), `.env` (`KOKORO_ROOT`, `KOKORO_RELEASE`, `KOKORO_UNIDIC_FILE`, `COMPOSE_PROJECT_NAME` and the settings) and `cache-seed/`. Images are `optimized-kokoro-{worker,server,demo}:REL`. The release's Compose project is `optimized-kokoro-rel` (REL in lower case), with the volume `optimized-kokoro-rel_sock` and the network `optimized-kokoro-rel_kokoro`. A plain `docker compose -f releases/REL/compose.yaml` finds it in the `.env`.
+- `releases/REL/`: `compose.yaml` (a copy of `deploy/compose.yaml`), `.env` (`KOKORO_ROOT`, `KOKORO_RELEASE`, `KOKORO_UNIDIC_FILE`, `KOKORO_MODELS_DIR`, `COMPOSE_PROJECT_NAME` and the settings) and `cache-seed/`. Images are `optimized-kokoro-{worker,server,demo}:REL`. The release's Compose project is `optimized-kokoro-rel` (REL in lower case), with the volume `optimized-kokoro-rel_sock` and the network `optimized-kokoro-rel_kokoro`. A plain `docker compose -f releases/REL/compose.yaml` finds it in the `.env`.
 - `current`: a symlink to the running release.
 - `.lock`: held while `install.sh`, `update.sh` or `keys.sh` runs.
 

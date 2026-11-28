@@ -486,12 +486,21 @@ prune_unidic() {
     done
 }
 
-# Models: imported from directory $1 if given, or converted once by the build user
-# (kokoro_worker.convert downloads a pinned revision). Only the three files the converter writes.
+# Which models this checkout wants: named by the converter's source, which pins the revisions of the
+# weights it fetches. (A change to the files it writes must change convert.py too.)
+models_id() {
+    sha256sum "$repo/worker/kokoro_worker/convert.py" | cut -c1-16
+}
+
+# Models, as models/ID/: kept if they're there; otherwise imported from directory $1 if given, or
+# converted by the build user (kokoro_worker.convert downloads pinned revisions). Only the three
+# files the converter writes. Each release's .env names its own (KOKORO_MODELS_DIR), so neither the
+# running worker nor a rollback sees new weights.
 ensure_models() {
-    local from=${1:-} files=(config.json model.safetensors voices.safetensors) src rt bt f
-    if [ -f "$root/models/voices.safetensors" ]; then
-        [ -z "$from" ] || echo "keeping the models already in $root/models (not importing $from)"
+    local from=${1:-} files=(config.json model.safetensors voices.safetensors) src rt bt f dest
+    dest=$root/models/$(models_id)
+    if [ -f "$dest/voices.safetensors" ]; then
+        [ -z "$from" ] || echo "keeping the models already in $dest (not importing $from)"
         return
     fi
     echo "== models"
@@ -505,11 +514,30 @@ ensure_models() {
     fi
     make_tmp rt
     for f in "${files[@]}"; do import_file "$src/$f" "$rt/$f"; done
-    rm -rf "$root/models.new"
-    install -d -m 0755 "$root/models.new"
-    for f in "${files[@]}"; do install -m 0644 "$rt/$f" "$root/models.new/$f"; done
-    rm -rf "$root/models"
-    mv "$root/models.new" "$root/models"
+    rm -rf "$dest.new"
+    install -d -m 0755 "$root/models" "$dest.new"
+    for f in "${files[@]}"; do install -m 0644 "$rt/$f" "$dest.new/$f"; done
+    rm -rf "$dest"  # an incomplete one
+    mv -T "$dest.new" "$dest"
+}
+
+# Removes the models no release names, except the ones this checkout wants. Models installed
+# before they had IDs (models/*.safetensors and config.json) go once no release lacks
+# KOKORO_MODELS_DIR.
+prune_models() {
+    local d want env
+    want=$(models_id)
+    for d in "$root"/models/*/; do
+        [ -d "$d" ] && [ "$(basename "$d")" != "$want" ] || continue
+        if ! grep -qxF "KOKORO_MODELS_DIR=$(basename "$d")" "$root"/releases/*/.env 2> /dev/null; then
+            rm -rf "${d:?}"
+        fi
+    done
+    for env in "$root"/releases/*/.env; do
+        [ -f "$env" ] || continue
+        grep -q '^KOKORO_MODELS_DIR=' "$env" || return 0
+    done
+    rm -f "$root"/models/config.json "$root"/models/*.safetensors
 }
 
 # secrets/keys (the clients' named API keys, imported from $1 as imported-N or one new one named
@@ -662,6 +690,7 @@ stage_release() {
         echo "KOKORO_ROOT=$root"
         echo "KOKORO_RELEASE=$rel"
         echo "KOKORO_UNIDIC_FILE=$(unidic_sha).dic"
+        echo "KOKORO_MODELS_DIR=$(models_id)"
         echo "COMPOSE_PROJECT_NAME=$(new_project "$rel")"
         settings_env
     } > "$dir/.env"
@@ -848,13 +877,14 @@ wait_tunnel() {
 }
 
 # Removes a release (never the current one): its Compose project, images and directory, and the
-# dictionaries no release names any more.
+# dictionaries and models no release names any more.
 remove_release() {
     local i
     remove_project "$(new_project "$1")"
     for i in "${images[@]}"; do docker image rm "optimized-kokoro-$i:$1" > /dev/null 2>&1 || true; done
     rm -rf "${root:?}/releases/$1"
     prune_unidic
+    prune_models
 }
 
 # Removes every release except the ones given (no arguments: all).
@@ -869,6 +899,7 @@ prune_releases() {
         [ -n "$keep" ] || remove_release "$r"
     done
     prune_unidic
+    prune_models
 }
 
 # The last log lines of release $1.

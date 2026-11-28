@@ -208,7 +208,8 @@ def accept_loop(listener: socket.socket, synth, max_batch: int, frame_timeout: f
 
 
 def warmup(synth, max_batch: int) -> None:
-    """Compile before accepting connections: batch 1 and packed rows have graphs of their own."""
+    """Warm up before accepting connections: compile (with --compile), and compile the Triton
+    conv1d's variants and tune its tiles, for batch 1 and for batches."""
     from .model import Request
 
     ids = sorted(synth.vocab_ids)
@@ -260,15 +261,16 @@ def main() -> None:
     # 1 by default. On the 3060 Ti, batching 8 gives more throughput under load (about 210x against
     # 153x at 16 streams) but longer waits for first audio; see README.md.
     parser.add_argument("--max-batch", type=int, default=1)
-    # 60 s (2,400 frames) at any speed, and a packed decoder row is held to the same frame count:
-    # about 1.4 GB of GPU memory reserved at most. Real 510-phoneme chunks reach about 44 s at
+    # 60 s (2,400 frames) at any speed, and a padded frame-side batch is held to the same frame count.
+    # (Its GPU memory hasn't been remeasured since the Vocos-style decoder replaced Kokoro's.) Real 510-phoneme chunks reach about 44 s at
     # speed 1; the front splits chunks that would exceed the cap (README.md).
     parser.add_argument("--max-chunk-seconds", type=float, default=60.0,
                         help="longest audio one request may produce, at any speed; sets the worker's "
                              "peak GPU memory (README.md)")
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--fp32", action="store_true")
-    parser.add_argument("--no-compile", action="store_true")
+    # torch.compile: ~1.8x the throughput under load on the 3060 Ti, but minutes of startup (model.py).
+    parser.add_argument("--compile", action="store_true")
     args = parser.parse_args()
     if not args.socket and not args.export_cache:
         parser.error("--socket is required (or --export-cache)")
@@ -290,7 +292,7 @@ def main() -> None:
     from .model import Synth
 
     t = time.monotonic()
-    synth = Synth(args.models, device=args.device, half=not args.fp32, compile=not args.no_compile,
+    synth = Synth(args.models, device=args.device, half=not args.fp32, compile=args.compile,
                   max_chunk_samples=max_chunk_samples)
     log.info("loaded in %.1f s: %d voices", time.monotonic() - t, len(synth.voice_names))
     warmup(synth, args.max_batch)
